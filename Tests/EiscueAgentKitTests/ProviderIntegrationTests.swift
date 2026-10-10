@@ -1,0 +1,142 @@
+import Foundation
+import Testing
+import PiDurableKit
+import os
+@testable import EiscueAgentKit
+
+@Suite("Custom provider protocols")
+struct ProviderIntegrationTests {
+    @Test(arguments: AgentAPI.allCases)
+    func customProviderUsesConfiguredEndpointAndCredential(_ api: AgentAPI) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-provider-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = api.rawValue.lowercased() + ".fixture.invalid"
+        let configuration = AgentConfiguration(api: api, baseURL: URL(string: "https://\(host)/v1")!,
+                                               model: "fixture-model", apiKey: "credential-for-fixture-only")
+        let network = URLSessionConfiguration.ephemeral
+        network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        let id = UUID()
+        var messages: [AgentMessage] = []
+        var partials: [String] = []
+        for try await event in try await client.run(request: .init(conversationID: id, prompt: "Say hello")) {
+            if case .message(let message) = event { messages.append(message) }
+            if case .assistantText(let text) = event { partials.append(text) }
+        }
+        #expect(messages.last?.text == "Hello world")
+        let request = try #require(ProviderFixtureProtocol.requests.withLock { $0.last(where: { $0.url.host == host }) })
+        let expectedPath: String = switch api {
+        case .openAICompletions: "/v1/chat/completions"
+        case .openAIResponses: "/v1/responses"
+        case .anthropicMessages: "/v1/messages"
+        }
+        #expect(request.url.path == expectedPath)
+        #expect(request.body["model"] == "fixture-model")
+        #expect(request.body["stream"] == true)
+        if api == .anthropicMessages {
+            #expect(request.apiKey == configuration.apiKey)
+        } else {
+            #expect(request.authorization == "Bearer \(configuration.apiKey)")
+        }
+        if api == .openAICompletions {
+            #expect(partials.contains { !$0.isEmpty && $0 != "Hello world" && "Hello world".hasPrefix($0) })
+        }
+        // Configured credentials live in Models' memory store, not the durable transcript.
+        let bytes = try Data(contentsOf: directory.appendingPathComponent(id.uuidString.lowercased() + ".sqlite"))
+        #expect(bytes.range(of: Data(configuration.apiKey.utf8)) == nil)
+        let offline = AgentClient(storageDirectory: directory)
+        #expect(await offline.availability == .unconfigured)
+        #expect(try await offline.recover(conversationID: id).messages.last?.text == "Hello world")
+        try await offline.removeConversation(id: id)
+        #expect(try await offline.recover(conversationID: id).messages.isEmpty)
+    }
+}
+
+private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
+    struct Request: Sendable {
+        let url: URL
+        let body: AgentJSONValue
+        let authorization: String?
+        let apiKey: String?
+    }
+    static let requests = OSAllocatedUnfairLock(initialState: [Request]())
+    private let work = OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let url = request.url else { return }
+        var data = request.httpBody ?? Data()
+        if data.isEmpty, let stream = request.httpBodyStream {
+            stream.open()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(buffer, count: count)
+            }
+            stream.close()
+        }
+        let recorded = Request(url: url, body: (try? JSONDecoder().decode(AgentJSONValue.self, from: data)) ?? .null,
+                               authorization: request.value(forHTTPHeaderField: "Authorization"),
+                               apiKey: request.value(forHTTPHeaderField: "x-api-key"))
+        Self.requests.withLock { $0.append(recorded) }
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+                                       headerFields: ["Content-Type": "text/event-stream"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        let chunks: [String]
+        if url.path.hasSuffix("chat/completions") { chunks = Self.completions }
+        else if url.path.hasSuffix("responses") { chunks = Self.responses }
+        else { chunks = Self.anthropic }
+        work.withLock { task in
+            task = Task {
+                for chunk in chunks {
+                    do { try await Task.sleep(for: .milliseconds(100)) }
+                    catch { return }
+                    client?.urlProtocol(self, didLoad: Data(chunk.utf8))
+                }
+                client?.urlProtocolDidFinishLoading(self)
+            }
+        }
+    }
+
+    override func stopLoading() { work.withLock { $0?.cancel() } }
+
+    static func sse(_ json: String, event: String? = nil) -> String {
+        (event.map { "event: \($0)\n" } ?? "") + "data: \(json)\n\n"
+    }
+
+    static let completions = [
+        sse(#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#),
+        sse(#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":"stop"}]}"#),
+        "data: [DONE]\n\n",
+    ]
+
+    static let anthropic = [
+        sse(#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"fixture-model","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}"#, event: "message_start"),
+        sse(#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#, event: "content_block_start"),
+        sse(#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello world"}}"#, event: "content_block_delta"),
+        sse(#"{"type":"content_block_stop","index":0}"#, event: "content_block_stop"),
+        sse(#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":2}}"#, event: "message_delta"),
+        sse(#"{"type":"message_stop"}"#, event: "message_stop"),
+    ]
+
+    static var responses: [String] {
+        let item = #"{"id":"msg_1","type":"message","status":"in_progress","role":"assistant","content":[]}"#
+        let done = #"{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello world","annotations":[]}]}"#
+        func response(_ status: String, _ output: String) -> String {
+            #"{"id":"resp_1","object":"response","created_at":1,"status":"\#(status)","model":"fixture-model","output":\#(output),"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}"#
+        }
+        return [
+            sse(#"{"type":"response.created","sequence_number":0,"response":\#(response("in_progress", "[]"))}"#, event: "response.created"),
+            sse(#"{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":\#(item)}"#, event: "response.output_item.added"),
+            sse(#"{"type":"response.content_part.added","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}"#, event: "response.content_part.added"),
+            sse(#"{"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello world"}"#, event: "response.output_text.delta"),
+            sse(#"{"type":"response.output_item.done","sequence_number":4,"output_index":0,"item":\#(done)}"#, event: "response.output_item.done"),
+            sse(#"{"type":"response.completed","sequence_number":5,"response":\#(response("completed", "[" + done + "]"))}"#, event: "response.completed"),
+        ]
+    }
+}

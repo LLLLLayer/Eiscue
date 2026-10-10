@@ -1,0 +1,1040 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08863259B315D6AD944F73C9 /* ModelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17BB1912D4603DC0C1F335F1 /* ModelSettingsView.swift */; };
+		0D1A3149B9F201C6E8A50BB5 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 47288B06A089F452C97A9F25 /* Localizable.xcstrings */; };
+		0FCAA99233B971E3092E52A1 /* SkillsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC250402F80F8DA3C197939B /* SkillsView.swift */; };
+		109F57365B69F0464960F441 /* SkillLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE860B63A4D199A0D88D8504 /* SkillLibrary.swift */; };
+		13186EA3B1214825C206C125 /* LocalTunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B542B78213F4AA386C31146 /* LocalTunnelManager.swift */; };
+		142CD3B5D424919FD677D02D /* TaskNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 604E70845A3BA6FE465D6878 /* TaskNotificationManager.swift */; };
+		143F8C10629C01BAFCD84EA8 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6825B2E1C563FEEE8C4308D9 /* AppModel.swift */; };
+		16E09731981B3E1F189F3CAE /* EiscueAgentKit in Frameworks */ = {isa = PBXBuildFile; productRef = FA0B3DC5C1F457A78F8AF869 /* EiscueAgentKit */; };
+		1C1D4CC676D0758763A53063 /* search-smoke-test.md in Resources */ = {isa = PBXBuildFile; fileRef = 0C6151CD048ACF400CBF0CBB /* search-smoke-test.md */; };
+		27649B9FDD677802567AE14A /* DeviceToolSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E80F87EDB2D18383BBE7DBF5 /* DeviceToolSessionTests.swift */; };
+		2C5C93121F230E36902D3397 /* TaskStatus.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 1B85F3CF922F90778842F840 /* TaskStatus.xcstrings */; };
+		2EAD279892239E7A5B000B78 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8DD306C184BA93655C1F25 /* RootView.swift */; };
+		30CFC9809D0F10728746CA84 /* EiscueTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 878D57E814A5453CF290210F /* EiscueTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		310DC9D3046011C406FF5882 /* TaskStatusPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02C5B3F749409F2C368DFFA /* TaskStatusPresentationTests.swift */; };
+		31A24A24911B0A0B4CEC158B /* CredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FB8C39464D515E019541550 /* CredentialStore.swift */; };
+		326833CAB16FFC9E3B47383F /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E4340173F725948EB4EBCB29 /* InfoPlist.xcstrings */; };
+		338998C0A22ED36D08398FC2 /* EiscueDeviceKit in Frameworks */ = {isa = PBXBuildFile; productRef = FADEF459526446FA7B72270B /* EiscueDeviceKit */; };
+		3A487D870AFA0B2E120F3CED /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 83419005CFB2850C52F954E6 /* Assets.xcassets */; };
+		46C89E6B5ECD275A74A52A8E /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F3E6236EEE44C09DE94043 /* OnboardingView.swift */; };
+		4720C1A0DE81BBB5B1E6288E /* PacketReflector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0BAF02C3A4596BB81900937 /* PacketReflector.swift */; };
+		4C322E4662A3C60FCFDA0F61 /* ModelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2BB43D26F8950FA2A5185FA /* ModelSettings.swift */; };
+		4FC5E87EB3D9D92623F91D38 /* DeviceConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE9E6334DAC0A5193DFE765 /* DeviceConnection.swift */; };
+		50AFD68759F7819B87838F50 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16932B04B3C656D0F674951 /* PacketTunnelProvider.swift */; };
+		6152EF03E4375C154B4464CC /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC8ABABC1676BF5AD324B2 /* AssistantView.swift */; };
+		646CDA42A4E74DC7A44C4042 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F4B4FCB3E0E12F0D5A95D892 /* Localizable.xcstrings */; };
+		6585261324C5D5A0DD263377 /* TaskNotificationManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 849AA5E1FD5B277C245491BF /* TaskNotificationManagerTests.swift */; };
+		66602933AF40443324295BF4 /* OnboardingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01D4FB3D16D345F97887C60 /* OnboardingUITests.swift */; };
+		67147D139EACE15D5F50E6F4 /* PairingTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE71B266875AC09F5F63AFF /* PairingTransferTests.swift */; };
+		6879DE205F8DDD037A932E55 /* EiscueUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06E807A4B8721B8A2C6FEEC3 /* EiscueUITests.swift */; };
+		6A0F9A3B7DA51DFC071F0FDD /* DeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E243958F91356B3A30120CD /* DeviceView.swift */; };
+		6C73EA58A8ADA9A5C3300BCE /* LocalTunnel in Resources */ = {isa = PBXBuildFile; fileRef = 31887D770371FDEA757C11FB /* LocalTunnel */; };
+		7A810F0B7BA13B3B8B42E444 /* TaskStatusPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E816BCA11DD953460AE2CE8C /* TaskStatusPresentation.swift */; };
+		7DF293E753E1C3376405803A /* DeviceTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17DAECA4B9B978DF3B90D031 /* DeviceTools.swift */; };
+		7EE9EDD54F5E31FA417A6C57 /* LocalTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */; };
+		8395165BFFDC4AF21C4C4474 /* PairingTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369A186D03AD1B77A10984A0 /* PairingTransfer.swift */; };
+		896303C2BDDBBDC6DD804881 /* ConversationReconciliationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A505109E0ECA9E58007AD2 /* ConversationReconciliationTests.swift */; };
+		93923A433779533C2F3B232D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52BD4DE32F6EAD3627D0B45F /* SettingsView.swift */; };
+		9D3928AF4F7625FE481F138E /* ios-navigation.md in Resources */ = {isa = PBXBuildFile; fileRef = A66379A812D3C89AAE2ED92F /* ios-navigation.md */; };
+		9DE47B041261AEEF75F702FE /* BackgroundStatus.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 90CF9E90D067F4E45B51B53B /* BackgroundStatus.xcstrings */; };
+		A988E817500C9D7E12208F23 /* BackgroundExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5DA2E68A4377D4B76AD9CC /* BackgroundExecution.swift */; };
+		AFE01C39F200061750F93B6E /* AppLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCA2E1255BE860C03B2D7D2 /* AppLocalizationTests.swift */; };
+		B27D7E7BF15157A7810986C2 /* RunRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520105FEB6AA411D3BF07584 /* RunRecord.swift */; };
+		B38FBA6FC06E862C8C0075CB /* EiscueApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61CCF7D1613FCC89E14553DD /* EiscueApp.swift */; };
+		B633C15C203F04B8FFC8CD87 /* Runtime.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 78A63C30EF964BF5B9C42A22 /* Runtime.xcstrings */; };
+		B64A0FF7B8E06DB51C0ED42F /* failure-recovery.md in Resources */ = {isa = PBXBuildFile; fileRef = AE8FF5FBC3248D3E092A0B6F /* failure-recovery.md */; };
+		B7153829F4DBC08B326C27C5 /* LocalTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */; };
+		B77C61A22CAC4EF6F9D4FC30 /* EiscueAgentKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3D0877E9D7EC4BD3D62A56BD /* EiscueAgentKit */; };
+		BD60DC2EDC6935D987BC4244 /* PacketReflectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34C4F754435B4D37E796F42 /* PacketReflectorTests.swift */; };
+		BE87BF05F4BEAB134A08E089 /* EiscueDeviceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1B6A73E40564BA09F4256C9F /* EiscueDeviceKit */; };
+		BEF1B27E5D4F4D469EDAD9D5 /* LocalTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */; };
+		C21D2869B88F7F2A784C65F9 /* BackgroundTaskStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01B9BDDFD7C06B9D7C358D71 /* BackgroundTaskStatusTests.swift */; };
+		C772B756B528E7C492D8D397 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4893D49FE11574B85AF2C19C /* DesignSystem.swift */; };
+		CB31C17BA3E34080230F4054 /* DebugDeviceSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CB21C2665301FA81BFDCAD9 /* DebugDeviceSetup.swift */; };
+		CB87B1ABBA03F0EEFF3E34AB /* AgentIntegrationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE9CC030267FDA8C3D28EED /* AgentIntegrationUITests.swift */; };
+		D09AFA7C912B4BE9DA9B8B81 /* Onboarding.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 9F0C8133FEDA1A568AFA3120 /* Onboarding.xcstrings */; };
+		D47EF70F5A4CC0F7E2EB4330 /* RunHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F4E5E2462318E6163D11E3 /* RunHistoryView.swift */; };
+		DFD8D9D7337613DC090B2526 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B4113D63EF63119973E5290E /* InfoPlist.xcstrings */; };
+		E0C476F04D5A838540F40F76 /* PacketReflector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0BAF02C3A4596BB81900937 /* PacketReflector.swift */; };
+		EC26DA4792A228C1E9DCC1B5 /* LocalizationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C8DBBE9AC89717181349C81 /* LocalizationUITests.swift */; };
+		ED443FC145D794F43DC8ADC8 /* DevicePairingAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E4175D979EB76F8D4EC5CB /* DevicePairingAvailabilityTests.swift */; };
+		F3B9AD7FD904BA9AAA8DA432 /* LocalizationResourcesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2715D754945BFFCB698F91 /* LocalizationResourcesTests.swift */; };
+		FA471D0DAF642BD7D07D6190 /* LocalTunnelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5987C49F03E1A6006180D2D /* LocalTunnelManagerTests.swift */; };
+		FCD81924ED952E3E6041F99E /* Connections.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 24E7147A3B261B1E481387A7 /* Connections.xcstrings */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		3FD658B59C67BB9580C0FEB4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F5634374B44B1C587422F169 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 53732733BF21E4F8E25187CC;
+			remoteInfo = Eiscue;
+		};
+		7C57DCE7C297F2D6AD59EC31 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F5634374B44B1C587422F169 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 238C5FEA46B9F60E57DAF14E;
+			remoteInfo = EiscueTunnel;
+		};
+		B1AC38291ADFFD4E49FF821A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F5634374B44B1C587422F169 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 53732733BF21E4F8E25187CC;
+			remoteInfo = Eiscue;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F377B3E8D9E0EF5BAC6BA1BC /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				30CFC9809D0F10728746CA84 /* EiscueTunnel.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		01B9BDDFD7C06B9D7C358D71 /* BackgroundTaskStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTaskStatusTests.swift; sourceTree = "<group>"; };
+		06E807A4B8721B8A2C6FEEC3 /* EiscueUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EiscueUITests.swift; sourceTree = "<group>"; };
+		0C6151CD048ACF400CBF0CBB /* search-smoke-test.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "search-smoke-test.md"; sourceTree = "<group>"; };
+		0DCEF3E726C25700C9265A12 /* EiscueUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = EiscueUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		17BB1912D4603DC0C1F335F1 /* ModelSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSettingsView.swift; sourceTree = "<group>"; };
+		17DAECA4B9B978DF3B90D031 /* DeviceTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceTools.swift; sourceTree = "<group>"; };
+		1B542B78213F4AA386C31146 /* LocalTunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTunnelManager.swift; sourceTree = "<group>"; };
+		1B85F3CF922F90778842F840 /* TaskStatus.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = TaskStatus.xcstrings; sourceTree = "<group>"; };
+		1CB21C2665301FA81BFDCAD9 /* DebugDeviceSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugDeviceSetup.swift; sourceTree = "<group>"; };
+		1E53C0068E0B7D7A3A8F1B88 /* Eiscue */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Eiscue; path = .; sourceTree = SOURCE_ROOT; };
+		1FB8C39464D515E019541550 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
+		24E7147A3B261B1E481387A7 /* Connections.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Connections.xcstrings; sourceTree = "<group>"; };
+		2BE71B266875AC09F5F63AFF /* PairingTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingTransferTests.swift; sourceTree = "<group>"; };
+		31887D770371FDEA757C11FB /* LocalTunnel */ = {isa = PBXFileReference; lastKnownFileType = folder; name = LocalTunnel; path = Vendor/LocalTunnel; sourceTree = SOURCE_ROOT; };
+		34AC8ABABC1676BF5AD324B2 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
+		368D71E0423BB477CF0EEC8F /* Eiscue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Eiscue.entitlements; sourceTree = "<group>"; };
+		369A186D03AD1B77A10984A0 /* PairingTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingTransfer.swift; sourceTree = "<group>"; };
+		3C2715D754945BFFCB698F91 /* LocalizationResourcesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationResourcesTests.swift; sourceTree = "<group>"; };
+		42CF02C0AE15013B45B39912 /* EiscueTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EiscueTunnel.entitlements; sourceTree = "<group>"; };
+		47288B06A089F452C97A9F25 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		4893D49FE11574B85AF2C19C /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		4B8DD306C184BA93655C1F25 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		4C8DBBE9AC89717181349C81 /* LocalizationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationUITests.swift; sourceTree = "<group>"; };
+		5143994A569E8CAC8519162C /* EiscueAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = EiscueAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		520105FEB6AA411D3BF07584 /* RunRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunRecord.swift; sourceTree = "<group>"; };
+		52BD4DE32F6EAD3627D0B45F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		5BE9CC030267FDA8C3D28EED /* AgentIntegrationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIntegrationUITests.swift; sourceTree = "<group>"; };
+		604E70845A3BA6FE465D6878 /* TaskNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNotificationManager.swift; sourceTree = "<group>"; };
+		61CCF7D1613FCC89E14553DD /* EiscueApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EiscueApp.swift; sourceTree = "<group>"; };
+		653FC56B0DAD643030BB9528 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		66E4175D979EB76F8D4EC5CB /* DevicePairingAvailabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePairingAvailabilityTests.swift; sourceTree = "<group>"; };
+		6825B2E1C563FEEE8C4308D9 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		6FD7D59EEFA5A15E076B3237 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		74A505109E0ECA9E58007AD2 /* ConversationReconciliationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationReconciliationTests.swift; sourceTree = "<group>"; };
+		78A63C30EF964BF5B9C42A22 /* Runtime.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Runtime.xcstrings; sourceTree = "<group>"; };
+		7E243958F91356B3A30120CD /* DeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceView.swift; sourceTree = "<group>"; };
+		83419005CFB2850C52F954E6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		849AA5E1FD5B277C245491BF /* TaskNotificationManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNotificationManagerTests.swift; sourceTree = "<group>"; };
+		878D57E814A5453CF290210F /* EiscueTunnel.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = EiscueTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8CCA2E1255BE860C03B2D7D2 /* AppLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalizationTests.swift; sourceTree = "<group>"; };
+		90CF9E90D067F4E45B51B53B /* BackgroundStatus.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = BackgroundStatus.xcstrings; sourceTree = "<group>"; };
+		9DE9E6334DAC0A5193DFE765 /* DeviceConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceConnection.swift; sourceTree = "<group>"; };
+		9F0C8133FEDA1A568AFA3120 /* Onboarding.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Onboarding.xcstrings; sourceTree = "<group>"; };
+		A29F08DF64FB95B30868D1C0 /* Eiscue.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Eiscue.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A66379A812D3C89AAE2ED92F /* ios-navigation.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "ios-navigation.md"; sourceTree = "<group>"; };
+		AC250402F80F8DA3C197939B /* SkillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsView.swift; sourceTree = "<group>"; };
+		AE5DA2E68A4377D4B76AD9CC /* BackgroundExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundExecution.swift; sourceTree = "<group>"; };
+		AE8FF5FBC3248D3E092A0B6F /* failure-recovery.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "failure-recovery.md"; sourceTree = "<group>"; };
+		B0BAF02C3A4596BB81900937 /* PacketReflector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketReflector.swift; sourceTree = "<group>"; };
+		B4113D63EF63119973E5290E /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		B9F4E5E2462318E6163D11E3 /* RunHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunHistoryView.swift; sourceTree = "<group>"; };
+		C2BB43D26F8950FA2A5185FA /* ModelSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSettings.swift; sourceTree = "<group>"; };
+		D01D4FB3D16D345F97887C60 /* OnboardingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingUITests.swift; sourceTree = "<group>"; };
+		E34C4F754435B4D37E796F42 /* PacketReflectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketReflectorTests.swift; sourceTree = "<group>"; };
+		E4340173F725948EB4EBCB29 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		E80F87EDB2D18383BBE7DBF5 /* DeviceToolSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceToolSessionTests.swift; sourceTree = "<group>"; };
+		E816BCA11DD953460AE2CE8C /* TaskStatusPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStatusPresentation.swift; sourceTree = "<group>"; };
+		E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTunnelConfiguration.swift; sourceTree = "<group>"; };
+		EE860B63A4D199A0D88D8504 /* SkillLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLibrary.swift; sourceTree = "<group>"; };
+		F02C5B3F749409F2C368DFFA /* TaskStatusPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStatusPresentationTests.swift; sourceTree = "<group>"; };
+		F16932B04B3C656D0F674951 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		F3F3E6236EEE44C09DE94043 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		F4B4FCB3E0E12F0D5A95D892 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		F5987C49F03E1A6006180D2D /* LocalTunnelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTunnelManagerTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5E5A25B772691DCEF7DA4E23 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B77C61A22CAC4EF6F9D4FC30 /* EiscueAgentKit in Frameworks */,
+				BE87BF05F4BEAB134A08E089 /* EiscueDeviceKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73A833DEAD6EE456E8811DC8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				16E09731981B3E1F189F3CAE /* EiscueAgentKit in Frameworks */,
+				338998C0A22ED36D08398FC2 /* EiscueDeviceKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0742BA143128AD40BD0DA9D4 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A29F08DF64FB95B30868D1C0 /* Eiscue.app */,
+				5143994A569E8CAC8519162C /* EiscueAppTests.xctest */,
+				878D57E814A5453CF290210F /* EiscueTunnel.appex */,
+				0DCEF3E726C25700C9265A12 /* EiscueUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1297DF939248A71B669E2E49 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				1E53C0068E0B7D7A3A8F1B88 /* Eiscue */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		3788B706C43449CB69ABA6BE /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				83419005CFB2850C52F954E6 /* Assets.xcassets */,
+				90CF9E90D067F4E45B51B53B /* BackgroundStatus.xcstrings */,
+				24E7147A3B261B1E481387A7 /* Connections.xcstrings */,
+				E4340173F725948EB4EBCB29 /* InfoPlist.xcstrings */,
+				F4B4FCB3E0E12F0D5A95D892 /* Localizable.xcstrings */,
+				9F0C8133FEDA1A568AFA3120 /* Onboarding.xcstrings */,
+				78A63C30EF964BF5B9C42A22 /* Runtime.xcstrings */,
+				1B85F3CF922F90778842F840 /* TaskStatus.xcstrings */,
+				7D4B7AC68501D50E737749EF /* Skills */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		46578061E8FB8A79BDBBA250 /* Vendor */ = {
+			isa = PBXGroup;
+			children = (
+				31887D770371FDEA757C11FB /* LocalTunnel */,
+			);
+			path = Vendor;
+			sourceTree = "<group>";
+		};
+		7D4B7AC68501D50E737749EF /* Skills */ = {
+			isa = PBXGroup;
+			children = (
+				AE8FF5FBC3248D3E092A0B6F /* failure-recovery.md */,
+				A66379A812D3C89AAE2ED92F /* ios-navigation.md */,
+				0C6151CD048ACF400CBF0CBB /* search-smoke-test.md */,
+			);
+			path = Skills;
+			sourceTree = "<group>";
+		};
+		816154893613858202DC290A /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				34AC8ABABC1676BF5AD324B2 /* AssistantView.swift */,
+				7E243958F91356B3A30120CD /* DeviceView.swift */,
+				17BB1912D4603DC0C1F335F1 /* ModelSettingsView.swift */,
+				F3F3E6236EEE44C09DE94043 /* OnboardingView.swift */,
+				B9F4E5E2462318E6163D11E3 /* RunHistoryView.swift */,
+				52BD4DE32F6EAD3627D0B45F /* SettingsView.swift */,
+				AC250402F80F8DA3C197939B /* SkillsView.swift */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		818F4126548B47B997BB1681 /* Apps */ = {
+			isa = PBXGroup;
+			children = (
+				DC9A697D7914FEB05662B526 /* Eiscue */,
+				DA5A29B8E4E17775FB7AED10 /* EiscueTunnel */,
+				C0F6E62FF9C7B44D79E4D344 /* Shared */,
+			);
+			path = Apps;
+			sourceTree = "<group>";
+		};
+		854E051966E6438A5CAC8BBA /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				C2BB43D26F8950FA2A5185FA /* ModelSettings.swift */,
+				520105FEB6AA411D3BF07584 /* RunRecord.swift */,
+				E816BCA11DD953460AE2CE8C /* TaskStatusPresentation.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		8712D86E1638ACC2B077A4AA /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				CE9E9D4C602D22D11EA6A22D /* EiscueUITests */,
+			);
+			path = UITests;
+			sourceTree = "<group>";
+		};
+		985BBF3E66E357FB31E1E7C4 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				B4113D63EF63119973E5290E /* InfoPlist.xcstrings */,
+				47288B06A089F452C97A9F25 /* Localizable.xcstrings */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		9FCF13833957DDCCA62A423F /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				FEE563782609E801844DBF76 /* EiscueAppTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		C0F6E62FF9C7B44D79E4D344 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		CE9E9D4C602D22D11EA6A22D /* EiscueUITests */ = {
+			isa = PBXGroup;
+			children = (
+				5BE9CC030267FDA8C3D28EED /* AgentIntegrationUITests.swift */,
+				06E807A4B8721B8A2C6FEEC3 /* EiscueUITests.swift */,
+				4C8DBBE9AC89717181349C81 /* LocalizationUITests.swift */,
+				D01D4FB3D16D345F97887C60 /* OnboardingUITests.swift */,
+			);
+			path = EiscueUITests;
+			sourceTree = "<group>";
+		};
+		D120ACBD8E03AA92CEC7FC3D = {
+			isa = PBXGroup;
+			children = (
+				818F4126548B47B997BB1681 /* Apps */,
+				1297DF939248A71B669E2E49 /* Packages */,
+				9FCF13833957DDCCA62A423F /* Tests */,
+				8712D86E1638ACC2B077A4AA /* UITests */,
+				46578061E8FB8A79BDBBA250 /* Vendor */,
+				0742BA143128AD40BD0DA9D4 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DA5A29B8E4E17775FB7AED10 /* EiscueTunnel */ = {
+			isa = PBXGroup;
+			children = (
+				42CF02C0AE15013B45B39912 /* EiscueTunnel.entitlements */,
+				6FD7D59EEFA5A15E076B3237 /* Info.plist */,
+				B0BAF02C3A4596BB81900937 /* PacketReflector.swift */,
+				F16932B04B3C656D0F674951 /* PacketTunnelProvider.swift */,
+				985BBF3E66E357FB31E1E7C4 /* Resources */,
+			);
+			path = EiscueTunnel;
+			sourceTree = "<group>";
+		};
+		DC9A697D7914FEB05662B526 /* Eiscue */ = {
+			isa = PBXGroup;
+			children = (
+				6825B2E1C563FEEE8C4308D9 /* AppModel.swift */,
+				4893D49FE11574B85AF2C19C /* DesignSystem.swift */,
+				368D71E0423BB477CF0EEC8F /* Eiscue.entitlements */,
+				61CCF7D1613FCC89E14553DD /* EiscueApp.swift */,
+				653FC56B0DAD643030BB9528 /* Info.plist */,
+				4B8DD306C184BA93655C1F25 /* RootView.swift */,
+				816154893613858202DC290A /* Features */,
+				FAD9C1F77A7D42B8F7D9D8DF /* Integrations */,
+				854E051966E6438A5CAC8BBA /* Models */,
+				3788B706C43449CB69ABA6BE /* Resources */,
+				EC2A8B48E4A8C8FD2C71E9EC /* Services */,
+			);
+			path = Eiscue;
+			sourceTree = "<group>";
+		};
+		EC2A8B48E4A8C8FD2C71E9EC /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				AE5DA2E68A4377D4B76AD9CC /* BackgroundExecution.swift */,
+				1FB8C39464D515E019541550 /* CredentialStore.swift */,
+				1B542B78213F4AA386C31146 /* LocalTunnelManager.swift */,
+				EE860B63A4D199A0D88D8504 /* SkillLibrary.swift */,
+				604E70845A3BA6FE465D6878 /* TaskNotificationManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		FAD9C1F77A7D42B8F7D9D8DF /* Integrations */ = {
+			isa = PBXGroup;
+			children = (
+				1CB21C2665301FA81BFDCAD9 /* DebugDeviceSetup.swift */,
+				9DE9E6334DAC0A5193DFE765 /* DeviceConnection.swift */,
+				17DAECA4B9B978DF3B90D031 /* DeviceTools.swift */,
+				369A186D03AD1B77A10984A0 /* PairingTransfer.swift */,
+			);
+			path = Integrations;
+			sourceTree = "<group>";
+		};
+		FEE563782609E801844DBF76 /* EiscueAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				8CCA2E1255BE860C03B2D7D2 /* AppLocalizationTests.swift */,
+				01B9BDDFD7C06B9D7C358D71 /* BackgroundTaskStatusTests.swift */,
+				74A505109E0ECA9E58007AD2 /* ConversationReconciliationTests.swift */,
+				66E4175D979EB76F8D4EC5CB /* DevicePairingAvailabilityTests.swift */,
+				E80F87EDB2D18383BBE7DBF5 /* DeviceToolSessionTests.swift */,
+				3C2715D754945BFFCB698F91 /* LocalizationResourcesTests.swift */,
+				F5987C49F03E1A6006180D2D /* LocalTunnelManagerTests.swift */,
+				E34C4F754435B4D37E796F42 /* PacketReflectorTests.swift */,
+				2BE71B266875AC09F5F63AFF /* PairingTransferTests.swift */,
+				849AA5E1FD5B277C245491BF /* TaskNotificationManagerTests.swift */,
+				F02C5B3F749409F2C368DFFA /* TaskStatusPresentationTests.swift */,
+			);
+			path = EiscueAppTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		238C5FEA46B9F60E57DAF14E /* EiscueTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A8C38AD4E75A58B4BB370D9B /* Build configuration list for PBXNativeTarget "EiscueTunnel" */;
+			buildPhases = (
+				36774068FE6D6001A1A3EA1B /* Sources */,
+				EDE75B05A84F4F613A5AAA93 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = EiscueTunnel;
+			packageProductDependencies = (
+			);
+			productName = EiscueTunnel;
+			productReference = 878D57E814A5453CF290210F /* EiscueTunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		48A4B18762D2BA21F81EFCA5 /* EiscueAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9220011F437AD75369C641F4 /* Build configuration list for PBXNativeTarget "EiscueAppTests" */;
+			buildPhases = (
+				E93894BDEB23DC2B6EE26EE7 /* Sources */,
+				5E5A25B772691DCEF7DA4E23 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B68D9D850CE9D7D8FCE9DA46 /* PBXTargetDependency */,
+			);
+			name = EiscueAppTests;
+			packageProductDependencies = (
+				3D0877E9D7EC4BD3D62A56BD /* EiscueAgentKit */,
+				1B6A73E40564BA09F4256C9F /* EiscueDeviceKit */,
+			);
+			productName = EiscueAppTests;
+			productReference = 5143994A569E8CAC8519162C /* EiscueAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		53732733BF21E4F8E25187CC /* Eiscue */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B85B8EF2807601EBB822E3A8 /* Build configuration list for PBXNativeTarget "Eiscue" */;
+			buildPhases = (
+				9A856B5D37DF9BF8D7131860 /* Sources */,
+				F627A3CA10DC80007C93E7C2 /* Resources */,
+				73A833DEAD6EE456E8811DC8 /* Frameworks */,
+				F377B3E8D9E0EF5BAC6BA1BC /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7866DB4C69F131848CB7E1E9 /* PBXTargetDependency */,
+			);
+			name = Eiscue;
+			packageProductDependencies = (
+				FA0B3DC5C1F457A78F8AF869 /* EiscueAgentKit */,
+				FADEF459526446FA7B72270B /* EiscueDeviceKit */,
+			);
+			productName = Eiscue;
+			productReference = A29F08DF64FB95B30868D1C0 /* Eiscue.app */;
+			productType = "com.apple.product-type.application";
+		};
+		808C43BBC13FDCECE0D6AFCC /* EiscueUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2BCC325B38E436236CBB97FB /* Build configuration list for PBXNativeTarget "EiscueUITests" */;
+			buildPhases = (
+				0DDC851F4A1C78EF5B4A3F12 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				61A196B85035E0D013B50C58 /* PBXTargetDependency */,
+			);
+			name = EiscueUITests;
+			packageProductDependencies = (
+			);
+			productName = EiscueUITests;
+			productReference = 0DCEF3E726C25700C9265A12 /* EiscueUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F5634374B44B1C587422F169 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					238C5FEA46B9F60E57DAF14E = {
+						DevelopmentTeam = Q2T8TN4ZW6;
+						ProvisioningStyle = Automatic;
+					};
+					48A4B18762D2BA21F81EFCA5 = {
+						ProvisioningStyle = Automatic;
+					};
+					53732733BF21E4F8E25187CC = {
+						DevelopmentTeam = Q2T8TN4ZW6;
+						ProvisioningStyle = Automatic;
+					};
+					808C43BBC13FDCECE0D6AFCC = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = 53732733BF21E4F8E25187CC;
+					};
+				};
+			};
+			buildConfigurationList = FFDFA4F911D298BFD5273542 /* Build configuration list for PBXProject "Eiscue" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+				"zh-Hans",
+			);
+			mainGroup = D120ACBD8E03AA92CEC7FC3D;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				23F0118B79A0B01B89AF21B1 /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0742BA143128AD40BD0DA9D4 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				53732733BF21E4F8E25187CC /* Eiscue */,
+				48A4B18762D2BA21F81EFCA5 /* EiscueAppTests */,
+				238C5FEA46B9F60E57DAF14E /* EiscueTunnel */,
+				808C43BBC13FDCECE0D6AFCC /* EiscueUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EDE75B05A84F4F613A5AAA93 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DFD8D9D7337613DC090B2526 /* InfoPlist.xcstrings in Resources */,
+				0D1A3149B9F201C6E8A50BB5 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F627A3CA10DC80007C93E7C2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3A487D870AFA0B2E120F3CED /* Assets.xcassets in Resources */,
+				9DE47B041261AEEF75F702FE /* BackgroundStatus.xcstrings in Resources */,
+				FCD81924ED952E3E6041F99E /* Connections.xcstrings in Resources */,
+				326833CAB16FFC9E3B47383F /* InfoPlist.xcstrings in Resources */,
+				6C73EA58A8ADA9A5C3300BCE /* LocalTunnel in Resources */,
+				646CDA42A4E74DC7A44C4042 /* Localizable.xcstrings in Resources */,
+				D09AFA7C912B4BE9DA9B8B81 /* Onboarding.xcstrings in Resources */,
+				B633C15C203F04B8FFC8CD87 /* Runtime.xcstrings in Resources */,
+				2C5C93121F230E36902D3397 /* TaskStatus.xcstrings in Resources */,
+				B64A0FF7B8E06DB51C0ED42F /* failure-recovery.md in Resources */,
+				9D3928AF4F7625FE481F138E /* ios-navigation.md in Resources */,
+				1C1D4CC676D0758763A53063 /* search-smoke-test.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0DDC851F4A1C78EF5B4A3F12 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CB87B1ABBA03F0EEFF3E34AB /* AgentIntegrationUITests.swift in Sources */,
+				6879DE205F8DDD037A932E55 /* EiscueUITests.swift in Sources */,
+				EC26DA4792A228C1E9DCC1B5 /* LocalizationUITests.swift in Sources */,
+				66602933AF40443324295BF4 /* OnboardingUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		36774068FE6D6001A1A3EA1B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BEF1B27E5D4F4D469EDAD9D5 /* LocalTunnelConfiguration.swift in Sources */,
+				E0C476F04D5A838540F40F76 /* PacketReflector.swift in Sources */,
+				50AFD68759F7819B87838F50 /* PacketTunnelProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9A856B5D37DF9BF8D7131860 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				143F8C10629C01BAFCD84EA8 /* AppModel.swift in Sources */,
+				6152EF03E4375C154B4464CC /* AssistantView.swift in Sources */,
+				A988E817500C9D7E12208F23 /* BackgroundExecution.swift in Sources */,
+				31A24A24911B0A0B4CEC158B /* CredentialStore.swift in Sources */,
+				CB31C17BA3E34080230F4054 /* DebugDeviceSetup.swift in Sources */,
+				C772B756B528E7C492D8D397 /* DesignSystem.swift in Sources */,
+				4FC5E87EB3D9D92623F91D38 /* DeviceConnection.swift in Sources */,
+				7DF293E753E1C3376405803A /* DeviceTools.swift in Sources */,
+				6A0F9A3B7DA51DFC071F0FDD /* DeviceView.swift in Sources */,
+				B38FBA6FC06E862C8C0075CB /* EiscueApp.swift in Sources */,
+				B7153829F4DBC08B326C27C5 /* LocalTunnelConfiguration.swift in Sources */,
+				13186EA3B1214825C206C125 /* LocalTunnelManager.swift in Sources */,
+				4C322E4662A3C60FCFDA0F61 /* ModelSettings.swift in Sources */,
+				08863259B315D6AD944F73C9 /* ModelSettingsView.swift in Sources */,
+				46C89E6B5ECD275A74A52A8E /* OnboardingView.swift in Sources */,
+				8395165BFFDC4AF21C4C4474 /* PairingTransfer.swift in Sources */,
+				2EAD279892239E7A5B000B78 /* RootView.swift in Sources */,
+				D47EF70F5A4CC0F7E2EB4330 /* RunHistoryView.swift in Sources */,
+				B27D7E7BF15157A7810986C2 /* RunRecord.swift in Sources */,
+				93923A433779533C2F3B232D /* SettingsView.swift in Sources */,
+				109F57365B69F0464960F441 /* SkillLibrary.swift in Sources */,
+				0FCAA99233B971E3092E52A1 /* SkillsView.swift in Sources */,
+				142CD3B5D424919FD677D02D /* TaskNotificationManager.swift in Sources */,
+				7A810F0B7BA13B3B8B42E444 /* TaskStatusPresentation.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E93894BDEB23DC2B6EE26EE7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AFE01C39F200061750F93B6E /* AppLocalizationTests.swift in Sources */,
+				C21D2869B88F7F2A784C65F9 /* BackgroundTaskStatusTests.swift in Sources */,
+				896303C2BDDBBDC6DD804881 /* ConversationReconciliationTests.swift in Sources */,
+				ED443FC145D794F43DC8ADC8 /* DevicePairingAvailabilityTests.swift in Sources */,
+				27649B9FDD677802567AE14A /* DeviceToolSessionTests.swift in Sources */,
+				7EE9EDD54F5E31FA417A6C57 /* LocalTunnelConfiguration.swift in Sources */,
+				FA471D0DAF642BD7D07D6190 /* LocalTunnelManagerTests.swift in Sources */,
+				F3B9AD7FD904BA9AAA8DA432 /* LocalizationResourcesTests.swift in Sources */,
+				4720C1A0DE81BBB5B1E6288E /* PacketReflector.swift in Sources */,
+				BD60DC2EDC6935D987BC4244 /* PacketReflectorTests.swift in Sources */,
+				67147D139EACE15D5F50E6F4 /* PairingTransferTests.swift in Sources */,
+				6585261324C5D5A0DD263377 /* TaskNotificationManagerTests.swift in Sources */,
+				310DC9D3046011C406FF5882 /* TaskStatusPresentationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		61A196B85035E0D013B50C58 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 53732733BF21E4F8E25187CC /* Eiscue */;
+			targetProxy = 3FD658B59C67BB9580C0FEB4 /* PBXContainerItemProxy */;
+		};
+		7866DB4C69F131848CB7E1E9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 238C5FEA46B9F60E57DAF14E /* EiscueTunnel */;
+			targetProxy = 7C57DCE7C297F2D6AD59EC31 /* PBXContainerItemProxy */;
+		};
+		B68D9D850CE9D7D8FCE9DA46 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 53732733BF21E4F8E25187CC /* Eiscue */;
+			targetProxy = B1AC38291ADFFD4E49FF821A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		007EF33D408E6D187BC168A6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Eiscue.app/Eiscue";
+			};
+			name = Release;
+		};
+		23C9B96ED88AB06716403D09 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		49C526127EBDF9DF3A434F8C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		5043CBBFE35E0CD2E22BABFA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Apps/EiscueTunnel/EiscueTunnel.entitlements;
+				DEVELOPMENT_TEAM = Q2T8TN4ZW6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/EiscueTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app.tunnel;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		77770BD41D731FAABB36C927 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Eiscue;
+			};
+			name = Debug;
+		};
+		96DD097A366B99826845623B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Apps/EiscueTunnel/EiscueTunnel.entitlements;
+				DEVELOPMENT_TEAM = Q2T8TN4ZW6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/EiscueTunnel/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app.tunnel;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BE8111111DE1388DD0BFDABD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Apps/Eiscue/Eiscue.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = Q2T8TN4ZW6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/Eiscue/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Eiscue;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D51F1DE8CFB25A0707AA8620 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Apps/Eiscue/Eiscue.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = Q2T8TN4ZW6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Apps/Eiscue/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Eiscue;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D5DC63C2302393596CFBD79D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Eiscue.app/Eiscue";
+			};
+			name = Debug;
+		};
+		D79B98B4EC7C4D7DB84DCDFA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Eiscue;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2BCC325B38E436236CBB97FB /* Build configuration list for PBXNativeTarget "EiscueUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				77770BD41D731FAABB36C927 /* Debug */,
+				D79B98B4EC7C4D7DB84DCDFA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9220011F437AD75369C641F4 /* Build configuration list for PBXNativeTarget "EiscueAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D5DC63C2302393596CFBD79D /* Debug */,
+				007EF33D408E6D187BC168A6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A8C38AD4E75A58B4BB370D9B /* Build configuration list for PBXNativeTarget "EiscueTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				96DD097A366B99826845623B /* Debug */,
+				5043CBBFE35E0CD2E22BABFA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B85B8EF2807601EBB822E3A8 /* Build configuration list for PBXNativeTarget "Eiscue" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BE8111111DE1388DD0BFDABD /* Debug */,
+				D51F1DE8CFB25A0707AA8620 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FFDFA4F911D298BFD5273542 /* Build configuration list for PBXProject "Eiscue" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				23C9B96ED88AB06716403D09 /* Debug */,
+				49C526127EBDF9DF3A434F8C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		23F0118B79A0B01B89AF21B1 /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1B6A73E40564BA09F4256C9F /* EiscueDeviceKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EiscueDeviceKit;
+		};
+		3D0877E9D7EC4BD3D62A56BD /* EiscueAgentKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EiscueAgentKit;
+		};
+		FA0B3DC5C1F457A78F8AF869 /* EiscueAgentKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EiscueAgentKit;
+		};
+		FADEF459526446FA7B72270B /* EiscueDeviceKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = EiscueDeviceKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F5634374B44B1C587422F169 /* Project object */;
+}

@@ -1,0 +1,263 @@
+import XCTest
+
+final class EiscueUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    @MainActor
+    private func launch(reset: Bool = true) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        if reset { app.launchArguments.append("--reset-state") }
+        app.launch()
+        XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
+        return app
+    }
+
+    @MainActor
+    private func openModelSettings(in app: XCUIApplication) {
+        app.tabBars.buttons["设置"].tap()
+        app.buttons["modelSettingsButton"].tap()
+        XCTAssertTrue(app.textFields["modelBaseURL"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func replace(_ field: XCUIElement, with text: String, in app: XCUIApplication) {
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        if let value = field.value as? String, !value.isEmpty, value != field.placeholderValue {
+            // A simulated Command-A can leave only part of a URL selected.
+            // Use the visible edit menu and verify the replacement itself.
+            field.press(forDuration: 1)
+            let selectAll = app.descendants(matching: .any).matching(
+                NSPredicate(format: "label IN %@", ["全选", "Select All"])
+            ).firstMatch
+            XCTAssertTrue(selectAll.waitForExistence(timeout: 5))
+            selectAll.tap()
+            field.typeText(XCUIKeyboardKey.delete.rawValue)
+            XCTAssertTrue((field.value as? String ?? "").isEmpty || field.value as? String == field.placeholderValue)
+        }
+        field.typeText(text)
+        XCTAssertEqual(field.value as? String, text)
+    }
+
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 {
+            if element.isHittable { return }
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable)
+    }
+
+    @MainActor
+    private func expandDeviceOptions(in app: XCUIApplication) {
+        let options = app.descendants(matching: .any).matching(identifier: "deviceAdvancedOptions").firstMatch
+        reveal(options, in: app)
+        options.tap()
+    }
+
+    @MainActor
+    func testAdvancedOptionsAreHiddenUntilRequested() throws {
+        let app = launch()
+        openModelSettings(in: app)
+        let outputLimit = app.descendants(matching: .any).matching(identifier: "maxOutputTokensStepper").firstMatch
+        XCTAssertFalse(outputLimit.exists)
+        let advanced = app.descendants(matching: .any).matching(identifier: "modelAdvancedOptions").firstMatch
+        reveal(advanced, in: app)
+        advanced.tap()
+        // SwiftUI may expose the labeled Stepper as a container around its
+        // increment/decrement controls. Form rows also appear lazily on scroll.
+        reveal(outputLimit, in: app)
+        XCTAssertTrue(outputLimit.exists)
+        app.navigationBars.buttons["取消"].tap()
+        app.tabBars.buttons["设备"].tap()
+        XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
+        XCTAssertFalse(app.buttons["打开验证页面"].exists)
+        expandDeviceOptions(in: app)
+        XCTAssertTrue(app.buttons["startLocalTunnelButton"].exists)
+        XCTAssertTrue(app.buttons["打开验证页面"].exists)
+    }
+
+    @MainActor
+    func testUnconfiguredSendOpensModelSettingsWithoutCreatingConversation() throws {
+        let app = launch()
+        XCTAssertFalse(app.buttons["sendMessageButton"].isEnabled)
+        let field = app.textFields["messageInput"].exists
+            ? app.textFields["messageInput"] : app.textViews["messageInput"]
+        field.tap()
+        field.typeText("Help me plan a morning")
+        app.buttons["sendMessageButton"].tap()
+        XCTAssertTrue(app.textFields["modelBaseURL"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["saveModelSettingsButton"].isEnabled)
+        app.navigationBars.buttons["取消"].tap()
+
+        app.buttons["historyButton"].tap()
+        XCTAssertTrue(app.staticTexts["还没有会话"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons["完成"].tap()
+        XCTAssertTrue(field.value as? String == "Help me plan a morning")
+    }
+
+    @MainActor
+    func testModelConfigurationValidatesHTTPSAndDoesNotPrefillSavedKey() throws {
+        var app = launch()
+        openModelSettings(in: app)
+        replace(app.textFields["modelBaseURL"], with: "http://example.invalid/v1", in: app)
+        replace(app.textFields["modelIdentifier"], with: "ui-test-model", in: app)
+        let key = "eiscue-ui-test-placeholder"
+        let secureField = app.secureTextFields["modelAPIKey"]
+        reveal(secureField, in: app)
+        secureField.tap()
+        secureField.typeText(key)
+        app.buttons["saveModelSettingsButton"].tap()
+        XCTAssertTrue(app.alerts["无法保存配置"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["请输入不含账号、查询参数的 HTTPS 服务地址。"].exists)
+        app.alerts.buttons["好"].tap()
+
+        replace(app.textFields["modelBaseURL"], with: "https://example.invalid/v1", in: app)
+        app.buttons["saveModelSettingsButton"].tap()
+        XCTAssertTrue(app.buttons["modelSettingsButton"].waitForExistence(timeout: 5))
+        app.terminate()
+
+        app = launch(reset: false)
+        openModelSettings(in: app)
+        XCTAssertEqual(app.textFields["modelBaseURL"].value as? String, "https://example.invalid/v1")
+        XCTAssertEqual(app.textFields["modelIdentifier"].value as? String, "ui-test-model")
+        XCTAssertTrue(app.staticTexts["已保存 API Key"].exists)
+        let savedKeyField = app.secureTextFields["modelAPIKey"]
+        reveal(savedKeyField, in: app)
+        XCTAssertEqual(savedKeyField.value as? String, "留空以保留已存密钥")
+        XCTAssertFalse(app.staticTexts[key].exists)
+
+        app.buttons["removeAPIKeyButton"].tap()
+        app.buttons["删除密钥"].tap()
+        XCTAssertTrue(app.buttons["modelSettingsButton"].waitForExistence(timeout: 5))
+        app.buttons["modelSettingsButton"].tap()
+        XCTAssertFalse(app.staticTexts["已保存 API Key"].exists)
+        XCTAssertFalse(app.buttons["saveModelSettingsButton"].isEnabled)
+        app.navigationBars.buttons["取消"].tap()
+    }
+
+    @MainActor
+    func testAppearancePersistsAcrossLaunches() throws {
+        var app = launch()
+        app.tabBars.buttons["设置"].tap()
+        let picker = app.buttons["appearancePicker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        picker.tap()
+        app.buttons["深色"].tap()
+        XCTAssertTrue((picker.label + (picker.value as? String ?? "")).contains("深色"))
+        app.terminate()
+
+        app = launch(reset: false)
+        app.tabBars.buttons["设置"].tap()
+        let restored = app.buttons["appearancePicker"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 5))
+        XCTAssertTrue((restored.label + (restored.value as? String ?? "")).contains("深色"))
+        restored.tap()
+        app.buttons["跟随系统"].tap()
+    }
+
+    @MainActor
+    func testBuiltInSkillCanBePreviewedAndSelected() throws {
+        let app = launch()
+        app.tabBars.buttons["设置"].tap()
+        app.buttons["skillsNavigationLink"].tap()
+        let skill = app.buttons["skillRow_ios-navigation"]
+        XCTAssertTrue(skill.waitForExistence(timeout: 5))
+        skill.tap()
+        XCTAssertTrue(app.staticTexts["skillContentPreview"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["skillContentPreview"].label.contains("先观察当前屏幕"))
+        let source = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Eiscue 内置", "Eiscue 内置")
+        ).firstMatch
+        XCTAssertTrue(source.exists)
+        XCTAssertFalse(app.buttons["删除导入的技能"].exists)
+        let selection = app.buttons["selectSkillButton"]
+        selection.tap()
+        XCTAssertTrue(selection.label.contains("取消选用"))
+        selection.tap()
+        XCTAssertTrue(selection.label.contains("使用此技能"))
+    }
+
+    @MainActor
+    func testEmbeddedLocalConnectionRejectsSimulatorWithoutExternalApp() throws {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("This case checks the simulator-only rejection and must not start a real VPN.")
+        #else
+        let app = launch()
+        app.tabBars.buttons["设备"].tap()
+        expandDeviceOptions(in: app)
+        let start = app.buttons["startLocalTunnelButton"]
+        reveal(start, in: app)
+        XCTAssertTrue(app.staticTexts["localTunnelStatus"].exists)
+        start.tap()
+        let alert = app.alerts["暂时无法完成"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "模拟器")).firstMatch.exists)
+        alert.buttons["知道了"].tap()
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 {
+            XCTAssertFalse(app.buttons["startPairingButton"].exists)
+        }
+        XCTAssertFalse(app.staticTexts["pairingCode"].exists)
+        #endif
+    }
+
+    @MainActor
+    func testIOS26ShowsUSBImportInsteadOfSystemPairing() throws {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("This case checks the iOS 26 setup guide on a simulator.")
+        #else
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 else {
+            throw XCTSkip("This case checks the iOS 26 USB setup path.")
+        }
+        let app = launch()
+        app.tabBars.buttons["设备"].tap()
+        let guidance = app.staticTexts["usbPairingGuidance"]
+        reveal(guidance, in: app)
+        XCTAssertTrue(guidance.label.contains("USB"))
+        XCTAssertFalse(app.buttons["startPairingButton"].exists)
+        let importButton = app.buttons["importPairingIdentityButton"]
+        reveal(importButton, in: app)
+        XCTAssertTrue(importButton.isEnabled)
+        XCTAssertEqual(importButton.label, "导入 Eiscue 配对文件")
+        XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
+        XCTAssertFalse(app.staticTexts["pairingCode"].exists)
+        #endif
+    }
+
+    @MainActor
+    func testDeviceControlProbeRespondsToTapInputAndScroll() throws {
+        let app = launch()
+        app.tabBars.buttons["设备"].tap()
+        expandDeviceOptions(in: app)
+        XCTAssertTrue(app.staticTexts["连接准备"].waitForExistence(timeout: 5))
+        let openProbe = app.buttons["打开验证页面"]
+        reveal(openProbe, in: app)
+        openProbe.tap()
+        XCTAssertTrue(app.staticTexts["probeCount"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["probeCount"].label, "计数：0")
+        app.buttons["probeIncrement"].tap()
+        app.buttons["probeIncrement"].tap()
+        XCTAssertEqual(app.staticTexts["probeCount"].label, "计数：2")
+        app.buttons["归零"].tap()
+        XCTAssertEqual(app.staticTexts["probeCount"].label, "计数：0")
+        app.textFields["probeInput"].tap()
+        app.textFields["probeInput"].typeText("Eiscue UI 26")
+        XCTAssertEqual(app.staticTexts["probeEcho"].label, "Eiscue UI 26")
+        let lastRow = app.staticTexts["验证行 20"]
+        reveal(lastRow, in: app)
+        XCTAssertTrue(lastRow.isHittable)
+        app.navigationBars.buttons["完成"].tap()
+        XCTAssertTrue(app.navigationBars["设备"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testRunHistoryIsEmptyBeforeFirstRun() throws {
+        let app = launch()
+        app.tabBars.buttons["设置"].tap()
+        app.buttons["runHistoryNavigationLink"].tap()
+        XCTAssertTrue(app.staticTexts["还没有运行记录"].waitForExistence(timeout: 5))
+    }
+}

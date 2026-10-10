@@ -1,0 +1,3 @@
+# Preserve the pinned upstream bytes, including Markdown hard breaks in comments.
+idevice/src/services/dvt/message.rs whitespace=-blank-at-eol
+idevice/src/services/springboardservices.rs whitespace=-blank-at-eol

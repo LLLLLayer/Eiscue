@@ -1,0 +1,64 @@
+import SwiftUI
+
+enum EiscueStyle {
+    static let accent = Color("AccentColor")
+    static let background = Color("Canvas")
+    static let surface = Color("Surface")
+    static let ink = Color.primary
+    static let muted = Color.secondary
+}
+
+struct IceMark: View {
+    var size: CGFloat = 52
+
+    var body: some View {
+        Image("Mascot")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
+struct StatusLabel: View {
+    let title: String
+    var color: Color = .secondary
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text(title).font(.caption.weight(.medium))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.08), in: Capsule())
+    }
+}
+
+struct SectionCaption: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct SurfaceCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.025))
+            }
+    }
+}

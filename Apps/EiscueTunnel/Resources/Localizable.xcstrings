@@ -1,0 +1,91 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "tunnel.error.already-started": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel is already starting or running."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地隧道已在启动或运行。"
+          }
+        }
+      }
+    },
+    "tunnel.error.previous-read-pending": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The previous local tunnel is still stopping. Try connecting again shortly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一次本地隧道仍在结束，请稍后重新连接。"
+          }
+        }
+      }
+    },
+    "tunnel.error.incompatible-configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel configuration version does not match. Configure it again in Eiscue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地隧道配置版本不匹配，请在 Eiscue 中重新配置。"
+          }
+        }
+      }
+    },
+    "tunnel.error.stopped-before-ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel stopped before it was ready."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地隧道在就绪前已停止。"
+          }
+        }
+      }
+    },
+    "tunnel.error.packet-write-failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel could not write packets. The connection has stopped."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地隧道写入失败，连接已停止。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

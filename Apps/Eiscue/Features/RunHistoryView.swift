@@ -1,0 +1,253 @@
+import SwiftUI
+
+struct RunHistoryView: View {
+    @Environment(AppModel.self) private var model
+    var conversationID: UUID? = nil
+
+    private var records: [RunRecord] {
+        var result = model.runs
+        if let active = model.activeRun {
+            result.removeAll { $0.id == active.id }
+            result.append(active)
+        }
+        return result.filter { conversationID == nil || $0.conversationID == conversationID }
+            .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    var body: some View {
+        Group {
+            if records.isEmpty {
+                ContentUnavailableView("runs.empty", systemImage: "clock.arrow.circlepath",
+                                       description: Text("runs.emptyDetail"))
+            } else {
+                List(records) { run in
+                    NavigationLink {
+                        RunDetailView(initialRecord: run)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack {
+                                Label(run.state.title, systemImage: run.state.symbol)
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(run.state.color)
+                                Spacer()
+                                Text(run.scope.title)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(run.startedAt, format: .dateTime.year().month().day().hour().minute())
+                                .font(.subheadline)
+                            HStack {
+                                Text(run.model).lineLimit(1)
+                                Spacer()
+                                Text("runs.eventCount \(run.events.count)")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 5)
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .background(EiscueStyle.background)
+        .navigationTitle(conversationID == nil ? String(localized: "runs.title") : String(localized: "runs.conversationTitle"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct RunDetailView: View {
+    @Environment(AppModel.self) private var model
+    let initialRecord: RunRecord
+
+    private var record: RunRecord {
+        if let active = model.activeRun, active.id == initialRecord.id { return active }
+        return model.runs.first { $0.id == initialRecord.id } ?? initialRecord
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Label(record.state.title, systemImage: record.state.symbol)
+                    .font(.headline)
+                    .foregroundStyle(record.state.color)
+                Text(record.state.explanation)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                LabeledContent("runs.scope", value: record.scope.title)
+                LabeledContent("common.model", value: record.model)
+                LabeledContent("runs.startTime") {
+                    Text(record.startedAt, format: .dateTime.year().month().day().hour().minute().second())
+                }
+                if let end = record.endedAt {
+                    LabeledContent("runs.endTime") {
+                        Text(end, format: .dateTime.hour().minute().second())
+                    }
+                    LabeledContent("runs.duration", value: RunReport.duration(from: record.startedAt, to: end))
+                }
+                if let skill = record.skill {
+                    LabeledContent("common.skill", value: skillName(skill))
+                }
+            }
+
+            Section {
+                if record.events.isEmpty {
+                    Text("runs.noEvents")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(record.events) { event in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(RunReport.eventTitle(event))
+                                    .font(.subheadline.weight(.medium))
+                                Spacer()
+                                Text(event.date, format: .dateTime.hour().minute().second())
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(RunReport.eventSummary(event))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            } header: {
+                Text("runs.log")
+            } footer: {
+                Text("runs.logDetail")
+            }
+
+            Section {
+                ShareLink(item: RunReport.text(record), subject: Text("runs.reportTitle")) {
+                    Label("runs.shareReport", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("shareRunReportButton")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(EiscueStyle.background)
+        .navigationTitle("runs.detailTitle")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func skillName(_ reference: String) -> String {
+        let id = reference.components(separatedBy: "@").first ?? reference
+        return model.skills.first { $0.id == id }?.name ?? String(localized: "common.recordedSkill")
+    }
+}
+
+/// Reports deliberately format an allowlist of metadata, never raw errors,
+/// prompts, tool arguments or credentials stored elsewhere in the application.
+private enum RunReport {
+    private static let tools: [String: String] = [
+        "device_screenshot": String(localized: "scope.observe"),
+        "device_list_apps": String(localized: "tool.listApps"),
+        "device_tap": String(localized: "tool.tap"),
+        "device_swipe": String(localized: "tool.swipe"),
+        "device_type_text": String(localized: "tool.typeText"),
+        "device_launch_app": String(localized: "tool.launchApp"),
+        "device_home": String(localized: "tool.home")
+    ]
+
+    static func eventTitle(_ event: RunLogEntry) -> String {
+        switch event.kind {
+        case "run.started": String(localized: "event.runStarted")
+        case "tool.started": String(localized: "event.toolStarted")
+        case "tool.finished": String(localized: "event.toolFinished")
+        case "tool.failed": String(localized: "event.toolFailed")
+        case "action.prepared": String(localized: "event.actionPrepared")
+        case "action.dispatched": String(localized: "event.actionDispatched")
+        case "action.acknowledged": String(localized: "event.actionAcknowledged")
+        case "action.unknown": String(localized: "event.actionUnknown")
+        case "observation.prepared": String(localized: "event.observationPrepared")
+        case "observation.captured": String(localized: "event.observationCaptured")
+        default: String(localized: "event.other")
+        }
+    }
+
+    static func eventSummary(_ event: RunLogEntry) -> String {
+        if event.kind == "run.started" { return String(localized: "event.startedSummary") }
+        if event.kind == "observation.captured" {
+            // Accept both the stable metadata format and records from earlier versions.
+            let patterns = [
+                #"^width=(\d{1,6});height=(\d{1,6});frame=([0-9a-fA-F-]{36})$"#,
+                #"^(\d{1,6}) × (\d{1,6})，frame ([0-9a-fA-F-]{36})$"#
+            ]
+            for pattern in patterns {
+                guard let expression = try? NSRegularExpression(pattern: pattern),
+                      let match = expression.firstMatch(in: event.summary, range: NSRange(event.summary.startIndex..., in: event.summary)),
+                      let widthRange = Range(match.range(at: 1), in: event.summary),
+                      let heightRange = Range(match.range(at: 2), in: event.summary),
+                      let frameRange = Range(match.range(at: 3), in: event.summary),
+                      let width = Int(event.summary[widthRange]),
+                      let height = Int(event.summary[heightRange]),
+                      let frame = UUID(uuidString: String(event.summary[frameRange])) else { continue }
+                return String(localized: "event.capturedMetadata \(width) \(height) \(frame.uuidString)")
+            }
+            return String(localized: "event.capturedSummary")
+        }
+        let name = event.summary.components(separatedBy: "：").first ?? ""
+        guard let title = tools[name] else { return String(localized: "event.changedSummary") }
+        switch event.kind {
+        case "action.acknowledged": return String(localized: "event.acknowledgedSummary \(title)")
+        case "action.unknown": return String(localized: "event.unknownSummary \(title)")
+        default: return title
+        }
+    }
+
+    static func duration(from start: Date, to end: Date) -> String {
+        let seconds = max(0, Int(end.timeIntervalSince(start)))
+        return Duration.seconds(seconds).formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated))
+    }
+
+    static func text(_ run: RunRecord) -> String {
+        var lines = [
+            String(localized: "runs.reportTitle"),
+            String(localized: "report.taskID \(run.id.uuidString)"),
+            String(localized: "report.conversationID \(run.conversationID.uuidString)"),
+            String(localized: "report.status \(run.state.title)"),
+            String(localized: "report.scope \(run.scope.title)"),
+            String(localized: "report.model \(run.model)"),
+            String(localized: "report.started \(run.startedAt.ISO8601Format())")
+        ]
+        if let end = run.endedAt {
+            lines.append(String(localized: "report.ended \(end.ISO8601Format())"))
+            lines.append(String(localized: "report.duration \(duration(from: run.startedAt, to: end))"))
+        }
+        lines += ["", String(localized: "runs.log")]
+        lines += run.events.map { "\($0.date.ISO8601Format())  \(eventTitle($0)) · \(eventSummary($0))" }
+        lines += ["", String(localized: "runs.reportPrivacy")]
+        return lines.joined(separator: "\n")
+    }
+}
+
+private extension RunState {
+    var color: Color {
+        switch self {
+        case .preparing, .running: EiscueStyle.accent
+        case .completed: .green
+        case .interrupted: .orange
+        case .failed: .red
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .preparing: "hourglass"
+        case .running: "circle.dotted.circle"
+        case .completed: "checkmark.circle"
+        case .interrupted: "pause.circle"
+        case .failed: "exclamationmark.circle"
+        }
+    }
+    var explanation: String {
+        switch self {
+        case .preparing: String(localized: "run.preparingDetail")
+        case .running: String(localized: "run.runningDetail")
+        case .completed: String(localized: "run.completedDetail")
+        case .interrupted: String(localized: "run.interruptedDetail")
+        case .failed: String(localized: "run.failedDetail")
+        }
+    }
+}

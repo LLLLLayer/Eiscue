@@ -1,0 +1,61 @@
+import Foundation
+
+public enum AgentRunMode: Sendable, Equatable {
+    case message
+    case resume
+}
+
+public struct AgentRequest: Sendable {
+    public let conversationID: UUID
+    public let requestID: UUID
+    public let prompt: String
+    public let systemPrompt: String
+    public let maxToolCalls: Int
+    public let timeoutSeconds: Double
+    public let mode: AgentRunMode
+    /// Used only when the runtime transcript is empty, to import existing local conversations.
+    public let history: [AgentMessage]
+
+    public init(
+        conversationID: UUID, requestID: UUID = UUID(), prompt: String, systemPrompt: String = "",
+        maxToolCalls: Int = 30, timeoutSeconds: Double = 180, mode: AgentRunMode = .message,
+        history: [AgentMessage] = []
+    ) {
+        self.conversationID = conversationID
+        self.requestID = requestID
+        self.prompt = prompt
+        self.systemPrompt = systemPrompt
+        self.maxToolCalls = maxToolCalls
+        self.timeoutSeconds = timeoutSeconds
+        self.mode = mode
+        self.history = history
+    }
+}
+
+public enum AgentRunOutcome: Sendable, Equatable {
+    case completed
+    case cancelled
+}
+
+public enum AgentEvent: Sendable, Equatable {
+    /// The request is durably admitted, or an existing interrupted run is accepted for explicit continuation.
+    /// A repeated request ID acknowledges the same durable submission without submitting it twice.
+    case requestAccepted(UUID)
+    /// Current text of the assistant's in-flight message, replacing the preceding partial.
+    case assistantText(String)
+    /// A committed assistant message; its stable ID is also returned by recovery.
+    case message(AgentMessage)
+    case toolStarted(AgentToolCall)
+    case toolFinished(AgentToolCompletion)
+    case finished(AgentRunOutcome)
+}
+
+public struct AgentRecovery: Sendable, Equatable {
+    public let messages: [AgentMessage]
+    public let hasInterruptedRun: Bool
+
+    public init(messages: [AgentMessage], hasInterruptedRun: Bool) {
+        self.messages = messages
+        self.hasInterruptedRun = hasInterruptedRun
+    }
+}

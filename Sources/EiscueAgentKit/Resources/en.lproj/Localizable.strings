@@ -1,0 +1,20 @@
+// Official Foundation localization resources for this Swift package target.
+"agent.configuration.empty-message" = "The message must not be empty.";
+"agent.configuration.invalid-budget" = "The task time limit or tool call limit is invalid.";
+"agent.configuration.invalid-context" = "The model context and output length settings are invalid.";
+"agent.configuration.invalid-storage" = "The agent storage directory must be a local file URL.";
+"agent.configuration.invalid-tools" = "Tool names must be unique, and parameters must be JSON Schema objects.";
+"agent.configuration.invalid-url" = "Enter a valid HTTP or HTTPS model service URL.";
+"agent.configuration.missing-model" = "Enter a model name.";
+"agent.conversation.new-title" = "New conversation";
+"agent.error.busy" = "A task is already running. Stop it or wait for it to finish.";
+"agent.error.interrupted-run" = "This conversation has an unfinished task. Choose whether to resume or stop it.";
+"agent.error.nothing-to-resume" = "This conversation has no task to resume.";
+"agent.error.timeout" = "The task reached its time limit and stopped.";
+"agent.error.tool-limit" = "This task has reached its tool call limit.";
+"agent.error.unconfigured" = "The agent engine has not been configured.";
+"agent.runtime.model-failed" = "The model request failed.";
+"agent.runtime.unfinished" = "The task did not finish (%@). %@";
+"agent.storage.duplicate-conversation" = "The conversation file contains duplicate records. The original file has been preserved.";
+"agent.storage.unsupported-version" = "Conversation file version %@ is not supported. The original file has been preserved.";
+"agent.tool.interrupted" = "Tool execution was interrupted.";

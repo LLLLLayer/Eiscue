@@ -1,0 +1,722 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "tunnel.status.unconfigured": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not configured"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未配置"
+          }
+        }
+      }
+    },
+    "tunnel.error.simulator_unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel requires an iOS device. The simulator is not supported."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道需要 iOS 真机，模拟器不支持。"
+          }
+        }
+      }
+    },
+    "tunnel.error.missing_bundle_id": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The App identifier is missing, so its local tunnel extension cannot be identified."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少 App 标识，无法确定本机通道扩展。"
+          }
+        }
+      }
+    },
+    "tunnel.error.busy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel is still processing the previous operation. Try again shortly."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道正在处理上一项操作，请稍后重试。"
+          }
+        }
+      }
+    },
+    "tunnel.error.duplicate_configurations": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multiple Eiscue tunnel configurations were found. Review them in Settings > VPN and keep one before trying again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测到多个 Eiscue 通道配置，请在系统设置的 VPN 页面核对并保留一个后重试。"
+          }
+        }
+      }
+    },
+    "tunnel.error.connection_timeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel connection timed out. A stop request has been sent."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道连接超时，已请求停止连接。"
+          }
+        }
+      }
+    },
+    "tunnel.error.disconnected_during_start": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel disconnected before the connection was established."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道在完成连接前已断开。"
+          }
+        }
+      }
+    },
+    "tunnel.error.disconnection_timeout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system has not confirmed that the local tunnel disconnected. Check the VPN status."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统尚未确认本机通道断开，请查看 VPN 状态。"
+          }
+        }
+      }
+    },
+    "tunnel.status.simulator_unsupported": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local tunnel unavailable in Simulator"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模拟器不支持本机通道"
+          }
+        }
+      }
+    },
+    "tunnel.error.unowned_reloaded_configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tunnel configuration returned by the system does not belong to this App."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统返回的通道配置不属于当前 App。"
+          }
+        }
+      }
+    },
+    "tunnel.error.unowned_configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This tunnel configuration does not belong to this App. The operation has stopped."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通道配置不属于当前 App，已停止操作。"
+          }
+        }
+      }
+    },
+    "tunnel.configuration.display_name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eiscue Local Tunnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eiscue 本机通道"
+          }
+        }
+      }
+    },
+    "tunnel.status.connected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local tunnel connected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道已连接"
+          }
+        }
+      }
+    },
+    "tunnel.status.connecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting local tunnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接本机通道"
+          }
+        }
+      }
+    },
+    "tunnel.status.reasserting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting local tunnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道正在重新连接"
+          }
+        }
+      }
+    },
+    "tunnel.status.disconnecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnecting local tunnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在断开本机通道"
+          }
+        }
+      }
+    },
+    "tunnel.status.stopping": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping local tunnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在停止本机通道"
+          }
+        }
+      }
+    },
+    "tunnel.status.preparing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing local tunnel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备本机通道"
+          }
+        }
+      }
+    },
+    "tunnel.status.awaiting_configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the system to finish configuration"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待系统完成配置"
+          }
+        }
+      }
+    },
+    "tunnel.status.disconnected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local tunnel disconnected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道未连接"
+          }
+        }
+      }
+    },
+    "tunnel.status.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local tunnel status unknown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道状态未知"
+          }
+        }
+      }
+    },
+    "tunnel.error.authorization_cancelled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System authorization was cancelled. The local tunnel was not started."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统授权已取消，本机通道未启动。"
+          }
+        }
+      }
+    },
+    "tunnel.error.permission_denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system denied the local tunnel configuration. Check VPN authorization and the signing entitlements of the App and extension."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统拒绝了本机通道配置，请检查 VPN 配置授权及 App 与扩展的签名权限。"
+          }
+        }
+      }
+    },
+    "tunnel.error.invalid_configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel configuration is invalid. Check the App and extension configuration and signing entitlements."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道配置无效，请检查 App 与通道扩展的配置及签名权限。"
+          }
+        }
+      }
+    },
+    "tunnel.error.disabled_configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system disabled the local tunnel configuration. Start the tunnel again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道配置被系统停用，请重新启动通道。"
+          }
+        }
+      }
+    },
+    "tunnel.error.stale_configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local tunnel configuration changed. Refresh and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道配置已变化，请刷新后重试。"
+          }
+        }
+      }
+    },
+    "tunnel.error.preferences_unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system could not read or write the local tunnel configuration. Check VPN authorization and the App signing entitlements."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统无法读写本机通道配置，请检查 VPN 配置授权及 App 的签名权限。"
+          }
+        }
+      }
+    },
+    "notifications.authorization.unchecked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System notification permission has not been checked"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未检查系统通知权限"
+          }
+        }
+      }
+    },
+    "notifications.error.permission_denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications are not allowed by the system. You can change notification permissions in Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知未获系统允许，可在系统设置中调整通知权限。"
+          }
+        }
+      }
+    },
+    "notifications.error.authorization_failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notification permission could not be requested. Try again later."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法请求通知权限，请稍后重试。"
+          }
+        }
+      }
+    },
+    "notifications.task.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eiscue Task Status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eiscue 任务状态"
+          }
+        }
+      }
+    },
+    "notifications.error.submission_failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task status notification could not be submitted. View the run history in the App."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务状态通知未能提交，请在 App 中查看运行记录。"
+          }
+        }
+      }
+    },
+    "notifications.task.completed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model has finished this turn. Open Eiscue to view the run history."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型本轮处理已结束，可打开 Eiscue 查看运行记录。"
+          }
+        }
+      },
+      "comment": "This means only that the model turn ended; it does not claim the requested device task was verified or completed."
+    },
+    "notifications.task.interrupted": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task was interrupted. Open Eiscue to view the run history."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务已中断，可打开 Eiscue 查看运行记录。"
+          }
+        }
+      }
+    },
+    "notifications.task.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task failed. Open Eiscue to view the run history."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行失败，可打开 Eiscue 查看运行记录。"
+          }
+        }
+      }
+    },
+    "notifications.authorization.not_determined": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System notification permission has not been requested"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未请求系统通知权限"
+          }
+        }
+      }
+    },
+    "notifications.authorization.denied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System notifications are not allowed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统未允许通知"
+          }
+        }
+      }
+    },
+    "notifications.authorization.authorized": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System notifications are allowed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统通知已允许"
+          }
+        }
+      }
+    },
+    "notifications.authorization.provisional": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only quiet notifications are allowed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统仅允许静默通知"
+          }
+        }
+      }
+    },
+    "notifications.authorization.ephemeral": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifications are temporarily allowed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统暂时允许通知"
+          }
+        }
+      }
+    },
+    "notifications.authorization.unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System notification permission is unknown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统通知权限未知"
+          }
+        }
+      }
+    },
+    "tunnel.error.operation_failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local tunnel operation failed: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机通道操作失败：%@"
+          }
+        }
+      },
+      "comment": "%@ is the localized error message provided by the operating system."
+    }
+  },
+  "version": "1.0"
+}
