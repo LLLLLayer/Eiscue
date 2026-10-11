@@ -169,6 +169,36 @@ final class LocalTunnelManager {
         #endif
     }
 
+    #if DEBUG
+    /// Explicit developer recovery after replacing the extension during install.
+    /// Only restarts an enabled, previously authorized, owned configuration.
+    /// Never creates/saves/enables a configuration or requests new permission.
+    func resumeExistingForDiagnostics() async throws {
+        guard operation == nil, !preferenceSavePending, !isTransitioning else { throw Failure.busy }
+        let token = UUID()
+        generation = token; operation = .starting
+        var submitted: NETunnelProviderManager?
+        defer { if generation == token { finish(token) } }
+        do {
+            let providerID = try providerBundleIdentifier()
+            let configurations = try await NETunnelProviderManager.loadAllFromPreferences()
+            try checkCurrent(token)
+            guard let selected = try Self.ownedConfiguration(in: configurations, providerID: providerID),
+                  selected.isEnabled else { throw Failure.system("debug_existing_tunnel_required") }
+            adopt(selected)
+            if selected.connection.status == .connected { return }
+            submitted = selected
+            try selected.connection.startVPNTunnel()
+            try await waitForConnection(selected, token: token)
+        } catch {
+            if let submitted, generation == token {
+                await Task { @MainActor in await self.cleanUpFailedStart(submitted, token: token) }.value
+            }
+            throw error
+        }
+    }
+    #endif
+
     /// Can interrupt `start()`, including a pending system authorization dialog.
     /// It never removes preferences or stops another App's VPN configuration.
     func stop() async throws {

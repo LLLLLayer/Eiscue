@@ -450,14 +450,7 @@ pub unsafe extern "C" fn ncm_lockdown_start(
     })
 }
 async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
-    let required = match r.action {
-        1 | 11 => 0,
-        2 => SCREEN,
-        3 => MEDIA,
-        4 | 6 | 7 | 9 | 10 => INPUT,
-        8 => VERIFY,
-        _ => u32::MAX,
-    };
+    let required = required_permissions(r.action);
     if permissions & required != required {
         return Event::failed(
             r.id,
@@ -465,6 +458,7 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
                 stage: match r.action {
                     2 => Stage::Screenshot,
                     3 => Stage::Media,
+                    13 => Stage::LegacyInstrumentsConnection,
                     _ => Stage::Input,
                 },
                 cause: Cause::Unprepared,
@@ -472,6 +466,10 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
         );
     }
     let result = match r.action {
+        13 => session
+            .probe_legacy_developer_services()
+            .await
+            .map(|report| Event::ok(r.id, 2, report)),
         1 => session
             .check_developer_readiness()
             .await
@@ -537,6 +535,17 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
         }
         event
     })
+}
+fn required_permissions(action: u32) -> u32 {
+    match action {
+        1 | 11 => 0,
+        2 => SCREEN,
+        3 => MEDIA,
+        4 | 6 | 7 | 9 | 10 => INPUT,
+        8 => VERIFY,
+        13 => SCREEN | VERIFY,
+        _ => u32::MAX,
+    }
 }
 /// # Safety
 /// `status` must be writable. Counters only, never packet bytes or credentials.
@@ -750,7 +759,7 @@ pub unsafe extern "C" fn ncm_local_vpn_start_configured(
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ncm_backend_submit(handle: u64, id: u64, action: u32, x: u16, y: u16) -> i32 {
-    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 {
+    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 && action != 13 {
         return INVALID;
     }
     submit_request(
@@ -1189,6 +1198,16 @@ pub unsafe extern "C" fn ncm_test_start_loopback(port: u16, handle: *mut u64) ->
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_probe_requires_screen_and_existing_verification_but_no_input() {
+        let required = super::required_permissions(13);
+        assert_eq!(required, super::SCREEN | super::VERIFY);
+        for permissions in 0..16 {
+            assert_eq!(permissions & required == required,
+                permissions & super::SCREEN != 0 && permissions & super::VERIFY != 0);
+        }
+    }
+
     #[test]
     fn command_payload_is_bounded_typed_and_accepts_unicode() {
         // ASCII, whitespace, and mixed Unicode all use the same paste command.

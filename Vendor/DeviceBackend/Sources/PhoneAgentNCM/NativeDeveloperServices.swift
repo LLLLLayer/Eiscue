@@ -322,7 +322,7 @@ public struct NativeVideoSnapshot: Sendable {
     public func typeText(_ text: String) async throws {
         _ = try await operation(10, payload: JSONSerialization.data(withJSONObject: ["text": text]))
     }
-    private func operation(_ action: UInt32, x: UInt16 = 0, y: UInt16 = 0, expectedKind: UInt32 = 2, drag: (UInt16, UInt16, UInt16)? = nil, payload: Data? = nil) async throws -> Data {
+    func operation(_ action: UInt32, x: UInt16 = 0, y: UInt16 = 0, expectedKind: UInt32 = 2, drag: (UInt16, UInt16, UInt16)? = nil, payload: Data? = nil) async throws -> Data {
         guard !busy else { throw NativeBackendError.busy }
         guard ready, handle != 0 else { throw NativeBackendError.closed }
         busy = true; defer { busy = false }; let token = handle

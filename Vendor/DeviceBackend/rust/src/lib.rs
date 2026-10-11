@@ -6,6 +6,7 @@ mod ffi;
 mod media;
 mod relay;
 mod local_vpn;
+mod legacy_probe;
 mod video;
 pub use relay::RelayConnector;
 pub mod lockdown;
@@ -54,6 +55,12 @@ pub enum Stage {
     ScreenshotConnection,
     ScreenshotResponse,
     Applications,
+    LegacyInstrumentsConnection,
+    LegacyInstrumentsHandshake,
+    LegacyScreenshotChannel,
+    LegacyScreenshotResponse,
+    LegacyTestmanagerConnection,
+    LegacyTestmanagerHandshake,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]

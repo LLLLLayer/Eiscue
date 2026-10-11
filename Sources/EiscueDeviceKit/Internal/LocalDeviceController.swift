@@ -190,6 +190,44 @@ import OSLog
         }
     }
 
+    #if DEBUG
+    /// Check the iOS 26 developer route with the existing identity. This creates
+    /// no media/input session and does not change production readiness state.
+    func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data {
+        guard Self.supported else { throw DeviceControlError.unsupported }
+        guard !busy, !ready, pairingTask == nil, mediaReleaseTask == nil else { throw DeviceControlError.busy }
+        let vpn = try VPNLoopbackConfiguration(localAddress: configuration.localAddress, peerAddress: configuration.peerAddress)
+        guard var data = try identityStore.load() else { throw DeviceControlError.noIdentity }
+        defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
+        let record = try PairingIdentityCodec.decode(data)
+        var identity = try record.identity()
+        defer { identity.clearSeed() }
+        let token = epoch
+        let discovery = LocalVPNDiscovery()
+        let probe = NativeDeveloperServices()
+        busy = true; self.discovery = discovery; services = probe
+        defer {
+            probe.close(); discovery.cancel()
+            if token == epoch { busy = false; self.discovery = nil; services = nil }
+        }
+        return try await withTaskCancellationHandler {
+            let port = try await discovery.discoverPort(configuration: vpn)
+            try ensureCurrent(token)
+            try await probe.connectLocalVPN(identity: identity,
+                authorization: ExistingSessionAuthorization(verifyExistingIdentity: true, screen: true),
+                pairingPort: port, configuration: vpn)
+            try ensureCurrent(token)
+            try await probe.checkDeveloperReadiness()
+            try ensureCurrent(token)
+            let report = try await probe.probeLegacyDeveloperServices()
+            try ensureCurrent(token)
+            return report
+        } onCancel: {
+            Task { @MainActor in discovery.cancel(); probe.close() }
+        }
+    }
+    #endif
+
     func disconnect() async {
         if let release = disconnectNow() { _ = await release.value }
     }

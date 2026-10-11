@@ -4,9 +4,13 @@ EiscueDeviceKit 内置 iPhone / iPad 本机控制后端。上层 App 的最低�
 
 ## 当前真机兼容性
 
-2026-10-11，指定 iPhone 14 Pro（iOS 26.5.2）已完成身份导入、本机通道、配对认证和开发环境检查，但启动控制时失败。其系统服务表没有 `com.apple.coredevice.displayservice`、`com.apple.coredevice.universalhidservice` 或 `com.apple.coredevice.screencaptureservice`；电脑报告当前开发者镜像兼容且可用。当前后端依赖这些服务，因此这台设备的屏幕与触控能力尚不可用，不能靠重新导入身份或重复信任解决。
+2026-10-11，指定 iPhone 14 Pro（iOS 26.5.2）已完成身份导入、本机通道、配对认证和开发环境检查，但启动控制时失败。其系统服务表没有 `com.apple.coredevice.displayservice`、`com.apple.coredevice.hid.universalhidservice` 或 `com.apple.coredevice.screencaptureservice`；电脑报告当前开发者镜像兼容且可用。当前后端依赖这些服务，因此这台设备的屏幕与触控能力尚不可用，不能靠重新导入身份或重复信任解决。
 
-App 最低支持 iOS 26 仅表示应用可运行；普通聊天可用，不能据此承诺 iOS 26 整机控制已实现。其他系统版本仍需逐台验证，本项目尚未完成截图、触控的真机闭环。主界面使用可理解的状态说明，内部阶段与原因编号只写本地诊断日志。
+**支持 iOS / iPadOS 26 及以上是产品要求，当前控制实现尚未达标。** App 可安装运行、配对成功或界面测试通过，都不能代替本机截图、触控和跨 App 任务的真机验收。缺少上述服务只证明目前选择的后端不适配这台设备，不能推出 iOS 26 无法实现设备控制，也不能通过文档降低支持要求。主界面使用可理解的状态说明，内部阶段与原因编号只写本地诊断日志。
+
+适配方向是原方案中的 App 内 XCTest 自运行会话：已有授权隧道可作为传输基础，但仍需验证测试会话、系统自动化授权、截图、实际输入和停止。开发构建提供显式 `--legacy-device-probe` 参数，通过现有授权读取 Instruments 截图并检查 testmanagerd 的 DTX 握手；诊断仅保存尺寸和阶段，不发送触控、不启用自动化，也不把探针成功标记为设备控制就绪。Release 不会自动运行该探针。
+
+2026-10-11 已在上述 iOS 26.5.2 测试机的 Eiscue 内验证该替代通道：Instruments 截图 **1179 × 2556**、testmanagerd DTX 握手均成功，复用既有身份。实际触控和生产后端替换仍未完成，详见 [最新实测记录](validation.md#ios-26-本机替代通道实测同日最新)。
 
 ## 首次准备
 

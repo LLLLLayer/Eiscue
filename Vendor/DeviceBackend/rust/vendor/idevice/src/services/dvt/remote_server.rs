@@ -353,7 +353,9 @@ impl<R: ReadWrite> RemoteServerClient<R> {
 
     /// Performs the DTX capability handshake, mirroring pymobiledevice3's
     /// `DTXConnection._perform_handshake()`.
-    pub(crate) async fn perform_handshake(
+    // Eiscue adaptation: expose the existing capability-only handshake for a
+    // read-only probe over its already authenticated RemotePairing tunnel.
+    pub async fn perform_handshake(
         &mut self,
         capabilities: Option<Dictionary>,
         timeout: std::time::Duration,

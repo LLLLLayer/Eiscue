@@ -23,6 +23,13 @@ public struct DeviceClient: Sendable {
     public func removePairingIdentity() async throws { try await controller.removePairingIdentity() }
     public func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> { await controller.beginPairing() }
     public func connectLocalVPN(configuration: LocalVPNConfiguration = .defaults) async throws { try await controller.connectLocalVPN(configuration: configuration) }
+    #if DEBUG
+    /// Explicit development probe. Never marks device control ready or sends input.
+    public func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration = .defaults) async throws -> Data {
+        guard let local = controller as? LocalDeviceController else { throw DeviceControlError.unsupported }
+        return try await local.probeLegacyDeveloperServices(configuration: configuration)
+    }
+    #endif
     public func disconnect() async { await controller.disconnect() }
     public func captureScreenshot() async throws -> DeviceScreenshot { try await controller.captureScreenshot() }
     public func tap(at point: DevicePoint, frameID: UUID) async throws { try await controller.tap(at: point, frameID: frameID) }

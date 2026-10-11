@@ -65,6 +65,16 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use super::errors::DvtError;
 use crate::IdeviceError;
 
+// Eiscue adaptation: bound untrusted DTX framing before allocation or decoding.
+// Covers a complete message (payload header, auxiliary values and archived data).
+const MAX_DTX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+const DTX_HEADER_BYTES: usize = 32;
+const DTX_PAYLOAD_HEADER_BYTES: usize = 16;
+
+fn invalid_frame() -> IdeviceError {
+    IdeviceError::UnexpectedResponse("invalid or oversized DTX frame".into())
+}
+
 /// Message header containing metadata about the message
 ///
 /// 32-byte structure that appears at the start of every message
@@ -191,6 +201,9 @@ impl Aux {
             aux_size: Self::read_u32(&mut cursor)?,
             unknown2: Self::read_u32(&mut cursor)?,
         };
+        if header.aux_size as usize != bytes.len() - DTX_PAYLOAD_HEADER_BYTES {
+            return Err(invalid_frame());
+        }
 
         let mut values = Vec::new();
         while cursor.position() + 4 <= bytes.len() as u64 {
@@ -206,10 +219,11 @@ impl Aux {
                     let _flags = Self::read_u32(&mut cursor)?;
                     let body_len = Self::read_u64(&mut cursor)?;
                     let pos = cursor.position() as usize;
-                    let end = pos + body_len as usize;
-                    if end > bytes.len() {
-                        return Err(IdeviceError::NotEnoughBytes(bytes.len(), end));
-                    }
+                    let end = usize::try_from(body_len)
+                        .ok()
+                        .and_then(|len| pos.checked_add(len))
+                        .filter(|end| *end <= bytes.len())
+                        .ok_or_else(invalid_frame)?;
                     cursor.set_position(end as u64);
                 }
                 _ => {
@@ -223,7 +237,9 @@ impl Aux {
                 }
             }
         }
-
+        if cursor.position() != bytes.len() as u64 {
+            return Err(invalid_frame());
+        }
         Ok(Self { header, values })
     }
 
@@ -246,8 +262,16 @@ impl Aux {
     }
 
     fn read_exact_vec(cursor: &mut Cursor<&[u8]>, len: usize) -> Result<Vec<u8>, IdeviceError> {
-        let mut buf = vec![0u8; len];
-        Read::read_exact(cursor, &mut buf)?;
+        let start = usize::try_from(cursor.position()).map_err(|_| invalid_frame())?;
+        let end = start.checked_add(len).ok_or_else(invalid_frame)?;
+        // Validate the nested length against the already bounded parent slice
+        // before allocating. A short packet cannot request a multi-GiB vector.
+        let buf = cursor
+            .get_ref()
+            .get(start..end)
+            .ok_or_else(invalid_frame)?
+            .to_vec();
+        cursor.set_position(end as u64);
         Ok(buf)
     }
 
@@ -287,6 +311,9 @@ impl Aux {
     /// (`[flags(4B)][unknown(4B)][body_len(8B)][key-value pairs...]`).
     /// Keys are positional-null sentinels; only the values are collected.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, IdeviceError> {
+        if bytes.len() > MAX_DTX_MESSAGE_BYTES {
+            return Err(invalid_frame());
+        }
         if bytes.is_empty() {
             return Ok(Self::from_values(Vec::new()));
         }
@@ -303,13 +330,17 @@ impl Aux {
         let _type_and_flags = Self::read_u32(&mut cursor)?;
         let _unknown_flags = Self::read_u32(&mut cursor)?;
         let body_len = Self::read_u64(&mut cursor)?;
-        let body_end = 16u64 + body_len;
-        if body_end > bytes.len() as u64 {
-            return Err(IdeviceError::NotEnoughBytes(bytes.len(), body_end as usize));
-        }
+        let body_end = body_len
+            .checked_add(DTX_PAYLOAD_HEADER_BYTES as u64)
+            .filter(|end| *end == bytes.len() as u64)
+            .ok_or_else(invalid_frame)?;
+        let body = bytes
+            .get(DTX_PAYLOAD_HEADER_BYTES..body_end as usize)
+            .ok_or_else(invalid_frame)?;
+        let mut cursor = Cursor::new(body);
 
         let mut values = Vec::new();
-        while cursor.position() < body_end {
+        while cursor.position() < body_len {
             let _key = Self::parse_primitive(&mut cursor)?;
             let value = Self::parse_primitive(&mut cursor)?;
             values.push(value);
@@ -481,6 +512,43 @@ impl AuxValue {
 }
 
 impl MessageHeader {
+    async fn read<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Self, IdeviceError> {
+        let mut buf = [0u8; DTX_HEADER_BYTES];
+        reader.read_exact(&mut buf).await?;
+        let number = |index: usize| {
+            u32::from_le_bytes([buf[index], buf[index + 1], buf[index + 2], buf[index + 3]])
+        };
+        let wire_channel = i32::from_le_bytes([buf[24], buf[25], buf[26], buf[27]]);
+        let conversation_index = number(20);
+        let header = Self {
+            magic: number(0),
+            header_len: number(4),
+            fragment_id: u16::from_le_bytes([buf[8], buf[9]]),
+            fragment_count: u16::from_le_bytes([buf[10], buf[11]]),
+            length: number(12),
+            identifier: number(16),
+            conversation_index,
+            channel: if conversation_index.is_multiple_of(2) {
+                wire_channel.checked_neg().ok_or_else(invalid_frame)?
+            } else {
+                wire_channel
+            },
+            expects_reply: number(28) == 1,
+        };
+        if header.magic != 0x1F3D5B79
+            || header.header_len != DTX_HEADER_BYTES as u32
+            || header.fragment_count == 0
+            || header.fragment_id >= header.fragment_count
+            || header.length == 0
+            || header.length as usize > MAX_DTX_MESSAGE_BYTES
+            || wire_channel == i32::MIN
+            || number(28) > 1
+        {
+            return Err(invalid_frame());
+        }
+        Ok(header)
+    }
+
     /// Creates a new message header
     ///
     /// Note: Length field is updated during message serialization
@@ -583,44 +651,49 @@ impl Message {
     /// # Errors
     /// * Various IdeviceError variants for IO and parsing failures
     pub async fn from_reader<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Self, IdeviceError> {
-        let mut packet_data: Vec<u8> = Vec::new();
-        // loop for deal with multiple fragments
-        let mheader = loop {
-            let mut buf = [0u8; 32];
-            reader.read_exact(&mut buf).await?;
-            let header = MessageHeader {
-                magic: u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]),
-                header_len: u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]),
-                fragment_id: u16::from_le_bytes([buf[8], buf[9]]),
-                fragment_count: u16::from_le_bytes([buf[10], buf[11]]),
-                length: u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]),
-                identifier: u32::from_le_bytes([buf[16], buf[17], buf[18], buf[19]]),
-                conversation_index: u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]),
-                channel: {
-                    let wire_channel = i32::from_le_bytes([buf[24], buf[25], buf[26], buf[27]]);
-                    let conversation_index =
-                        u32::from_le_bytes([buf[20], buf[21], buf[22], buf[23]]);
-                    if conversation_index.is_multiple_of(2) {
-                        -wire_channel
-                    } else {
-                        wire_channel
-                    }
-                },
-                expects_reply: u32::from_le_bytes([buf[28], buf[29], buf[30], buf[31]]) == 1,
-            };
-            if header.fragment_count > 1 && header.fragment_id == 0 {
-                // when reading multiple message fragments, the first fragment contains only a message header.
+        let first = MessageHeader::read(reader).await?;
+        if first.fragment_id != 0 || first.length < DTX_PAYLOAD_HEADER_BYTES as u32 {
+            return Err(invalid_frame());
+        }
+        let announced_size = first.length as usize;
+        let mut packet_data = Vec::new();
+        // Fragment zero of a multipart message is an announcement only. Its
+        // length is the total payload length, not bytes following that header.
+        let mut header = first;
+        for expected in 0..first.fragment_count {
+            if expected != 0 {
+                header = MessageHeader::read(reader).await?;
+            }
+            if header.fragment_id != expected
+                || header.fragment_count != first.fragment_count
+                || header.identifier != first.identifier
+                || header.conversation_index != first.conversation_index
+                || header.channel != first.channel
+                || header.expects_reply != first.expects_reply
+            {
+                return Err(invalid_frame());
+            }
+            if expected == 0 && first.fragment_count > 1 {
                 continue;
             }
-            let mut buf = vec![0u8; header.length as usize];
-            reader.read_exact(&mut buf).await?;
-            packet_data.extend(buf);
-            if header.fragment_id == header.fragment_count - 1 {
-                break header;
-            }
-        };
-        // read the payload header
-        let buf = &packet_data[0..16];
+            let end = packet_data
+                .len()
+                .checked_add(header.length as usize)
+                .filter(|end| *end <= announced_size && *end <= MAX_DTX_MESSAGE_BYTES)
+                .ok_or_else(invalid_frame)?;
+            let start = packet_data.len();
+            packet_data
+                .try_reserve_exact(end - start)
+                .map_err(|_| invalid_frame())?;
+            packet_data.resize(end, 0);
+            reader.read_exact(&mut packet_data[start..end]).await?;
+        }
+        if packet_data.len() != announced_size {
+            return Err(invalid_frame());
+        }
+        let buf = packet_data
+            .get(..DTX_PAYLOAD_HEADER_BYTES)
+            .ok_or_else(invalid_frame)?;
         let pheader = PayloadHeader {
             msg_type: buf[0],
             flags_a: buf[1],
@@ -630,33 +703,41 @@ impl Message {
             total_length: u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]),
             flags: u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]),
         };
-        let aux = if pheader.aux_length > 0 {
-            let buf = packet_data[16..(16 + pheader.aux_length as usize)].to_vec();
-            Some(Aux::from_bytes(buf)?)
-        } else {
+        let payload_end = DTX_PAYLOAD_HEADER_BYTES
+            .checked_add(pheader.total_length as usize)
+            .filter(|end| *end == packet_data.len())
+            .ok_or_else(invalid_frame)?;
+        let aux_end = DTX_PAYLOAD_HEADER_BYTES
+            .checked_add(pheader.aux_length as usize)
+            .filter(|end| *end <= payload_end)
+            .ok_or_else(invalid_frame)?;
+        let aux_bytes = packet_data
+            .get(DTX_PAYLOAD_HEADER_BYTES..aux_end)
+            .ok_or_else(invalid_frame)?;
+        let aux = if aux_bytes.is_empty() {
             None
-        };
-        // read the data
-        let need_len = (pheader.total_length - pheader.aux_length) as usize;
-        let buf = packet_data
-            [(pheader.aux_length + 16) as usize..pheader.aux_length as usize + 16 + need_len]
-            .to_vec();
-        let raw_data = if buf.is_empty() {
-            None
         } else {
-            Some(buf.clone())
+            Some(Aux::from_bytes(aux_bytes.to_vec())?)
         };
-        let data = if buf.is_empty() {
+        let data_bytes = packet_data
+            .get(aux_end..payload_end)
+            .ok_or_else(invalid_frame)?;
+        let data = if data_bytes.is_empty() {
             None
         } else {
             Some(
-                ns_keyed_archive::decode::from_bytes(&buf)
+                ns_keyed_archive::decode::from_bytes(data_bytes)
                     .map_err(super::errors::DvtError::from)?,
             )
         };
+        let raw_data = if data_bytes.is_empty() {
+            None
+        } else {
+            Some(data_bytes.to_vec())
+        };
 
         Ok(Message {
-            message_header: mheader,
+            message_header: first,
             payload_header: pheader,
             aux,
             data,
@@ -807,6 +888,213 @@ impl std::fmt::Debug for Message {
             .field("has_data", &self.data.is_some())
             .field("raw_data_length", &self.raw_data.as_ref().map(Vec::len))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod framing_tests {
+    use super::*;
+
+    fn message() -> Message {
+        Message::new(
+            MessageHeader::new(0, 1, 42, 1, 7, false),
+            PayloadHeader::method_invocation(),
+            Some(Aux::from_values(vec![
+                AuxValue::U32(5),
+                AuxValue::String("fixture".into()),
+            ])),
+            Some(Value::String("fixture screenshot method".into())),
+        )
+    }
+
+    fn fragment_header(index: u16, count: u16, length: usize) -> Vec<u8> {
+        let mut header = MessageHeader::new(index, count, 42, 1, 7, false);
+        header.length = length as u32;
+        header.serialize()
+    }
+
+    fn fragmented() -> (Vec<u8>, usize) {
+        let bytes = message().serialize();
+        let payload = &bytes[DTX_HEADER_BYTES..];
+        // The first data fragment deliberately cuts across the payload header.
+        let split = 7;
+        let mut wire = fragment_header(0, 3, payload.len());
+        wire.extend(fragment_header(1, 3, split));
+        wire.extend_from_slice(&payload[..split]);
+        let last_header = wire.len();
+        wire.extend(fragment_header(2, 3, payload.len() - split));
+        wire.extend_from_slice(&payload[split..]);
+        (wire, last_header)
+    }
+
+    async fn invalid(bytes: &[u8]) {
+        let result = Message::from_reader(&mut &bytes[..]).await;
+        assert!(
+            matches!(result, Err(IdeviceError::UnexpectedResponse(_))),
+            "invalid framing must be rejected before reading its claimed body: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_single_and_fragmented_messages_with_the_same_content() {
+        let expected = message();
+        let (fragmented, _) = fragmented();
+        for wire in [expected.serialize(), fragmented] {
+            let actual = Message::from_reader(&mut wire.as_slice()).await.unwrap();
+            assert_eq!(actual.data, expected.data);
+            assert_eq!(
+                actual.aux.unwrap().values,
+                expected.aux.clone().unwrap().values
+            );
+            assert_eq!(actual.message_header.identifier, 42);
+            assert_eq!(actual.message_header.fragment_id, 0);
+            assert_eq!(actual.message_header.channel, 7);
+        }
+    }
+
+    #[tokio::test]
+    async fn parses_fixed_wire_fragment_zero_announcement_without_a_body() {
+        // Literal DTX wire fixture, independent of this module's serializer:
+        // id 42 / conversation 1 / channel 7; 3 fragments; 16-byte empty payload.
+        // Fragment zero declares the aggregate size and carries no payload.
+        let announcement: [u8; 32] = [
+            0x79, 0x5b, 0x3d, 0x1f, 32, 0, 0, 0, 0, 0, 3, 0, 16, 0, 0, 0, 42, 0, 0, 0, 1, 0, 0, 0,
+            7, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let first_body: [u8; 40] = [
+            0x79, 0x5b, 0x3d, 0x1f, 32, 0, 0, 0, 1, 0, 3, 0, 8, 0, 0, 0, 42, 0, 0, 0, 1, 0, 0, 0,
+            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let second_body: [u8; 40] = [
+            0x79, 0x5b, 0x3d, 0x1f, 32, 0, 0, 0, 2, 0, 3, 0, 8, 0, 0, 0, 42, 0, 0, 0, 1, 0, 0, 0,
+            7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let wire = [
+            announcement.as_slice(),
+            first_body.as_slice(),
+            second_body.as_slice(),
+        ]
+        .concat();
+        let actual = Message::from_reader(&mut wire.as_slice()).await.unwrap();
+        assert_eq!(actual.message_header.identifier, 42);
+        assert_eq!(actual.message_header.length, 16);
+        assert!(actual.data.is_none());
+        assert!(actual.aux.is_none());
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_headers_before_allocating_a_body() {
+        let base = fragment_header(0, 1, 16);
+        for (offset, value) in [
+            (0, 0_u32),
+            (4, 0),
+            (4, 31),
+            (4, 33),
+            (12, 0),
+            (12, 15),
+            (12, MAX_DTX_MESSAGE_BYTES as u32 + 1),
+            (12, u32::MAX),
+            (24, i32::MIN as u32),
+            (28, 2),
+        ] {
+            let mut wire = base.clone();
+            wire[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            invalid(&wire).await;
+        }
+        for (index, count) in [(0, 0), (1, 1), (2, 2), (1, 3)] {
+            invalid(&fragment_header(index, count, 16)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_fragment_reordering_and_mixed_message_identities() {
+        let (wire, last_header) = fragmented();
+        for offset in [DTX_HEADER_BYTES, last_header] {
+            for (field, bytes) in [
+                (8, 0_u16.to_le_bytes().to_vec()),
+                (8, 3_u16.to_le_bytes().to_vec()),
+                (10, 4_u16.to_le_bytes().to_vec()),
+                (16, 43_u32.to_le_bytes().to_vec()),
+                (20, 3_u32.to_le_bytes().to_vec()),
+                (24, 8_u32.to_le_bytes().to_vec()),
+                (28, 1_u32.to_le_bytes().to_vec()),
+            ] {
+                let mut damaged = wire.clone();
+                damaged[offset + field..offset + field + bytes.len()].copy_from_slice(&bytes);
+                invalid(&damaged).await;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_aggregate_and_payload_length_mismatches() {
+        let mut oversized_aggregate = fragment_header(0, 3, 40);
+        oversized_aggregate.extend(fragment_header(1, 3, 30));
+        oversized_aggregate.extend([0; 30]);
+        oversized_aggregate.extend(fragment_header(2, 3, 20));
+        invalid(&oversized_aggregate).await;
+
+        let (mut incomplete_aggregate, _) = fragmented();
+        let length = u32::from_le_bytes(incomplete_aggregate[12..16].try_into().unwrap());
+        incomplete_aggregate[12..16].copy_from_slice(&(length + 1).to_le_bytes());
+        invalid(&incomplete_aggregate).await;
+
+        for (aux, total, trailing) in [
+            (1_u32, 0_u32, 0),
+            (u32::MAX, 0, 0),
+            (0, u32::MAX, 0),
+            (16, 1, 1),
+            (0, 0, 1),
+        ] {
+            let mut payload = PayloadHeader {
+                aux_length: aux,
+                total_length: total,
+                ..PayloadHeader::default()
+            }
+            .serialize();
+            payload.extend(vec![0; trailing]);
+            let mut wire = fragment_header(0, 1, payload.len());
+            wire.extend(payload);
+            invalid(&wire).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_truncated_headers_and_bodies_without_panicking() {
+        let wire = message().serialize();
+        for end in [0, 1, 31, 32, wire.len() - 1] {
+            assert!(Message::from_reader(&mut &wire[..end]).await.is_err());
+        }
+        let (wire, _) = fragmented();
+        assert!(
+            Message::from_reader(&mut &wire[..wire.len() - 1])
+                .await
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_nested_aux_lengths_before_allocating_and_checked_dictionary_overflow() {
+        for buffer_size in [496_u32, 1_u32] {
+            for primitive_type in [1_u32, 2_u32] {
+                let mut wire = buffer_size.to_le_bytes().to_vec();
+                wire.extend(0_u32.to_le_bytes());
+                wire.extend(12_u64.to_le_bytes());
+                wire.extend(0x0a_u32.to_le_bytes());
+                wire.extend(primitive_type.to_le_bytes());
+                wire.extend(u32::MAX.to_le_bytes());
+                assert!(Aux::from_bytes(wire).is_err());
+            }
+        }
+        let mut modern = 496_u64.to_le_bytes().to_vec();
+        modern.extend(u64::MAX.to_le_bytes());
+        assert!(Aux::from_bytes(modern).is_err());
+        let mut legacy = 1_u64.to_le_bytes().to_vec();
+        legacy.extend(16_u64.to_le_bytes());
+        legacy.extend(0xf0_u32.to_le_bytes());
+        legacy.extend(0_u32.to_le_bytes());
+        legacy.extend(u64::MAX.to_le_bytes());
+        assert!(Aux::from_bytes(legacy).is_err());
     }
 }
 

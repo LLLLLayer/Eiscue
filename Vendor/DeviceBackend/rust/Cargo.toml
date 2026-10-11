@@ -13,7 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [workspace]
 members = ["vendor/idevice"]
 [dependencies]
-idevice = { path = "vendor/idevice", default-features = false, features = ["ring", "remote_pairing", "tunnel_tcp_stack", "display_stream", "mobile_image_mounter"] }
+idevice = { path = "vendor/idevice", default-features = false, features = ["ring", "remote_pairing", "tunnel_tcp_stack", "display_stream", "mobile_image_mounter", "dvt"] }
 tokio = { version = "1.53", features = ["io-util", "net", "rt", "sync", "time", "macros"] }
 libc = "0.2"
 zeroize = "1.9"

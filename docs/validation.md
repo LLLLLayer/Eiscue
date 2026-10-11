@@ -2,11 +2,29 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## iOS 26 本机替代通道实测（同日，最新）
+
+产品支持要求保持 iOS / iPadOS 26 及以上。之前将 App 可运行与设备控制未完成分开描述，并不能代替这一要求；原先选用的 DisplayService/HID 路径在测试机上缺少必要服务，应修正控制实现。
+
+在指定 iPhone 14 Pro / iOS 26.5.2（23F84）的 Eiscue **App 进程内**执行新探针，复用 Keychain 内已有 RemotePairing 身份和内置 VPN 通道，获得以下真实结果：
+
+- Instruments DTX 握手成功，一次截图返回合法 PNG，尺寸 **1179 × 2556**。
+- `com.apple.dt.testmanagerd.remote` 的 DTX 握手成功。
+- 无重新配对、无导入 Mac Lockdown 私钥、无额外 Runner 安装；未启用自动化或发送触控。
+
+这证明当前授权可访问 iOS 26 的另一条截图通道及测试服务。**它不证明 App 内 XCTest 会话、实际点击或脱离电脑后的持续后台控制已经完成**；生产设备连接仍使用旧控制后端，探针不会把其标为 ready。下一项工作是完成本 App 的测试会话与授权、验证一次自有页面点击及停止，再接入生产控制流程。
+
+探针仅由 Debug 启动参数 `--legacy-device-probe` 显式触发；`--resume-existing-local-tunnel` 只恢复安装更新后断开的、已启用的本应用 VPN 配置，不创建或保存配置，不申请新授权。首次探针在 VPN 断开时直接结束；恢复既有配置后的第二次实测才得到上述结果。测试完成后已按正常参数重新启动 App，不会自动再执行探针。
+
+同时修复新启用的 vendored DTX 解析器长度边界：单帧和聚合限制 64 MiB，验证分片身份/顺序、payload 与 Aux 内层范围，拒绝溢出和不完整报文。8 项 DTX 测试、52 项后端测试、35 项 DeviceKit 测试通过；包含独立固定字节的正常分片和损坏长度回归。交叉审查发现的解析器问题已修复并复核。Debug / Release 签名构建、签名验证通过；真机运行的是普通 App 的 Debug 构建，没有安装 UI Test Runner。
+
+本地结果：`/tmp/eiscue-ios26-probe-result.json`；日志：`/tmp/eiscue-dtx-framing-tests.log`、`/tmp/eiscue-legacy-probe-all-tests.log`、`/tmp/eiscue-ios26-probe-swift-tests.log`、`/tmp/eiscue-ios26-probe-debug-build.log`、`/tmp/eiscue-ios26-probe-release-build.log`。诊断仅有系统版本、握手结果和截图尺寸，截图字节不落盘。
+
 ## 真机控制服务兼容性与状态提示（同日）
 
 通过 Xcode 对指定 iPhone 14 Pro 截图，确认实际界面显示“屏幕或触控服务未就绪（阶段 10，原因 4）”，本机通道已连接。该错误只会在身份验证、隧道、服务发现和开发环境检查通过后出现；临时导入文件也已被 App 消费。因此配对导入已完成，无需重复生成。确认后已删除电脑上本次生成的临时身份副本。
 
-使用 `remotectl show` 读取并按 UDID 核对该测试机的服务表：没有 `com.apple.coredevice.displayservice`、`com.apple.coredevice.universalhidservice`、`com.apple.coredevice.screencaptureservice`，存在 App 服务和 XCTest 服务。`devicectl device info ddiServices --no-auto-mount-ddis` 报告当前镜像兼容且可用。结论是当前后端与这台 iOS 26.5.2 的屏幕/触控服务不兼容；本轮没有完成设备操作，也没有通过重新配对或修改系统版本规避问题。
+使用 `remotectl show` 读取并按 UDID 核对该测试机的服务表：没有 `com.apple.coredevice.displayservice`、`com.apple.coredevice.hid.universalhidservice`、`com.apple.coredevice.screencaptureservice`，存在 App 服务和 XCTest 服务。`devicectl device info ddiServices --no-auto-mount-ddis` 报告当前镜像兼容且可用。结论是当前后端与这台 iOS 26.5.2 的屏幕/触控服务不兼容；本轮没有完成设备操作，也没有通过重新配对或修改系统版本规避问题。
 
 界面修正：已有身份时明确显示授权已保存，避免把本地保存当作已验证；隐藏首次配对说明和重复导入入口；未连接时按钮明确表示开启/重试设备控制，控制验证入口仅在控制就绪时出现。Kit 主错误文案区分缺少屏幕服务、缺少触控服务与超时，中英文同步，保留继续聊天的说明。阶段/原因编号改为 `org.eiscue.device` / `connection` 本地 OSLog，只记录操作名及数值，不记录身份、凭据或原始协议内容。
 
