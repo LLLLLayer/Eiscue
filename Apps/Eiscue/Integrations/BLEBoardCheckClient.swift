@@ -2,7 +2,7 @@
 import Foundation
 @preconcurrency import CoreBluetooth
 
-/// Original, deliberately small implementation of Passport-BLE protocol v1.
+/// Original, deliberately small implementation of the BLE board protocol v1.
 /// It has no dependency on the network/CoreDevice/XCTest control backends.
 @MainActor final class BLEBoardCheckClient: NSObject, @preconcurrency CBCentralManagerDelegate, @preconcurrency CBPeripheralDelegate {
     enum Failure: String, Error {

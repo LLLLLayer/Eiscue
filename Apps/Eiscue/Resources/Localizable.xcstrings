@@ -4366,13 +4366,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Requires an ESP32-S3 board with Eiscue NCM firmware. TRAE Passport C3 cannot act as the required USB network adapter."
+            "value": "Use an ESP32-S3 board configured with Eiscue USB network firmware."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要 ESP32-S3 开发板和 Eiscue NCM 固件。TRAE Passport C3 不支持所需的 USB 网卡能力。"
+            "value": "使用已配置 Eiscue USB 网卡固件的 ESP32-S3 开发板。"
           }
         }
       }
@@ -4519,13 +4519,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wireless board"
+            "value": "Wi-Fi board"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无线开发板"
+            "value": "Wi-Fi 开发板"
           }
         }
       }
@@ -4536,13 +4536,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Install Eiscue wireless firmware on TRAE Passport, then connect this device to its Eiscue-xxxx Wi-Fi in Settings. The password is in your local flashing configuration."
+            "value": "Use an ESP32-C3 board configured with Eiscue Wi-Fi firmware. In Settings, join its Eiscue-xxxx network using the password provided during setup."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先给 TRAE Passport 刷入 Eiscue 无线固件，再到系统设置连接它的 Eiscue-xxxx Wi-Fi。密码见本机烧录配置。"
+            "value": "使用已配置 Eiscue Wi-Fi 固件的 ESP32-C3 开发板。在系统设置中加入它的 Eiscue-xxxx 网络，密码见开发板连接信息。"
           }
         }
       }
@@ -4570,13 +4570,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecting through the wireless board…"
+            "value": "Connecting through the Wi-Fi board…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在通过无线开发板连接…"
+            "value": "正在通过 Wi-Fi 开发板连接…"
           }
         }
       }

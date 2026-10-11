@@ -252,7 +252,7 @@ def provision_passport(directory: Path) -> Path:
     """
     idf_path = os.environ.get("IDF_PATH")
     if not idf_path:
-        raise RuntimeError("Set IDF_PATH to provision the Passport NVS image. No firmware was written.")
+        raise RuntimeError("Set IDF_PATH to provision the ESP32-C3 board configuration. No firmware was written.")
     generator = Path(idf_path) / "components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"
     if not generator.is_file():
         raise RuntimeError("ESP-IDF NVS generator was not found. No firmware was written.")
@@ -270,9 +270,9 @@ def provision_passport(directory: Path) -> Path:
     if result.returncode or binary_path.stat().st_size != PASSPORT_CONFIG_SIZE:
         raise RuntimeError("Wi-Fi configuration image generation failed. No firmware was written.")
     binary_path.chmod(0o600)
-    setup = ("Eiscue Passport wireless relay\n\n"
+    setup = ("Eiscue Wi-Fi development board\n\n"
              f"Wi-Fi: {ssid}\nPassword: {password}\n\n"
-             "Connect the iPhone to this Wi-Fi, then select Wireless board in Eiscue.\n"
+             "Connect the iPhone to this Wi-Fi, then select Wi-Fi board in Eiscue.\n"
              "The board supplies a local connection, not internet access.\n"
              "Keep cellular data enabled if needed. VPN local-network access depends on its policy.\n"
              "These credentials are private. Do not commit or publish this file.\n")

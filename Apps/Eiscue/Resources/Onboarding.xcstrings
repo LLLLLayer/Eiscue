@@ -602,13 +602,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use an ESP32-S3 board running Eiscue NCM firmware. TRAE Passport C3 does not support this USB network connection. You can keep your other VPN active."
+            "value": "Connect an ESP32-S3 board configured with Eiscue USB network firmware."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用已刷写 Eiscue NCM 固件的 ESP32-S3 开发板。TRAE Passport C3 不支持这种 USB 网卡连接。你可以继续使用其他 VPN。"
+            "value": "接入已配置 Eiscue USB 网卡固件的 ESP32-S3 开发板。"
           }
         }
       }
@@ -619,13 +619,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect a wireless board"
+            "value": "Connect a Wi-Fi board"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接无线开发板"
+            "value": "连接 Wi-Fi 开发板"
           }
         }
       }
@@ -636,13 +636,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Install Eiscue wireless firmware on TRAE Passport. In Settings, connect this device to its Eiscue-xxxx Wi-Fi using the password in your local flashing configuration."
+            "value": "Use an ESP32-C3 board configured with Eiscue Wi-Fi firmware. In Settings, join its Eiscue-xxxx network using the password provided during setup."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "给 TRAE Passport 刷入 Eiscue 无线固件后，到系统设置连接它的 Eiscue-xxxx Wi-Fi，密码见本机烧录配置。"
+            "value": "使用已配置 Eiscue Wi-Fi 固件的 ESP32-C3 开发板。在系统设置中加入它的 Eiscue-xxxx 网络，密码见开发板连接信息。"
           }
         }
       }
@@ -670,13 +670,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wireless board setup guide"
+            "value": "Wi-Fi board setup guide"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无线开发板配置说明"
+            "value": "Wi-Fi 开发板配置说明"
           }
         }
       }

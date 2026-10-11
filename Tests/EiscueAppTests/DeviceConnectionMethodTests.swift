@@ -317,7 +317,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
             let path = try XCTUnwrap(app.path(forResource: language, ofType: "lproj"))
             let bundle = try XCTUnwrap(Bundle(path: path))
             let requirement = bundle.localizedString(forKey: "device.boardHardwareRequirement", value: nil, table: "Localizable")
-            XCTAssertTrue(requirement.contains("ESP32-S3") && requirement.contains("TRAE Passport C3"))
+            XCTAssertTrue(requirement.contains("ESP32-S3") && requirement.contains("USB"))
             for (table, keys) in [
                 ("Localizable", ["device.connectionMethod", "device.appConnectionMethod", "device.boardConnectionMethod", "device.boardPairingRequired", "connection.boardSelected"]),
                 ("Onboarding", ["setup.boardPairingDetail", "setup.boardConnection", "setup.boardConnectionDetail"]),

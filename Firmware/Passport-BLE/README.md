@@ -1,4 +1,4 @@
-# Passport BLE hardware experiment
+# ESP32-C3 Bluetooth Board Experiment
 
 Original ESP32-C3 firmware, version **0.1.0**, built with ESP-IDF **5.5.3**.
 No Pilot or other undeclared-license implementation was copied. The peripheral
@@ -7,6 +7,11 @@ is to test encrypted App commands and actual iPhone keyboard/mouse effects while
 the phone keeps its normal Wi-Fi connection. It does not capture the screen,
 implement an Agent, or prove that iOS recognizes the HID service merely by
 returning a command acknowledgement.
+
+This route is an explicit **Debug-only experiment** on the current ESP32-C3 /
+8 MB sample. It is not integrated into the normal App's device-connection
+selection or Agent. Other board layouts and phone / OS combinations require
+separate validation.
 
 ## Build and Flash layout
 
@@ -50,7 +55,7 @@ Reference descriptor identifies each characteristic. Device Information `180A`
 has an experimental PnP identity rather than claiming a registered product.
 Battery Service `180F` / Battery Level `2A19` is present for mandatory HOGP
 structure. It reports **fixed 100 as a USB-powered laboratory test value**;
-the Passport fuel gauge is not initialized, and this is **not measured battery
+the board's fuel gauge is not initialized, and this is **not measured battery
 SOC**. The App must not display it as the product's battery percentage.
 
 The board requests encrypted Just Works bonding when connected. Command writes
@@ -126,11 +131,12 @@ release the old report channel before changing mode. Failed release, loss of
 encryption while input is held, or disabling a held-input notification channel
 terminates the owned connection instead of abandoning its release timer.
 
-On iOS, system acceptance of BLE HID and simultaneous custom GATT access must be
-verified on the selected test phone. Mouse behavior can depend on AssistiveTouch
-and system pointer settings. A keyboard text effect, mouse movement or button
-action is considered verified only when the App's actual UIKit callbacks observe
-it, not when this firmware logs a packet or returns an acknowledgement.
+On the selected iPhone 14 Pro / iOS 26.5.2, BLE HID and simultaneous custom GATT
+access passed the input checks described below. Other combinations remain
+unverified. Mouse behavior can depend on AssistiveTouch and system pointer
+settings. A keyboard text effect, mouse movement or button action is considered
+verified only when the App's actual UIKit callbacks observe it, not when this
+firmware logs a packet or returns an acknowledgement.
 
 ## License and API references
 
@@ -161,6 +167,7 @@ No credentials, original board data, serial captures or binaries are included.
 - Physical app-only Flash switching was verified. On iPhone 14 Pro / iOS 26.5.2,
   actual UIKit callbacks confirmed three 12-digit keyboard inputs and one
   mouse click on an explicitly opted-in full-area test target. Wi-Fi HTTPS with
-  cellular disabled returned 200 on each run. This does not establish calibrated
-  coordinates, screen capture, Agent integration, or background execution. See
+  cellular access disabled for that request returned 200 on each run. This does
+  not establish calibrated coordinates, screen capture, Agent integration, or
+  background execution. See
   [the device validation record](../../docs/ble-board-validation-2026-10-12.md).

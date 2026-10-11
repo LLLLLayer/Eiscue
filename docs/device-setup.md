@@ -1,16 +1,18 @@
 # 真机设备控制
 
-EiscueDeviceKit 内置 iPhone / iPad 本机控制后端。上层 App 的最低系统版本为 iOS / iPadOS 26.0。控制使用系统 RemotePairing / CoreDevice 服务与本地回环 VPN；Eiscue App 已随包内置该扩展，无需额外安装 LocalDevVPN。模拟器不能完成真实配对或设备控制，Mac 目前只支持构建、测试和注入自定义 controller。
+EiscueDeviceKit 内置 iPhone / iPad 本机控制后端。上层 App 的最低系统版本为 iOS / iPadOS 26.0。控制使用系统 RemotePairing / CoreDevice 服务，正常 App 可选择本地回环 VPN、USB 开发板或 Wi-Fi 开发板通道。Eiscue 已随包内置 VPN 扩展，无需额外安装 LocalDevVPN；开发板通道不启动 VPN。模拟器不能完成真实配对或设备控制，Mac 目前只支持构建、测试和注入自定义 controller。
 
 ## 当前真机兼容性
 
 2026-10-11，iOS 26 真机连接已接入 **App 进程内的独立 XCTest 会话**。它复用 Eiscue 已认证的隧道，通过 Instruments 获取 PNG，并使用开发者镜像（DDI）中的 XCTest 接口准备输入；不再要求 iOS 26 提供旧后端的 DisplayService/HID 服务。iOS 27+ 仍保留原有控制路径。
 
-指定 iPhone 14 Pro（iOS 26.5.2）的真实结果为：身份认证和开发环境检查完成；两个独立 testmanagerd DTX 通道已为当前 App 的 PID 完成授权；DDI 下的新 XPC 会话创建完成、返回无错误；异步启用自动化后，手机显示 **“为 XCTest 输入 iPhone 密码 / Enable UI Automation”** 系统页面。已有授权通道取得的有效 PNG 为 **1179 × 2556**。密码必须由用户直接在手机上输入，不应交给 App、Agent 或聊天。
+指定 iPhone 14 Pro（iOS 26.5.2）与 ESP32-C3 / 8 MB 样机已通过 Wi-Fi 开发板完成身份认证、开发环境检查、当前 App 会话授权和连接就绪。真实 PNG 为 **1179 × 2556**；点击后重新截图、横屏触控、180° 旋转后旧帧拒绝、滑动、中文与表情输入、Home / 返回 App，以及断连后第二次连接均通过，本地 VPN 保持断开。首次系统 **“启用 UI 自动化 / Enable UI Automation”** 授权可能要求设备密码，必须由用户直接在手机上输入，不应交给 App、Agent 或聊天。
 
-**支持 iOS / iPadOS 26 及以上仍是产品要求，完整控制尚未完成真机验收。** 当前实测停在系统授权页，尚未证明生产连接达到 `ready`，也没有验证真实点击、滑动、文本粘贴、Home、停止后重新连接或 180° 旋转后的旧截图拒绝。会话授权、截图和系统提示均不能代替这些结果。详见 [当前会话实测与限制](validation.md#ios-26-app-内-xctest-会话同日当前)。
+**支持 iOS / iPadOS 26 及以上仍是产品要求；当前实测兼容范围是上述样机与手机组合。** 持续后台运行、蜂窝模型请求、公司 VPN 共存和其他系统 / 硬件组合仍需验证。关闭本地连接也不等于取得远端会话释放确认。详见 [Wi-Fi 真机验证记录](board-validation-2026-10-11.md)。
 
-这条路径无需额外安装 UI Test Runner；正常 App 动态加载设备 DDI 中的开发者框架，不把测试 Runner 随包分发。但它依赖 Apple 开发者环境和私有接口，不能据此承诺 App Store 分发或任意系统版本的兼容性。Release 在 iOS 26 暂不声明 Home 和文本输入能力，需完成实际操作验证后再开放。
+这条路径无需额外安装 UI Test Runner；正常 App 动态加载设备 DDI 中的开发者框架，不把测试 Runner 随包分发。但它依赖 Apple 开发者环境和私有接口，不能据此承诺 App Store 分发或任意系统版本的兼容性。iOS 26 正常版本已开放通过 Wi-Fi 真机验证的 Home 和文本输入。
+
+另有独立的 [蓝牙开发板实验](board-setup.md#蓝牙开发板实验)：2026-10-12 验证了三次 12 位数字输入、一次测试按钮点击；禁用该请求的蜂窝访问时，Wi-Fi HTTPS 返回 200。这条 Debug 路径使用 BLE HID，不依赖本节的 RemotePairing / DDI 准备，但尚未接入正常 App 的连接选择或 Agent，也不提供屏幕观察与精确坐标操作。
 
 ## 首次准备
 
@@ -18,7 +20,7 @@ EiscueDeviceKit 内置 iPhone / iPad 本机控制后端。上层 App 的最低�
 
 1. 在真机启用开发者模式，完成系统要求的重启与确认。
 2. 将真机连接 Xcode，完成开发准备并确保对应开发者镜像（DDI）可用。Kit 只检查镜像状态，不下载、个性化或挂载镜像。
-3. 在 Eiscue 设备页点击「开启本地连接」，首次允许系统添加 VPN 配置。扩展使用本地 `10.7.1.1`、对端 `10.7.0.1`，只有系统报告已连接后才开放配对和设备连接。扩展随 App 安装；签名要求与回环方式的系统边界见 [内置本地连接](local-tunnel.md)。Eiscue 不修改第三方 VPN 配置。
+3. 在 Eiscue 设备页选择连接方式。本地 VPN 方式需点击「开启本地连接」，首次允许系统添加 VPN 配置；扩展使用本地 `10.7.1.1`、对端 `10.7.0.1`，系统报告已连接后才开放该通道的配对和设备连接。USB / Wi-Fi 开发板方式按[开发板说明](board-setup.md)准备对应固件与网络，不启动 VPN。内置扩展的签名要求与系统边界见 [内置本地连接](local-tunnel.md)。Eiscue 不修改第三方 VPN 配置。
 4. 根据系统版本完成首次配对：**iOS 26 先通过下方 USB 工具生成并导入身份**；iOS 27+ 才能从设备页开始系统配对，再到系统设置的配对入口选择 Eiscue、输入 App 显示的 PIN。开发者模式和 VPN 授权均不能代替配对。允许 Eiscue 访问本地网络。
 5. 配对完成后回到 Eiscue，点击「连接设备」。Kit 依次发现本机配对服务、认证保存的设备身份、建立隧道、检查开发者模式 / DDI，并准备对应系统的控制会话。iOS 26 若显示“启用 UI 自动化 / Enable UI Automation”，按系统要求直接在手机上输入设备密码。App 在连接期间不会因为这张系统页面进入后台而主动取消准备；授权页出现不代表设备已经就绪。
 
@@ -53,7 +55,7 @@ xcrun devicectl device copy to --device '<USB_UDID>' \
 
 工具输出文件权限为 `0600`，拒绝覆盖已有文件，只有 Pair Setup 签名验证和重新连接后的 Pair Verify 成功才导出完整身份。文件包含私钥，导入成功后删除电脑上的这份临时文件，不要放进 Git、聊天或网盘。普通 Lockdown 文件和标准 RPPairing 文件不能直接替代 Eiscue 的完整格式。
 
-USB 身份生成不代表设备控制已经验收。2026-10-11 已在指定 iPhone 14 Pro（iOS 26.5.2）完成真实 USB 身份生成、Pair Setup 签名验证、重新连接后的 Pair Verify、App 内导入和本地通道连接；后续 App 内 XCTest 会话已走到系统自动化授权页面，实际输入验证仍待完成，见上方说明。
+USB 身份生成不代表设备控制已经验收。2026-10-11 已在指定 iPhone 14 Pro（iOS 26.5.2）完成真实 USB 身份生成、Pair Setup 签名验证、重新连接后的 Pair Verify 和 App 内导入；随后通过 Wi-Fi 开发板完成 App 内 XCTest 授权与真实操作验证，见[验证记录](board-validation-2026-10-11.md)。其他设备仍需分别确认授权与操作结果。
 
 上述传输文件位于 App 私有临时目录，不会显示在系统“文件”App 中。电脑传输完成后，重新打开 Eiscue 右上角的设备页，点击「导入电脑发送的配对」即可，无需在文件选择器里寻找它；停留在设备页时，可返回对话再进入以刷新按钮。
 
@@ -111,7 +113,7 @@ bash Scripts/test-owned-automation.sh
 
 脚本使用 vendor 中的 Rust 全源及 Cargo.lock，按平台构建并移除 debug 符号后生成 `NCMNativeBackend.xcframework`。首次构建需要联网获取 Cargo.lock 固定的依赖。SwiftPM 通过内部 binary / C targets 链接，不使用指向某台机器目录的 unsafe linker flags。
 
-当前验证覆盖 Kit 单元测试、Rust 协议 / 取消 / 会话隔离测试、独立 XCTest 桥接的宿主 fixture、App 授权页后台生命周期测试与编译。真实 USB 身份建立、App 内导入、本地 VPN 通道、会话 PID 授权、截图及系统授权页已取得证据；触控、滑动、文本、Home、断连恢复、方向变化和持续后台任务仍待真机验收。宿主 fixture 使用模拟类，不加载开发者框架、不连接手机，不能代替实际输入。上游的真机记录也不能代替 Eiscue 的验收。验收应在测试设备和可逆操作中逐项完成：配对 → 系统授权 → 连接就绪 → 截图 → 点击 → 截图确认 → 滑动 → 文本输入 → Home / 回到 App → 停止 → 断连 / 恢复 → 旋转后旧截图拒绝。
+当前验证覆盖 Kit 单元测试、Rust 协议 / 取消 / 会话隔离测试、独立 XCTest 桥接的宿主 fixture、App 授权页后台生命周期测试与编译。指定 C3 / 8 MB 样机与 iPhone 14 Pro 的 Wi-Fi 真机验证已覆盖配对身份、系统授权、连接就绪、截图、点击确认、滑动、中文输入、Home / 返回 App、断连重连及旋转后旧截图拒绝；持续后台任务与公司 VPN 共存仍未验证。宿主 fixture 使用模拟类，不加载开发者框架、不连接手机，不能代替实际输入。上游的真机记录也不能代替 Eiscue 的验收；新设备或系统版本应在可逆操作中重新检查上述流程。
 
 Debug 的 `--owned-device-check` 在正常 App 进程中提供独立验证页面，检查真实按钮计数、滚动位置、文本及前后台状态，不需要 UI Test Runner 或模型请求。它是显式开发入口，不自动用于正常启动，也不把任一步失败记为成功。这个入口可保存受文件保护的准备页截图用于本地核查；该例外不改变正常截图只在内存返回的约定，系统密码页图片和原始设备日志不提交仓库。
 

@@ -2,6 +2,14 @@
 
 更新日期：2026-10-12。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## 开发板文案更新（2026-10-12）
+
+设备页与首次引导的中英文文案统一使用通用开发板名称，并将现有无线连接明确标为
+“Wi-Fi 开发板”。17 个 String Catalog 的 1148 项本地化值均已检查；构建产物中
+中英文 Localizable / Onboarding 资源也已核对。Release 签名构建通过，已覆盖安装
+并正常启动到指定 iPhone 14 Pro。此次仅调整文案和说明，没有把蓝牙实验接入正式
+设备连接流程，也没有重新刷写开发板。
+
 ## BLE 真机实验（2026-10-12）
 
 现有 **ESP32-C3 / 8 MiB** 板以纯 BLE 固件，与指定 **iPhone 14 Pro / iOS 26.5.2**
@@ -20,7 +28,7 @@ Release 签名构建及指定真机安装通过，没有加装 UI Test Runner。
 
 ## 无线真机验收（2026-10-11）
 
-指定 **iPhone 14 Pro / iOS 26.5.2** 经 Passport 无线开发板完成一次完整动作
+指定 **iPhone 14 Pro / iOS 26.5.2** 经 ESP32-C3 Wi-Fi 开发板完成一次完整动作
 闭环，最终报告 `/tmp/eiscue-wireless-final-check-result.json` 为
 **`state = passed`、`phase = finished`**。两次连接、两次点击及各自点击后截图、
 两次本地断开均通过；另验证合法 `1179 × 2556` PNG、180° 旋转后的旧帧拒绝且
@@ -42,10 +50,10 @@ Debug 验证。Release 构建、安装和启动证据为
 首次扫码加入失败的原因仍未知。详细过程、早期失败及证据见
 [无线真机验证增量记录](board-validation-2026-10-11.md)。
 
-下面的 Passport 和 XCTest 小节是同日早期记录，保留其当时的未完成状态和测试
+下面的 Wi-Fi 开发板和 XCTest 小节是同日早期记录，保留其当时的未完成状态和测试
 结果；其中“停在授权页”“手机连接待验”不代表当前最新状态。
 
-## Passport 无线开发板（同日，早期记录）
+## Wi-Fi 开发板（同日，早期记录）
 
 **历史范围：本节记录当时的备份、刷写、AP 启动与安装；后续无线关联及动作闭环
 已经推进，最新结果见上方小节。**
@@ -126,7 +134,7 @@ iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换
 
 本地证据：`/tmp/eiscue-xctest-session-tests.log`（64 项）、`/tmp/eiscue-xctest-idevice-tests.log`（184 项）、`/tmp/eiscue-ios26-devicekit-all.log`（56 项）、`/tmp/eiscue-owned-final-fixtures.log`（203 项）、`/tmp/eiscue-auth-ux-tests.log`（21 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_19-56-27-+0800.xcresult`。真机准备的构建及阶段日志为 `/tmp/eiscue-owned-async-build.log`、`/tmp/eiscue-owned-device-async-console.log`；失败检查的结构化报告为 `/tmp/eiscue-owned-check-ddi.json`，不把失败报告算作动作通过。
 
-此处关联的早期开发板进度为：用户的 Passport 已由 ROM 确认为 C3 / 8 MB，完成原 Flash 备份、MD5 校验、无线固件写入及实际 AP/relay 就绪日志，App 已签名安装；当时尚未验证手机关联与操作。后续完整无线动作闭环见本文最新小节，公司 VPN 共存仍未验收。C3 固定 USB Serial/JTAG 不能实现 USB NCM 的硬件限制保持不变。见 [开发板说明](board-setup.md)。
+此处关联的早期开发板进度为：用户的 ESP32-C3 开发板已由 ROM 确认为 C3 / 8 MB，完成原 Flash 备份、MD5 校验、无线固件写入及实际 AP/relay 就绪日志，App 已签名安装；当时尚未验证手机关联与操作。后续完整无线动作闭环见本文最新小节，公司 VPN 共存仍未验收。C3 固定 USB Serial/JTAG 不能实现 USB NCM 的硬件限制保持不变。见 [开发板说明](board-setup.md)。
 
 最终补充证据：`/tmp/eiscue-owned-final-devicekit-tests.log`、`/tmp/eiscue-owned-final-app-ipad-tests.log`（112 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_20-09-37-+0800.xcresult`、`/tmp/eiscue-owned-final-release-build.log`、`/tmp/eiscue-owned-final-release-install.json`、`/tmp/eiscue-owned-final-release-launch.json`。首次中止的完整 App 测试日志为 `/tmp/eiscue-owned-final-app-tests.log`。
 
@@ -160,7 +168,7 @@ iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换
 
 首轮 UI 暴露了工具与回复错序：模型时间戳与主机处理事件的时间不同，不能混用排序。改为消息存储顺序和工具的上一条消息锚点；同锚恢复运行的活动按主机开始时间排序。独立审查还发现纯文本恢复会替换原用户 ID，导致无前置文字工具丢锚；已用现有显示元信息格式保留所有新请求 ID，并验证没有改变模型上下文。首轮失败保留在本地结果中，针对性复测通过。配对时停止 VPN 漏取消监听的回归也已修复，并覆盖连接标记尚为空的情况。
 
-该阶段开发板代码位于 `Firmware/NCM-Relay`，App 可选 USB 板或本地 VPN，USB 分支不会启动 VPN，外部 VPN 回调不终止板会话。**这些软件测试不是开发板实测。** 官方 TRAE/FoloToy Passport 参考硬件为 ESP32-C3，其固定 USB Serial/JTAG 不能实现 NCM；当时用户的实际板子尚未读取芯片，Mac 无开发板串口枚举，没有备份、烧录、NCM 枚举或公司 VPN 共存实测，无线中转也尚未实现。后续 C3 ROM 确认、无线固件刷写及 AP 启动证据见本文首节。详见 [硬件与烧录说明](board-setup.md)。此阶段的聊天和连接方式改动没有补齐 iOS 26 触控，后续独立 XCTest 接入与验收范围见上方相应章节。实际真人录音、本地语言识别效果未重新验收。
+该阶段开发板代码位于 `Firmware/NCM-Relay`，App 可选 USB 板或本地 VPN，USB 分支不会启动 VPN，外部 VPN 回调不终止板会话。**这些软件测试不是开发板实测。** 该开发板参考硬件为 ESP32-C3，其固定 USB Serial/JTAG 不能实现 NCM；当时用户的实际板子尚未读取芯片，Mac 无开发板串口枚举，没有备份、烧录、NCM 枚举或公司 VPN 共存实测，无线中转也尚未实现。后续 C3 ROM 确认、无线固件刷写及 AP 启动证据见本文首节。详见 [硬件与烧录说明](board-setup.md)。此阶段的聊天和连接方式改动没有补齐 iOS 26 触控，后续独立 XCTest 接入与验收范围见上方相应章节。实际真人录音、本地语言识别效果未重新验收。
 
 本地证据：`.build/results/FinalAppAndPlainChat.xcresult`（105 单元 + 普通聊天重启），`.build/results/ChatTemporalProof-iPad.xcresult`（真实流式与工具顺序），`.build/results/ChatTimelineNoProse.xcresult`（直接工具调用重启），`.build/results/TimelinePairingRegression.xcresult`（22 项），`.build/results/ChatPresentationCopyVerified.xcresult`、`.build/results/ChatPresentation-iPad-Dark.xcresult`（各 2 项 UI）；截图 `.build/chat-ui-review-copy/`、`.build/chat-ipad-review/`。日志 `/tmp/eiscue-runtime-message-identity-final.log`、`/tmp/eiscue-ncm-transport-tests.log`、`/tmp/eiscue-board-build.log`、`/tmp/eiscue-board-final-tests.log`、`/tmp/eiscue-chat-release.log`、`/tmp/eiscue-chat-20261011-install.log`、`/tmp/eiscue-chat-20261011-launch.log`。
 

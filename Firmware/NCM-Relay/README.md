@@ -7,28 +7,23 @@ ND1/NR1/NL1 relay used by Eiscue's `PhoneAgentNCM` backend. The App owns pairing
 authentication and developer-service protocols; the board supplies an external
 network origin. It does not implement an Agent or store pairing keys.
 
-**TRAE Passport / FoloToy AI Passport is an ESP32-C3 product and cannot run this
-USB NCM firmware.** Its fixed-function USB Serial/JTAG block cannot become a
-network device. See [hardware compatibility and setup](../../docs/board-setup.md).
-An ESP32-S3 build is not evidence that the TRAE Passport works.
+**ESP32-C3 cannot run this USB NCM firmware.** Its fixed-function USB Serial/JTAG
+block cannot become a network device. See [hardware compatibility and
+setup](../../docs/board-setup.md).
+An ESP32-S3 build is not evidence of physical USB compatibility.
 
-The attached user's board has now been identified by ROM as ESP32-C3 with 8 MB
-Flash. Its separate [Passport Wi-Fi firmware](../Passport-Relay/README.md) uses
-WPA2, one client and `.1/.2` on a `/30` subnet; this S3 USB firmware keeps `/24`.
-The C3's full original Flash backup passed ROM MD5 verification, and an initial
-wireless image passed `write_flash` and `verify_flash`. Runtime review then found
-a missing explicit DHCP start. The patched application partition has been
-written and verified while preserving the original backup and private Wi-Fi
-configuration. An actual boot log reports the private WPA2 AP and relay ready
-at 352 ms, waiting for a phone; phone association and relay/control behavior
-remain unverified. The wireless App's unsigned and signed Release builds and
-deep signature verification passed. After the user manually unlocked the login
-keychain, the existing signing certificate was used to install and normally
-launch the App on the designated iPhone 14 Pro, without an extra UI Test Runner.
-See the [Passport build,
-private provisioning and phone
-setup](../../docs/board-setup.md#给-passport-烧录无线固件). Neither route has yet
-demonstrated company VPN coexistence or complete iOS 26 device control.
+The current sample was identified by ROM as ESP32-C3 with 8 MB Flash. Its
+separate [Wi-Fi firmware](../Passport-Relay/README.md) uses WPA2, one client and
+`.1/.2` on a `/30` subnet; this S3 USB firmware keeps `/24`. The C3 Wi-Fi route
+passed actual iPhone 14 Pro / iOS 26.5.2 control on 2026-10-11, including screen
+capture, touch, swipe, Unicode input, Home/App return, reconnect and rotation
+checks. The same board's [BLE experiment](../Passport-BLE/README.md) passed three
+12-digit inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access
+disabled for that request on 2026-10-12; it remains Debug-only and is not
+integrated with normal App connection selection or the Agent. These independent
+C3 results do not validate USB NCM on an S3. See the [Wi-Fi build, private
+provisioning and phone setup](../../docs/board-setup.md#给-esp32-c3-开发板烧录-wi-fi-固件).
+Company VPN coexistence remains unverified for all routes.
 
 ## Source and license
 
@@ -104,21 +99,19 @@ Unplug/suspend epochs revoke active relays. Authentication remains end to end in
 the App/backend; an `NR1 OK` is a transport acknowledgement, not proof that a tap
 or screenshot succeeded.
 
-## Validation status (2026-10-11)
+## Validation status (2026-10-12)
 
 | Check | Evidence |
 | --- | --- |
 | ESP32-S3 cross build | PASS: ESP-IDF 5.5.3, app `0x5f600` bytes within 1 MB partition |
 | Protocol/localhost tests | PASS: DNS truncation/TTL, greeting/schema/EOF, auth boundaries, browser gates, source binding, deadlines, two-way 1 MiB relay/backpressure/cancel |
-| Python flash-tool guards | Historical PASS for the USB S3 profile: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory. Passport now has a separate C3 profile; no new unit-test result is claimed. |
-| Physical board identification | PASS for the subsequently attached Passport: ROM reports ESP32-C3 / 8 MB. The earlier no-board USB inventory remains a historical observation, not current status. |
-| Passport original Flash backup | PASS: full Flash saved privately and checked against ROM MD5 |
-| Passport wireless write/readback | PASS: initial image and DHCP-fixed application partition both passed `write_flash` and `verify_flash`; original backup and private provisioning preserved |
-| Passport actual boot | PASS: at 352 ms, `Private WPA2 AP ready; waiting for one phone` and ND1/NR1 relay idle; no phone association or actual diagnostic request demonstrated |
-| Wireless App build/install | Unsigned and signed Release full builds and deep signature verification PASS; after manual keychain unlock, the wireless version was installed and normally launched on the designated iPhone 14 Pro. Phone association/control remains unverified. |
-| Flash/readback on physical S3 | NOT RUN: the connected Passport is C3, not an S3 board |
+| Python flash-tool guards | Historical PASS for the USB S3 profile: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory. Wi-Fi now has a separate C3 profile; no new unit-test result is claimed. |
+| Separate C3 sample identification and backup | PASS: ROM reports ESP32-C3 / 8 MB; full Flash saved privately and checked against ROM MD5 |
+| Separate C3 Wi-Fi write/readback and phone control | PASS: firmware readback, AP/DHCP, discovery/authorization, capture, touch, swipe, Unicode input, Home/App return, reconnect and rotation checks; local VPN stayed disconnected. See [Wi-Fi evidence](../../docs/board-validation-2026-10-11.md). |
+| Separate C3 BLE Debug experiment | PASS for three 12-digit inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access disabled for each request; no normal App/Agent integration or calibrated-coordinate claim. See [BLE evidence](../../docs/ble-board-validation-2026-10-12.md). |
+| Flash/readback on physical S3 | NOT RUN: the current sample is C3, not an S3 board |
 | USB NCM enumeration and ND1 on Mac/phone | NOT RUN |
-| Company VPN coexistence and iOS control | NOT RUN |
+| Company VPN coexistence | NOT RUN |
 
 The local Xcode 26.3 ASan runtime deadlocked during initialization on the current
 macOS; a process sample located the deadlock before test `main`. UBSan tests

@@ -2,15 +2,15 @@
 
 运行在 iPhone / iPad 上的 Agent 设备助手。App 最低 **iOS / iPadOS 26.0**。任务编排和工具执行在手机上，模型通过用户配置的网络服务调用。
 
-**iOS 26 完整控制尚待真机验收：** 已接入 App 内独立 XCTest 会话；iPhone 14 Pro / iOS 26.5.2 已验证既有身份、本地通道、当前 App 的会话授权、1179 × 2556 PNG 和系统“启用 UI 自动化”密码页。尚未验证连接就绪或实际点击、滑动等操作。支持 iOS / iPadOS 26 及以上的要求保持不变，不能用 App 可运行或授权成功代替控制验收。详见 [设备兼容性](docs/device-setup.md)。
+**已验证的真机路径：** 2026-10-11，ESP32-C3 / 8 MB 样机与 iPhone 14 Pro / iOS 26.5.2 通过 Wi-Fi 开发板完成连接、截图、点击、滑动、中文输入、Home / 返回 App、重连和旋转检查，本地 VPN 保持断开。2026-10-12，同一开发板的蓝牙 Debug 实验验证了三次 12 位数字输入和一次测试按钮点击；禁用该请求的蜂窝访问时，正常 Wi-Fi HTTPS 返回 200。蓝牙尚未接入正常 App 的连接选择或 Agent；这些结果不代表所有开发板、系统版本或公司 VPN 均已兼容。详见 [开发板说明](docs/board-setup.md) 和 [设备兼容性](docs/device-setup.md)。
 
 ## 已实现
 
 - 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，自定义地址和模型 ID，API Key 使用系统 Keychain。
 - Agent：真实 PiDurableKit 运行时、流式回答、多轮对话、图片工具结果、串行工具调用、停止、超时与调用次数限制。
 - 会话与任务：发送后立即上屏并清空输入，流式回复、分开的真实工具记录、块级 Markdown、消息时间与选段复制；侧栏历史、长按置顶/排序/删除、恢复、脱敏报告导出，运行记录从对话菜单查看。
-- 设备代码：内置本地 VPN 扩展、iOS 26 的 USB 首次配对工具和身份导入、iOS 27+ 系统配对、开发者模式/DDI 检查；iOS 26 采用独立 XCTest 会话，其他系统路径保留原后端。公开动作包含截图、点击、拖动、文字粘贴、App 列表、启动 App 和 Home，实际可用项以连接能力为准；iOS 26 Release 暂不开放 Home 和文本输入。
-- 连接方式：App 可选择本地 VPN、USB 开发板或无线开发板，Kit 提供 `DeviceClient.connect(method:)`；开发板分支不启动 VPN。S3 USB 固件在 [Firmware/NCM-Relay](Firmware/NCM-Relay)，C3 无线固件在 [Firmware/Passport-Relay](Firmware/Passport-Relay)。用户的 Passport 已由 ROM 确认为 ESP32-C3 / 8 MB，原 Flash 备份、修复版固件写入和读回校验完成，实板启动日志确认 AP/relay 就绪；手机关联、配对与控制仍待实测。无线版 Release 已通过签名校验，覆盖安装并正常启动到指定 iPhone 14 Pro。C3 仍不支持 USB NCM。见 [开发板说明](docs/board-setup.md)。
+- 设备代码：内置本地 VPN 扩展、iOS 26 的 USB 首次配对工具和身份导入、iOS 27+ 系统配对、开发者模式/DDI 检查；iOS 26 采用独立 XCTest 会话，其他系统路径保留原后端。公开动作包含截图、点击、拖动、文字粘贴、App 列表、启动 App 和 Home，实际可用项以连接能力为准；iOS 26 正常版本已开放通过 Wi-Fi 真机验证的 Home 和文本输入。
+- 连接方式：正常 App 可选择本地 VPN、USB 开发板或 Wi-Fi 开发板，Kit 提供 `DeviceClient.connect(method:)`；开发板分支不启动 VPN。ESP32-S3 的 [USB 固件](Firmware/NCM-Relay/README.md) 已构建，尚未验证实板 NCM 枚举；ESP32-C3 / 8 MB 样机的 [Wi-Fi 固件](Firmware/Passport-Relay/README.md) 已通过真机控制验证。独立的 [蓝牙固件](Firmware/Passport-BLE/README.md) 目前只用于显式 Debug 实验；同一板子需切换固件才能使用不同方案。C3 不支持 USB NCM，其他板型需另行核对芯片、Flash 和接线。见 [开发板说明](docs/board-setup.md)。
 - 执行边界：输入框加号中可开启“允许 AI 操作设备”，默认关闭；Kit 另保留只读观察范围。坐标操作绑定新截图，单次使用，过期或重连后失效；未知操作结果不自动重发。
 - 后台：iOS 26 的 BGContinuedProcessingTask 和系统实时活动，显示真实执行阶段；可选的完成／中断本地通知默认关闭，系统取消与过期统一停止。
 - Skill：内置导航、只读搜索和中断核查流程，导入与删除 UTF-8 Markdown；不执行导入文件里的脚本。
@@ -30,7 +30,7 @@
 
 内置扩展与主 App 都需要匹配 Network Extension capability 的签名。首次添加 VPN 配置仍需系统授权，详见 [内置本地连接](docs/local-tunnel.md)。
 
-iOS 26 的开发者模式页没有本后端要求的系统配对入口。[USB 配对步骤](docs/device-setup.md#ios-26-的首次-usb-配对) 已在上述测试机上完成身份建立；后续独立 XCTest 会话已触发系统自动化授权，实际控制仍需验收。无需为重试控制而重复生成已经有效的身份。该路径无需额外 UI Test Runner，但依赖设备 DDI 中的开发者框架和私有接口，目前不承诺 App Store 分发。
+iOS 26 的开发者模式页没有本后端要求的系统配对入口。[USB 配对步骤](docs/device-setup.md#ios-26-的首次-usb-配对) 已在上述测试机上完成身份建立；后续独立 XCTest 会话通过系统自动化授权，并完成 Wi-Fi 开发板控制验证。无需为重试控制而重复生成已经有效的身份。该路径无需额外 UI Test Runner，但依赖设备 DDI 中的开发者框架和私有接口，目前不承诺 App Store 分发。
 
 App 当前仅接受 HTTPS 模型服务地址。OpenAI 兼容接口通常填写带 `/v1` 的地址；Anthropic 默认填写 `https://api.anthropic.com`。Kit 允许宿主自行配置本地 HTTP 服务。测试专用 loopback 配置只在 DEBUG 且显式 UI 测试模式下启用。
 

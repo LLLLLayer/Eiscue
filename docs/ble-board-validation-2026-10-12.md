@@ -1,8 +1,8 @@
-# Passport BLE experiment — 2026-10-12
+# BLE development board experiment — 2026-10-12
 
 ## Scope
 
-Use the existing ESP32-C3 TRAE Passport as a BLE HID peripheral and encrypted
+Use the existing ESP32-C3 development board as a BLE HID peripheral and encrypted
 GATT command receiver. The iPhone keeps its normal Wi-Fi Internet connection.
 This experiment does not run the Agent, capture the screen with ReplayKit, or
 prove background operation. The normal App's device backend is unchanged.
@@ -85,9 +85,10 @@ UIKit callback and matching nonce are the action evidence.
   coordinate clicks, scrolling, Home, other Apps, background execution and
   ReplayKit/Agent integration are not established by these observations.
 
-The final fixture run remains on the test phone for inspection. Its entry is
-available only through explicit Debug launch arguments; an ordinary launch still
-opens the normal App. The board remains on the BLE experiment firmware, so its
+The final fixture result is retained in the protected local report. A subsequent
+wording-only Release update was installed and launched normally on the test
+phone. The fixture entry is available only through explicit Debug launch
+arguments. The board remains on the BLE experiment firmware, so its
 former Wi-Fi relay is unavailable until that saved application image is restored.
 
 Private reports and backups remain under `.build/ble-validation` and

@@ -1,19 +1,20 @@
-# Eiscue Passport Relay
+# Eiscue Wi-Fi Board Relay
 
 Version **1.0.0**, target **ESP32-C3**, **8 MB Flash**, ESP-IDF **5.5.3**.
 
-This target supplies a private Wi-Fi access point for a TRAE Passport / FoloToy
-AI Passport class board. An ESP32-C3 cannot expose USB NCM; its USB Serial/JTAG
+This target supplies a private Wi-Fi access point for the tested ESP32-C3 / 8 MB
+development-board sample. An ESP32-C3 cannot expose USB NCM; its USB Serial/JTAG
 connection is used for provisioning and power. The phone joins the board's Wi-Fi
 network and the App uses the same bounded ND1/NR1/NL1 relay as the USB target.
 Pairing credentials and developer-service authentication stay in the App.
 
-This is an implementation and cross-build target, **not a claim of physical
-board or iPhone compatibility validation**. The attached board must still be
-identified from its ROM before flashing. Wi-Fi association alone does not prove
-that iOS has authorized screen or touch services. Joining this AP occupies the
-phone's Wi-Fi connection; it is not an Internet hotspot. Cellular connectivity
-and company VPN coexistence still require device validation.
+Physical control passed on that sample with iPhone 14 Pro / iOS 26.5.2 on
+2026-10-11, as detailed below. This does not establish compatibility with every
+C3 board or phone. Identify the attached board from its ROM before flashing.
+Wi-Fi association alone does not prove that iOS has authorized screen or touch
+services. Joining this AP occupies the phone's Wi-Fi connection; it is not an
+Internet hotspot. Cellular model requests and company VPN coexistence still
+require device validation.
 
 ## Network behavior
 
@@ -105,3 +106,7 @@ Local disconnection is not a remote daemon teardown acknowledgement. Sustained
 background work, cellular model requests and company VPN coexistence remain
 unverified. Board identification, backup and flashing belong to the
 [board setup workflow](../../docs/board-setup.md).
+
+The sample now runs the separate [BLE Debug experiment](../Passport-BLE/README.md).
+Restore the retained Wi-Fi application image before using this Wi-Fi route;
+the two firmware images do not run simultaneously.
