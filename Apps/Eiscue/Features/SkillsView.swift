@@ -92,6 +92,7 @@ struct SkillsView: View {
                     .swipeActions(allowsFullSwipe: false) {
                         if !skill.isBuiltIn {
                             Button("common.delete", role: .destructive) { model.deleteSkill(skill) }
+                                .tint(.gray)
                                 .disabled(model.isBusy)
                         }
                     }
@@ -146,6 +147,7 @@ private struct SkillDetailView: View {
                                 if !model.skills.contains(where: { $0.id == skill.id }) { dismiss() }
                             }
                             .buttonStyle(.glass)
+                            .foregroundStyle(.primary)
                             .disabled(model.isBusy)
                         }
                     }

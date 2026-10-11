@@ -60,7 +60,7 @@ private struct MicrophoneControl: UIViewRepresentable {
         configuration.contentInsets = .zero
         configuration.imagePadding = 0
         configuration.showsActivityIndicator = isPreparing
-        configuration.baseForegroundColor = isRecording ? .systemRed : UIColor(named: "AccentColor") ?? .systemBlue
+        configuration.baseForegroundColor = UIColor(named: "AccentColor") ?? .label
         button.configuration = configuration
         button.accessibilityLabel = isBusy
             ? String(localized: "speech.stop", table: "Speech")

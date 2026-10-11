@@ -2,6 +2,14 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## 黑白灰配色更新（同日）
+
+根据最新配色要求，将 AccentColor 调整为浅色近黑、深色近白；按钮、SF Symbols、麦克风和运行状态统一灰阶。错误提示增加感叹号，设备状态保留不同图形与文字，角标随主题反转前景/背景；系统确认弹窗保留原生 destructive 语义。贴纸和 App 图标保留原图。
+
+模拟器与签名 Release 构建通过，签名验证通过。已查看浅色 iPhone 主页面、模型设置以及深色 iPad 侧栏/输入区，检查文字、图标和玻璃背景的对比。正常 App 已更新并启动到指定 iPhone 14 Pro。本次为颜色和提示样式调整，没有新增或重复运行功能测试；交互回归结果见下方 Liquid Glass 记录。
+
+本地产物：`.build/review/monochrome-*.png`、`/tmp/eiscue-monochrome-final-build.log`、`/tmp/eiscue-monochrome-release.log`、`/tmp/eiscue-monochrome-install.log`、`/tmp/eiscue-monochrome-launch.log`。
+
 ## Liquid Glass 界面调整（同日）
 
 - 顶部沿用系统工具栏玻璃；侧栏底部改为左侧新对话玻璃胶囊、右侧设置透明玻璃圆钮。输入区及设备、引导、模型、技能等页面的独立按钮使用原生玻璃材质，统一 SF Symbols 尺寸；正文与列表保留语义背景。

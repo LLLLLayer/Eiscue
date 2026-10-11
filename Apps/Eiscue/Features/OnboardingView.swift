@@ -76,7 +76,7 @@ struct OnboardingView: View {
                                 .buttonStyle(.glass).disabled(model.isBusy)
                         }
                         if let error = model.localTunnel.lastError ?? model.errorMessage {
-                            Text(error).font(.caption).foregroundStyle(.red)
+                            Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.primary)
                         }
                         Text(text("setup.deviceLater")).font(.subheadline).foregroundStyle(.secondary)
                     }

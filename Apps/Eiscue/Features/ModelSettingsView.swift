@@ -67,6 +67,7 @@ struct ModelSettingsView: View {
                             confirmsKeyRemoval = true
                         }
                         .buttonStyle(.glass)
+                        .foregroundStyle(.primary)
                         .accessibilityIdentifier("removeAPIKeyButton")
                     }
                 } header: {

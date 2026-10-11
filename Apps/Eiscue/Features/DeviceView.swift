@@ -95,6 +95,7 @@ struct DeviceView: View {
         if model.isDeviceReady || model.isPairing || model.isConnecting {
             Button("device.disconnectAndStop", role: .destructive) { Task { await model.disconnectDevice() } }
                 .buttonStyle(.glass)
+                .foregroundStyle(.primary)
         } else {
             if model.hasTransferredPairingIdentity {
                 Button("device.importTransferredPairing") {
@@ -156,6 +157,7 @@ struct DeviceView: View {
                     if model.hasPairingIdentity {
                         Button("device.removePairing", role: .destructive) { confirmsForget = true }
                             .buttonStyle(.glass)
+                            .foregroundStyle(.primary)
                             .disabled(model.isBusy)
                     }
                 }
@@ -178,13 +180,14 @@ struct DeviceView: View {
             }
             Text("device.localConnectionShort").font(.caption).foregroundStyle(.secondary)
             if let error = model.localTunnel.lastError {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.primary)
             }
             if model.localTunnel.isConnected || model.localTunnel.isTransitioning || model.isManagingTunnel {
                 Button(model.isStoppingTunnel ? String(localized: "device.stoppingLocalConnection") : String(localized: "device.stopLocalConnection"), role: .destructive) {
                     Task { await model.stopLocalTunnel() }
                 }
                 .buttonStyle(.glass)
+                .foregroundStyle(.primary)
                 .disabled(model.isStoppingTunnel)
                 .accessibilityIdentifier("stopLocalTunnelButton")
             } else {

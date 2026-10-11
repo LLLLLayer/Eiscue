@@ -137,7 +137,7 @@ private struct TaskSettingsView: View {
                 .disabled(model.taskNotifications.isRequestingAuthorization)
                 .accessibilityIdentifier("taskNotificationsToggle")
                 if let error = model.taskNotifications.lastError {
-                    Text(error).font(.caption).foregroundStyle(.red)
+                    Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.primary)
                 }
                 Button {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }

@@ -28,7 +28,7 @@ struct RunHistoryView: View {
                             HStack {
                                 Label(run.state.title, systemImage: run.state.symbol)
                                     .font(.body.weight(.medium))
-                                    .foregroundStyle(run.state.color)
+                                    .foregroundStyle(.primary)
                                 Spacer()
                                 Text(run.scope.title)
                                     .font(.caption)
@@ -70,7 +70,7 @@ private struct RunDetailView: View {
             Section {
                 Label(record.state.title, systemImage: record.state.symbol)
                     .font(.headline)
-                    .foregroundStyle(record.state.color)
+                    .foregroundStyle(.primary)
                 Text(record.state.explanation)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -225,14 +225,6 @@ private enum RunReport {
 }
 
 private extension RunState {
-    var color: Color {
-        switch self {
-        case .preparing, .running: EiscueStyle.accent
-        case .completed: .green
-        case .interrupted: .orange
-        case .failed: .red
-        }
-    }
     var symbol: String {
         switch self {
         case .preparing: "hourglass"

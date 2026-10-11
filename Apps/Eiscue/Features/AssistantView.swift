@@ -163,6 +163,7 @@ struct AssistantView: View {
                     }
                     Spacer()
                     Button("common.stop", role: .destructive) { Task { await model.stop() } }
+                        .foregroundStyle(.primary)
                         .accessibilityIdentifier("stopRunButton")
                 }
             }
@@ -267,7 +268,8 @@ struct AssistantView: View {
                 .accessibilityIdentifier("speechPreview")
             }
             if let error = speech.errorMessage {
-                Text(error).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
             }
             GlassEffectContainer(spacing: 8) {

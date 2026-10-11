@@ -15,8 +15,7 @@ enum ConnectionIndicatorState: Equatable {
     }
     var color: Color {
         switch self {
-        case .ready, .connecting: EiscueStyle.accent
-        case .failed: .red
+        case .ready, .connecting, .failed: EiscueStyle.accent
         case .unpaired, .paired: .secondary
         }
     }
@@ -49,12 +48,14 @@ struct DeviceConnectionIndicator: View {
                 case .failed: Image(systemName: "exclamationmark.circle.fill")
                 case .unpaired: Image(systemName: "questionmark.circle.fill")
                 case .paired: Image(systemName: "minus.circle.fill")
-                case .connecting: ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
+                case .connecting:
+                    ProgressView().tint(state.color).controlSize(.mini)
+                        .scaleEffect(0.7).frame(width: 10, height: 10)
                 }
             }
                 .font(.system(size: 10, weight: .semibold))
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(.white, state.color)
+                .foregroundStyle(Color(.systemBackground), state.color)
                 .offset(x: 2, y: 1)
         }.foregroundStyle(state.color).accessibilityHidden(true)
     }
