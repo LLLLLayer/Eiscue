@@ -46,8 +46,8 @@ struct OnboardingView: View {
                         heading("setup.deviceSetup", "setup.deviceSetupDetail")
                         DeviceConnectionMethodPicker()
                         row("1.circle", "setup.developerMode", "setup.developerModeDetail")
-                        row("2.circle", "setup.pairing", model.deviceConnectionMethod == .usbBoard ? "setup.boardPairingDetail" : model.supportsSystemPairing ? "setup.systemPairingDetail" : "setup.usbPairingDetail")
-                        if !model.supportsSystemPairing || model.deviceConnectionMethod == .usbBoard {
+                        row("2.circle", "setup.pairing", model.deviceConnectionMethod != .localVPN ? "setup.boardPairingDetail" : model.supportsSystemPairing ? "setup.systemPairingDetail" : "setup.usbPairingDetail")
+                        if !model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN {
                             Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/blob/main/docs/device-setup.md")!) {
                                 Label(text("setup.computerGuide"), systemImage: "arrow.up.right")
                             }.font(.subheadline)
@@ -61,7 +61,7 @@ struct OnboardingView: View {
                                 Task { await model.importTransferredPairingIdentity() }
                             }
                                 .buttonStyle(.glass).disabled(model.isBusy)
-                        } else if !model.supportsSystemPairing || model.deviceConnectionMethod == .usbBoard {
+                        } else if !model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN {
                             Button(text("setup.importFile")) { importsIdentity = true }
                                 .buttonStyle(.glass).disabled(model.isBusy)
                         }
@@ -70,6 +70,13 @@ struct OnboardingView: View {
                         }
                         if model.deviceConnectionMethod == .usbBoard {
                             row("3.circle", "setup.boardConnection", "setup.boardConnectionDetail")
+                        } else if model.deviceConnectionMethod == .wirelessBoard {
+                            row("3.circle", "setup.wirelessBoardConnection", "setup.wirelessBoardConnectionDetail")
+                            Text(text("setup.wirelessBoardNetworkNote"))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/tree/main/Firmware/Passport-Relay")!) {
+                                Label(text("setup.wirelessBoardGuide"), systemImage: "arrow.up.right")
+                            }.font(.subheadline)
                         } else {
                             row("3.circle", "setup.localConnection", "setup.localConnectionDetail")
                             if model.localTunnel.isConnected {

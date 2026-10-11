@@ -40,7 +40,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to attach to your message.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Discover and connect to this device’s developer services over a local loopback network.</string>
+	<string>Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Turn your speech into text in the message field.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

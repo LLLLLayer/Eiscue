@@ -1,0 +1,34 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "messageSharing.unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The original attachment is unavailable. Add the file again to share it." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "找不到原附件，请重新添加文件后分享。" } }
+      }
+    },
+    "messageSharing.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This message has nothing to share." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这条消息没有可分享的内容。" } }
+      }
+    },
+    "messageSharing.preparation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The message could not be prepared for sharing. Please try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂时无法准备分享内容，请重试。" } }
+      }
+    },
+    "messageSharing.delivery": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The selected app could not share the message. Try another sharing option." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选应用未能分享这条消息，请尝试其他分享方式。" } }
+      }
+    }
+  },
+  "version": "1.0"
+}

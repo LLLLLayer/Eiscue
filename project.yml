@@ -40,7 +40,7 @@ targets:
         NSCameraUsageDescription: "Take a photo to attach to your message."
         NSMicrophoneUsageDescription: "Turn your speech into text in the message field."
         NSSpeechRecognitionUsageDescription: "Transcribe speech on this device without sending a message automatically."
-        NSLocalNetworkUsageDescription: "Discover and connect to this device’s developer services over a local loopback network."
+        NSLocalNetworkUsageDescription: "Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board."
         CFBundleLocalizations: [en, zh-Hans]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

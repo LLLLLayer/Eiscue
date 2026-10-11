@@ -614,6 +614,9 @@ impl MessageHeader {
 }
 
 impl PayloadHeader {
+    /// DTX payload type (0 ACK, 3 object reply, 4 remote error).
+    pub fn message_type(&self) -> u8 { self.msg_type }
+
     /// Creates a new payload header
     pub fn new() -> Self {
         Self::default()

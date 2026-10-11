@@ -2,7 +2,92 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
-## 对话时间线、语音交互与开发板连接（同日，最新）
+## Passport 无线开发板（同日，当前）
+
+用户随后接入的真实开发板已由 ROM 确认为 **ESP32-C3 / 8 MB Flash**。其固定
+USB Serial/JTAG 不能实现 USB NCM，因此新增 `Firmware/Passport-Relay` 独立
+Wi-Fi AP 固件，并保留 S3 USB 固件。两者复用 ND1 / NR1 / NL1；Agent、配对
+身份、开发者服务认证和控制仍在 App / Kit 中。App 增加「无线开发板」，开发板
+分支不启动本地 VPN，接口变动或地址不符时失败，不自动改用其他网络。
+
+| 验证 | 结果及实际范围 |
+|---|---|
+| ROM 与原固件备份 | PASS：确认 C3 / 8 MB，完整原 Flash 备份并与 ROM MD5 比较一致；备份在本机受保护目录 `.build/board-backups/20261011T141744.974028Z/`，不提交原内容或密码 |
+| 无线固件首次写入 | PASS：固件和独立随机 Wi-Fi 配置完成 `write_flash`、`verify_flash`；配置只保存在私有 NVS 与本机 `wifi-setup.txt`，没有通用默认密码 |
+| DHCP 修复及最终固件更新 | 运行时审查发现自建 AP 接口遗漏显式启动 DHCP；修复后仅更新 App 分区，`write_flash`、`verify_flash` 均通过，原 Flash 备份和既有私有 Wi-Fi 配置保留 |
+| 实板启动 | PASS：串口启动日志在 352 ms 明确返回 `Private WPA2 AP ready; waiting for one phone` 与 `ND1 diagnostics / NR1 bounded relay; idle until command`；这证明固件走到 AP/relay 就绪，尚未有手机关联或实际 ND1 请求结果 |
+| 后端编译 | PASS：PhoneAgentNCM、EiscueDeviceKit 编译通过；Rust arm64 iOS / simulator / macOS 三平台 Release 及 XCFramework 重建通过 |
+| 完整 App 编译 | PASS：包含无线入口的无签名 Release 完整构建 `BUILD SUCCEEDED`；最低 iOS 26 |
+| App 签名与安装 | 未完成：用户从 Xcode GUI Run 后重试，仍在 EiscueTunnel 的 CodeSign 失败，日志为 `errSecInternalComponent`。无线版本没有覆盖安装到手机；先前安装成功的分享版本不计作无线版本安装成功 |
+| 手机及网络验收 | 未完成：手机关联、DHCP `.2` 租约、手机 ND1、iOS 26 RemotePairing、实际屏幕/触控、断连撤销、蜂窝模型联网及公司 VPN 共存均待实测 |
+
+Wi-Fi 固件使用 WPA2-PSK / CCMP、最多一个客户端，板子 `.1/30`、唯一 DHCP
+地址 `.2`，不发布路由器或 DNS，不提供 NAT 或互联网转发。Swift 只接受所选
+Wi-Fi 接口及 `.2/30`；USB 仍严格使用 Ethernet `.2/24`。每次发现保留传输类型、
+完整接口和 3 秒有效期，原生连接前重新核对；Rust 仍按指定 index 和源地址绑定。
+这些是当前实现边界，实际手机联网效果不由 AP 就绪日志代替。按用户要求，本轮
+优先完成实现、构建和实板启动，没有新增单元测试通过数，也未重跑历史完整套件。
+
+本地证据：`/tmp/eiscue-passport-app-partition-update.log`（修复版 App 分区写入、
+读回及保留配置），`.build/passport-relay-firmware/boot-20261011-review.log`
+（实际启动），`/tmp/eiscue-wifi-backend-xcframework-build.log`（三平台后端），
+`/tmp/eiscue-wifi-backend-build.log`（PhoneAgentNCM），
+`/tmp/eiscue-passport-app-unsigned-retry.log`（完整无签名 Release），
+`/tmp/eiscue-sign-after-user-run.log`（签名失败）。配置和烧录步骤见
+[开发板说明](board-setup.md)。
+
+## iOS 26 App 内 XCTest 会话（同日，当前）
+
+iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换该系统版本上缺失服务的 DisplayService/HID 选择。iOS 27+ 保留原路径。下面区分当前代码、已取得的真机证据和未完成的验收；后面的同日条目保留各阶段的历史结果。
+
+实现使用既有 RemotePairing 身份与认证隧道，不重新生成身份。Rust 拥有两个 testmanagerd DTX 通道，为同一 UUID 初始化会话，并仅为当前进程的 `getpid()` 请求授权；接受相关请求的明确布尔 `true` 回复，Swift 再校验 UUID、PID 与授权值。独立 Objective-C 桥接动态使用 DDI 中的开发者框架，新建本 App 的 runner/XPC 会话，异步请求启用 UI 自动化。正常 App 不嵌入 Apple 测试 Runner 框架，不需要另装 UI Test Runner；这仍依赖开发者环境和私有接口，不能据此承诺 App Store 分发。
+
+指定 iPhone 14 Pro / iOS 26.5.2（23F84）已经取得的实际结果：
+
+- 既有身份认证、DDI 检查和当前 App PID 的 DTX 会话授权通过。
+- DDI 下新建 XPC 会话的工厂回调完成且没有错误，实际服务为 `com.apple.dt.testmanagerd.runner`。
+- 异步启用自动化请求后，延迟抓取的画面明确显示 **“为 XCTest 输入 iPhone 密码 / Enable UI Automation”** 系统页。
+- 已有认证通道返回合法 Instruments PNG，尺寸 **1179 × 2556**。
+
+**当前真机验证停在系统密码授权页。** 需要用户直接在手机上输入密码；App、Agent 和聊天不接收密码。尚未取得启用自动化完成或生产连接 `ready` 的证据，也未发送并验证真实点击、滑动、文本、Home。停止后重新连接、180° 旋转后的旧帧拒绝和持续后台操作同样未验收。当前代码与系统提示证明路径已推进到这一步，不能写成设备控制已完成。
+
+| 验证 | 结果及实际范围 |
+|---|---|
+| Rust 后端 | 64 项通过；独立通道、请求相关性、严格授权、PNG 校验、取消、清理和父会话保留 |
+| vendored idevice | 184 项通过；包含 DTX 解析与相关回复及已有协议回归 |
+| DeviceKit | 56 项通过；PNG MIME、能力声明、会话身份、几何与旧帧失效、释放/取消；宿主测试不能证明真机方向回调 |
+| Objective-C fixture | 203 项检查通过；执行生产入口与事件构造，替换平台导入并使用模拟运行时类，覆盖 UTF-8、几何修订、请求回执、未知结果、剪贴板提交门禁、迟到回调和清理；不加载 DDI 框架、不连接手机 |
+| SDK 编译与安装 | 上述 fixture 脚本同时通过 iOS 真机与模拟器 SDK 的 Objective-C 语法检查；签名 Debug / Release App 构建通过。最终 Release 深度签名校验通过，最低系统 26.0，没有嵌入测试框架；覆盖安装并按普通参数启动到指定 iPhone 14 Pro，没有安装额外 Runner |
+| App 单元测试 | iPad 模拟器完整 112 项通过，其中连接生命周期 21 项包含 7 项新增授权/后台用例：连接中的系统页不触发主动取消，返回前台保留结果，后台空闲连接延迟释放，显式停止仍可取消；使用注入 controller 验证，尚未在完成授权的真机上复测。首次 iPhone 模拟器运行卡在安装/启动阶段，被中止，没有计作通过 |
+| 真机授权准备 | 新会话工厂与异步系统授权请求得到上方证据；等待密码时超时并清理，没有把准备成功误标为控制就绪 |
+
+坐标输入实现核对本会话的显示 ID、方向、缩放、几何修订和截图尺寸，截图前后几何不一致则拒绝；事件使用递增请求回执，未知结果不自动重试。文本验证实现只在最终提交门禁通过后将给定文字写入系统剪贴板，再发送一个本会话的 Command-V，不读取旧剪贴板；焦点、粘贴授权与可见内容仍需真机确认。**iOS 26 Release 暂不声明 Home 和文本输入能力**，仅在显式 Debug 验证入口开放。
+
+独立审查发现并修复了几何查询完成后的取消检查缺口，以及原生公开方法可绕过 Home / 文本能力限制的问题。等待系统授权超时现在给出系统密码页的中英文指引，不解释为服务缺失或用户拒绝。修复后的 DeviceKit 56 项、App 112 项及最终 Release 构建通过。
+
+`--owned-device-check` 是正常 App 内的显式 Debug 验证页面，不依赖模型或额外 Runner。计划通过截图坐标触发页面上的按钮、滚动与文本框，再检查真实计数、位置、文本及 Home 后的前后台状态，并做停止/重连；目前检查在连接准备阶段结束，后续断言均未执行。验证页现在使用实际窗口、场景、屏幕与截图几何计算坐标，额外要求真实横屏方向改变 180°，拒绝转向前的未使用旧帧，再以新截图点击并核对计数；仅源码和构建检查通过，没有真机旋转证据。本地关闭 DTX/XPC 只记录为本地断开，不称为远端释放确认。Debug 为核查授权页保存过受保护的准备截图，图片留在本地；正常截图 API 只在内存返回。密码页图片、配对身份和完整原始手机日志不提交 Git。
+
+本地证据：`/tmp/eiscue-xctest-session-tests.log`（64 项）、`/tmp/eiscue-xctest-idevice-tests.log`（184 项）、`/tmp/eiscue-ios26-devicekit-all.log`（56 项）、`/tmp/eiscue-owned-final-fixtures.log`（203 项）、`/tmp/eiscue-auth-ux-tests.log`（21 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_19-56-27-+0800.xcresult`。真机准备的构建及阶段日志为 `/tmp/eiscue-owned-async-build.log`、`/tmp/eiscue-owned-device-async-console.log`；失败检查的结构化报告为 `/tmp/eiscue-owned-check-ddi.json`，不把失败报告算作动作通过。
+
+开发板的后续实板进展见本文首节：用户的 Passport 已由 ROM 确认为 C3 / 8 MB，完成原 Flash 备份、MD5 校验、无线固件写入及实际 AP/relay 就绪日志。手机关联、RemotePairing、屏幕/触控与公司 VPN 共存仍未验证；无线 App 构建通过但受签名失败阻碍，尚未安装。C3 固定 USB Serial/JTAG 不能实现 USB NCM 的硬件限制保持不变。见 [开发板说明](board-setup.md)。
+
+最终补充证据：`/tmp/eiscue-owned-final-devicekit-tests.log`、`/tmp/eiscue-owned-final-app-ipad-tests.log`（112 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_20-09-37-+0800.xcresult`、`/tmp/eiscue-owned-final-release-build.log`、`/tmp/eiscue-owned-final-release-install.json`、`/tmp/eiscue-owned-final-release-launch.json`。首次中止的完整 App 测试日志为 `/tmp/eiscue-owned-final-app-tests.log`。
+
+## 消息附件分享补齐（同日，当前）
+
+独立审查发现旧分享按钮只发送 `message.text`，纯照片或文件消息会发送空字符串。现在保存有界文档原件和类型/大小元信息，模型仍接收原有提取文本；照片分享规范化后的 JPEG，扩展名与实际类型一致。每次分享使用独立私有副本，保留到原生分享结束、失败或实际关闭后清理，不删除原附件；iPad 使用按钮所在窗口作为弹窗锚点。空消息不能分享，空文字的复制/选段按钮隐藏。旧 PDF 没有原始字节时明确禁用分享，不把提取文本伪造为 PDF；旧文本可按实际保留内容导出 UTF-8。
+
+新增 12 项 App 单元用例，覆盖 PDF 原字节、UTF-16、照片、重复文件名、重载、缺失原件、清理和后台 completion；新增 3 项 UI 用例，覆盖真实系统分享页、取消/重新打开，以及存储到本地文件后通过公开 document picker 再读回完整字节。最后一项使用本轮 UUID 名称和随机内容，读取前验证名称、大小及不属于分享临时目录；fixture 不写保存目标，只读 picker 新授予的文件。独立审查未发现把原件当保存结果的问题。
+
+**解锁 Mac 后，新增 12 项分享单元测试全部实际通过，0 失败。** 包含 PDF 原字节、UTF-16、照片类型、重复文件名、清理、后台回调和无窗口取消。证据为 `/tmp/eiscue-share-unlocked-unit-tests.log` 及 `.build/sharing-validation-no-dylib/Logs/Test/Test-EiscueValidation-2026.10.11_22-02-16-+0800.xcresult`。此前 XCTest 启动多次停在测试宿主暂停和 `wait_for_debugger = 1`，未进入 Test Suite；这些中止结果保留，不计通过。临时无调试器用户 scheme 在 Git 忽略的 `xcuserdata` 下，没有修改正式测试配置。新增 3 项自动 UI 测试仍待执行。
+
+分享修改后的正常 Release 签名校验通过，已覆盖安装并按普通参数启动到指定 iPhone 14 Pro；没有安装额外 Runner，没有读取 API Key。构建/安装/启动证据：`/tmp/eiscue-share-release-build.log`、`/tmp/eiscue-share-release-install.json`、`/tmp/eiscue-share-release-launch.json`。未执行的测试日志：`/tmp/eiscue-share-ipad-tests.log`、`/tmp/eiscue-share-ipad-retry-tests.log`、`/tmp/eiscue-share-ipad-unit-nondebug-tests.log`、`/tmp/eiscue-share-iphone-nondebug-tests.log`、`/tmp/eiscue-share-ipad-isolated-tests.log`。
+
+用户解锁 Mac 后，已通过 Computer Use 在 iPad Pro 11-inch (M5) / iOS 26.3 模拟器手动完成真实系统分享、保存到 On My iPad 和新的公开文件选择器读回。界面返回 `Saved file bytes verified`，完整值为 `verified|Shared notes-85585C84-F626-458F-832F-2A2E8EDCB54D.txt|66`；唯一文件名和全部 66 字节匹配。文件从系统 Recents 选回，fixture 没有直接写入保存位置。照片分享显示实际橙色 JPEG 预览及 1 KB 类型/大小，关闭后重新打开正常，文件分享同样验证取消后重新打开。此次是手动系统流程证据，不冒充 XCTest 通过。普通启动记录为 `/tmp/eiscue-share-manual-isolated-launch.log`；之前 Mac 锁定期间没有完成分享操作。
+
+此前一次提交在公司全局 pre-commit 扫描期间长时间等待，没有给出扫描结果或风险拒绝；该次未生成提交，也没有关闭或绕过钩子。后续交付以实际 Git 提交与远端分支记录为准。
+
+## 对话时间线、语音交互与开发板连接（同日，前一阶段）
 
 聊天发送先上屏并清空草稿，随后才执行保存和请求；保存失败恢复原草稿但不覆盖新输入。完成运行卡移出聊天，记录在对话菜单；流式回答、真实工具条目、消息时间、Markdown、消息操作和原生选段复制已实现。语音使用独立的 50 pt 按住区域，上滑取消，输入框不再挂录音长按手势。
 
@@ -18,7 +103,7 @@
 
 首轮 UI 暴露了工具与回复错序：模型时间戳与主机处理事件的时间不同，不能混用排序。改为消息存储顺序和工具的上一条消息锚点；同锚恢复运行的活动按主机开始时间排序。独立审查还发现纯文本恢复会替换原用户 ID，导致无前置文字工具丢锚；已用现有显示元信息格式保留所有新请求 ID，并验证没有改变模型上下文。首轮失败保留在本地结果中，针对性复测通过。配对时停止 VPN 漏取消监听的回归也已修复，并覆盖连接标记尚为空的情况。
 
-开发板代码位于 `Firmware/NCM-Relay`，App 可选 USB 板或本地 VPN，USB 分支不会启动 VPN，外部 VPN 回调不终止板会话。**这些软件测试不是开发板实测。** TRAE Passport 为 ESP32-C3，其固定 USB Serial/JTAG 不能实现 NCM；目前 Mac 无开发板串口枚举，没有备份、烧录、NCM 枚举或公司 VPN 共存实测。无线中转尚未实现。详见 [硬件与烧录说明](board-setup.md)。iOS 26 生产触控后端仍待完成；本轮聊天和连接方式改动没有补齐它。实际真人录音、本地语言识别效果未重新验收。
+该阶段开发板代码位于 `Firmware/NCM-Relay`，App 可选 USB 板或本地 VPN，USB 分支不会启动 VPN，外部 VPN 回调不终止板会话。**这些软件测试不是开发板实测。** 官方 TRAE/FoloToy Passport 参考硬件为 ESP32-C3，其固定 USB Serial/JTAG 不能实现 NCM；当时用户的实际板子尚未读取芯片，Mac 无开发板串口枚举，没有备份、烧录、NCM 枚举或公司 VPN 共存实测，无线中转也尚未实现。后续 C3 ROM 确认、无线固件刷写及 AP 启动证据见本文首节。详见 [硬件与烧录说明](board-setup.md)。此阶段的聊天和连接方式改动没有补齐 iOS 26 触控，后续独立 XCTest 接入与验收范围见上方相应章节。实际真人录音、本地语言识别效果未重新验收。
 
 本地证据：`.build/results/FinalAppAndPlainChat.xcresult`（105 单元 + 普通聊天重启），`.build/results/ChatTemporalProof-iPad.xcresult`（真实流式与工具顺序），`.build/results/ChatTimelineNoProse.xcresult`（直接工具调用重启），`.build/results/TimelinePairingRegression.xcresult`（22 项），`.build/results/ChatPresentationCopyVerified.xcresult`、`.build/results/ChatPresentation-iPad-Dark.xcresult`（各 2 项 UI）；截图 `.build/chat-ui-review-copy/`、`.build/chat-ipad-review/`。日志 `/tmp/eiscue-runtime-message-identity-final.log`、`/tmp/eiscue-ncm-transport-tests.log`、`/tmp/eiscue-board-build.log`、`/tmp/eiscue-board-final-tests.log`、`/tmp/eiscue-chat-release.log`、`/tmp/eiscue-chat-20261011-install.log`、`/tmp/eiscue-chat-20261011-launch.log`。
 
@@ -32,7 +117,7 @@
 - `com.apple.dt.testmanagerd.remote` 的 DTX 握手成功。
 - 无重新配对、无导入 Mac Lockdown 私钥、无额外 Runner 安装；未启用自动化或发送触控。
 
-这证明当前授权可访问 iOS 26 的另一条截图通道及测试服务。**它不证明 App 内 XCTest 会话、实际点击或脱离电脑后的持续后台控制已经完成**；生产设备连接仍使用旧控制后端，探针不会把其标为 ready。下一项工作是完成本 App 的测试会话与授权、验证一次自有页面点击及停止，再接入生产控制流程。
+这证明当时的授权可访问 iOS 26 的另一条截图通道及测试服务。**该探针本身不证明 App 内 XCTest 会话、实际点击或脱离电脑后的持续后台控制已经完成**；此阶段生产设备连接仍使用旧控制后端，探针不会把其标为 ready。后续已接入本 App 的独立测试会话并触发系统授权页，当前结果和剩余验收见上方「iOS 26 App 内 XCTest 会话」章节。
 
 探针仅由 Debug 启动参数 `--legacy-device-probe` 显式触发；`--resume-existing-local-tunnel` 只恢复安装更新后断开的、已启用的本应用 VPN 配置，不创建或保存配置，不申请新授权。首次探针在 VPN 断开时直接结束；恢复既有配置后的第二次实测才得到上述结果。测试完成后已按正常参数重新启动 App，不会自动再执行探针。
 

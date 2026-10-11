@@ -47,10 +47,18 @@ extension AppModel {
     func connectDevice() async {
         guard !isBusy, !isConnecting else { return }
         let method = deviceConnectionMethod
-        guard method == .usbBoard || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
+        guard method != .localVPN || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true; activeDeviceConnectionMethod = method; deviceConnectionError = nil
-        connectionMessage = method == .usbBoard ? String(localized: "connection.boardDiscovering") : String(localized: "connection.discovering")
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
+            connectionMessage = String(localized: "connection.automationAuthorization")
+        } else {
+            connectionMessage = switch method {
+            case .localVPN: String(localized: "connection.discovering")
+            case .usbBoard: String(localized: "connection.boardDiscovering")
+            case .wirelessBoard: String(localized: "connection.wirelessBoardDiscovering")
+            }
+        }
         let client = deviceClient
         let task = Task { try await client.connect(method: method, configuration: .defaults) }
         deviceConnectionTask = task
@@ -58,6 +66,9 @@ extension AppModel {
             if deviceOperationID == operationID {
                 isConnecting = false; deviceConnectionTask = nil
                 if !isDeviceReady { activeDeviceConnectionMethod = nil }
+                // Give the system authorization screen time to dismiss. An idle
+                // connection must still be released if the app stays in background.
+                scheduleIdleDeviceBackgroundRelease(operationID: operationID, delay: .milliseconds(200))
             }
         }
         do {
@@ -75,8 +86,8 @@ extension AppModel {
         await refreshDeviceStatus()
     }
 
-    /// The primary button starts only the selected connection method. USB never
-    /// starts a tunnel, changes VPN preferences, or falls back onto local VPN.
+    /// The primary button starts only the selected connection method. Boards never
+    /// start a tunnel, change VPN preferences, or fall back onto local VPN.
     func enableDeviceControl() async {
         guard !isBusy, !isChangingDeviceConnectionMethod else { return }
         let method = deviceConnectionMethod
@@ -100,7 +111,11 @@ extension AppModel {
         }
         deviceConnectionMethod = method
         deviceConnectionError = nil
-        connectionMessage = method == .usbBoard ? String(localized: "connection.boardSelected") : String(localized: "connection.vpnSelected")
+        connectionMessage = switch method {
+        case .localVPN: String(localized: "connection.vpnSelected")
+        case .usbBoard: String(localized: "connection.boardSelected")
+        case .wirelessBoard: String(localized: "connection.wirelessBoardSelected")
+        }
     }
 
     func disconnectDevice(expectedPairingID: UUID? = nil, stopChatRun: Bool = true,

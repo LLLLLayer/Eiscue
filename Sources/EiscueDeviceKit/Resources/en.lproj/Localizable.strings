@@ -54,3 +54,13 @@
 "device.board.pairing-service-unavailable" = "The board is connected, but this device's pairing service was not found. Keep the device unlocked with Developer Mode on, then try again.";
 "device.board.firmware-unavailable" = "The board did not provide the required connection service. Install the Eiscue board firmware and try again.";
 "device.board.interrupted" = "The USB board connection was interrupted. Check its cable and power, then try again.";
+"device.backend.automation-consent" = "Device control could not get system permission. Keep this device unlocked and allow automation if the system asks, then try again.";
+"device.backend.automation-geometry" = "The current screen could not be confirmed. Keep the device unlocked and steady, then try connecting again.";
+"device.backend.automation-delivery-unknown" = "The device did not confirm this action. It will not be repeated. Check the screen before reconnecting.";
+"device.backend.automation-authorization-timed-out" = "Waiting for system authorization timed out. Reconnect with this device unlocked. If Enable UI Automation asks for your device passcode, enter it on the system screen.";
+"device.wireless.discovering" = "Connecting to the wireless board.";
+"device.wireless.join-network" = "Connect this device to the board’s Eiscue-xxxx Wi-Fi in Settings, then try again. The password is in your local flashing configuration.";
+"device.wireless.multiple-connections" = "More than one board network was found. Keep only the intended Eiscue Wi-Fi connection and try again.";
+"device.wireless.unreachable" = "The wireless board did not respond. Check its power, the Eiscue Wi-Fi connection, and Eiscue’s Local Network permission. A company VPN may restrict local network access.";
+"device.wireless.firmware-required" = "The board did not provide the wireless connection service. Install the Eiscue wireless firmware and try again.";
+"device.wireless.pairing-unavailable" = "The wireless board is reachable, but this device’s pairing service was not found. Keep this device unlocked with Developer Mode on, then try again.";

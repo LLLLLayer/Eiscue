@@ -7,6 +7,7 @@ mod media;
 mod relay;
 mod local_vpn;
 mod legacy_probe;
+mod xctest_session;
 mod video;
 pub use relay::RelayConnector;
 pub mod lockdown;
@@ -61,6 +62,16 @@ pub enum Stage {
     LegacyScreenshotResponse,
     LegacyTestmanagerConnection,
     LegacyTestmanagerHandshake,
+    XCTestControlConnection,
+    XCTestMainConnection,
+    XCTestControlHandshake,
+    XCTestMainHandshake,
+    XCTestControlChannel,
+    XCTestMainChannel,
+    XCTestControlInit,
+    XCTestMainInit,
+    XCTestAuthorize,
+    XCTestStop,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -154,6 +165,7 @@ pub struct Session {
     _rsd_control: Option<RemoteXpcClient<StreamHandle>>,
     prepared: bool,
     media: Option<media::Media>,
+    xctest: Option<xctest_session::OwnedXCTestSession>,
     indigo: Option<IndigoHidClient<Box<dyn idevice::ReadWrite>>>,
     video: std::sync::Arc<video::VideoMailbox>,
     valid: bool,
@@ -211,6 +223,7 @@ impl Session {
             _rsd_control: Some(rsd_control),
             prepared: false,
             media: None,
+            xctest: None,
             indigo: None,
             video: std::sync::Arc::new(video::VideoMailbox::default()),
             valid: true,
@@ -498,6 +511,7 @@ impl Session {
         self.valid = false;
         self.prepared = false;
         self.media.take();
+        self.xctest.take();
         self.indigo.take();
         self.owner.0.close();
         self._rsd_control.take();
@@ -708,6 +722,7 @@ mod tests {
             _rsd_control: None,
             prepared: true,
             media: None,
+            xctest: None,
             indigo: None,
             video: std::sync::Arc::new(video::VideoMailbox::default()),
             valid: true,

@@ -75,12 +75,110 @@ actor MessageAttachments {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         let url = directory.appendingPathComponent(attachment.id.uuidString).appendingPathExtension("json")
-        try JSONEncoder().encode(attachment).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        do {
+            // Model requests keep using extracted text. Preserve the bounded
+            // document separately so sharing sends the actual file, including
+            // PDFs and a text file's original encoding. Photos already contain
+            // the normalized, metadata-free image and need no second copy.
+            if !attachment.isImage, let type {
+                try data.write(to: originalURL(attachment.id), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                let original = StoredAttachmentOriginal(typeIdentifier: type.identifier, byteCount: data.count)
+                try JSONEncoder().encode(original).write(to: originalMetadataURL(attachment.id),
+                    options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
+            try JSONEncoder().encode(attachment).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        } catch {
+            remove(attachment.id)
+            throw error
+        }
         return attachment
     }
 
     func remove(_ id: UUID) {
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(id.uuidString).appendingPathExtension("json"))
+        try? FileManager.default.removeItem(at: originalURL(id))
+        try? FileManager.default.removeItem(at: originalMetadataURL(id))
+    }
+
+    func canShareAttachments(_ attachments: [AgentAttachment]) -> Bool {
+        guard (try? AgentAttachment.validate(attachments, supportsImages: true)) != nil else { return false }
+        return attachments.allSatisfy { attachment in
+            do {
+                if attachment.isImage { return (try? sharingContent(for: attachment)) != nil }
+                if try originalDescriptor(for: attachment) != nil { return true }
+                return legacyTextType(for: attachment) != nil
+            } catch { return false }
+        }
+    }
+
+    func prepareShare(_ message: AgentMessage, exportRoot: URL = MessageSharing.exportRoot) throws -> MessageSharePayload {
+        try Task.checkCancellation()
+        let contents = try message.attachments.map { try sharingContent(for: $0) }
+        return try MessageSharing.prepare(text: message.text, attachments: contents, exportRoot: exportRoot)
+    }
+
+    private struct StoredAttachmentOriginal: Codable {
+        let typeIdentifier: String
+        let byteCount: Int
+    }
+
+    private func originalURL(_ id: UUID) -> URL {
+        directory.appendingPathComponent(id.uuidString).appendingPathExtension("source")
+    }
+
+    private func originalMetadataURL(_ id: UUID) -> URL {
+        directory.appendingPathComponent(id.uuidString).appendingPathExtension("source.json")
+    }
+
+    private func originalDescriptor(for attachment: AgentAttachment) throws -> (url: URL, type: UTType, bytes: Int)? {
+        let rawURL = originalURL(attachment.id), metadataURL = originalMetadataURL(attachment.id)
+        guard FileManager.default.fileExists(atPath: rawURL.path) || FileManager.default.fileExists(atPath: metadataURL.path) else { return nil }
+        do {
+            let metadataSize = try metadataURL.resourceValues(forKeys: [.fileSizeKey]).fileSize
+            guard let metadataSize, metadataSize > 0, metadataSize <= 1_024 else { throw MessageSharingError.unavailable }
+            let metadata = try JSONDecoder().decode(StoredAttachmentOriginal.self, from: Self.boundedData(at: metadataURL))
+            guard let type = UTType(metadata.typeIdentifier),
+                  type.conforms(to: .pdf) || type.conforms(to: .text) || type.conforms(to: .json),
+                  type.preferredMIMEType == attachment.mimeType,
+                  metadata.byteCount > 0, metadata.byteCount <= Self.maximumSourceBytes else { throw MessageSharingError.unavailable }
+            let values = try rawURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true,
+                  values.fileSize == metadata.byteCount else { throw MessageSharingError.unavailable }
+            return (rawURL, type, metadata.byteCount)
+        } catch { throw MessageSharingError.unavailable }
+    }
+
+    private func legacyTextType(for attachment: AgentAttachment) -> UTType? {
+        guard case .text = attachment.content,
+              let type = UTType(mimeType: attachment.mimeType), !type.conforms(to: .pdf),
+              type.conforms(to: .text) || type.conforms(to: .json) else { return nil }
+        return type
+    }
+
+    private func sharingContent(for attachment: AgentAttachment) throws -> MessageShareContent {
+        guard (try? AgentAttachment.validate([attachment], supportsImages: true)) != nil else {
+            throw MessageSharingError.unavailable
+        }
+        if case .image(let data) = attachment.content {
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) == 1,
+                  let identifier = CGImageSourceGetType(source), let type = UTType(identifier as String),
+                  type.preferredMIMEType == attachment.mimeType else { throw MessageSharingError.unavailable }
+            return MessageShareContent(name: attachment.name, typeIdentifier: type.identifier, data: data)
+        }
+
+        if let original = try originalDescriptor(for: attachment) {
+            do {
+                let data = try Self.boundedData(at: original.url)
+                guard data.count == original.bytes else { throw MessageSharingError.unavailable }
+                return MessageShareContent(name: attachment.name, typeIdentifier: original.type.identifier, data: data)
+            } catch { throw MessageSharingError.unavailable }
+        }
+
+        // Earlier versions did not preserve PDF bytes. Extracted text cannot
+        // become a valid PDF. Legacy text attachments can still share their
+        // actual retained text as a truthful UTF-8 file.
+        guard case .text(let text) = attachment.content, let type = legacyTextType(for: attachment) else { throw MessageSharingError.unavailable }
+        return MessageShareContent(name: attachment.name, typeIdentifier: type.identifier, data: Data(text.utf8))
     }
 
     nonisolated static func safeName(_ value: String) -> String {

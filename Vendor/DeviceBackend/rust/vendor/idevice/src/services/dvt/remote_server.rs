@@ -449,7 +449,7 @@ impl<R: ReadWrite> RemoteServerClient<R> {
             .call_method_with_reply(0, Some("_requestChannelWithCode:identifier:"), Some(args))
             .await?;
 
-        if reply.data.is_some() {
+        if reply.data.is_some() || !matches!(reply.payload_header.message_type(), 0 | 3) {
             warn!("make_channel: unexpected reply payload: {:?}", reply.data);
             return Err(IdeviceError::UnexpectedResponse(
                 "unexpected response".into(),
@@ -810,7 +810,16 @@ impl<R: ReadWrite> RemoteServerClient<R> {
             .ok_or(IdeviceError::UnexpectedResponse(
                 "unexpected response".into(),
             ))?;
-        self.wait_for_reply(identifier, receiver).await
+        let message = self.wait_for_reply(identifier, receiver).await?;
+        // A callback or a reply from another channel must not satisfy this RPC.
+        if message.message_header.channel != channel
+            || message.message_header.conversation_index() != 1
+            || message.message_header.identifier() != identifier
+            || message.message_header.expects_reply()
+        {
+            return Err(IdeviceError::UnexpectedResponse("invalid correlated DTX reply".into()));
+        }
+        Ok(message)
     }
 
     /// Reads the next message from the specified channel
@@ -1345,7 +1354,7 @@ impl<R: ReadWrite> Channel<'_, R> {
     }
 
     /// Calls a method on this channel and waits for the correlated reply.
-    pub(crate) async fn call_method_with_reply(
+    pub async fn call_method_with_reply(
         &mut self,
         method: Option<impl Into<plist::Value>>,
         args: Option<Vec<AuxValue>>,

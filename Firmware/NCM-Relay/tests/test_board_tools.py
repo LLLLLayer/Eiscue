@@ -34,6 +34,9 @@ class FakeChip:
         self.stub_started = True
         return self
 
+    def change_baud(self, baud):
+        assert baud == 460800
+
     def flash_id(self):
         return (20 << 16) | 0x4010
 
@@ -56,7 +59,7 @@ class BoardGuardTests(unittest.TestCase):
     def test_c3_rejected_before_stub_or_flash_read(self, port):
         chip = FakeChip()
         chip.CHIP_NAME = "ESP32-C3"
-        with self.rom(chip), self.assertRaisesRegex(RuntimeError, "cannot expose USB NCM"):
+        with self.rom(chip), self.assertRaisesRegex(RuntimeError, "selected ncm requires ESP32-S3"):
             board.probe_rom("/dev/fake")
         self.assertFalse(chip.stub_started)
         self.assertEqual(chip.read_count, 0)
@@ -68,7 +71,7 @@ class BoardGuardTests(unittest.TestCase):
         chip = FakeChip()
         chip.CHIP_NAME = "ESP32-C3"
         with tempfile.TemporaryDirectory() as tmp, patch.object(board, "ROOT", Path(tmp)), self.rom(chip):
-            with self.assertRaisesRegex(RuntimeError, "cannot expose USB NCM"):
+            with self.assertRaisesRegex(RuntimeError, "selected ncm requires ESP32-S3"):
                 board.flash_package("/dev/fake", Path(tmp))
         command.assert_not_called()
 

@@ -26,10 +26,12 @@ public struct DeviceClient: Sendable {
         switch method {
         case .localVPN: try await controller.connectLocalVPN(configuration: configuration)
         case .usbBoard: try await controller.connectUSBBoard()
+        case .wirelessBoard: try await controller.connectWirelessBoard()
         }
     }
     public func connectLocalVPN(configuration: LocalVPNConfiguration = .defaults) async throws { try await controller.connectLocalVPN(configuration: configuration) }
     public func connectUSBBoard() async throws { try await controller.connectUSBBoard() }
+    public func connectWirelessBoard() async throws { try await controller.connectWirelessBoard() }
     #if DEBUG
     /// Explicit development probe. Never marks device control ready or sends input.
     public func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration = .defaults) async throws -> Data {

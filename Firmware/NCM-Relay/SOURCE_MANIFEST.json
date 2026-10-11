@@ -15,7 +15,7 @@
     "core/nd_http.c": {
       "upstream": "ncm-dev/core/nd_http.c",
       "sha256": "7ff4fa4a952ed5ec38e607c54932f6580d3ad3a32943837b89c042844d111edd",
-      "local_sha256": "7ff4fa4a952ed5ec38e607c54932f6580d3ad3a32943837b89c042844d111edd"
+      "local_sha256": "b80c251eb37c520ba2c837b54d8a812aee4a1a21c442f228583a57d7eb58d0cc"
     },
     "core/nd_http.h": {
       "upstream": "ncm-dev/core/nd_http.h",
@@ -220,7 +220,7 @@
     "main/developer_service.c": {
       "upstream": "firmware-device/main/developer_service.c",
       "sha256": "c5bae2ffc7ba842ca762df0e47b2e8dc44c6364d1bcdb9e4af085729831a2d25",
-      "local_sha256": "c5bae2ffc7ba842ca762df0e47b2e8dc44c6364d1bcdb9e4af085729831a2d25"
+      "local_sha256": "33b15748de69b56cf3a96e04d68f3d9508b0c7431a5a9903c5b897ff2363e6ea"
     },
     "main/developer_service.h": {
       "upstream": "firmware-device/main/developer_service.h",
@@ -263,6 +263,8 @@
     "ESP-IDF version pinned to 5.5.3 (upstream used 5.5.5); TinyUSB versions retained and lock regenerated.",
     "Minimum flash layout changed from 16MB to 4MB; complete original flash is backed up by the explicit flash tool.",
     "USB manufacturer/product/version strings identify Eiscue NCM Relay 1.0.0.",
-    "Python flash/inventory/package/link tools and safety guard tests are Eiscue additions."
+    "Python flash/inventory/package/link tools and safety guard tests are Eiscue additions.",
+    "Shared developer-service startup log no longer claims absence of radio; the Passport-Relay target uses Wi-Fi.",
+    "Developer diagnostic page uses transport-neutral text for shared USB and Wi-Fi targets; wire protocol fields are unchanged."
   ]
 }

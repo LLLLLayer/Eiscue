@@ -2,7 +2,7 @@
 import Foundation
 import Network
 
-/// Short, bounded connections to S3 diagnostics, never to the phone's own
+/// Short, bounded connections to board diagnostics, never to the phone's own
 /// RemotePairing address. One command at a time; no reconnect or action replay.
 @MainActor public final class NCMProbeClient {
     private struct Pending {
@@ -14,25 +14,25 @@ import Network
     }
     private var pending: Pending?
     private var timer: Task<Void, Never>?
-    public init() {}
+    public let transport: NCMBoardTransport
+    public init(transport: NCMBoardTransport = .usb) { self.transport = transport }
 
-    /// Refresh candidates on the board, keeping discovery on one NCM interface.
+    /// Refresh candidates on the board, keeping discovery on the selected interface.
     /// IPv4 is attempted only when IPv6 discovery has no pairing candidate.
     public func discoverRemotePairing() async throws -> NCMDiscoveredEndpoint {
         guard pending == nil else { throw NCMError.busy }
         try Task.checkCancellation()
-        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory())
+        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: transport)
         for (command, family) in [(DiagnosticCommand.discoverIPv6, 6), (.discoverIPv4, 4)] {
             let connection = NWConnection(host: .ipv4(binding.remoteAddress), port: 28767, using: binding.parameters())
             let reply = try await exchange(command, connection: connection)
             try Task.checkCancellation()
-            // A changed interface never causes discovery or connection to move
-            // onto Wi-Fi, a corporate VPN, or another attached board.
-            let current = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory())
-            guard current.row == binding.row else { throw NCMError.interfaceInvalid }
+            // A changed interface never causes discovery to move onto another
+            // transport, a corporate VPN, or another attached board.
+            try binding.validateCurrent()
             if reply.layer == "discovery", reply.result == "candidates",
                reply.endpoints?.contains(where: { $0.service == "remotepairing" && $0.family == family }) == true {
-                return try NCMDiscoveredEndpoint(reply: reply, family: family, interface: binding.row)
+                return try NCMDiscoveredEndpoint(reply: reply, family: family, interface: binding.row, transport: transport)
             }
             guard reply.layer == "discovery", ["candidates", "no-candidates", "unsupported", "not_found"].contains(reply.result) else {
                 throw NCMError.malformedReply
@@ -44,11 +44,14 @@ import Network
     public func request(_ command: DiagnosticCommand) async throws -> DiagnosticReply {
         guard pending == nil else { throw NCMError.busy }
         try Task.checkCancellation()
-        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory())
+        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: transport)
         let connection = NWConnection(host: .ipv4(binding.remoteAddress), port: 28767, using: binding.parameters())
-        return try await exchange(command, connection: connection)
+        let reply = try await exchange(command, connection: connection)
+        try Task.checkCancellation()
+        try binding.validateCurrent()
+        return reply
     }
-    // Internal test seam: the public path always resolves and binds actual NCM.
+    // Internal test seam: the public path always resolves and binds the selected board link.
     func exchange(_ command: DiagnosticCommand, connection: NWConnection, timeout: Duration = .seconds(7)) async throws -> DiagnosticReply {
         guard pending == nil else { throw NCMError.busy }
         try Task.checkCancellation()

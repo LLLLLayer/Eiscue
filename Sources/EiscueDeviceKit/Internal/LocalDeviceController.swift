@@ -31,7 +31,9 @@ import OSLog
 
     func status() async -> DeviceStatus {
         guard dependencies.supportsPhysicalDevice else { return .unavailable(reason: DeviceControlError.unsupported.localizedDescription) }
-        return ready ? .ready(capabilities: Set(DeviceCapability.allCases)) : .unavailable(reason: failure)
+        guard ready, let services else { return .unavailable(reason: failure) }
+        let capabilities = Set(services.supportedControlActions.compactMap { DeviceCapability(rawValue: $0.rawValue) })
+        return .ready(capabilities: capabilities)
     }
 
     func hasPairingIdentity() async throws -> Bool {
@@ -145,6 +147,10 @@ import OSLog
         try await connect(method: .usbBoard, vpn: nil)
     }
 
+    func connectWirelessBoard() async throws {
+        try await connect(method: .wirelessBoard, vpn: nil)
+    }
+
     private func connect(method: DeviceConnectionMethod, vpn: VPNLoopbackConfiguration?) async throws {
         guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
@@ -164,9 +170,11 @@ import OSLog
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
         let token = epoch
         busy = true
-        failure = method == .localVPN
-            ? String(localized: "device.status.discovering", defaultValue: "Discovering the local VPN connection.", bundle: .module)
-            : String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB board.", bundle: .module)
+        failure = switch method {
+        case .localVPN: String(localized: "device.status.discovering", defaultValue: "Discovering the local VPN connection.", bundle: .module)
+        case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB board.", bundle: .module)
+        case .wirelessBoard: String(localized: "device.wireless.discovering", defaultValue: "Connecting to the wireless board.", bundle: .module)
+        }
         let service = dependencies.makeSession()
         services = service
         defer {
@@ -187,8 +195,10 @@ import OSLog
                     try ensureCurrent(token)
                     try await service.connectLocalVPN(identity: identity, authorization: authorization,
                                                       pairingPort: port, configuration: vpn)
-                case .usbBoard:
-                    let discovery = dependencies.makeBoardDiscovery()
+                case .usbBoard, .wirelessBoard:
+                    let discovery = method == .usbBoard
+                        ? dependencies.makeBoardDiscovery()
+                        : dependencies.makeWirelessBoardDiscovery()
                     boardDiscovery = discovery
                     let candidate = try await discovery.discoverRemotePairing()
                     try ensureCurrent(token)
@@ -206,10 +216,16 @@ import OSLog
             }
         } catch {
             guard epoch == token else { throw CancellationError() }
+            let connectionError: Error
+            if method == .wirelessBoard, let boardError = error as? NCMError {
+                connectionError = DeviceControlError.connection(WirelessBoardErrorPresentation.message(boardError))
+            } else {
+                connectionError = Self.convert(error)
+            }
             let release = disconnectNow(), stoppedEpoch = epoch
             if let release { _ = await release.value }
-            if epoch == stoppedEpoch, !releaseUnconfirmed { failure = Self.message(error) }
-            throw Self.convert(error)
+            if epoch == stoppedEpoch, !releaseUnconfirmed { failure = Self.message(connectionError) }
+            throw connectionError
         }
     }
 
@@ -303,7 +319,10 @@ import OSLog
                   width > 1, height > 1, width <= 16384, height <= 16384 else {
                 throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The received screen image is invalid.", bundle: .module))
             }
-            let frame = DeviceScreenshot(width: width, height: height, mimeType: "image/jpeg", data: data)
+            guard ["image/jpeg", "image/png"].contains(snapshot.mimeType) else {
+                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The received screen image is invalid.", bundle: .module))
+            }
+            let frame = DeviceScreenshot(width: width, height: height, mimeType: snapshot.mimeType, data: data)
             self.frames.record(frame, geometryID: snapshot.geometry.id)
             return frame
         }
@@ -332,6 +351,7 @@ import OSLog
     func typeText(_ text: String, frameID: UUID) async throws { try await sendText(text, frameID: frameID) }
     private func sendText(_ text: String, frameID: UUID?) async throws {
         try DeviceInputValidation.text(text)
+        if ready, services?.supportedControlActions.contains(.textInput) == false { throw DeviceControlError.unsupported }
         try await operation { service in
             if let frameID { _ = try await self.consumeFrame(service: service, id: frameID, points: []) }
             else { self.frames.invalidate() }
@@ -348,6 +368,7 @@ import OSLog
     }
 
     func home() async throws {
+        if ready, services?.supportedControlActions.contains(.home) == false { throw DeviceControlError.unsupported }
         try await operation { service in
             self.frames.invalidate()
             try await self.deliver { try await service.home() }
@@ -380,6 +401,9 @@ import OSLog
     private func deliver(_ body: () async throws -> Void) async throws {
         try Task.checkCancellation()
         do { try await body() }
+        catch NativeBackendError.coordinateSpaceChanged { throw DeviceControlError.staleFrame }
+        catch NativeBackendError.unsupportedControlAction { throw DeviceControlError.unsupported }
+        catch NativeBackendError.busy { throw DeviceControlError.busy }
         catch { throw DeviceControlError.deliveryUnknown(Self.message(error)) }
     }
 
@@ -403,9 +427,13 @@ import OSLog
                 if let error = error as? DeviceControlError, error.isDeliveryUnknown { throw error }
                 throw CancellationError()
             }
+            if case NativeBackendError.coordinateSpaceChanged = error {
+                frames.invalidate()
+                throw DeviceControlError.staleFrame
+            }
             // Validation failures happen before native submission and preserve the connection.
             if let error = error as? DeviceControlError,
-               [.staleFrame, .invalidCoordinates, .invalidDuration, .invalidText, .invalidBundleID].contains(error) { throw error }
+               [.staleFrame, .invalidCoordinates, .invalidDuration, .invalidText, .invalidBundleID, .unsupported, .busy].contains(error) { throw error }
             let release = disconnectNow(), stoppedEpoch = epoch
             if let release { _ = await release.value }
             if epoch == stoppedEpoch, !releaseUnconfirmed { failure = Self.message(error) }
@@ -415,6 +443,8 @@ import OSLog
 
     private static func convert(_ error: Error) -> Error {
         if error is CancellationError || error is DeviceControlError { return error }
+        if case NativeBackendError.coordinateSpaceChanged = error { return DeviceControlError.staleFrame }
+        if case NativeBackendError.unsupportedControlAction = error { return DeviceControlError.unsupported }
         if let native = error as? NativeBackendError { NativeDeviceErrorPresentation.record(native) }
         return DeviceControlError.connection(message(error))
     }
@@ -435,6 +465,24 @@ import OSLog
         if let error = error as? NativeBackendError { return NativeDeviceErrorPresentation.message(error) }
         if let error = error as? NCMError { return NCMDeviceErrorPresentation.message(error) }
         return String(localized: "device.operation.failed", defaultValue: "The device operation failed. Check local network permission, the selected connection method, and system pairing authorization.", bundle: .module)
+    }
+}
+
+enum WirelessBoardErrorPresentation {
+    static func message(_ error: NCMError, bundle: Bundle = .module) -> String {
+        switch error {
+        case .interfaceUnavailable, .interfaceInvalid, .interfaceScopeUnsupported, .staleDiscovery:
+            return String(localized: "device.wireless.join-network", defaultValue: "Connect this device to the board’s Eiscue-xxxx Wi-Fi in Settings, then try again. The password is in your local flashing configuration.", bundle: bundle)
+        case .interfaceAmbiguous:
+            return String(localized: "device.wireless.multiple-connections", defaultValue: "More than one board network was found. Keep only the intended Eiscue Wi-Fi connection and try again.", bundle: bundle)
+        case .network, .timeout, .disconnected:
+            return String(localized: "device.wireless.unreachable", defaultValue: "The wireless board did not respond. Check its power, the Eiscue Wi-Fi connection, and Eiscue’s Local Network permission. A company VPN may restrict local network access.", bundle: bundle)
+        case .malformedReply, .unavailableBackend:
+            return String(localized: "device.wireless.firmware-required", defaultValue: "The board did not provide the wireless connection service. Install the Eiscue wireless firmware and try again.", bundle: bundle)
+        case .pairingServiceUnavailable:
+            return String(localized: "device.wireless.pairing-unavailable", defaultValue: "The wireless board is reachable, but this device’s pairing service was not found. Keep this device unlocked with Developer Mode on, then try again.", bundle: bundle)
+        case .busy: return DeviceControlError.busy.localizedDescription
+        }
     }
 }
 
@@ -474,10 +522,18 @@ enum NativeDeviceErrorPresentation {
         case .protocolFailure: return String(localized: "device.backend.protocol-failed", defaultValue: "The device connection could not be completed. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
         // Media service lookup runs only after identity verification and developer preparation.
         // MissingService includes unusable ports or service flags, so do not claim iOS lacks it.
+        case .touchPreparationFailure(stage: 38, cause: 8): return String(localized: "device.backend.automation-consent", defaultValue: "Device control could not get system permission. Keep this device unlocked and allow automation if the system asks, then try again.", bundle: bundle)
+        case .touchPreparationFailure(stage: 38, cause: 9): return String(localized: "device.backend.automation-geometry", defaultValue: "The current screen could not be confirmed. Keep the device unlocked and steady, then try connecting again.", bundle: bundle)
+        case .touchPreparationFailure(stage: 38, cause: 14): return String(localized: "device.backend.touch-timed-out", defaultValue: "Preparing device control timed out. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
+        case .touchPreparationFailure(stage: 38, cause: _): return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not be started. You can keep chatting; device control is currently unavailable.", bundle: bundle)
         case .touchPreparationFailure(stage: 10, cause: 4): return String(localized: "device.backend.screen-service-unavailable", defaultValue: "Pairing is complete, but the screen service needed for device control could not be found. You can keep chatting; device control is currently unavailable.", bundle: bundle)
         case .touchPreparationFailure(stage: 11, cause: 4): return String(localized: "device.backend.touch-service-unavailable", defaultValue: "Pairing is complete, but the touch service needed for device control could not be found. You can keep chatting; device control is currently unavailable.", bundle: bundle)
         case .touchPreparationFailure(stage: _, cause: 2): return String(localized: "device.backend.touch-timed-out", defaultValue: "Preparing device control timed out. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
         case .touchPreparationFailure: return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not be started. You can keep chatting; device control is currently unavailable.", bundle: bundle)
+        case .coordinateSpaceChanged: return DeviceControlError.staleFrame.localizedDescription
+        case .unsupportedControlAction: return DeviceControlError.unsupported.localizedDescription
+        case .automationDeliveryUnknown: return String(localized: "device.backend.automation-delivery-unknown", defaultValue: "The device did not confirm this action. It will not be repeated. Check the screen before reconnecting.", bundle: bundle)
+        case .automationAuthorizationTimedOut: return String(localized: "device.backend.automation-authorization-timed-out", defaultValue: "Waiting for system authorization timed out. Reconnect with this device unlocked. If Enable UI Automation asks for your device passcode, enter it on the system screen.", bundle: bundle)
         case .screenshotFailure: return String(localized: "device.backend.screenshot-failed", defaultValue: "The device screen could not be read. Keep the device unlocked and try connecting again.", bundle: bundle)
         case .applicationQueryFailure: return String(localized: "device.backend.app-list-failed", defaultValue: "The list of installed apps could not be read. Try connecting again.", bundle: bundle)
         case .busy: return DeviceControlError.busy.localizedDescription
@@ -495,11 +551,17 @@ enum NativeDeviceErrorPresentation {
         case .touchPreparationFailure(let stage, let cause): diagnostic = ("prepare-control", stage, cause)
         case .screenshotFailure(let stage, let cause): diagnostic = ("screenshot", stage, cause)
         case .applicationQueryFailure(let stage, let cause): diagnostic = ("app-list", stage, cause)
+        case .automationDeliveryUnknown(let cause): diagnostic = ("automation-input", 38, cause)
+        case .automationAuthorizationTimedOut: diagnostic = ("automation-authorization", 38, 14)
         case .transport(let code):
             logger.error("operation=transport code=\(code, privacy: .public)")
             return
         default: return
         }
+        #if DEBUG
+        print("NCM native failure operation=\(diagnostic.operation) stage=\(diagnostic.stage) cause=\(diagnostic.cause)")
+        fflush(stdout)
+        #endif
         logger.error("operation=\(diagnostic.operation, privacy: .public) stage=\(diagnostic.stage, privacy: .public) cause=\(diagnostic.cause, privacy: .public)")
     }
 }

@@ -20,7 +20,7 @@ import Testing
         #expect(await controller.methods == [.usbBoard, .localVPN, .localVPN, .usbBoard])
         #expect(await controller.configurations == [configuration, .defaults])
         #expect(try JSONDecoder().decode(DeviceConnectionMethod.self, from: JSONEncoder().encode(DeviceConnectionMethod.usbBoard)) == .usbBoard)
-        #expect(Set(DeviceConnectionMethod.allCases) == [.localVPN, .usbBoard])
+        #expect(Set(DeviceConnectionMethod.allCases) == [.localVPN, .usbBoard, .wirelessBoard])
     }
 
     @Test func existingCustomControllersKeepAnUnsupportedBoardDefault() async {
@@ -47,6 +47,41 @@ import Testing
         #expect(fixture.board.cancelled)
         await client.disconnect()
         #expect(fixture.session.closed)
+    }
+
+    @Test func reportedCapabilitiesExcludeUnimplementedActionsAndPNGKeepsItsMimeType() async throws {
+        let fixture = try ConnectionFixture()
+        fixture.session.supportedControlActions = [.screenshot, .tap, .swipe, .launchApplication, .listApplications]
+        let client = fixture.client()
+        try await client.connectUSBBoard()
+        #expect(await client.status() == .ready(capabilities: [.screenshot, .tap, .swipe, .launchApplication, .listApplications]))
+        let screenshot = try await client.captureScreenshot()
+        #expect(screenshot.mimeType == "image/png")
+        await #expect(throws: DeviceControlError.unsupported) { try await client.home() }
+        await #expect(throws: DeviceControlError.unsupported) { try await client.typeText("synthetic") }
+        #expect(!fixture.session.closed)
+        try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: screenshot.frameID)
+        #expect(fixture.session.taps == 1)
+        await client.disconnect()
+    }
+
+    @Test func screenChangeDuringCaptureInvalidatesOldFramesWithoutClosingTheConnection() async throws {
+        let fixture = try ConnectionFixture()
+        let client = fixture.client()
+        try await client.connectUSBBoard()
+        let old = try await client.captureScreenshot()
+        fixture.session.captureFailure = NativeBackendError.coordinateSpaceChanged
+        await #expect(throws: DeviceControlError.staleFrame) { try await client.captureScreenshot() }
+        #expect(!fixture.session.closed)
+        await #expect(throws: DeviceControlError.staleFrame) {
+            try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: old.frameID)
+        }
+        #expect(fixture.session.taps == 0)
+        fixture.session.captureFailure = nil
+        let current = try await client.captureScreenshot()
+        try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: current.frameID)
+        #expect(fixture.session.taps == 1)
+        await client.disconnect()
     }
 
     @Test func VPNConnectionNeverCreatesBoardDiscovery() async throws {
@@ -298,10 +333,12 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
 }
 
 @MainActor private final class TestDeviceSession: LocalDeviceSession {
+    var supportedControlActions = Set(NativeControlAction.allCases)
     var boardConnections = 0, vpnConnections = 0, developerChecks = 0, mediaStarts = 0, taps = 0
     var closed = false, authorizedExistingIdentity = false, authorizedInput = false
     var peerID: String?
     var mediaFailure: (any Error)?
+    var captureFailure: (any Error)?
     private var geometry = NativeVideoGeometry(id: UUID(), epoch: 1, revision: 1)
     private let image: Data
     init() throws {
@@ -333,7 +370,10 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
     func startTouchMedia() async throws { mediaStarts += 1; if let mediaFailure { throw mediaFailure } }
     func stopTouchMediaWhenIdle() async throws -> Bool { mediaFailure == nil }
     func close() { closed = true }
-    func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot { NativeVideoSnapshot(data: image, geometry: geometry) }
+    func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
+        if let captureFailure { throw captureFailure }
+        return NativeVideoSnapshot(data: image, geometry: geometry, mimeType: "image/png")
+    }
     func currentVideoGeometry() async throws -> NativeVideoGeometry? { geometry }
     func tapDelivery(x: UInt16, y: UInt16) async throws -> InputDelivery { taps += 1; return .reportsWrittenVisualEffectUnverified }
     func dragDelivery(fromX: UInt16, fromY: UInt16, toX: UInt16, toY: UInt16, durationMS: UInt16) async throws -> InputDelivery { .reportsWrittenVisualEffectUnverified }

@@ -564,19 +564,36 @@ final class AppModel {
 
     func sceneChanged(_ phase: ScenePhase) {
         currentScenePhase = phase
+        #if DEBUG
+        // The opt-in device proof performs Home/return through the owned session,
+        // with its own bounded teardown. Match a running device task's lifecycle.
+        if ProcessInfo.processInfo.arguments.contains("--owned-device-check") { return }
+        #endif
         if phase == .active {
             refreshPairingTransfer()
             Task { await taskNotifications.refreshAuthorization() }
         }
-        guard phase == .background, !isPairing,
+        // System automation authorization temporarily backgrounds the app.
+        // The in-flight connection owns its bounded wait and cancellation.
+        guard phase == .background, !isPairing, !isConnecting,
               activeRun == nil || activeRun?.scope == .chat else { return }
+        scheduleIdleDeviceBackgroundRelease(operationID: deviceOperationID)
+    }
+
+    func scheduleIdleDeviceBackgroundRelease(operationID: UUID, delay: Duration = .zero) {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--owned-device-check") { return }
+        #endif
         let runID = activeRun?.id
-        let operationID = deviceOperationID
-        Task {
-            guard currentScenePhase == .background, !isPairing,
-                  activeRun == nil || activeRun?.id == runID,
-                  deviceOperationID == operationID else { return }
-            await disconnectDevice(stopReason: String(localized: "run.chat_backgrounded", table: "Runtime"))
+        Task { [weak self] in
+            if delay > .zero {
+                do { try await Task.sleep(for: delay) }
+                catch { return }
+            }
+            guard let self, self.currentScenePhase == .background, !self.isPairing, !self.isConnecting,
+                  self.activeRun == nil || (self.activeRun?.scope == .chat && self.activeRun?.id == runID),
+                  self.deviceOperationID == operationID else { return }
+            await self.disconnectDevice(stopReason: String(localized: "run.chat_backgrounded", table: "Runtime"))
         }
     }
 

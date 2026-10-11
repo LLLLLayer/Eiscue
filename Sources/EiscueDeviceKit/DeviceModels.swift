@@ -5,6 +5,7 @@ import Foundation
 public enum DeviceConnectionMethod: String, Codable, Sendable, CaseIterable {
     case localVPN
     case usbBoard
+    case wirelessBoard
 }
 
 public struct LocalVPNConfiguration: Codable, Sendable, Equatable {

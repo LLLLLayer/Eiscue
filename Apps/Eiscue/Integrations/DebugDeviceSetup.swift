@@ -7,6 +7,10 @@ extension AppModel {
     /// import or connection. Diagnostics never contain credentials or screen data.
     func runRequestedDeviceSetupCheck() async {
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--owned-device-check"), !arguments.contains("--ui-testing"), !isBusy {
+            await runOwnedDeviceCheck()
+            return
+        }
         if arguments.contains("--legacy-device-probe"), !arguments.contains("--ui-testing"), !isBusy {
             await runLegacyDeviceProbe()
             return

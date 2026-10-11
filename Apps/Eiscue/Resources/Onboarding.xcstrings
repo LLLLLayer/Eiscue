@@ -612,6 +612,74 @@
           }
         }
       }
+    },
+    "setup.wirelessBoardConnection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect a wireless board"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接无线开发板"
+          }
+        }
+      }
+    },
+    "setup.wirelessBoardConnectionDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Eiscue wireless firmware on TRAE Passport. In Settings, connect this device to its Eiscue-xxxx Wi-Fi using the password in your local flashing configuration."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给 TRAE Passport 刷入 Eiscue 无线固件后，到系统设置连接它的 Eiscue-xxxx Wi-Fi，密码见本机烧录配置。"
+          }
+        }
+      }
+    },
+    "setup.wirelessBoardNetworkNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep cellular data available for AI requests. A company VPN may restrict access to the local board network."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请保持蜂窝数据可用，供 AI 请求联网。公司 VPN 是否允许访问开发板，取决于其局域网策略。"
+          }
+        }
+      }
+    },
+    "setup.wirelessBoardGuide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wireless board setup guide"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无线开发板配置说明"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

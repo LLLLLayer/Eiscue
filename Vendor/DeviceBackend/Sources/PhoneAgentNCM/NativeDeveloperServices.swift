@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
 import CNCMBackend
+import CEiscueAutomation
 
 /// Existing, authorized RemotePairing identity only. No filesystem/Keychain
 /// discovery, generation or conversion from a Lockdown record is performed.
@@ -36,6 +37,8 @@ public struct ExistingSessionAuthorization {
 }
 public enum NativeBackendError: Error, Equatable {
     case invalidIdentity, authorizationRequired, unsupportedABI, invalidCandidate, busy, closed, malformedEvent
+    case coordinateSpaceChanged, unsupportedControlAction
+    case automationDeliveryUnknown(cause: UInt32), automationAuthorizationTimedOut
     case transport(code: Int32)
     /// Numeric protocol categories only; never raw peer data or keys.
     case protocolFailure(stage: UInt32, cause: UInt32)
@@ -56,6 +59,13 @@ public struct NativeVideoGeometry: Sendable, Equatable {
 public struct NativeVideoSnapshot: Sendable {
     public let data: Data
     public let geometry: NativeVideoGeometry
+    public let mimeType: String
+    public init(data: Data, geometry: NativeVideoGeometry, mimeType: String = "image/jpeg") {
+        self.data = data; self.geometry = geometry; self.mimeType = mimeType
+    }
+}
+public enum NativeControlAction: String, Sendable, CaseIterable {
+    case screenshot, tap, swipe, textInput, launchApplication, home, listApplications
 }
 
 /// Owns one native worker, its two relay streams and media. The caller closes
@@ -74,18 +84,65 @@ public struct NativeVideoSnapshot: Sendable {
     public private(set) var videoSnapshotDiagnostics: String?
     private var videoDecodeFailure: NativeBackendError?
     private var mediaStartCompleted = false
+    private var automationLease: UInt64 = 0
+    private var automationLayout: NCMXCTestLayout?
+    private var automationGeometry = NCMXCTestGeometryTracker()
+    private var automationRequest: UInt64 = 0
+    private var automationStopping = false
+    private var ownsXCTestChannels = false
+    private var automationStopConfirmed = false
+    private static var usesOwnedXCTest: Bool {
+        #if os(iOS) && !targetEnvironment(simulator)
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
+        #else
+        false
+        #endif
+    }
+    public var supportedControlActions: Set<NativeControlAction> {
+        guard mediaStartCompleted else { return [] }
+        if Self.usesOwnedXCTest {
+            var actions: Set<NativeControlAction> = [.screenshot, .tap, .swipe, .launchApplication, .listApplications]
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--owned-device-check") { actions.formUnion([.home, .textInput]) }
+            #endif
+            return actions
+        }
+        return Set(NativeControlAction.allCases)
+    }
     public init() {}
-    deinit { videoPump?.cancel(); if handle != 0 { ncm_backend_close(handle) } }
+    deinit {
+        videoPump?.cancel()
+        let lease = automationLease
+        if lease != 0 {
+            if Thread.isMainThread { eiscue_automation_abort(lease) }
+            else { DispatchQueue.main.async { eiscue_automation_abort(lease) } }
+        }
+        if handle != 0 { ncm_backend_close(handle) }
+    }
     public func close() {
+        if automationLease != 0 { eiscue_automation_abort(automationLease) }
+        automationLease = 0; automationLayout = nil; automationGeometry.reset()
+        ownsXCTestChannels = false
         videoPump?.cancel(); videoPump = nil
         videoDecoder = nil; videoDecodeFailure = nil; mediaStartCompleted = false
         let old = handle; handle = 0; ready = false; services = []
         if old != 0 { ncm_backend_close(old) }
     }
     /// Caller must refresh discovery just before this call (candidate TTL).
-    /// Bind to the actual .2/24 Ethernet interface, never default routing.
+    /// Compatibility entry point for USB. Wi-Fi callers use scoped discovery.
     public func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                         discovery: DiagnosticReply, endpoint: DiagnosticReply.Endpoint) async throws {
+        try Task.checkCancellation()
+        guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
+        guard !busy, handle == 0 else { throw NativeBackendError.busy }
+        guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
+        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: .usb)
+        try await connect(identity: identity, authorization: authorization,
+                          discovery: discovery, endpoint: endpoint, binding: binding)
+    }
+    private func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
+                         discovery: DiagnosticReply, endpoint: DiagnosticReply.Endpoint,
+                         binding: NCMInterfaceBinding) async throws {
         try Task.checkCancellation()
         guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
         guard !busy, handle == 0 else { throw NativeBackendError.busy }
@@ -94,7 +151,8 @@ public struct NativeVideoSnapshot: Sendable {
               discovery.screenCaptured != true, discovery.inputExecuted != true,
               let generation = discovery.generation, generation > 0, endpoint.service == "remotepairing",
               discovery.endpoints?.contains(where: { $0.index == endpoint.index && $0.family == endpoint.family && $0.port == endpoint.port && $0.service == endpoint.service }) == true else { throw NativeBackendError.invalidCandidate }
-        let row = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory()).row
+        try binding.validateCurrent()
+        let row = binding.row
         var config = ncm_config(abi: 1, interface_index: row.index, generation: generation, endpoint_index: UInt32(endpoint.index), permissions: authorization.mask)
         let values = [identity.signingSeed, Data(identity.controllerID.utf8), Data(identity.peerID.utf8), identity.peerPublicKey,
                       identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
@@ -112,10 +170,10 @@ public struct NativeVideoSnapshot: Sendable {
     public func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                         discovery: NCMDiscoveredEndpoint) async throws {
         try Task.checkCancellation()
-        let current = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory()).row
-        try discovery.validate(currentInterface: current)
+        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: discovery.transport)
+        try discovery.validate(currentInterface: binding.row, transport: binding.transport)
         try await connect(identity: identity, authorization: authorization,
-                          discovery: discovery.reply, endpoint: discovery.endpoint)
+                          discovery: discovery.reply, endpoint: discovery.endpoint, binding: binding)
     }
     /// Reuses the exact authenticated CoreDevice session over a bound local VPN socket.
     public func connectLocalVPN(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
@@ -150,9 +208,12 @@ public struct NativeVideoSnapshot: Sendable {
         guard ready, handle != 0 else { throw NativeBackendError.closed }; return services
     }
     public func checkDeveloperReadiness() async throws { _ = try await operation(1) }
-    public func capturePNG() async throws -> Data { try await operation(2, expectedKind: 4) }
+    public func capturePNG() async throws -> Data {
+        try await operation(Self.usesOwnedXCTest ? UInt32(NCM_ACTION_LEGACY_SCREENSHOT) : 2, expectedKind: 4)
+    }
     /// Starts an authenticated screen video stream; packets are drained locally.
     public func startTouchMedia() async throws {
+        if Self.usesOwnedXCTest { try await startOwnedAutomation(); return }
         _ = try await operation(3)
         mediaStartCompleted = true
         videoPump?.cancel()
@@ -178,9 +239,10 @@ public struct NativeVideoSnapshot: Sendable {
             }
         }
     }
-    /// Stop local decode immediately, then release this controller's owned
-    /// DisplayService/HID streams without revoking the authentication tunnel.
+    /// Stop local observation, then release this controller's owned automation
+    /// or DisplayService/HID resources without revoking the authentication tunnel.
     public func stopTouchMedia() async throws {
+        if Self.usesOwnedXCTest { try await stopOwnedAutomation(); return }
         videoPump?.cancel(); videoPump = nil
         let decoder = videoDecoder; videoDecoder = nil; videoDecodeFailure = nil
         _ = try await operation(11)
@@ -191,6 +253,8 @@ public struct NativeVideoSnapshot: Sendable {
     /// request drain before sending this session's explicit media-stop request.
     /// The caller owns the outer deadline and always calls close afterwards.
     public func stopTouchMediaWhenIdle() async throws -> Bool {
+        if Self.usesOwnedXCTest { automationStopping = true }
+        defer { automationStopping = false }
         videoPump?.cancel(); videoPump = nil
         videoDecoder = nil; videoDecodeFailure = nil
         while busy {
@@ -201,14 +265,24 @@ public struct NativeVideoSnapshot: Sendable {
         try Task.checkCancellation()
         let hadConfirmedStart = mediaStartCompleted
         try await stopTouchMedia()
-        return hadConfirmedStart
+        return Self.usesOwnedXCTest ? automationStopConfirmed : hadConfirmedStart
     }
     /// Snapshot the continuously decoded video picture, independent of input history.
     public func captureVideoJPEG() async throws -> Data {
-        try await captureVideoJPEGWithGeometry().data
+        let snapshot = try await captureVideoJPEGWithGeometry()
+        guard snapshot.mimeType != "image/jpeg" else { return snapshot.data }
+        guard let source = CGImageSourceCreateWithData(snapshot.data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw NativeBackendError.malformedEvent }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, "public.jpeg" as CFString, 1, nil) else { throw NativeBackendError.malformedEvent }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw NativeBackendError.malformedEvent }
+        return output as Data
     }
-    /// Pixels and their coordinate-space identity are captured on the same decoder queue.
+    /// A fresh screenshot and its coordinate-space identity. iOS 26 returns PNG;
+    /// DisplayService returns JPEG. Callers must use the snapshot's MIME type.
     public func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
+        if Self.usesOwnedXCTest { return try await captureOwnedAutomationSnapshot() }
         guard ready, handle != 0, let decoder = videoDecoder else { throw NativeBackendError.closed }
         videoSnapshotDiagnostics = nil
         let token = handle, began = ContinuousClock.now
@@ -258,6 +332,7 @@ public struct NativeVideoSnapshot: Sendable {
     /// Lightweight input guard: never compresses another image. Unknown/pending
     /// geometry fails closed, including a reset not yet consumed by the video pump.
     public func currentVideoGeometry() async throws -> NativeVideoGeometry? {
+        if Self.usesOwnedXCTest { return try await currentOwnedAutomationGeometry() }
         guard ready, handle != 0, let decoder = videoDecoder else { throw NativeBackendError.closed }
         let token = handle, deadline = ContinuousClock.now.advanced(by: .milliseconds(250))
         repeat {
@@ -318,31 +393,56 @@ public struct NativeVideoSnapshot: Sendable {
     public func videoDiagnosticKeyframe() async -> Data? { await videoDecoder?.diagnosticKeyframe() }
     #endif
     public func tapDelivery(x: UInt16, y: UInt16) async throws -> InputDelivery {
+        if Self.usesOwnedXCTest { return try await deliverOwnedTouch(x: x, y: y, endX: x, endY: y, durationMS: 0) }
         _ = try await operation(4, x: x, y: y); return .reportsWrittenVisualEffectUnverified
     }
     public func tap(x: UInt16, y: UInt16) async throws { _ = try await tapDelivery(x: x, y: y) }
     public func dragDelivery(fromX: UInt16, fromY: UInt16, toX: UInt16, toY: UInt16, durationMS: UInt16) async throws -> InputDelivery {
         guard (100...2000).contains(durationMS) else { throw NativeBackendError.malformedEvent }
+        if Self.usesOwnedXCTest { return try await deliverOwnedTouch(x: fromX, y: fromY, endX: toX, endY: toY, durationMS: durationMS) }
         _ = try await operation(6, x: fromX, y: fromY, drag: (toX, toY, durationMS))
         return .reportsWrittenVisualEffectUnverified
     }
-    public func home() async throws { _ = try await operation(7) }
+    public func home() async throws {
+        if Self.usesOwnedXCTest {
+            guard mediaStartCompleted else { throw NativeBackendError.closed }
+            guard supportedControlActions.contains(.home) else { throw NativeBackendError.unsupportedControlAction }
+            _ = try await deliverOwnedNonCoordinate(text: nil); return
+        }
+        _ = try await operation(7)
+    }
     public func installedApplications() async throws -> Data { try await operation(8, expectedKind: 11) }
     public func launchApplication(bundleID: String, arguments: [String]) async throws {
         _ = try await operation(9, payload: JSONSerialization.data(withJSONObject: ["bundle_id": bundleID, "arguments": arguments]))
     }
     public func typeText(_ text: String) async throws {
+        if Self.usesOwnedXCTest {
+            guard mediaStartCompleted else { throw NativeBackendError.closed }
+            guard supportedControlActions.contains(.textInput) else { throw NativeBackendError.unsupportedControlAction }
+            guard !text.isEmpty, text.utf8.count <= 8192, !text.utf8.contains(0) else { throw NativeBackendError.malformedEvent }
+            _ = try await deliverOwnedNonCoordinate(text: Data(text.utf8)); return
+        }
         _ = try await operation(10, payload: JSONSerialization.data(withJSONObject: ["text": text]))
     }
     func operation(_ action: UInt32, x: UInt16 = 0, y: UInt16 = 0, expectedKind: UInt32 = 2, drag: (UInt16, UInt16, UInt16)? = nil, payload: Data? = nil) async throws -> Data {
         guard !busy else { throw NativeBackendError.busy }
         guard ready, handle != 0 else { throw NativeBackendError.closed }
-        busy = true; defer { busy = false }; let token = handle
+        busy = true; defer { busy = false }
+        return try await performOperation(action, x: x, y: y, expectedKind: expectedKind, drag: drag, payload: payload)
+    }
+    /// Called only while the public operation holds the session's busy lease.
+    private func performOperation(_ action: UInt32, x: UInt16 = 0, y: UInt16 = 0, expectedKind: UInt32 = 2,
+                                  drag: (UInt16, UInt16, UInt16)? = nil, payload: Data? = nil) async throws -> Data {
+        let token = handle
+        guard ready, token != 0 else { throw NativeBackendError.closed }
         serial += 1; let id = serial
         do {
             try Task.checkCancellation()
             let code: Int32
-            if let payload { code = withSlices([payload]) { ncm_backend_command(token, id, action, $0[0]) } }
+            if action == UInt32(NCM_ACTION_XCTEST_START), let payload {
+                code = withSlices([payload]) { ncm_backend_xctest_start(token, id, $0[0]) }
+            } else if action == UInt32(NCM_ACTION_XCTEST_STOP) { code = ncm_backend_xctest_stop(token, id) }
+            else if let payload { code = withSlices([payload]) { ncm_backend_command(token, id, action, $0[0]) } }
             else if let drag { code = ncm_backend_drag(token, id, x, y, drag.0, drag.1, drag.2) }
             else { code = ncm_backend_submit(token, id, action, x, y) }
             guard code == 0 else { throw NativeBackendError.transport(code: code) }
@@ -350,16 +450,271 @@ public struct NativeVideoSnapshot: Sendable {
             guard header.kind == expectedKind else { throw NativeBackendError.malformedEvent }
             return data
         } catch {
+            #if DEBUG
+            operationDiagnostic(error, action: action)
+            #endif
             // A screenshot owns a fresh, read-only service stream. Dropping that
             // stream does not revoke the authenticated tunnel or replay any input.
             // Cancellation, worker closure and malformed ABI events remain fatal.
-            if action == 2, case NativeBackendError.protocolFailure(let stage, let cause) = error,
-               [UInt32(9), 19, 20].contains(stage) {
+            if [UInt32(2), UInt32(NCM_ACTION_LEGACY_SCREENSHOT)].contains(action),
+               case NativeBackendError.protocolFailure(let stage, let cause) = error,
+               [UInt32(9), 19, 20, 22, 23, 24, 25].contains(stage) {
                 throw NativeBackendError.screenshotFailure(stage: stage, cause: cause)
+            }
+            if action == UInt32(NCM_ACTION_XCTEST_START), case NativeBackendError.protocolFailure(let stage, let cause) = error {
+                // Rust has dropped all partial XCTest children; preserve the parent
+                // so explicit owned-session stop can acknowledge cleanup.
+                throw NativeBackendError.touchPreparationFailure(stage: stage, cause: cause)
             }
             if case NativeBackendError.touchPreparationFailure = error { throw error }
             if case NativeBackendError.applicationQueryFailure = error { throw error }
             if handle == token { close() }; throw error
+        }
+    }
+    #if DEBUG
+    private func automationDiagnostic(_ message: String) {
+        // Callers supply only allowlisted state labels and numeric categories.
+        print(message)
+        fflush(stdout)
+    }
+    private func operationDiagnostic(_ error: Error, action: UInt32) {
+        switch error {
+        case NativeBackendError.protocolFailure(let stage, let cause),
+             NativeBackendError.touchPreparationFailure(let stage, let cause),
+             NativeBackendError.screenshotFailure(let stage, let cause):
+            automationDiagnostic("NCM operation failed action=\(action) stage=\(stage) cause=\(cause)")
+        case NativeBackendError.transport(let code):
+            automationDiagnostic("NCM operation failed action=\(action) transportCode=\(code)")
+        case NCMError.timeout:
+            automationDiagnostic("NCM operation failed action=\(action) receiveTimedOut=true")
+        default:
+            automationDiagnostic("NCM operation failed action=\(action) canceled=\(error is CancellationError)")
+        }
+    }
+    #endif
+    private func startOwnedAutomation() async throws {
+        try Task.checkCancellation()
+        guard !busy, !automationStopping, automationLease == 0, !ownsXCTestChannels else { throw NativeBackendError.busy }
+        guard ready, handle != 0 else { throw NativeBackendError.closed }
+        busy = true; defer { busy = false }
+        automationStopConfirmed = false
+        let token = handle, sessionID = UUID()
+        var bytes = sessionID.uuid
+        let uuidData = withUnsafeBytes(of: &bytes) { Data($0) }
+        #if DEBUG
+        automationDiagnostic("NCM owned XCTest start=true")
+        #endif
+        let receipt = try await performOperation(UInt32(NCM_ACTION_XCTEST_START), payload: uuidData)
+        ownsXCTestChannels = true
+        do { try NCMXCTestAuthorization.validate(receipt, sessionID: sessionID, processID: getpid()) }
+        catch {
+            #if DEBUG
+            automationDiagnostic("NCM owned XCTest authorizedReceiptValid=false")
+            #endif
+            throw error
+        }
+        #if DEBUG
+        automationDiagnostic("NCM owned XCTest authorized=true")
+        #endif
+        guard handle == token else { throw NativeBackendError.closed }
+        var lease: UInt64 = 0
+        let code = uuidData.withUnsafeBytes { eiscue_automation_begin($0.bindMemory(to: UInt8.self).baseAddress, &lease) }
+        #if DEBUG
+        automationDiagnostic("NCM owned automation beginCode=\(code) leaseCreated=\(lease != 0)")
+        #endif
+        if lease != 0 { automationLease = lease }
+        guard code == 0, lease != 0 else { throw automationPreparationError(code) }
+        _ = try await waitForAutomation(lease: lease, token: token, timeout: .seconds(60))
+        try Task.checkCancellation()
+        guard handle == token, automationLease == lease, !automationStopping else { throw NativeBackendError.closed }
+        mediaStartCompleted = true
+    }
+    private func stopOwnedAutomation() async throws {
+        guard !busy else { throw NativeBackendError.busy }
+        guard ready, handle != 0 else { throw NativeBackendError.closed }
+        busy = true; defer { busy = false }
+        automationStopConfirmed = false
+        let token = handle, lease = automationLease
+        automationLayout = nil; automationGeometry.reset()
+        if lease != 0 {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            var code = eiscue_automation_stop(lease)
+            while code == EISCUE_AUTOMATION_BUSY, ContinuousClock.now < deadline {
+                try Task.checkCancellation()
+                guard handle == token else { throw NativeBackendError.closed }
+                try await Task.sleep(for: .milliseconds(20))
+                code = eiscue_automation_stop(lease)
+            }
+            guard code == 0 else {
+                eiscue_automation_abort(lease); automationLease = 0
+                throw NativeBackendError.automationDeliveryUnknown(cause: UInt32(max(code, 1)))
+            }
+            automationLease = 0
+        }
+        // Idempotent stop also acknowledges cleanup after partial preparation.
+        _ = try await performOperation(UInt32(NCM_ACTION_XCTEST_STOP))
+        guard handle == token else { throw NativeBackendError.closed }
+        ownsXCTestChannels = false; mediaStartCompleted = false; automationStopConfirmed = true
+    }
+    private func automationPreparationError(_ code: Int32) -> NativeBackendError {
+        .touchPreparationFailure(stage: 38, cause: UInt32(max(code, 1)))
+    }
+    private func automationState(lease: UInt64, token: UInt64) throws -> eiscue_automation_state {
+        guard ready, handle == token, automationLease == lease, lease != 0 else { throw NativeBackendError.closed }
+        var state = eiscue_automation_state()
+        let code = eiscue_automation_poll(lease, &state)
+        guard code == 0 else { throw automationPreparationError(code) }
+        return state
+    }
+    private func waitForAutomation(lease: UInt64, token: UInt64, timeout: Duration) async throws -> eiscue_automation_state {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        #if DEBUG
+        var previousPhase: UInt32?
+        var savedPreparationFrame = false
+        #endif
+        repeat {
+            try Task.checkCancellation()
+            let state = try automationState(lease: lease, token: token)
+            #if DEBUG
+            if previousPhase != state.phase {
+                automationDiagnostic("NCM owned automation phase=\(state.phase) error=\(state.error)")
+                previousPhase = state.phase
+            }
+            // Explicit developer proof only: one read-only frame of the setup
+            // state, so a system prompt is observed rather than inferred.
+            if !savedPreparationFrame, state.phase == UInt32(EISCUE_AUTOMATION_AUTHORIZING),
+               ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
+                savedPreparationFrame = true
+                do {
+                    try await Task.sleep(for: .seconds(2))
+                    let png = try await performOperation(UInt32(NCM_ACTION_LEGACY_SCREENSHOT), expectedKind: 4)
+                    try png.write(to: URL.cachesDirectory.appendingPathComponent("EiscueOwnedPreparation.png"), options: [.atomic, .completeFileProtection])
+                    print("NCM owned preparation frameSaved=true"); fflush(stdout)
+                } catch { print("NCM owned preparation frameSaved=false"); fflush(stdout) }
+            }
+            #endif
+            switch state.phase {
+            case UInt32(EISCUE_AUTOMATION_READY):
+                _ = try NCMXCTestScreenState(state)
+                return state
+            case UInt32(EISCUE_AUTOMATION_PREPARING), UInt32(EISCUE_AUTOMATION_QUERYING), UInt32(EISCUE_AUTOMATION_AUTHORIZING): break
+            case UInt32(EISCUE_AUTOMATION_FAILED): throw automationPreparationError(Int32(clamping: state.error))
+            case UInt32(EISCUE_AUTOMATION_STOPPED): throw NativeBackendError.closed
+            default: throw NativeBackendError.malformedEvent
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        } while ContinuousClock.now < deadline
+        var snapshot = eiscue_automation_state()
+        let code = eiscue_automation_poll(lease, &snapshot)
+        #if DEBUG
+        automationDiagnostic("NCM owned automation timedOut=true pollCode=\(code) phase=\(snapshot.phase) error=\(snapshot.error)")
+        #endif
+        if code == 0, snapshot.phase == UInt32(EISCUE_AUTOMATION_AUTHORIZING) {
+            throw NativeBackendError.automationAuthorizationTimedOut
+        }
+        throw NativeBackendError.touchPreparationFailure(stage: 38, cause: 14)
+    }
+    private func refreshOwnedScreen(lease: UInt64, token: UInt64) async throws -> NCMXCTestScreenState {
+        let code = eiscue_automation_refresh_geometry(lease)
+        guard code == 0 else { throw automationPreparationError(code) }
+        return try NCMXCTestScreenState(await waitForAutomation(lease: lease, token: token, timeout: .seconds(5)))
+    }
+    private func captureOwnedAutomationSnapshot() async throws -> NativeVideoSnapshot {
+        try Task.checkCancellation()
+        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
+        busy = true; defer { busy = false }
+        let token = handle, lease = automationLease
+        automationLayout = nil; automationGeometry.reset()
+        let before = try await refreshOwnedScreen(lease: lease, token: token)
+        let png = try await performOperation(UInt32(NCM_ACTION_LEGACY_SCREENSHOT), expectedKind: 4)
+        let after = try await refreshOwnedScreen(lease: lease, token: token)
+        guard before == after else { throw NativeBackendError.coordinateSpaceChanged }
+        let layout = try NCMXCTestLayout(png: png, screen: after)
+        automationLayout = layout
+        let geometry = automationGeometry.update(lease: lease, layout: layout)
+        videoSnapshotDiagnostics = "screenshot.xctest received=true geometryValidated=true"
+        return NativeVideoSnapshot(data: png, geometry: geometry, mimeType: "image/png")
+    }
+    private func currentOwnedAutomationGeometry() async throws -> NativeVideoGeometry? {
+        try Task.checkCancellation()
+        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
+        busy = true; defer { busy = false }
+        let token = handle, lease = automationLease
+        let screen = try await refreshOwnedScreen(lease: lease, token: token)
+        guard let layout = automationLayout, screen == layout.screen else {
+            automationLayout = nil; automationGeometry.reset(); return nil
+        }
+        return automationGeometry.current
+    }
+    private func deliverOwnedTouch(x: UInt16, y: UInt16, endX: UInt16, endY: UInt16, durationMS: UInt16) async throws -> InputDelivery {
+        try Task.checkCancellation()
+        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
+        guard let layout = automationLayout else { throw NativeBackendError.coordinateSpaceChanged }
+        busy = true; defer { busy = false }
+        let token = handle, lease = automationLease
+        let screen = try await refreshOwnedScreen(lease: lease, token: token)
+        guard screen == layout.screen else {
+            automationLayout = nil; automationGeometry.reset(); throw NativeBackendError.coordinateSpaceChanged
+        }
+        try Task.checkCancellation()
+        // Consume before submission, including every failure. Never replay an event.
+        automationLayout = nil; automationGeometry.reset()
+        automationRequest += 1
+        let request = automationRequest
+        let code = eiscue_automation_touch(lease, request, screen.revision, UInt32(layout.width), UInt32(layout.height),
+                                           x, y, endX, endY, durationMS)
+        try checkAutomationSubmission(code)
+        return try await awaitOwnedDelivery(lease: lease, token: token, request: request)
+    }
+    /// Used for direct diagnostics until these actions have been verified and
+    /// included in supportedControlActions. No DisplayService/HID fallback.
+    private func deliverOwnedNonCoordinate(text: Data?) async throws -> InputDelivery {
+        try Task.checkCancellation()
+        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
+        busy = true; defer { busy = false }
+        let token = handle, lease = automationLease
+        automationLayout = nil; automationGeometry.reset()
+        let screen = try await refreshOwnedScreen(lease: lease, token: token)
+        try Task.checkCancellation()
+        automationRequest += 1; let request = automationRequest
+        let code: Int32
+        if let text {
+            code = text.withUnsafeBytes { eiscue_automation_type_text(lease, request, screen.revision,
+                $0.bindMemory(to: UInt8.self).baseAddress, $0.count) }
+        } else { code = eiscue_automation_home(lease, request, screen.revision) }
+        try checkAutomationSubmission(code)
+        // Whole-text paste uses a single bounded key event. A delivered shortcut
+        // still requires a screenshot to confirm focus, paste consent and content.
+        return try await awaitOwnedDelivery(lease: lease, token: token, request: request)
+    }
+    private func checkAutomationSubmission(_ code: Int32) throws {
+        if code == EISCUE_AUTOMATION_GEOMETRY { throw NativeBackendError.coordinateSpaceChanged }
+        if code == EISCUE_AUTOMATION_BUSY { throw NativeBackendError.busy }
+        guard code == 0 else { throw NativeBackendError.automationDeliveryUnknown(cause: UInt32(max(code, 1))) }
+    }
+    private func awaitOwnedDelivery(lease: UInt64, token: UInt64, request: UInt64, timeout: Duration = .seconds(15)) async throws -> InputDelivery {
+        do {
+            let deadline = ContinuousClock.now.advanced(by: timeout)
+            repeat {
+                try Task.checkCancellation()
+                let state = try automationState(lease: lease, token: token)
+                guard state.request_id == request else { throw NativeBackendError.malformedEvent }
+                if state.phase == UInt32(EISCUE_AUTOMATION_READY) { return .reportsWrittenVisualEffectUnverified }
+                guard state.phase == UInt32(EISCUE_AUTOMATION_DELIVERING) else {
+                    throw NativeBackendError.automationDeliveryUnknown(cause: max(state.error, 1))
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            } while ContinuousClock.now < deadline
+            throw NativeBackendError.automationDeliveryUnknown(cause: 14)
+        } catch {
+            if handle == token { close() }
+            throw NativeBackendError.automationDeliveryUnknown(cause: (error as? NativeBackendError).flatMap {
+                if case .automationDeliveryUnknown(let cause) = $0 { return cause }; return nil
+            } ?? 11)
         }
     }
     private func receive(_ token: UInt64, requestID: UInt64) async throws -> (ncm_event, Data) {
@@ -411,6 +766,78 @@ public struct NativeVideoSnapshot: Sendable {
     }
     #endif
 }
+/// Strict host receipt checks; a successful control-channel handshake is not
+/// automation readiness and cannot authorize a different process or UUID.
+struct NCMXCTestAuthorization: Decodable {
+    let authorized: Bool
+    let processID: Int32
+    let sessionIdentifier: UUID
+    static func validate(_ data: Data, sessionID: UUID, processID: Int32) throws {
+        guard !data.isEmpty, data.count <= 4096,
+              let receipt = try? JSONDecoder().decode(Self.self, from: data),
+              receipt.authorized, processID > 0, receipt.processID == processID,
+              receipt.sessionIdentifier == sessionID else { throw NativeBackendError.malformedEvent }
+    }
+}
+
+struct NCMXCTestScreenState: Equatable {
+    let revision: UInt64, displayID: UInt64
+    let orientation: Int64
+    let scale: Double, boundsWidth: Double, boundsHeight: Double
+    init(_ state: eiscue_automation_state) throws {
+        guard state.phase == UInt32(EISCUE_AUTOMATION_READY), state.revision > 0,
+              (1...4).contains(state.orientation), state.scale.isFinite, (0.5...8).contains(state.scale),
+              state.bounds_width.isFinite, state.bounds_height.isFinite,
+              state.bounds_width > 0, state.bounds_height > 0,
+              state.bounds_width * state.scale <= 16384, state.bounds_height * state.scale <= 16384 else {
+            throw NativeBackendError.touchPreparationFailure(stage: 38, cause: UInt32(EISCUE_AUTOMATION_GEOMETRY))
+        }
+        revision = state.revision; displayID = state.display_id; orientation = state.orientation
+        scale = state.scale; boundsWidth = state.bounds_width; boundsHeight = state.bounds_height
+    }
+}
+
+struct NCMXCTestLayout: Equatable {
+    let width: Int, height: Int
+    let screen: NCMXCTestScreenState
+    init(width: Int, height: Int, screen: NCMXCTestScreenState) throws {
+        guard width > 1, height > 1, width <= 16384, height <= 16384,
+              width * height <= 32 * 1024 * 1024 else { throw NativeBackendError.malformedEvent }
+        let nativeWidth = screen.boundsWidth * screen.scale, nativeHeight = screen.boundsHeight * screen.scale
+        let direct = abs(Double(width) - nativeWidth) <= 1 && abs(Double(height) - nativeHeight) <= 1
+        let rotated = abs(Double(width) - nativeHeight) <= 1 && abs(Double(height) - nativeWidth) <= 1
+        let landscape = screen.orientation == 3 || screen.orientation == 4
+        guard (direct || rotated), landscape ? width >= height : height >= width else {
+            throw NativeBackendError.coordinateSpaceChanged
+        }
+        self.width = width; self.height = height; self.screen = screen
+    }
+    init(png: Data, screen: NCMXCTestScreenState) throws {
+        guard !png.isEmpty, png.count <= 64 * 1024 * 1024,
+              let source = CGImageSourceCreateWithData(png as CFData, nil),
+              CGImageSourceGetCount(source) == 1, CGImageSourceGetType(source) as String? == "public.png",
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              (properties[kCGImagePropertyOrientation] as? Int ?? 1) == 1 else { throw NativeBackendError.malformedEvent }
+        try self.init(width: width, height: height, screen: screen)
+    }
+}
+
+struct NCMXCTestGeometryTracker {
+    private var lease: UInt64?
+    private var layout: NCMXCTestLayout?
+    private(set) var current: NativeVideoGeometry?
+    mutating func reset() { lease = nil; layout = nil; current = nil }
+    mutating func update(lease: UInt64, layout: NCMXCTestLayout) -> NativeVideoGeometry {
+        if self.lease != lease || self.layout != layout || current == nil {
+            self.lease = lease; self.layout = layout
+            current = NativeVideoGeometry(id: UUID(), epoch: lease, revision: layout.screen.revision)
+        }
+        return current!
+    }
+}
+
 private func withSlices<T>(_ data: [Data], _ index: Int = 0, _ slices: [ncm_bytes] = [], _ body: ([ncm_bytes]) -> T) -> T {
     if index == data.count { return body(slices) }
     return data[index].withUnsafeBytes { bytes in

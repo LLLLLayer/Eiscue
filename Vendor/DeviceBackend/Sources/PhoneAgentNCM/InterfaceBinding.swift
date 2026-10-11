@@ -4,10 +4,16 @@ import Foundation
 import Network
 import Darwin
 
+/// The board link is chosen by the caller; it never falls back to another route.
+public enum NCMBoardTransport: String, Sendable, Equatable {
+    case usb, wifi
+}
+
 struct NCMInterfaceBinding {
     static let localIP = "192.168.7.2"
     static let remoteIP = "192.168.7.1"
     static let netmask = "255.255.255.0"
+    static let wifiNetmask = "255.255.255.252"
     struct Row: Equatable, Sendable {
         let name: String
         let index: UInt32
@@ -20,28 +26,35 @@ struct NCMInterfaceBinding {
     let interface: NWInterface
     let localAddress: IPv4Address
     let remoteAddress: IPv4Address
+    let transport: NCMBoardTransport
 
-    static func select(_ rows: [Row]) throws -> Row {
-        let matches = rows.filter { $0.address == localIP }
+    static func select(_ rows: [Row], transport: NCMBoardTransport = .usb) throws -> Row {
+        let addressed = rows.filter { $0.address == localIP }
+        guard !addressed.isEmpty else { throw NCMError.interfaceUnavailable }
+        // Both links use .2, but USB is /24 and Wi-Fi is /30. Only the
+        // selected transport's subnet participates in ambiguity detection.
+        let expectedMask = transport == .usb ? netmask : wifiNetmask
+        let matches = addressed.filter { $0.mask == expectedMask }
         guard matches.count == 1, let row = matches.first else {
-            throw matches.isEmpty ? NCMError.interfaceUnavailable : NCMError.interfaceAmbiguous
+            throw matches.isEmpty ? NCMError.interfaceInvalid : NCMError.interfaceAmbiguous
         }
         let required = UInt32(IFF_UP | IFF_RUNNING | IFF_BROADCAST)
         let forbidden = UInt32(IFF_LOOPBACK | IFF_POINTOPOINT)
-        guard row.index > 0, row.mask == netmask, row.flags & required == required,
+        guard row.index > 0, row.mask == expectedMask, row.flags & required == required,
               row.flags & forbidden == 0, row.linkType == UInt8(IFT_ETHER) else {
             throw NCMError.interfaceInvalid
         }
         return row
     }
-    static func validateType(_ type: NWInterface.InterfaceType) throws {
-        switch type {
-        case .wiredEthernet, .other: break // .other additionally requires IFT_ETHER and no POINTOPOINT above.
+    static func validateType(_ type: NWInterface.InterfaceType, transport: NCMBoardTransport = .usb) throws {
+        switch (transport, type) {
+        case (.usb, .wiredEthernet), (.usb, .other): break // .other additionally requires IFT_ETHER and no POINTOPOINT above.
+        case (.wifi, .wifi): break
         default: throw NCMError.interfaceInvalid
         }
     }
-    static func resolve(_ rows: [Row]) throws -> NCMInterfaceBinding {
-        let row = try select(rows)
+    static func resolve(_ rows: [Row], transport: NCMBoardTransport = .usb) throws -> NCMInterfaceBinding {
+        let row = try select(rows, transport: transport)
         // Compatibility workaround inherited from PA3: IPv4 %scope parsing is not
         // explicitly guaranteed by Apple documentation. Validate it and fail closed.
         // Validate the result; unsupported/stale scopes fail instead of unbinding.
@@ -51,8 +64,12 @@ struct NCMInterfaceBinding {
               interface.name == row.name, interface.index == Int(row.index) else {
             throw NCMError.interfaceInvalid
         }
-        try validateType(interface.type)
-        return NCMInterfaceBinding(row: row, interface: interface, localAddress: local, remoteAddress: remote)
+        try validateType(interface.type, transport: transport)
+        return NCMInterfaceBinding(row: row, interface: interface, localAddress: local, remoteAddress: remote, transport: transport)
+    }
+    func validateCurrent() throws {
+        let current = try Self.resolve(Self.inventory(), transport: transport)
+        guard current.row == row, current.interface == interface else { throw NCMError.interfaceInvalid }
     }
     func parameters() -> NWParameters {
         let parameters = NWParameters.tcp

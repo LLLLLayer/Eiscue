@@ -157,6 +157,139 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertNil(model.deviceConnectionError, "The cancelled old connection must not overwrite the new method's state.")
     }
 
+    func testSystemAuthorizationBackgroundKeepsThePendingConnectionAlive() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        let operationID = model.deviceOperationID
+        model.sceneChanged(.background)
+        await Task.yield()
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.disconnects, 0)
+        XCTAssertEqual(calls.cancelledConnections, 0)
+        XCTAssertEqual(model.deviceOperationID, operationID)
+        XCTAssertTrue(model.isConnecting)
+        model.sceneChanged(.active)
+        await fixture.controller.completePendingConnection()
+        await pending.value
+        XCTAssertTrue(model.isDeviceReady)
+        await model.disconnectDevice()
+    }
+
+    func testCompletingConnectionInBackgroundReleasesItAfterTheDismissalGrace() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        model.sceneChanged(.background)
+        await fixture.controller.completePendingConnection()
+        await pending.value
+        XCTAssertFalse(model.isConnecting)
+        XCTAssertTrue(model.isDeviceReady)
+        let initial = await fixture.controller.calls()
+        XCTAssertEqual(initial.disconnects, 0, "System dismissal gets a brief chance to reactivate the app.")
+        try await waitUntil { await fixture.controller.calls().disconnects == 1 && !model.isConnecting }
+        XCTAssertFalse(model.isDeviceReady)
+        XCTAssertNil(model.activeDeviceConnectionMethod)
+        let completed = await fixture.controller.calls()
+        XCTAssertEqual(completed.cancelledConnections, 0)
+    }
+
+    func testReturningFromSystemAuthorizationDuringGraceKeepsTheCompletedConnection() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        model.sceneChanged(.background)
+        await fixture.controller.completePendingConnection()
+        await pending.value
+        model.sceneChanged(.active)
+        try await Task.sleep(for: .milliseconds(300))
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.disconnects, 0)
+        XCTAssertTrue(model.isDeviceReady)
+        await model.disconnectDevice()
+    }
+
+    func testOldCompletionCannotReleaseANewerPendingConnection() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        let first = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods.count == 1 }
+        model.sceneChanged(.background)
+        await fixture.controller.completePendingConnection()
+        await first.value
+        await model.disconnectDevice()
+        let newer = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods.count == 2 }
+        let operationID = model.deviceOperationID
+        try await Task.sleep(for: .milliseconds(300))
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.disconnects, 1, "Only the explicit disconnect should release a session.")
+        XCTAssertEqual(calls.cancelledConnections, 0)
+        XCTAssertEqual(model.deviceOperationID, operationID)
+        XCTAssertTrue(model.isConnecting)
+        model.sceneChanged(.active)
+        await fixture.controller.completePendingConnection()
+        await newer.value
+        XCTAssertTrue(model.isDeviceReady)
+        await model.disconnectDevice()
+    }
+
+    func testDeviceRunStartedDuringDismissalGraceKeepsItsConnection() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        model.sceneChanged(.background)
+        await fixture.controller.completePendingConnection()
+        await pending.value
+        model.activeRun = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(),
+                                    scope: .control, model: "synthetic", skill: nil, state: .running, detail: "", events: [])
+        try await Task.sleep(for: .milliseconds(300))
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.disconnects, 0)
+        XCTAssertTrue(model.isDeviceReady)
+        model.activeRun = nil
+        model.sceneChanged(.active)
+        await model.disconnectDevice()
+    }
+
+    func testDeferredBackgroundTaskRechecksTheConnectingFlag() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard")
+        let model = fixture.model
+        model.sceneChanged(.background)
+        model.isConnecting = true
+        try await Task.sleep(for: .milliseconds(30))
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.disconnects, 0)
+        model.isConnecting = false
+        model.sceneChanged(.active)
+    }
+
+    func testAutomationAuthorizationGuidanceIsLocalizedAndUsesTheSystemScreen() throws {
+        let app = Bundle(for: AppModel.self)
+        for language in ["en", "zh-Hans"] {
+            let path = try XCTUnwrap(app.path(forResource: language, ofType: "lproj"))
+            let bundle = try XCTUnwrap(Bundle(path: path))
+            let text = bundle.localizedString(forKey: "connection.automationAuthorization", value: nil, table: "Localizable")
+            XCTAssertNotEqual(text, "connection.automationAuthorization")
+            XCTAssertTrue(text.contains(language == "en" ? "passcode" : "密码"))
+            XCTAssertTrue(text.contains(language == "en" ? "system screen" : "系统页面"))
+        }
+    }
+
+    private func waitUntil(_ predicate: @MainActor () async -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        repeat {
+            if await predicate() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        } while ContinuousClock.now < deadline
+        XCTFail("The synthetic connection did not reach the expected state in time.")
+        throw NSError(domain: "DeviceConnectionMethodTests", code: 1)
+    }
+
     func testMethodChangeIsBusyAndBlocksNewControlWork() async throws {
         let fixture = try Fixture(savedMethod: "usbBoard")
         fixture.model.isChangingDeviceConnectionMethod = true
@@ -267,6 +400,11 @@ private actor AppConnectionRecordingController: DeviceController {
             }
         }
         connected = true
+    }
+    func completePendingConnection() {
+        guard let pending else { return }
+        self.pending = nil
+        pending.resume()
     }
     private func cancelPending() {
         guard let pending else { return }

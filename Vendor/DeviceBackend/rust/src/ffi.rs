@@ -459,6 +459,8 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
                     2 => Stage::Screenshot,
                     3 => Stage::Media,
                     13 => Stage::LegacyInstrumentsConnection,
+                    14 => Stage::XCTestControlInit,
+                    16 => Stage::LegacyInstrumentsConnection,
                     _ => Stage::Input,
                 },
                 cause: Cause::Unprepared,
@@ -466,6 +468,11 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
         );
     }
     let result = match r.action {
+        16 => session.screenshot_legacy().await.map(|s| Event::ok(r.id, 4, s.png)),
+        14 => session.start_xctest_session(&r.payload).await
+            .map(|receipt| Event::ok(r.id, 2, receipt)),
+        15 => session.stop_xctest_session().await
+            .map(|_| Event::ok(r.id, 2, Vec::new())),
         13 => session
             .probe_legacy_developer_services()
             .await
@@ -538,12 +545,14 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
 }
 fn required_permissions(action: u32) -> u32 {
     match action {
-        1 | 11 => 0,
+        1 | 11 | 15 => 0,
         2 => SCREEN,
         3 => MEDIA,
         4 | 6 | 7 | 9 | 10 => INPUT,
         8 => VERIFY,
         13 => SCREEN | VERIFY,
+        14 => INPUT | VERIFY,
+        16 => SCREEN | VERIFY,
         _ => u32::MAX,
     }
 }
@@ -759,7 +768,7 @@ pub unsafe extern "C" fn ncm_local_vpn_start_configured(
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ncm_backend_submit(handle: u64, id: u64, action: u32, x: u16, y: u16) -> i32 {
-    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 && action != 13 {
+    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 && action != 13 && action != 15 && action != 16 {
         return INVALID;
     }
     submit_request(
@@ -775,6 +784,29 @@ pub extern "C" fn ncm_backend_submit(handle: u64, id: u64, action: u32, x: u16, 
             payload: Zeroizing::new(Vec::new()),
         },
     )
+}
+/// # Safety
+/// `session_uuid` must borrow exactly the 16 bytes returned by NSUUID/getUUIDBytes.
+/// Input is copied during this call. No caller-supplied process identifier exists.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ncm_backend_xctest_start(
+    handle: u64, id: u64, session_uuid: Bytes,
+) -> i32 {
+    protect(|| {
+        let payload = match unsafe { bytes(&session_uuid, 16) } {
+            Ok(bytes) if crate::xctest_session::valid_uuid_bytes(bytes) => bytes.to_vec(),
+            _ => return INVALID,
+        };
+        submit_request(handle, Request {
+            id, action: 14, x: 0, y: 0, end_x: 0, end_y: 0, duration: 0,
+            payload: Zeroizing::new(payload),
+        })
+    })
+}
+/// Idempotent owned child-channel stop. Completion is obtained through poll.
+#[unsafe(no_mangle)]
+pub extern "C" fn ncm_backend_xctest_stop(handle: u64, id: u64) -> i32 {
+    ncm_backend_submit(handle, id, 15, 0, 0)
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ncm_backend_drag(
@@ -1198,6 +1230,27 @@ pub unsafe extern "C" fn ncm_test_start_loopback(port: u16, handle: *mut u64) ->
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn xctest_and_legacy_capture_permissions_and_uuid_abi_are_explicit() {
+        use super::*;
+        assert_eq!(required_permissions(14), INPUT | VERIFY);
+        assert_eq!(required_permissions(15), 0);
+        assert_eq!(required_permissions(16), SCREEN | VERIFY);
+        assert_eq!(Stage::LegacyTestmanagerHandshake as u32 + 1, 27);
+        assert_eq!(Stage::XCTestControlConnection as u32 + 1, 28);
+        assert_eq!(Stage::XCTestAuthorize as u32 + 1, 36);
+        // Generic submit cannot accept a start with missing UUID or an arbitrary PID.
+        assert_eq!(ncm_backend_submit(u64::MAX, 1, 14, 1, 0), INVALID);
+        for input in [vec![0; 16], vec![1; 15], vec![1; 17], b"{\"pid\":1}".to_vec()] {
+            assert_eq!(unsafe { ncm_backend_xctest_start(u64::MAX, 1,
+                Bytes { data: input.as_ptr(), size: input.len() }) }, INVALID);
+        }
+        let uuid = [0x33; 16];
+        assert_eq!(unsafe { ncm_backend_xctest_start(u64::MAX, 1,
+            Bytes { data: uuid.as_ptr(), size: uuid.len() }) }, CLOSED);
+        assert_eq!(ncm_backend_xctest_stop(u64::MAX, 1), CLOSED);
+    }
+
     #[test]
     fn legacy_probe_requires_screen_and_existing_verification_but_no_input() {
         let required = super::required_permissions(13);

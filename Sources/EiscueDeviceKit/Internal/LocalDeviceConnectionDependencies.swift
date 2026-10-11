@@ -16,6 +16,7 @@ extension LocalVPNDiscovery: LocalVPNDiscovering {}
 extension NCMProbeClient: USBBoardDiscovering {}
 
 @MainActor protocol LocalDeviceSession: AnyObject, Sendable {
+    var supportedControlActions: Set<NativeControlAction> { get }
     func connectLocalVPN(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                          pairingPort: UInt16, configuration: VPNLoopbackConfiguration) async throws
     func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
@@ -33,6 +34,9 @@ extension NCMProbeClient: USBBoardDiscovering {}
     func home() async throws
     func installedApplications() async throws -> Data
 }
+extension LocalDeviceSession {
+    var supportedControlActions: Set<NativeControlAction> { Set(NativeControlAction.allCases) }
+}
 extension NativeDeveloperServices: LocalDeviceSession {}
 
 struct LocalDeviceConnectionDependencies: Sendable {
@@ -40,6 +44,19 @@ struct LocalDeviceConnectionDependencies: Sendable {
     let makeSession: @MainActor @Sendable () -> any LocalDeviceSession
     let makeVPNDiscovery: @MainActor @Sendable () -> any LocalVPNDiscovering
     let makeBoardDiscovery: @MainActor @Sendable () -> any USBBoardDiscovering
+    let makeWirelessBoardDiscovery: @MainActor @Sendable () -> any USBBoardDiscovering
+
+    init(supportsPhysicalDevice: Bool,
+         makeSession: @escaping @MainActor @Sendable () -> any LocalDeviceSession,
+         makeVPNDiscovery: @escaping @MainActor @Sendable () -> any LocalVPNDiscovering,
+         makeBoardDiscovery: @escaping @MainActor @Sendable () -> any USBBoardDiscovering,
+         makeWirelessBoardDiscovery: @escaping @MainActor @Sendable () -> any USBBoardDiscovering = { NCMProbeClient(transport: .wifi) }) {
+        self.supportsPhysicalDevice = supportsPhysicalDevice
+        self.makeSession = makeSession
+        self.makeVPNDiscovery = makeVPNDiscovery
+        self.makeBoardDiscovery = makeBoardDiscovery
+        self.makeWirelessBoardDiscovery = makeWirelessBoardDiscovery
+    }
 
     static let live = Self(
         supportsPhysicalDevice: {

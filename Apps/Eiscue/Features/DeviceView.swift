@@ -63,7 +63,7 @@ struct DeviceView: View {
                     }
                 } else if !model.hasPairingIdentity {
                     Text("device.firstConnection").font(.headline)
-                    if model.deviceConnectionMethod == .usbBoard {
+                    if model.deviceConnectionMethod != .localVPN {
                         Text("device.boardPairingRequired")
                             .font(.subheadline).foregroundStyle(.secondary)
                     } else if !model.supportsSystemPairing {
@@ -117,7 +117,7 @@ struct DeviceView: View {
                 .buttonStyle(.glassProminent)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("importTransferredPairingButton")
-            } else if !model.hasPairingIdentity && (!model.supportsSystemPairing || model.deviceConnectionMethod == .usbBoard) {
+            } else if !model.hasPairingIdentity && (!model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN) {
                 Button("device.importIdentity") { importsIdentity = true }
                     .buttonStyle(.glassProminent)
                     .disabled(model.isBusy)
@@ -156,7 +156,7 @@ struct DeviceView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("device.preparation").font(.subheadline.weight(.semibold))
                             Text("device.developerModeDetail")
-                            Text(model.supportsSystemPairing ? String(localized: "device.pairingSetup") : String(localized: "device.usbPairingSetup"))
+                            Text(model.supportsSystemPairing && model.deviceConnectionMethod == .localVPN ? String(localized: "device.pairingSetup") : String(localized: "device.usbPairingSetup"))
                             Text("device.compatibilityDetail")
                         }
                         .font(.caption).foregroundStyle(.secondary)
@@ -190,7 +190,7 @@ struct DeviceView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("device.connectionMethod").font(.subheadline.weight(.semibold))
                 DeviceConnectionMethodPicker()
-                Text(model.deviceConnectionMethod == .usbBoard ? String(localized: "device.boardConnectionDetail") : String(localized: "device.appConnectionDetail"))
+                Text(connectionDetail)
                     .font(.caption).foregroundStyle(.secondary)
                 if model.deviceConnectionMethod == .usbBoard {
                     Text("device.boardHardwareRequirement")
@@ -200,8 +200,23 @@ struct DeviceView: View {
                         Label("device.boardFirmwareGuide", systemImage: "arrow.up.right")
                     }
                     .font(.caption)
+                } else if model.deviceConnectionMethod == .wirelessBoard {
+                    Text("device.wirelessBoardNetworkNote")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/tree/main/Firmware/Passport-Relay")!) {
+                        Label("device.boardFirmwareGuide", systemImage: "arrow.up.right")
+                    }
+                    .font(.caption)
                 }
             }
+        }
+    }
+
+    private var connectionDetail: String {
+        switch model.deviceConnectionMethod {
+        case .localVPN: String(localized: "device.appConnectionDetail")
+        case .usbBoard: String(localized: "device.boardConnectionDetail")
+        case .wirelessBoard: String(localized: "device.wirelessBoardConnectionDetail")
         }
     }
 
@@ -263,6 +278,7 @@ struct DeviceConnectionMethodPicker: View {
         )) {
             Text("device.appConnectionMethod").tag(DeviceConnectionMethod.localVPN)
             Text("device.boardConnectionMethod").tag(DeviceConnectionMethod.usbBoard)
+            Text("device.wirelessBoardConnectionMethod").tag(DeviceConnectionMethod.wirelessBoard)
         }
         .pickerStyle(.segmented)
         .disabled(model.isChangingDeviceConnectionMethod || model.isSaving || model.isStopping || model.isManagingTunnel || model.isStoppingTunnel || model.isImportingAttachments)

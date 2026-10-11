@@ -29,6 +29,7 @@ pub mod notifications;
 pub mod process_control;
 pub mod remote_server;
 pub mod screenshot;
+pub mod xctest_protocol;
 #[cfg(feature = "sysmontap")]
 pub mod sysmontap;
 #[cfg(feature = "xctest")]

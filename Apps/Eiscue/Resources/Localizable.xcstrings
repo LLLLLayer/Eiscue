@@ -4406,7 +4406,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先导入这台设备的 Eiscue 配对授权。插入开发板不能代替配对。"
+            "value": "先导入这台设备的 Eiscue 配对授权。连接开发板不能代替配对。"
           }
         }
       }
@@ -4492,6 +4492,108 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接开发板前，请先导入这台设备的 Eiscue 配对授权。"
+          }
+        }
+      }
+    },
+    "connection.automationAuthorization": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting. If Enable UI Automation asks for your device passcode, enter it on the system screen."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接。若「启用 UI 自动化」要求设备解锁密码，请在系统页面输入。"
+          }
+        }
+      }
+    },
+    "device.wirelessBoardConnectionMethod": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wireless board"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无线开发板"
+          }
+        }
+      }
+    },
+    "device.wirelessBoardConnectionDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Eiscue wireless firmware on TRAE Passport, then connect this device to its Eiscue-xxxx Wi-Fi in Settings. The password is in your local flashing configuration."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先给 TRAE Passport 刷入 Eiscue 无线固件，再到系统设置连接它的 Eiscue-xxxx Wi-Fi。密码见本机烧录配置。"
+          }
+        }
+      }
+    },
+    "device.wirelessBoardNetworkNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep cellular data available for AI requests. This connection does not start Eiscue VPN; access through a company VPN depends on its local network policy."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请保持蜂窝数据可用，供 AI 请求联网。此方式不会开启 Eiscue VPN；公司 VPN 能否访问开发板，取决于其局域网策略。"
+          }
+        }
+      }
+    },
+    "connection.wirelessBoardDiscovering": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting through the wireless board…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在通过无线开发板连接…"
+          }
+        }
+      }
+    },
+    "connection.wirelessBoardSelected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to the board’s Eiscue-xxxx Wi-Fi when you want AI to operate this device. Chat works without the board."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 AI 操作设备时，请先连接开发板的 Eiscue-xxxx Wi-Fi。聊天不需要连接开发板。"
           }
         }
       }

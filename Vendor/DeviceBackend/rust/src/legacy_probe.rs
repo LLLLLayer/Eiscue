@@ -109,33 +109,46 @@ async fn handshake(
     Ok(())
 }
 
+async fn screenshot_bytes(
+    client: &mut RemoteServerClient<Box<dyn ReadWrite>>,
+) -> Result<Zeroizing<Vec<u8>>, Error> {
+    let mut screenshot = bounded_for(
+        Stage::LegacyScreenshotChannel, Duration::from_secs(10), ScreenshotClient::new(client),
+    ).await?;
+    let bytes = Zeroizing::new(bounded_for(
+        Stage::LegacyScreenshotResponse, Duration::from_secs(45), screenshot.take_screenshot(),
+    ).await?);
+    png::validate_png(&bytes).map_err(|_| error(Stage::LegacyScreenshotResponse, Cause::Protocol))?;
+    Ok(bytes)
+}
+
 async fn screenshot_dimensions(
     client: &mut RemoteServerClient<Box<dyn ReadWrite>>,
 ) -> Result<Dimensions, Error> {
-    let mut screenshot = bounded_for(
-        Stage::LegacyScreenshotChannel,
-        Duration::from_secs(10),
-        ScreenshotClient::new(client),
-    )
-    .await?;
-    let bytes = Zeroizing::new(
-        bounded_for(
-            Stage::LegacyScreenshotResponse,
-            Duration::from_secs(45),
-            screenshot.take_screenshot(),
-        )
-        .await?,
-    );
+    let bytes = screenshot_bytes(client).await?;
     let dimensions = png::validate_png(&bytes)
         .map_err(|_| error(Stage::LegacyScreenshotResponse, Cause::Protocol))?;
-    // Only dimensions escape; the owned image buffer is zeroized on every path.
-    Ok(Dimensions {
-        width: dimensions.width,
-        height: dimensions.height,
-    })
+    Ok(Dimensions { width: dimensions.width, height: dimensions.height })
 }
 
 impl Session {
+    /// Actual PNG capture for the iOS 26 Instruments path. Uses only the current
+    /// prepared adapter; one request, no alternate transport or automatic replay.
+    pub async fn screenshot_legacy(&mut self) -> Result<crate::Screenshot, Error> {
+        self.check()?;
+        if !self.prepared { return Err(error(Stage::LegacyInstrumentsConnection, Cause::Unprepared)); }
+        let port = service_port(&self.handshake, INSTRUMENTS)
+            .map_err(|cause| error(Stage::LegacyInstrumentsConnection, cause))?;
+        let stream = bounded_for(Stage::LegacyInstrumentsConnection, CONNECT_TIMEOUT,
+            self.adapter.connect(port)).await?;
+        let mut client = RemoteServerClient::with_label(stream, "legacy-screenshot");
+        handshake(&mut client, Stage::LegacyInstrumentsHandshake, HANDSHAKE_TIMEOUT).await?;
+        let bytes = screenshot_bytes(&mut client).await?;
+        let dimensions = png::validate_png(&bytes)
+            .map_err(|_| error(Stage::LegacyScreenshotResponse, Cause::Protocol))?;
+        Ok(crate::Screenshot { png: bytes.to_vec(), width: dimensions.width, height: dimensions.height })
+    }
+
     /// Both services are probed independently, once, on this session's adapter.
     /// Result contains status, dimensions and sanitized errors only. Per-step
     /// deadlines sum to 105s, below the caller's 120s operation deadline.
@@ -235,6 +248,7 @@ mod tests {
             _rsd_control: None,
             prepared: false,
             media: None,
+            xctest: None,
             indigo: None,
             video: std::sync::Arc::new(VideoMailbox::default()),
             valid: true,
@@ -330,6 +344,44 @@ mod tests {
                     "error": {"stage": 26, "cause": 4}}
             })
         );
+    }
+
+    #[tokio::test]
+    async fn instruments_capture_returns_actual_png_and_rejects_non_images_and_errors() {
+        // Generated public 2x2 RGB fixture; contains no captured device pixels.
+        let png = vec![137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 0, 0, 0, 253, 212, 154, 115, 0, 0, 0, 16, 73, 68, 65, 84, 120, 156, 99, 48, 94, 117, 6, 136, 24, 32, 20, 0, 44, 38, 6, 165, 74, 91, 171, 240, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130];
+        assert_eq!(png::validate_png(&png).unwrap(), png::PngDimensions { width: 2, height: 2 });
+        for (payload, kind, succeeds) in [(png.clone(), 3u8, true), (b"not an image".to_vec(), 3, false),
+                                         (png.clone(), 4, false)] {
+            let (stream, mut peer) = tokio::io::duplex(8192);
+            let mut client = RemoteServerClient::new(stream);
+            let expected = payload.clone();
+            let server = tokio::spawn(async move {
+                let request = Message::from_reader(&mut peer).await.unwrap();
+                assert_eq!(request.data, Some("_requestChannelWithCode:identifier:".into()));
+                assert_eq!(request.aux.as_ref().unwrap().values, vec![AuxValue::U32(1),
+                    AuxValue::archived_value(plist::Value::String("com.apple.instruments.server.services.screenshot".into()))]);
+                let id = u32::from_le_bytes(request.message_header.serialize()[16..20].try_into().unwrap());
+                let ack = Message::new(MessageHeader::new(0, 1, id, 1, 0, false),
+                    PayloadHeader::new(), None, None);
+                peer.write_all(&ack.serialize()).await.unwrap();
+                let request = Message::from_reader(&mut peer).await.unwrap();
+                assert_eq!(request.data, Some("takeScreenshot".into()));
+                assert!(request.aux.is_none());
+                let id = u32::from_le_bytes(request.message_header.serialize()[16..20].try_into().unwrap());
+                let mut reply = Message::new(MessageHeader::new(0, 1, id, 1, 1, false),
+                    PayloadHeader::new(), None, Some(plist::Value::Data(payload))).serialize();
+                reply[32] = kind;
+                peer.write_all(&reply).await.unwrap();
+                assert_eq!(tokio::time::timeout(Duration::from_secs(1), peer.read_u8()).await.unwrap()
+                    .unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
+            });
+            let result = screenshot_bytes(&mut client).await;
+            if succeeds { assert_eq!(result.unwrap().as_slice(), expected.as_slice()); }
+            else { assert_eq!(result.unwrap_err(), error(Stage::LegacyScreenshotResponse, Cause::Protocol)); }
+            drop(client);
+            server.await.unwrap();
+        }
     }
 
     #[tokio::test]

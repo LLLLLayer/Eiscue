@@ -38,6 +38,20 @@ import PhoneAgentNCM
         #expect(try message(.protocolFailure(stage: 8, cause: 5), language: "en").contains("Xcode"))
     }
 
+    @Test func automationErrorsGiveInstructionsWithoutReinterpretingBridgeCodes() throws {
+        #expect(try message(.touchPreparationFailure(stage: 38, cause: 8), language: "en").contains("system permission"))
+        #expect(try message(.touchPreparationFailure(stage: 38, cause: 9), language: "zh-Hans").contains("方向稳定"))
+        #expect(try message(.touchPreparationFailure(stage: 38, cause: 14), language: "en").contains("timed out"))
+        #expect(try !message(.touchPreparationFailure(stage: 38, cause: 2), language: "en").contains("timed out"))
+        #expect(try message(.automationDeliveryUnknown(cause: 11), language: "en").contains("will not be repeated"))
+        for language in ["en", "zh-Hans"] {
+            let text = try message(.automationAuthorizationTimedOut, language: language)
+            #expect(!text.contains("screen service"))
+            #expect(!text.contains("未获得"))
+            #expect(text.contains(language == "en" ? "system screen" : "系统页面"))
+        }
+    }
+
     @Test func nativeCodesAreNotExposedInMainErrorText() throws {
         let errors: [NativeBackendError] = [
             .protocolFailure(stage: 3, cause: 1),
@@ -46,6 +60,10 @@ import PhoneAgentNCM
             .screenshotFailure(stage: 19, cause: 2),
             .applicationQueryFailure(stage: 21, cause: 1),
             .transport(code: -999),
+            .touchPreparationFailure(stage: 38, cause: 8),
+            .touchPreparationFailure(stage: 38, cause: 14),
+            .automationDeliveryUnknown(cause: 11),
+            .automationAuthorizationTimedOut,
         ]
         for language in ["en", "zh-Hans"] {
             for error in errors {

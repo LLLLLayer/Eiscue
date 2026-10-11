@@ -30,7 +30,7 @@ static void serve(void *unused) {
     static nd_relay relay; static relay_worker workers[2];
     uint32_t epoch=usb_epoch_callback(),relay_epoch=epoch;
     nd_link link={.local4={192,168,7,1},.peer4={192,168,7,2},.interface_index=usb_interface_index,.alive=alive,.context=&epoch};
-    ESP_LOGI("pa_developer","ND1 diagnostics / NR1 bounded relay; no stored keys or radio; idle until command");
+    ESP_LOGI("pa_developer","ND1 diagnostics / NR1 bounded relay; idle until command");
     for (;;) {
         if (usb_epoch_callback()!=epoch) { nd_relay_cancel(&relay); epoch=usb_epoch_callback(); nd_server_reset(&server); rotate(&http); }
         if (usb_online_callback()) {

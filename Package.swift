@@ -22,9 +22,11 @@ let package = Package(
             linkerSettings: [.linkedFramework("Security"), .linkedFramework("SystemConfiguration")]
         ),
         .target(
-            name: "PhoneAgentNCM", dependencies: ["CNCMBackend"],
+            name: "PhoneAgentNCM", dependencies: ["CNCMBackend", "CEiscueAutomation"],
             path: "Vendor/DeviceBackend/Sources/PhoneAgentNCM", swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .target(name: "CEiscueAutomation", path: "Vendor/DeviceBackend/Sources/CEiscueAutomation", publicHeadersPath: "include",
+                linkerSettings: [.linkedFramework("Foundation"), .linkedFramework("UIKit", .when(platforms: [.iOS]))]),
         .target(name: "EiscueDeviceKit", dependencies: ["PhoneAgentNCM"], resources: [.process("Resources")]),
         .testTarget(name: "EiscueAgentKitTests", dependencies: ["EiscueAgentKit", .product(name: "PiDurableKit", package: "PiDurableKit")]),
         .testTarget(name: "EiscueDeviceKitTests", dependencies: ["EiscueDeviceKit"]),

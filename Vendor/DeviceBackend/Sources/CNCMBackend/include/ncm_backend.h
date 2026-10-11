@@ -11,6 +11,9 @@ extern "C" {
 #define NCM_ALLOW_INPUT 4u
 #define NCM_ALLOW_EXISTING_VERIFY 8u
 #define NCM_ACTION_LEGACY_DEVELOPER_PROBE 13u
+#define NCM_ACTION_XCTEST_START 14u
+#define NCM_ACTION_XCTEST_STOP 15u
+#define NCM_ACTION_LEGACY_SCREENSHOT 16u
 /* All pointers are borrowed only for start(); caller owns/clears its secrets.
  * No disk/keychain lookup, identity generation, pairing or logging occurs. */
 typedef struct { const uint8_t *data; size_t size; } ncm_bytes;
@@ -18,7 +21,7 @@ typedef struct {
     ncm_bytes seed, controller_id, peer_id, peer_public_key, alt_irk, peer_udid, peer_model;
 } ncm_identity;
 typedef struct { uint32_t abi,interface_index,generation,endpoint_index,permissions; } ncm_config;
-enum ncm_failure_stage { NCM_STAGE_IDENTITY=1, NCM_STAGE_NCM_CONNECT=2, NCM_STAGE_PAIR_VERIFY=3, NCM_STAGE_TUNNEL_LISTENER=4, NCM_STAGE_TLS_TUNNEL=5, NCM_STAGE_RSD=6, NCM_STAGE_DEVELOPER_MODE=7, NCM_STAGE_DEVELOPER_IMAGE=8, NCM_STAGE_SCREENSHOT=9, NCM_STAGE_MEDIA=10, NCM_STAGE_INPUT=11, NCM_STAGE_CLOSED=12, NCM_STAGE_VIDEO_RECEIVER=13, NCM_STAGE_VIDEO_SERVICE=14, NCM_STAGE_VIDEO_NEGOTIATION=15, NCM_STAGE_VIDEO_ANSWER=16, NCM_STAGE_VIDEO_PACKETS=17, NCM_STAGE_TOUCH_SERVICE=18, NCM_STAGE_SCREENSHOT_CONNECTION=19, NCM_STAGE_SCREENSHOT_RESPONSE=20, NCM_STAGE_APPLICATIONS=21, NCM_STAGE_LEGACY_INSTRUMENTS_CONNECTION=22, NCM_STAGE_LEGACY_INSTRUMENTS_HANDSHAKE=23, NCM_STAGE_LEGACY_SCREENSHOT_CHANNEL=24, NCM_STAGE_LEGACY_SCREENSHOT_RESPONSE=25, NCM_STAGE_LEGACY_TESTMANAGER_CONNECTION=26, NCM_STAGE_LEGACY_TESTMANAGER_HANDSHAKE=27 };
+enum ncm_failure_stage { NCM_STAGE_IDENTITY=1, NCM_STAGE_NCM_CONNECT=2, NCM_STAGE_PAIR_VERIFY=3, NCM_STAGE_TUNNEL_LISTENER=4, NCM_STAGE_TLS_TUNNEL=5, NCM_STAGE_RSD=6, NCM_STAGE_DEVELOPER_MODE=7, NCM_STAGE_DEVELOPER_IMAGE=8, NCM_STAGE_SCREENSHOT=9, NCM_STAGE_MEDIA=10, NCM_STAGE_INPUT=11, NCM_STAGE_CLOSED=12, NCM_STAGE_VIDEO_RECEIVER=13, NCM_STAGE_VIDEO_SERVICE=14, NCM_STAGE_VIDEO_NEGOTIATION=15, NCM_STAGE_VIDEO_ANSWER=16, NCM_STAGE_VIDEO_PACKETS=17, NCM_STAGE_TOUCH_SERVICE=18, NCM_STAGE_SCREENSHOT_CONNECTION=19, NCM_STAGE_SCREENSHOT_RESPONSE=20, NCM_STAGE_APPLICATIONS=21, NCM_STAGE_LEGACY_INSTRUMENTS_CONNECTION=22, NCM_STAGE_LEGACY_INSTRUMENTS_HANDSHAKE=23, NCM_STAGE_LEGACY_SCREENSHOT_CHANNEL=24, NCM_STAGE_LEGACY_SCREENSHOT_RESPONSE=25, NCM_STAGE_LEGACY_TESTMANAGER_CONNECTION=26, NCM_STAGE_LEGACY_TESTMANAGER_HANDSHAKE=27, NCM_STAGE_XCTEST_CONTROL_CONNECTION=28, NCM_STAGE_XCTEST_MAIN_CONNECTION=29, NCM_STAGE_XCTEST_CONTROL_HANDSHAKE=30, NCM_STAGE_XCTEST_MAIN_HANDSHAKE=31, NCM_STAGE_XCTEST_CONTROL_CHANNEL=32, NCM_STAGE_XCTEST_MAIN_CHANNEL=33, NCM_STAGE_XCTEST_CONTROL_INIT=34, NCM_STAGE_XCTEST_MAIN_INIT=35, NCM_STAGE_XCTEST_AUTHORIZE=36, NCM_STAGE_XCTEST_STOP=37 };
 enum ncm_failure_cause { NCM_CAUSE_PROTOCOL=1, NCM_CAUSE_TIMEOUT=2, NCM_CAUSE_INVALID=3, NCM_CAUSE_MISSING_SERVICE=4, NCM_CAUSE_UNPREPARED=5, NCM_CAUSE_MEDIA_INACTIVE=6, NCM_CAUSE_DELIVERY_UNCERTAIN=7 };
 typedef struct { uint64_t request_id; uint32_t kind,stage,cause,reserved; size_t size; } ncm_event;
 /* Return codes: 0 success/queued, 1 invalid, 2 busy, 3 closed, 4 empty,
@@ -85,6 +88,9 @@ int32_t ncm_lockdown_start(uint32_t interface_index,uint32_t permissions,ncm_byt
  * Each service is probed once independently; scoped connections close on completion. */
 // Drag uses normalized coordinates, 100–2000 ms; uncertain delivery is never replayed.
 int32_t ncm_backend_drag(uint64_t handle,uint64_t request_id,uint16_t x,uint16_t y,uint16_t end_x,uint16_t end_y,uint16_t duration_ms);
+/* Action 16: one Instruments PNG capture over the same prepared adapter.
+ * SCREEN | EXISTING_VERIFY required, kind 4 actual validated PNG bytes. No input,
+ * no screenshot cache or automatic retry; temporary DTX closes on every path. */
 int32_t ncm_backend_submit(uint64_t handle,uint64_t request_id,uint32_t action,uint16_t x,uint16_t y);
 /* 7 Home, 8 installed applications (event 11 JSON name/bundle_id/version).
  * 9 launch {bundle_id,arguments:[strings]}, 10 type {text}: all text via pasteboard + Cmd-V
@@ -92,6 +98,22 @@ int32_t ncm_backend_submit(uint64_t handle,uint64_t request_id,uint32_t action,u
  * command copies bounded JSON; input permission required, no replay. Event 12
  * is a read-only app query failure retaining the authenticated session. */
 int32_t ncm_backend_command(uint64_t handle,uint64_t request_id,uint32_t action,ncm_bytes payload);
+/* Explicit XCTest owned-session start over this handle's authenticated adapter.
+ * UUID is exactly 16 NSUUID/getUUIDBytes bytes; nil UUID is rejected. Requires
+ * INPUT | EXISTING_VERIFY. No PID parameter: only getpid() of the embedding app
+ * is authorized. Control/main DTX connections are independent, main uses this
+ * same UUID. No Lockdown, runner install/launch, input, automation enablement or
+ * route fallback. Duplicate start is rejected without repeating authorization.
+ * Poll event 2 JSON {sessionIdentifier,processID,authorized:true} requires an
+ * affirmative boolean authorization reply. This does NOT prove touch readiness.
+ * Any failed/timed-out/canceled start drops both scoped channels before failure.
+ * Stop (action 15) is idempotent, releases owned child streams only, retains RP
+ * authentication and does not assert remote automation disablement. The host
+ * must stop its local XCTest automation separately. close drops both channels.
+ * Bounded steps: connect 10s each, handshake/channel/init/authorize 15s each.
+ * Entire start has a 105s deadline (all partial children dropped on timeout). */
+int32_t ncm_backend_xctest_start(uint64_t handle,uint64_t request_id,ncm_bytes session_uuid);
+int32_t ncm_backend_xctest_stop(uint64_t handle,uint64_t request_id);
 int32_t ncm_backend_poll(uint64_t handle,ncm_event *,uint8_t *buffer,size_t capacity);
 /* Idempotent. Immediately revokes handle and requests worker cancellation. Does
  * not block UI waiting for join or assert remote media/touch release succeeded. */

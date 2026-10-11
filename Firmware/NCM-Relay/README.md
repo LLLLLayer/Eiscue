@@ -12,6 +12,21 @@ USB NCM firmware.** Its fixed-function USB Serial/JTAG block cannot become a
 network device. See [hardware compatibility and setup](../../docs/board-setup.md).
 An ESP32-S3 build is not evidence that the TRAE Passport works.
 
+The attached user's board has now been identified by ROM as ESP32-C3 with 8 MB
+Flash. Its separate [Passport Wi-Fi firmware](../Passport-Relay/README.md) uses
+WPA2, one client and `.1/.2` on a `/30` subnet; this S3 USB firmware keeps `/24`.
+The C3's full original Flash backup passed ROM MD5 verification, and an initial
+wireless image passed `write_flash` and `verify_flash`. Runtime review then found
+a missing explicit DHCP start. The patched application partition has been
+written and verified while preserving the original backup and private Wi-Fi
+configuration. An actual boot log reports the private WPA2 AP and relay ready
+at 352 ms, waiting for a phone; phone association and relay/control behavior
+remain unverified. The wireless App's unsigned Release build passed, but its
+signed build still fails and has not been installed. See the [Passport build,
+private provisioning and phone
+setup](../../docs/board-setup.md#给-passport-烧录无线固件). Neither route has yet
+demonstrated company VPN coexistence or complete iOS 26 device control.
+
 ## Source and license
 
 Source: [ja1chen/actell](https://github.com/ja1chen/actell), pinned commit
@@ -92,9 +107,13 @@ or screenshot succeeded.
 | --- | --- |
 | ESP32-S3 cross build | PASS: ESP-IDF 5.5.3, app `0x5f600` bytes within 1 MB partition |
 | Protocol/localhost tests | PASS: DNS truncation/TTL, greeting/schema/EOF, auth boundaries, browser gates, source binding, deadlines, two-way 1 MiB relay/backpressure/cancel |
-| Python flash-tool guards | PASS: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory |
-| Physical board identification | NOT RUN: current Mac USB registry has no board/USB serial candidate |
-| Flash/readback on physical S3 | NOT RUN: no supported board is connected |
+| Python flash-tool guards | Historical PASS for the USB S3 profile: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory. Passport now has a separate C3 profile; no new unit-test result is claimed. |
+| Physical board identification | PASS for the subsequently attached Passport: ROM reports ESP32-C3 / 8 MB. The earlier no-board USB inventory remains a historical observation, not current status. |
+| Passport original Flash backup | PASS: full Flash saved privately and checked against ROM MD5 |
+| Passport wireless write/readback | PASS: initial image and DHCP-fixed application partition both passed `write_flash` and `verify_flash`; original backup and private provisioning preserved |
+| Passport actual boot | PASS: at 352 ms, `Private WPA2 AP ready; waiting for one phone` and ND1/NR1 relay idle; no phone association or actual diagnostic request demonstrated |
+| Wireless App build/install | Unsigned Release full build PASS; signed build still fails, so the wireless version has not been installed on the phone |
+| Flash/readback on physical S3 | NOT RUN: the connected Passport is C3, not an S3 board |
 | USB NCM enumeration and ND1 on Mac/phone | NOT RUN |
 | Company VPN coexistence and iOS control | NOT RUN |
 

@@ -54,9 +54,10 @@ impl<'a, R: ReadWrite> ScreenshotClient<'a, R> {
     pub async fn take_screenshot(&mut self) -> Result<Vec<u8>, IdeviceError> {
         let method = Value::String("takeScreenshot".into());
 
-        self.channel.call_method(Some(method), None, true).await?;
-
-        let msg = self.channel.read_message().await?;
+        let msg = self.channel.call_method_with_reply(Some(method), None).await?;
+        if msg.payload_header.message_type() != 3 {
+            return Err(IdeviceError::UnexpectedResponse("invalid DTX screenshot reply".into()));
+        }
         match msg.data {
             Some(Value::Data(data)) => Ok(data),
             _ => Err(IdeviceError::UnexpectedResponse(

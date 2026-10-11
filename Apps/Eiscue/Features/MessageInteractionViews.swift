@@ -7,6 +7,14 @@ struct ChatMessageRow: View {
     let message: AgentMessage
     @State private var showsSelection = false
     @State private var didCopy = false
+    @State private var canShareAttachments = false
+    @State private var checkedAttachments = false
+    @State private var isPreparingShare = false
+    @State private var sharePayload: MessageSharePayload?
+    @State private var sharePreparation: Task<Void, Never>?
+
+    private var hasText: Bool { !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canShare: Bool { message.attachments.isEmpty ? hasText : canShareAttachments }
 
     var body: some View {
         HStack(alignment: .top) {
@@ -29,16 +37,28 @@ struct ChatMessageRow: View {
                 HStack(spacing: 16) {
                     Text(message.createdAt, format: .dateTime.hour().minute())
                         .font(.caption2.monospacedDigit()).accessibilityIdentifier("messageTime")
-                    Button { copy() } label: {
-                        Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 26, height: 26).contentShape(Rectangle())
+                    if hasText {
+                        Button { copy() } label: {
+                            Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 26, height: 26).contentShape(Rectangle())
+                        }
+                        .accessibilityLabel(chatText(didCopy ? "chat.copied" : "chat.copy"))
+                        .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
                     }
-                    .accessibilityLabel(chatText(didCopy ? "chat.copied" : "chat.copy"))
-                    .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
-                    ShareLink(item: message.text) {
-                        Image(systemName: "square.and.arrow.up").frame(width: 26, height: 26).contentShape(Rectangle())
+                    Button { share() } label: {
+                        Group {
+                            if isPreparingShare { ProgressView().controlSize(.mini) }
+                            else { Image(systemName: "square.and.arrow.up") }
+                        }.frame(width: 26, height: 26).contentShape(Rectangle())
                     }
+                    .disabled(!canShare || isPreparingShare || sharePayload != nil)
                     .accessibilityLabel(chatText("chat.share"))
                     .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
+                    .background {
+                        MessageActivityPresenter(payload: sharePayload) { id, hasError in
+                            if sharePayload?.id == id { sharePayload = nil }
+                            if hasError { model.errorMessage = MessageSharingError.delivery.localizedDescription }
+                        }.allowsHitTesting(false)
+                    }
                     Menu { messageMenu } label: {
                         Image(systemName: "ellipsis").frame(width: 26, height: 26).contentShape(Rectangle())
                     }
@@ -47,6 +67,11 @@ struct ChatMessageRow: View {
                 }
                 .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
                 .padding(.horizontal, message.role == .user ? 8 : 0)
+                if !message.attachments.isEmpty, checkedAttachments, !canShareAttachments {
+                    Text(String(localized: "messageSharing.unavailable", table: "MessageSharing"))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("messageShareUnavailable")
+                }
             }
             if message.role != .user { Spacer(minLength: 0) }
         }
@@ -59,14 +84,25 @@ struct ChatMessageRow: View {
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("common.done") { showsSelection = false } } }
             }.presentationDetents([.large])
         }
+        .task(id: message.attachments.map(\.id)) {
+            checkedAttachments = false
+            let available = await model.messageAttachments.canShareAttachments(message.attachments)
+            guard !Task.isCancelled else { return }
+            canShareAttachments = available
+            checkedAttachments = true
+        }
+        .onDisappear { sharePreparation?.cancel() }
     }
 
     @ViewBuilder private var messageMenu: some View {
-        Button(chatText("chat.copy"), systemImage: "doc.on.doc") { copy() }
-        Button(chatText("chat.selectText"), systemImage: "selection.pin.in.out") { showsSelection = true }
-            .accessibilityIdentifier("selectMessageTextButton")
-        ShareLink(item: message.text) { Label(chatText("chat.share"), systemImage: "square.and.arrow.up") }
-        if message.role == .user {
+        if hasText {
+            Button(chatText("chat.copy"), systemImage: "doc.on.doc") { copy() }
+            Button(chatText("chat.selectText"), systemImage: "selection.pin.in.out") { showsSelection = true }
+                .accessibilityIdentifier("selectMessageTextButton")
+        }
+        Button(chatText("chat.share"), systemImage: "square.and.arrow.up") { share() }
+            .disabled(!canShare || isPreparingShare || sharePayload != nil)
+        if message.role == .user, hasText {
             Button(chatText("chat.useAsDraft"), systemImage: "pencil") { model.draft = message.text }
                 .disabled(model.isBusy)
         }
@@ -76,11 +112,29 @@ struct ChatMessageRow: View {
     }
 
     private func copy() {
+        guard hasText else { return }
         UIPasteboard.general.string = message.text
         didCopy = true
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
             didCopy = false
+        }
+    }
+
+    private func share() {
+        guard canShare, !isPreparingShare, sharePayload == nil else { return }
+        isPreparingShare = true
+        sharePreparation = Task { @MainActor in
+            var prepared: MessageSharePayload?
+            defer { isPreparingShare = false; sharePreparation = nil }
+            do {
+                prepared = try await model.messageAttachments.prepareShare(message)
+                try Task.checkCancellation()
+                sharePayload = prepared
+            } catch {
+                prepared?.cleanup()
+                if !(error is CancellationError) { model.errorMessage = error.localizedDescription }
+            }
         }
     }
 }
