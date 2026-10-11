@@ -1,0 +1,268 @@
+{
+  "repository": "https://github.com/ja1chen/actell",
+  "commit": "032864e2339da19ee13025c471f4cf1dfdf4c5cd",
+  "files": {
+    "core/nd.h": {
+      "upstream": "ncm-dev/core/nd.h",
+      "sha256": "14b3862dc01d92d874d5a1014f11aaa8af4216871773f747c738c182584ddb69",
+      "local_sha256": "14b3862dc01d92d874d5a1014f11aaa8af4216871773f747c738c182584ddb69"
+    },
+    "core/nd_discovery.c": {
+      "upstream": "ncm-dev/core/nd_discovery.c",
+      "sha256": "047179d7d38cf40cbac28d6ff278b13e0fdfaab83e378bc35679d885d5041953",
+      "local_sha256": "047179d7d38cf40cbac28d6ff278b13e0fdfaab83e378bc35679d885d5041953"
+    },
+    "core/nd_http.c": {
+      "upstream": "ncm-dev/core/nd_http.c",
+      "sha256": "7ff4fa4a952ed5ec38e607c54932f6580d3ad3a32943837b89c042844d111edd",
+      "local_sha256": "7ff4fa4a952ed5ec38e607c54932f6580d3ad3a32943837b89c042844d111edd"
+    },
+    "core/nd_http.h": {
+      "upstream": "ncm-dev/core/nd_http.h",
+      "sha256": "350596a9906b363d95e252e7c12677496d7e1e13e820c22c58aefdb0cfcd07b7",
+      "local_sha256": "350596a9906b363d95e252e7c12677496d7e1e13e820c22c58aefdb0cfcd07b7"
+    },
+    "core/nd_pairing.c": {
+      "upstream": "ncm-dev/core/nd_pairing.c",
+      "sha256": "108574807665e1cec659c94e1fa40ff459cd369f1a76e2eea1ba7d6128e9836c",
+      "local_sha256": "108574807665e1cec659c94e1fa40ff459cd369f1a76e2eea1ba7d6128e9836c"
+    },
+    "core/nd_relay.c": {
+      "upstream": "ncm-dev/core/nd_relay.c",
+      "sha256": "91dcf67cdf3c4a537598748c5b60cfa954e4f9c5261365d5338734afa95732a7",
+      "local_sha256": "91dcf67cdf3c4a537598748c5b60cfa954e4f9c5261365d5338734afa95732a7"
+    },
+    "core/nd_relay.h": {
+      "upstream": "ncm-dev/core/nd_relay.h",
+      "sha256": "98af08364f771e29ce2c3cb8033e60ae76c508cce33e5604fb6013c13c90f5c9",
+      "local_sha256": "98af08364f771e29ce2c3cb8033e60ae76c508cce33e5604fb6013c13c90f5c9"
+    },
+    "core/nd_server.c": {
+      "upstream": "ncm-dev/core/nd_server.c",
+      "sha256": "53043d6efa1fc52df9bfdc260823b195d54b9beae37835b48923fefe369ce56a",
+      "local_sha256": "53043d6efa1fc52df9bfdc260823b195d54b9beae37835b48923fefe369ce56a"
+    },
+    "core/nd_server.h": {
+      "upstream": "ncm-dev/core/nd_server.h",
+      "sha256": "1dbced5e591e7f138b1f11e2a73141d98a77cfe90cbaafbda74935593ff5dd28",
+      "local_sha256": "1dbced5e591e7f138b1f11e2a73141d98a77cfe90cbaafbda74935593ff5dd28"
+    },
+    "core/nd_services.c": {
+      "upstream": "ncm-dev/core/nd_services.c",
+      "sha256": "99fc296ad0ab2310d15a6e62f8c75984c42a7c8697e4ff34ad272eb6a3a2cb06",
+      "local_sha256": "99fc296ad0ab2310d15a6e62f8c75984c42a7c8697e4ff34ad272eb6a3a2cb06"
+    },
+    "core/nd_services.h": {
+      "upstream": "ncm-dev/core/nd_services.h",
+      "sha256": "fec41d21ed729547ed1a38818ea3eddde8616b95615ea9c49d7a2b7c8aad1f88",
+      "local_sha256": "fec41d21ed729547ed1a38818ea3eddde8616b95615ea9c49d7a2b7c8aad1f88"
+    },
+    "core/nd_socket.c": {
+      "upstream": "ncm-dev/core/nd_socket.c",
+      "sha256": "8837759bfe1edf4f417818c902fbe741536ed76658f95afd592dd915a8f2c950",
+      "local_sha256": "8837759bfe1edf4f417818c902fbe741536ed76658f95afd592dd915a8f2c950"
+    },
+    "core/nd_socket.h": {
+      "upstream": "ncm-dev/core/nd_socket.h",
+      "sha256": "eb6fd06306970b746564bac991ce86aaf59122cf626f9222431baaa7e5fd47f0",
+      "local_sha256": "eb6fd06306970b746564bac991ce86aaf59122cf626f9222431baaa7e5fd47f0"
+    },
+    "bridge/include/bridge_bplist.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_bplist.h",
+      "sha256": "3e80826881cfd2346ae2545b0112bf0a456050c1fb6c4f5c8efc3a7fdf51e082",
+      "local_sha256": "3e80826881cfd2346ae2545b0112bf0a456050c1fb6c4f5c8efc3a7fdf51e082"
+    },
+    "bridge/include/bridge_cdtunnel.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_cdtunnel.h",
+      "sha256": "dfd073d45ccf067a280e148f6c0b4407acf6ae67d72b70e71ca3059d17870a45",
+      "local_sha256": "dfd073d45ccf067a280e148f6c0b4407acf6ae67d72b70e71ca3059d17870a45"
+    },
+    "bridge/include/bridge_core.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_core.h",
+      "sha256": "0f65e4c6de82dbfa66852ba953d6bf7adc489c8924ad01dd430d332eb03ab3ce",
+      "local_sha256": "0f65e4c6de82dbfa66852ba953d6bf7adc489c8924ad01dd430d332eb03ab3ce"
+    },
+    "bridge/include/bridge_hid.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_hid.h",
+      "sha256": "cd7757fe863d57ba8fd05761d7b5be541a06e4b91adb5b490373f7440976567e",
+      "local_sha256": "cd7757fe863d57ba8fd05761d7b5be541a06e4b91adb5b490373f7440976567e"
+    },
+    "bridge/include/bridge_lockdown_probe.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_lockdown_probe.h",
+      "sha256": "050afd7fb6abc881f46e666a4abbc5ec6eb509c45511e32cc0bd969b3a7c1016",
+      "local_sha256": "050afd7fb6abc881f46e666a4abbc5ec6eb509c45511e32cc0bd969b3a7c1016"
+    },
+    "bridge/include/bridge_lockdown_session.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_lockdown_session.h",
+      "sha256": "25c8a95de435ee03b5a482ef0618fd3c7421c6843b9a05bb3337315f7e48b201",
+      "local_sha256": "25c8a95de435ee03b5a482ef0618fd3c7421c6843b9a05bb3337315f7e48b201"
+    },
+    "bridge/include/bridge_media_offer.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_media_offer.h",
+      "sha256": "7fa3b8a9f03451dfc7141ccaecadc51bb38d095bac55ddf08ff60883c3a16874",
+      "local_sha256": "7fa3b8a9f03451dfc7141ccaecadc51bb38d095bac55ddf08ff60883c3a16874"
+    },
+    "bridge/include/bridge_operations.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_operations.h",
+      "sha256": "b0e3581e8c0638d785e795bd5c6d32c12d792ada426b6ea331ba950908e26496",
+      "local_sha256": "b0e3581e8c0638d785e795bd5c6d32c12d792ada426b6ea331ba950908e26496"
+    },
+    "bridge/include/bridge_packet_link.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_packet_link.h",
+      "sha256": "878ff5da28a7b78b2db2e7693419ae5d49048dd59cdd02f4148a0c3ad21657aa",
+      "local_sha256": "878ff5da28a7b78b2db2e7693419ae5d49048dd59cdd02f4148a0c3ad21657aa"
+    },
+    "bridge/include/bridge_remotexpc.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_remotexpc.h",
+      "sha256": "06a6d7120b9354a8662023804f887d595f86243d27857f8e0b5d1d6936c574f6",
+      "local_sha256": "06a6d7120b9354a8662023804f887d595f86243d27857f8e0b5d1d6936c574f6"
+    },
+    "bridge/include/bridge_requests.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_requests.h",
+      "sha256": "6733e2b99c6328a2d701616bdd0b0932b6844e388c6e6a0dc658b95ed669c0fb",
+      "local_sha256": "6733e2b99c6328a2d701616bdd0b0932b6844e388c6e6a0dc658b95ed669c0fb"
+    },
+    "bridge/include/bridge_rsd.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_rsd.h",
+      "sha256": "59d5e626d4036fea0e69ebed269ae22851662615873664cd80a10240eb975322",
+      "local_sha256": "59d5e626d4036fea0e69ebed269ae22851662615873664cd80a10240eb975322"
+    },
+    "bridge/include/bridge_screenshot_stream.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_screenshot_stream.h",
+      "sha256": "08735b594aac95345a5a53ca4865ed3f65d907d1ef0dcdacb147377d1cc28489",
+      "local_sha256": "08735b594aac95345a5a53ca4865ed3f65d907d1ef0dcdacb147377d1cc28489"
+    },
+    "bridge/include/bridge_usb_descriptors.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_usb_descriptors.h",
+      "sha256": "7cb5e9233fd58214b81fdb647f2866d521afcd361924fd5a66237d277150991d",
+      "local_sha256": "7cb5e9233fd58214b81fdb647f2866d521afcd361924fd5a66237d277150991d"
+    },
+    "bridge/include/bridge_usbmux.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_usbmux.h",
+      "sha256": "2ab9e9901dca8870bd6eea3f5d385724f931172fd6712127d0744cb0070f9b06",
+      "local_sha256": "2ab9e9901dca8870bd6eea3f5d385724f931172fd6712127d0744cb0070f9b06"
+    },
+    "bridge/include/bridge_xpc.h": {
+      "upstream": "firmware/components/bridge_core/include/bridge_xpc.h",
+      "sha256": "f240b6214c25f6723b40612649b3a9e1532be0dd3585c50b2a435655e3480bab",
+      "local_sha256": "f240b6214c25f6723b40612649b3a9e1532be0dd3585c50b2a435655e3480bab"
+    },
+    "bridge/bridge_io.c": {
+      "upstream": "firmware/components/bridge_core/bridge_io.c",
+      "sha256": "15fab049c2ae4e5ce15096173aea7c173e8f83576fdc39ed9b090e2f3e33f3e9",
+      "local_sha256": "15fab049c2ae4e5ce15096173aea7c173e8f83576fdc39ed9b090e2f3e33f3e9"
+    },
+    "bridge/bridge_bplist.c": {
+      "upstream": "firmware/components/bridge_core/bridge_bplist.c",
+      "sha256": "472d0eafa2acfb08da731fc69a04e3c92edaf16715833592a8880eab821e5148",
+      "local_sha256": "472d0eafa2acfb08da731fc69a04e3c92edaf16715833592a8880eab821e5148"
+    },
+    "bridge/bridge_lockdown_probe.c": {
+      "upstream": "firmware/components/bridge_core/bridge_lockdown_probe.c",
+      "sha256": "6fc05a8961bab0a94b33d3e25a06b603b8293ae86962e8d6086095d98ef7dceb",
+      "local_sha256": "6fc05a8961bab0a94b33d3e25a06b603b8293ae86962e8d6086095d98ef7dceb"
+    },
+    "bridge/bridge_xpc.c": {
+      "upstream": "firmware/components/bridge_core/bridge_xpc.c",
+      "sha256": "a013b56dcff066c75ffcea26a23e6418a9f130e8663945f61ab91e8f4bd8a7e4",
+      "local_sha256": "a013b56dcff066c75ffcea26a23e6418a9f130e8663945f61ab91e8f4bd8a7e4"
+    },
+    "bridge/bridge_hid.c": {
+      "upstream": "firmware/components/bridge_core/bridge_hid.c",
+      "sha256": "3845770c6e96ff4780fb632ed1ea246255913917961686b3633261b0e50d343a",
+      "local_sha256": "3845770c6e96ff4780fb632ed1ea246255913917961686b3633261b0e50d343a"
+    },
+    "bridge/bridge_requests.c": {
+      "upstream": "firmware/components/bridge_core/bridge_requests.c",
+      "sha256": "564872cebd65b1f3afc9549589d09a87d6e8fe976e927838db68c03ee7c7ff95",
+      "local_sha256": "564872cebd65b1f3afc9549589d09a87d6e8fe976e927838db68c03ee7c7ff95"
+    },
+    "bridge/bridge_screenshot_stream.c": {
+      "upstream": "firmware/components/bridge_core/bridge_screenshot_stream.c",
+      "sha256": "b2076945324bc18b6ca430b2aa1300e8119f452bfecb2fe6f68428cbbda20c07",
+      "local_sha256": "b2076945324bc18b6ca430b2aa1300e8119f452bfecb2fe6f68428cbbda20c07"
+    },
+    "bridge/bridge_remotexpc.c": {
+      "upstream": "firmware/components/bridge_core/bridge_remotexpc.c",
+      "sha256": "1098bea578c757261f3b15619299b9d862c6e5da8d13bb1b91e6ca306d819edd",
+      "local_sha256": "1098bea578c757261f3b15619299b9d862c6e5da8d13bb1b91e6ca306d819edd"
+    },
+    "bridge/bridge_rsd.c": {
+      "upstream": "firmware/components/bridge_core/bridge_rsd.c",
+      "sha256": "1f575d7b2506cab907907cae375de2fb7b80a222e94a1cd246d3c2727e46ddf3",
+      "local_sha256": "1f575d7b2506cab907907cae375de2fb7b80a222e94a1cd246d3c2727e46ddf3"
+    },
+    "bridge/bridge_operations.c": {
+      "upstream": "firmware/components/bridge_core/bridge_operations.c",
+      "sha256": "5b036eeb31a31fa1fc063d8a64f10fdf71b70ae4b320efefd4156d1832e989d0",
+      "local_sha256": "5b036eeb31a31fa1fc063d8a64f10fdf71b70ae4b320efefd4156d1832e989d0"
+    },
+    "main/usb.c": {
+      "upstream": "ncm-dev/firmware/main/usb.c",
+      "sha256": "a350f2d503b0dcc77cd83c44f191a09171900cfc6ebe31a1c61f07b4c4b94f02",
+      "local_sha256": "00b185f45e7ee2bdb6feba24a775768ced129606bad868950d9472c435444ec2"
+    },
+    "main/usb.h": {
+      "upstream": "ncm-dev/firmware/main/usb.h",
+      "sha256": "7de517fa3a430869203681f5727a748c86364543fb108926839b5a1d275a792f",
+      "local_sha256": "7de517fa3a430869203681f5727a748c86364543fb108926839b5a1d275a792f"
+    },
+    "main/network.c": {
+      "upstream": "ncm-dev/firmware/main/network.c",
+      "sha256": "d5e82f0cbd27ff640d2dc33fed38eb5d0422ac35d49ce5fa9f96d089e692684a",
+      "local_sha256": "d5e82f0cbd27ff640d2dc33fed38eb5d0422ac35d49ce5fa9f96d089e692684a"
+    },
+    "main/main.c": {
+      "upstream": "ncm-dev/firmware/main/main.c",
+      "sha256": "ee2fbde58e19ca062596067a9b73630f4e540ffb3c9ac7e68485664d7263a631",
+      "local_sha256": "ee2fbde58e19ca062596067a9b73630f4e540ffb3c9ac7e68485664d7263a631"
+    },
+    "main/developer_service.c": {
+      "upstream": "firmware-device/main/developer_service.c",
+      "sha256": "c5bae2ffc7ba842ca762df0e47b2e8dc44c6364d1bcdb9e4af085729831a2d25",
+      "local_sha256": "c5bae2ffc7ba842ca762df0e47b2e8dc44c6364d1bcdb9e4af085729831a2d25"
+    },
+    "main/developer_service.h": {
+      "upstream": "firmware-device/main/developer_service.h",
+      "sha256": "5d5d8032b19bc8fb6e042eac99ef20a66011704ce85ecc86f3c34d477a3e47bc",
+      "local_sha256": "5d5d8032b19bc8fb6e042eac99ef20a66011704ce85ecc86f3c34d477a3e47bc"
+    },
+    "tests/test_core.c": {
+      "upstream": "ncm-dev/tests/test_core.c",
+      "sha256": "7aa50157a4eea167c7bdadc28f45aa8a2bc29c14396c4e4ff1fc8e0da981aa43",
+      "local_sha256": "7aa50157a4eea167c7bdadc28f45aa8a2bc29c14396c4e4ff1fc8e0da981aa43"
+    },
+    "tests/test_socket.c": {
+      "upstream": "ncm-dev/tests/test_socket.c",
+      "sha256": "075fe7ee6b9239b37823e4dccfd31e4cd26ff121e1daf747e39bd6563ef22dbd",
+      "local_sha256": "075fe7ee6b9239b37823e4dccfd31e4cd26ff121e1daf747e39bd6563ef22dbd"
+    },
+    "tests/test_relay.c": {
+      "upstream": "ncm-dev/tests/test_relay.c",
+      "sha256": "21806f83eb6ad89ee903cc71e1c20437d406567e96b19aa0eb5b4bf31237a04b",
+      "local_sha256": "21806f83eb6ad89ee903cc71e1c20437d406567e96b19aa0eb5b4bf31237a04b"
+    },
+    "sdkconfig.defaults": {
+      "upstream": "ncm-dev/firmware/sdkconfig.defaults",
+      "sha256": "576e9b7a7b50e8784781e0b0e7c69ab5f4ff4a0283373a761bb5eb9ad585c251",
+      "local_sha256": "0bbb30b3e1d2f9a1f2e659d6495edc389df5b6da8ce9e137d42c6bc336b78558"
+    },
+    "LICENSE": {
+      "upstream": "LICENSE",
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+      "local_sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    "UPSTREAM_THIRD_PARTY.md": {
+      "upstream": "THIRD_PARTY.md",
+      "sha256": "1ba39fa041c15c1ad7c2c931dcfb75f54a80a6fc5c1224b61c3e5e23c8ab73a4",
+      "local_sha256": "1ba39fa041c15c1ad7c2c931dcfb75f54a80a6fc5c1224b61c3e5e23c8ab73a4"
+    }
+  },
+  "local_changes": [
+    "Build include/source paths relocated into a standalone Firmware/NCM-Relay project.",
+    "ESP-IDF version pinned to 5.5.3 (upstream used 5.5.5); TinyUSB versions retained and lock regenerated.",
+    "Minimum flash layout changed from 16MB to 4MB; complete original flash is backed up by the explicit flash tool.",
+    "USB manufacturer/product/version strings identify Eiscue NCM Relay 1.0.0.",
+    "Python flash/inventory/package/link tools and safety guard tests are Eiscue additions."
+  ]
+}
