@@ -8,13 +8,14 @@
 
 - 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，自定义地址和模型 ID，API Key 使用系统 Keychain。
 - Agent：真实 PiDurableKit 运行时、流式回答、多轮对话、图片工具结果、串行工具调用、停止、超时与调用次数限制。
-- 会话与任务：侧栏历史、长按置顶/排序/删除、本地持久化、恢复、执行记录、脱敏报告导出；重启不自动继续任务，未提交消息保留并可重试。
+- 会话与任务：发送后立即上屏并清空输入，流式回复、分开的真实工具记录、块级 Markdown、消息时间与选段复制；侧栏历史、长按置顶/排序/删除、恢复、脱敏报告导出，运行记录从对话菜单查看。
 - 设备：内置本地 VPN 扩展、iOS 26 的 USB 首次配对工具和身份导入、iOS 27+ 系统配对、开发者模式/DDI 检查、截图、点击、拖动、文字粘贴、App 列表、启动 App 和 Home。
+- 连接方式：App 可选择本地 VPN 或 USB 开发板，Kit 提供 `DeviceClient.connect(method:)`；开发板分支不启动 VPN。ESP32-S3 的 NCM 固件、构建和备份烧录工具在 [Firmware/NCM-Relay](Firmware/NCM-Relay)，尚待实板验收；TRAE Passport C3 无法实现该 USB 网卡方案。见 [开发板说明](docs/board-setup.md)。
 - 执行边界：输入框加号中可开启“允许 AI 操作设备”，默认关闭；Kit 另保留只读观察范围。坐标操作绑定新截图，单次使用，过期或重连后失效；未知操作结果不自动重发。
 - 后台：iOS 26 的 BGContinuedProcessingTask 和系统实时活动，显示真实执行阶段；可选的完成／中断本地通知默认关闭，系统取消与过期统一停止。
 - Skill：内置导航、只读搜索和中断核查流程，导入与删除 UTF-8 Markdown；不执行导入文件里的脚本。
 - 原生界面：首次全屏入门引导，随浅色／深色模式切换的黑白灰控件与原生 Liquid Glass；对话主页面、左侧历史与设置、右上角设备状态，iPad 宽窗口支持常驻侧栏。使用用户提供的 Eiscue 图片作为图标。
-- 附件与语音：照片、拍摄、文本/代码文件和可提取文字的 PDF；Apple Speech 本机听写，可点击或按住麦克风，无需语音 API Key。普通聊天默认使用简短提示，不注入表情 Skill 或设备工具。见 [对话体验说明](docs/chat-experience.md)。
+- 附件与语音：照片、拍摄、文本/代码文件和可提取文字的 PDF；Apple Speech 本机听写，切换语音模式后按住说话、松开结束、上滑取消，无需语音 API Key。普通聊天默认使用简短提示，不注入表情 Skill 或设备工具。见 [对话体验说明](docs/chat-experience.md)。
 - 多语言：Apple String Catalog 和 Swift Package 本地化资源，支持英文、简体中文，跟随系统／App 语言；新增语言无需修改业务逻辑。见 [本地化说明](docs/localization.md)。
 
 **源码接入与真机验收是两件事。** 模拟器可验证 Agent 与 App 流程，但不能进行本机整机控制。DDI、回环 VPN、新身份配对、后台持续时间及不同系统版本的控制效果，需要在目标真机上验收。没有自动降级成电脑控制，也不会生成假的设备成功结果。

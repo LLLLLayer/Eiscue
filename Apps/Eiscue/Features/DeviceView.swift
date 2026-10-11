@@ -14,6 +14,7 @@ struct DeviceView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     deviceHeader
+                    connectionMethod
                     connectionCard
                     advancedOptions
                 }
@@ -62,7 +63,10 @@ struct DeviceView: View {
                     }
                 } else if !model.hasPairingIdentity {
                     Text("device.firstConnection").font(.headline)
-                    if !model.supportsSystemPairing {
+                    if model.deviceConnectionMethod == .usbBoard {
+                        Text("device.boardPairingRequired")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    } else if !model.supportsSystemPairing {
                         Text("device.usbPairingRequired")
                             .font(.subheadline).foregroundStyle(.secondary)
                             .accessibilityIdentifier("usbPairingGuidance")
@@ -88,7 +92,7 @@ struct DeviceView: View {
                 }
 
                 connectionActions
-                if !model.localTunnel.isConnected && (model.hasPairingIdentity || model.supportsSystemPairing) {
+                if model.deviceConnectionMethod == .localVPN && !model.localTunnel.isConnected && (model.hasPairingIdentity || model.supportsSystemPairing) {
                     Text("device.connectHint").font(.caption).foregroundStyle(.secondary)
                 }
 
@@ -113,7 +117,7 @@ struct DeviceView: View {
                 .buttonStyle(.glassProminent)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("importTransferredPairingButton")
-            } else if !model.hasPairingIdentity && !model.supportsSystemPairing {
+            } else if !model.hasPairingIdentity && (!model.supportsSystemPairing || model.deviceConnectionMethod == .usbBoard) {
                 Button("device.importIdentity") { importsIdentity = true }
                     .buttonStyle(.glassProminent)
                     .disabled(model.isBusy)
@@ -131,10 +135,7 @@ struct DeviceView: View {
             }
             if model.hasPairingIdentity {
                 Button(model.deviceConnectionError == nil ? String(localized: "device.enableControl") : String(localized: "device.retryControl")) {
-                    Task {
-                        if !model.localTunnel.isConnected { await model.startLocalTunnel() }
-                        if model.localTunnel.isConnected { await model.connectDevice() }
-                    }
+                    Task { await model.enableDeviceControl() }
                 }
                 .buttonStyle(.glassProminent)
                 .disabled(model.isBusy)
@@ -147,8 +148,10 @@ struct DeviceView: View {
         SurfaceCard {
             DisclosureGroup(isExpanded: $showsAdvanced) {
                 VStack(alignment: .leading, spacing: 24) {
-                    localConnection
-                    Divider()
+                    if model.deviceConnectionMethod == .localVPN {
+                        localConnection
+                        Divider()
+                    }
                     if !model.hasPairingIdentity {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("device.preparation").font(.subheadline.weight(.semibold))
@@ -178,6 +181,26 @@ struct DeviceView: View {
                 Label("device.advanced", systemImage: "slider.horizontal.3")
                     .font(.subheadline.weight(.medium))
                     .accessibilityIdentifier("deviceAdvancedOptions")
+            }
+        }
+    }
+
+    private var connectionMethod: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("device.connectionMethod").font(.subheadline.weight(.semibold))
+                DeviceConnectionMethodPicker()
+                Text(model.deviceConnectionMethod == .usbBoard ? String(localized: "device.boardConnectionDetail") : String(localized: "device.appConnectionDetail"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.deviceConnectionMethod == .usbBoard {
+                    Text("device.boardHardwareRequirement")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("boardHardwareRequirement")
+                    Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/tree/main/Firmware/NCM-Relay")!) {
+                        Label("device.boardFirmwareGuide", systemImage: "arrow.up.right")
+                    }
+                    .font(.caption)
+                }
             }
         }
     }
@@ -227,6 +250,23 @@ struct DeviceView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+struct DeviceConnectionMethodPicker: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Picker("device.connectionMethod", selection: Binding(
+            get: { model.deviceConnectionMethod },
+            set: { method in Task { await model.selectDeviceConnectionMethod(method) } }
+        )) {
+            Text("device.appConnectionMethod").tag(DeviceConnectionMethod.localVPN)
+            Text("device.boardConnectionMethod").tag(DeviceConnectionMethod.usbBoard)
+        }
+        .pickerStyle(.segmented)
+        .disabled(model.isChangingDeviceConnectionMethod || model.isSaving || model.isStopping || model.isManagingTunnel || model.isStoppingTunnel || model.isImportingAttachments)
+        .accessibilityIdentifier("deviceConnectionMethodPicker")
     }
 }
 

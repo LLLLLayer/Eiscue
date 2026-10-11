@@ -10,6 +10,9 @@ options:
 packages:
   EiscueKit:
     path: .
+  SwiftMarkdown:
+    url: https://github.com/swiftlang/swift-markdown.git
+    exactVersion: 0.9.0
 
 settings:
   base:
@@ -51,6 +54,8 @@ targets:
         product: EiscueAgentKit
       - package: EiscueKit
         product: EiscueDeviceKit
+      - package: SwiftMarkdown
+        product: Markdown
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.app

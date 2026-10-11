@@ -2,7 +2,27 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
-## iOS 26 本机替代通道实测（同日，最新）
+## 对话时间线、语音交互与开发板连接（同日，最新）
+
+聊天发送先上屏并清空草稿，随后才执行保存和请求；保存失败恢复原草稿但不覆盖新输入。完成运行卡移出聊天，记录在对话菜单；流式回答、真实工具条目、消息时间、Markdown、消息操作和原生选段复制已实现。语音使用独立的 50 pt 按住区域，上滑取消，输入框不再挂录音长按手势。
+
+| 验证 | 结果及实际范围 |
+|---|---|
+| App 单元测试 | 最终 105 项通过，包含发送时序/附件清空/保存失败、时间线、语音与连接方式隔离 |
+| AgentKit | 30 项通过；纯文本原请求 ID、相同文本、重试、孤立元信息、旧会话、附件、三种模型请求；精确验证普通聊天指令与零工具 |
+| DeviceKit | 49 项通过；USB/VPN 路径、取消/释放、身份、接口与候选有效期；只有媒体启动成功可 ready |
+| UI | 11 种场景分别通过，包含多轮/重启、停止、401/503、侧栏排序；真实 SSE 未结束时清空输入和展示部分回答；带前置文字与直接工具调用两种时间线重启恢复 |
+| iPhone/iPad | Markdown 标题、引用、列表、代码、表格、时间与操作；实际选词 Copy 后 Paste，内容非空且短于整篇；语音模式切换保留草稿、区域尺寸有效。已看 iPhone 浅色与 iPad 深色截图 |
+| S3 固件 | ESP-IDF 5.5.3 构建 390656 字节；6 组协议/localhost 测试、7 项烧录守卫通过，UBSan。ASan 本机初始化死锁，未计通过 |
+| 发布构建/安装 | Release、签名校验通过，MinimumOSVersion=26.0；正常 App 已覆盖安装并按普通参数启动到指定 iPhone 14 Pro。未在真机安装 UI Test Runner |
+
+首轮 UI 暴露了工具与回复错序：模型时间戳与主机处理事件的时间不同，不能混用排序。改为消息存储顺序和工具的上一条消息锚点；同锚恢复运行的活动按主机开始时间排序。独立审查还发现纯文本恢复会替换原用户 ID，导致无前置文字工具丢锚；已用现有显示元信息格式保留所有新请求 ID，并验证没有改变模型上下文。首轮失败保留在本地结果中，针对性复测通过。配对时停止 VPN 漏取消监听的回归也已修复，并覆盖连接标记尚为空的情况。
+
+开发板代码位于 `Firmware/NCM-Relay`，App 可选 USB 板或本地 VPN，USB 分支不会启动 VPN，外部 VPN 回调不终止板会话。**这些软件测试不是开发板实测。** TRAE Passport 为 ESP32-C3，其固定 USB Serial/JTAG 不能实现 NCM；目前 Mac 无开发板串口枚举，没有备份、烧录、NCM 枚举或公司 VPN 共存实测。无线中转尚未实现。详见 [硬件与烧录说明](board-setup.md)。iOS 26 生产触控后端仍待完成；本轮聊天和连接方式改动没有补齐它。实际真人录音、本地语言识别效果未重新验收。
+
+本地证据：`.build/results/FinalAppAndPlainChat.xcresult`（105 单元 + 普通聊天重启），`.build/results/ChatTemporalProof-iPad.xcresult`（真实流式与工具顺序），`.build/results/ChatTimelineNoProse.xcresult`（直接工具调用重启），`.build/results/TimelinePairingRegression.xcresult`（22 项），`.build/results/ChatPresentationCopyVerified.xcresult`、`.build/results/ChatPresentation-iPad-Dark.xcresult`（各 2 项 UI）；截图 `.build/chat-ui-review-copy/`、`.build/chat-ipad-review/`。日志 `/tmp/eiscue-runtime-message-identity-final.log`、`/tmp/eiscue-ncm-transport-tests.log`、`/tmp/eiscue-board-build.log`、`/tmp/eiscue-board-final-tests.log`、`/tmp/eiscue-chat-release.log`、`/tmp/eiscue-chat-20261011-install.log`、`/tmp/eiscue-chat-20261011-launch.log`。
+
+## iOS 26 本机替代通道实测（同日，控制通道探针）
 
 产品支持要求保持 iOS / iPadOS 26 及以上。之前将 App 可运行与设备控制未完成分开描述，并不能代替这一要求；原先选用的 DisplayService/HID 路径在测试机上缺少必要服务，应修正控制实现。
 

@@ -29,6 +29,7 @@ final class AppModel {
     var isImportingAttachments = false
     var isLoading = true
     var isSaving = false
+    var isSubmittingMessage = false
     var isStopping = false
     var errorMessage: String?
     var agentAvailability: AgentAvailability = .unconfigured
@@ -47,6 +48,11 @@ final class AppModel {
     var showsOnboarding = false
     var connectionMessage = String(localized: "connection.disconnected", table: "Runtime")
     var deviceConnectionError: String?
+    /// Change through selectDeviceConnectionMethod so old sessions are released first.
+    var deviceConnectionMethod: DeviceConnectionMethod {
+        didSet { preferences.set(deviceConnectionMethod.rawValue, forKey: "deviceConnectionMethod") }
+    }
+    var isChangingDeviceConnectionMethod = false
     var isConnecting = false
     var isPairing = false
     var isManagingTunnel = false
@@ -62,7 +68,7 @@ final class AppModel {
     let storageDirectory: URL
     @ObservationIgnored let preferences: UserDefaults
     @ObservationIgnored let credentials: CredentialStore
-    @ObservationIgnored let repository: JSONConversationRepository
+    @ObservationIgnored let repository: any ConversationRepository
     @ObservationIgnored let journal: RunJournal
     @ObservationIgnored let skillLibrary: SkillLibrary
     @ObservationIgnored let messageAttachments: MessageAttachments
@@ -77,12 +83,15 @@ final class AppModel {
     @ObservationIgnored var pairingTask: Task<Void, Never>?
     @ObservationIgnored var pairingLeaseID: UUID?
     @ObservationIgnored var deviceOperationID = UUID()
+    @ObservationIgnored var deviceConnectionTask: Task<Void, Error>?
+    @ObservationIgnored var activeDeviceConnectionMethod: DeviceConnectionMethod?
     @ObservationIgnored var currentScenePhase: ScenePhase = .active
     @ObservationIgnored var lastTaskPresentation: TaskStatusPresentation?
     @ObservationIgnored var isReceivingResponse = false
     var runtimeDirectory: URL { storageDirectory.appendingPathComponent("Runtime", isDirectory: true) }
 
-    init() {
+    init(storageDirectory suppliedDirectory: URL? = nil, preferences suppliedPreferences: UserDefaults? = nil,
+         repository suppliedRepository: (any ConversationRepository)? = nil) {
         let files = FileManager.default
         var directory = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Eiscue", isDirectory: true)
         var defaults = UserDefaults.standard
@@ -99,8 +108,11 @@ final class AppModel {
             }
         }
         #endif
+        if let suppliedDirectory { directory = suppliedDirectory }
+        if let suppliedPreferences { defaults = suppliedPreferences }
         storageDirectory = directory
         preferences = defaults
+        deviceConnectionMethod = DeviceConnectionMethod(rawValue: defaults.string(forKey: "deviceConnectionMethod") ?? "") ?? .localVPN
         showsOnboarding = defaults.integer(forKey: "onboardingVersion") < 1
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
@@ -111,7 +123,7 @@ final class AppModel {
         appearance = AppAppearance(rawValue: defaults.string(forKey: "appearance") ?? "system") ?? .system
         hapticsEnabled = defaults.object(forKey: "hapticsEnabled") as? Bool ?? true
         modelSettings = defaults.data(forKey: "modelSettings").flatMap { try? JSONDecoder().decode(ModelSettings.self, from: $0) } ?? ModelSettings()
-        repository = JSONConversationRepository(fileURL: directory.appendingPathComponent("conversations.json"))
+        repository = suppliedRepository ?? JSONConversationRepository(fileURL: directory.appendingPathComponent("conversations.json"))
         journal = RunJournal(directory: directory.appendingPathComponent("Runs", isDirectory: true))
         skillLibrary = SkillLibrary(directory: directory.appendingPathComponent("Skills", isDirectory: true))
         messageAttachments = MessageAttachments(directory: directory.appendingPathComponent("Attachments", isDirectory: true))
@@ -120,7 +132,7 @@ final class AppModel {
                                   platform: current.userInterfaceIdiom == .pad ? .iPadOS : .iOS, systemVersion: current.systemVersion)
         do { try background.register() } catch { connectionMessage = error.localizedDescription }
         localTunnel.onDisconnect = { [weak self] in
-            guard let self else { return }
+            guard let self, self.activeDeviceConnectionMethod == .localVPN || self.isPairing else { return }
             let operationID = self.deviceOperationID
             let runID = self.activeRun?.id
             if self.isDeviceReady && !self.isStoppingTunnel {
@@ -131,6 +143,7 @@ final class AppModel {
             if self.activeRun?.scope != .chat { self.deviceTools?.stop() }
             Task {
                 guard self.deviceOperationID == operationID,
+                      self.activeDeviceConnectionMethod == .localVPN || self.isPairing,
                       self.activeRun == nil || self.activeRun?.id == runID,
                       !self.localTunnel.isConnected else { return }
                 await self.disconnectDevice(stopChatRun: false, stopReason: String(localized: "connection.lost_stopped", table: "Runtime"))
@@ -153,7 +166,7 @@ final class AppModel {
         showsOnboarding = false
     }
     var isRunning: Bool { activeRun != nil }
-    var isBusy: Bool { isSaving || isRunning || isPairing || isStopping || isConnecting || isManagingTunnel || isStoppingTunnel || isImportingAttachments }
+    var isBusy: Bool { isSaving || isRunning || isPairing || isStopping || isConnecting || isChangingDeviceConnectionMethod || isManagingTunnel || isStoppingTunnel || isImportingAttachments }
     var canSend: Bool { !isLoading && !isBusy && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty) }
     var canAddAttachments: Bool { !isLoading && !isBusy && draftAttachments.count < MessageAttachments.maximumCount }
     var isDeviceReady: Bool { if case .ready = deviceStatus { true } else { false } }
@@ -161,6 +174,15 @@ final class AppModel {
     var agentStatusTitle: String { agentAvailability == .ready ? String(localized: "agent.configured", table: "Runtime") : String(localized: "agent.configure_first", table: "Runtime") }
     var selectedSkill: AgentSkill? { skills.first { $0.id == selectedSkillID } }
     var selectedRuns: [RunRecord] { runs.filter { $0.conversationID == selectedConversationID } }
+    var conversationFeed: [ConversationFeedItem] {
+        var records = selectedRuns
+        if let activeRun, activeRun.conversationID == selectedConversationID {
+            records.removeAll { $0.id == activeRun.id }
+            records.append(activeRun)
+        }
+        return ConversationFeedItem.merge(messages: selectedConversation?.messages ?? [],
+                                          activities: records.flatMap { $0.activities ?? [] })
+    }
     var needsRecovery: Bool { selectedConversationID.map { interruptedConversationIDs.contains($0) } ?? false }
     var unsubmittedMessageIDs: Set<UUID> {
         var states: [UUID: RunSubmission] = [:]
@@ -181,6 +203,7 @@ final class AppModel {
                 runs[index].state = .interrupted
                 runs[index].detail = String(localized: "run.recovered_interruption", table: "Runtime")
                 runs[index].endedAt = Date()
+                runs[index].interruptOpenActivities()
                 try await journal.save(runs[index])
             }
             var latestStates: [UUID: RunState] = [:]
@@ -270,27 +293,44 @@ final class AppModel {
         if needsRecovery { errorMessage = String(localized: "run.resolve_interruption", table: "Runtime"); return }
         if scope != .chat && !isDeviceReady { errorMessage = String(localized: "run.connect_first", table: "Runtime"); return }
         if scope != .chat && !modelSettings.supportsImages { errorMessage = String(localized: "run.images_required", table: "Runtime"); return }
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let originalDraft = draft
+        let text = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = draftAttachments
         do { try AgentAttachment.validate(attachments, supportsImages: modelSettings.supportsImages) }
         catch { errorMessage = error.localizedDescription; return }
-        isSaving = true
-        var conversation = selectedConversation ?? Conversation(title: String((text.isEmpty ? attachments.first?.name ?? "" : text).prefix(40)))
+        isSaving = true; isSubmittingMessage = true
+        let previousConversation = selectedConversation
+        let previousSelection = selectedConversationID
+        var conversation = previousConversation ?? Conversation(title: String((text.isEmpty ? attachments.first?.name ?? "" : text).prefix(40)))
         let history = conversation.messages.filter { !unsubmittedMessageIDs.contains($0.id) }
         let message = AgentMessage(role: .user, text: text, attachments: attachments)
         conversation.messages.append(message); conversation.updatedAt = Date()
+        // Sending immediately moves the draft onto the transcript. Persistence
+        // and provider admission still happen before any model/tool execution.
+        composerSessionID = UUID()
+        let submissionSession = composerSessionID
+        draft = ""; draftAttachments = []
+        streamingText = ""
+        upsert(conversation); selectedConversationID = conversation.id
         do {
             try await repository.save(conversation)
-            upsert(conversation); selectedConversationID = conversation.id
             preferences.set(conversation.id.uuidString, forKey: "selectedConversationID")
             isSaving = false
             if hapticsEnabled { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
-            let finished = await perform(conversationID: conversation.id, requestID: message.id, prompt: text, history: history, resume: false, attachments: attachments)
-            // Failed/cancelled sends keep the user's exact draft for review.
-            if finished, draft.trimmingCharacters(in: .whitespacesAndNewlines) == text, draftAttachments == attachments {
-                draft = ""; draftAttachments = []
+            _ = await perform(conversationID: conversation.id, requestID: message.id, prompt: text, history: history, resume: false, attachments: attachments)
+        } catch {
+            // A local save failure did not submit the message. Remove only the
+            // optimistic copy; restore the draft without overwriting new edits.
+            conversations.removeAll { $0.id == conversation.id }
+            if let previousConversation { upsert(previousConversation) }
+            if selectedConversationID == conversation.id { selectedConversationID = previousSelection }
+            if composerSessionID == submissionSession, draft.isEmpty, draftAttachments.isEmpty {
+                draft = originalDraft; draftAttachments = attachments
             }
-        } catch { isSaving = false; errorMessage = String(format: String(localized: "error.save_message", table: "Runtime"), error.localizedDescription) }
+            isSaving = false
+            errorMessage = String(format: String(localized: "error.save_message", table: "Runtime"), safeError(error))
+        }
+        isSubmittingMessage = false
     }
 
     func continueInterruptedRun() async {
@@ -366,7 +406,14 @@ final class AppModel {
                                           log: { [weak self] kind, detail in try await self?.logEvent(kind, detail) },
                                           onUnknown: { [weak self] in await self?.stop(expectedRunID: runID, reason: String(localized: "run.unknown_delivery", table: "Runtime")) })
             deviceTools = tools
-            agent = AgentClient(configuration: config, storageDirectory: runtimeDirectory, tools: tools.tools)
+            var availableTools = tools.tools
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+               ProcessInfo.processInfo.arguments.contains("--tool-timeline-fixture") {
+                availableTools = Self.timelineFixtureTools
+            }
+            #endif
+            agent = AgentClient(configuration: config, storageDirectory: runtimeDirectory, tools: availableTools)
             runningAgent = agent
             if scope != .chat {
                 try await background.begin(taskID: runID, title: String(localized: "run.activity_title", table: "Runtime"), subtitle: String(localized: "run.preparing_device", table: "Runtime"), onExpiration: { [weak self] in
@@ -416,10 +463,35 @@ final class AppModel {
                 case .toolStarted(let call):
                     isReceivingResponse = false
                     currentTool = call.name; activeRun?.detail = String(format: String(localized: "run.calling_tool", table: "Runtime"), call.name)
+                    if let runID = activeRun?.id {
+                        let activityID = "\(runID.uuidString):\(call.id)"
+                        if !(activeRun?.activities ?? []).contains(where: { $0.id == activityID }) {
+                            var activities = activeRun?.activities ?? []
+                            activities.append(ToolActivity(id: activityID, name: call.name,
+                                                           arguments: sanitizedActivityText(ToolActivityFormatting.arguments(call.arguments)),
+                                                           precedingMessageID: conversations.first(where: { $0.id == conversationID })?.messages.last?.id))
+                            activeRun?.activities = activities
+                        }
+                    }
                     try await logEvent("tool.started", call.name)
                 case .toolFinished(let completion):
                     isReceivingResponse = false
                     currentTool = ""
+                    if let runID = activeRun?.id {
+                        let activityID = "\(runID.uuidString):\(completion.call.id)"
+                        var activities = activeRun?.activities ?? []
+                        if let index = activities.firstIndex(where: { $0.id == activityID }) {
+                            activities[index].endedAt = Date()
+                            activities[index].output = sanitizedActivityText(completion.result.text)
+                            activities[index].isError = completion.result.isError
+                        } else {
+                            activities.append(ToolActivity(id: activityID, name: completion.call.name, endedAt: Date(),
+                                                           arguments: sanitizedActivityText(ToolActivityFormatting.arguments(completion.call.arguments)),
+                                                           output: sanitizedActivityText(completion.result.text), isError: completion.result.isError,
+                                                           precedingMessageID: conversations.first(where: { $0.id == conversationID })?.messages.last?.id))
+                        }
+                        activeRun?.activities = activities
+                    }
                     try await logEvent(completion.result.isError ? "tool.failed" : "tool.finished", completion.call.name)
                     if completion.result.isError {
                         let text = completion.result.content.compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: " ")
@@ -443,6 +515,7 @@ final class AppModel {
             if !stopRequested { activeRun?.detail = safeError(error) }
         }
         deviceTools?.stop()
+        activeRun?.interruptOpenActivities()
         updateTaskStatus(isFinishing: true)
         if activeRun?.scope != .chat { await releaseDeviceConnection() }
         activeRun?.endedAt = Date()
@@ -601,5 +674,13 @@ final class AppModel {
         var message = text
         if let key = try? credentials.read("model-key"), !key.isEmpty { message = message.replacingOccurrences(of: key, with: String(localized: "privacy.redacted_key", table: "Runtime")) }
         return String(message.prefix(1000))
+    }
+
+    private func sanitizedActivityText(_ text: String) -> String {
+        var value = text
+        if let key = try? credentials.read("model-key"), !key.isEmpty {
+            value = value.replacingOccurrences(of: key, with: String(localized: "privacy.redacted_key", table: "Runtime"))
+        }
+        return String(value.prefix(8_192))
     }
 }

@@ -1,13 +1,15 @@
 import SwiftUI
 
-struct AssistantMessageContent: View {
+struct AssistantMessageContent: View, Equatable {
     let text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(StickerCatalog.segments(in: text).enumerated()), id: \.offset) { _, segment in
                 switch segment {
                 case .text(let value):
-                    if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text(value) }
+                    if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ChatMarkdownView(source: value).equatable()
+                    }
                 case .sticker(let sticker):
                     Image(sticker.assetName).resizable().scaledToFit().frame(width: 144, height: 144)
                         .accessibilityLabel(sticker.label)

@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tap to start or stop. Hold to talk, then release to finish."
+            "value": "Hold to talk. Release to finish, or slide up to cancel."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点击开始或停止；也可以按住说话，松开结束。"
+            "value": "按住说话，松开结束，上滑取消。"
           }
         }
       }
@@ -235,6 +235,108 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有识别到语音，请再试一次。"
+          }
+        }
+      }
+    },
+    "speech.holdToTalk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold to talk"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住说话"
+          }
+        }
+      }
+    },
+    "speech.slideToCancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release to finish · Slide up to cancel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开结束 · 上滑取消"
+          }
+        }
+      }
+    },
+    "speech.releaseToCancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release to cancel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开取消"
+          }
+        }
+      }
+    },
+    "speech.holdHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold to talk, then release. Slide up to cancel. With VoiceOver, double-tap to start or stop."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住说话，松开结束，上滑取消。使用旁白时，轻点两下开始或停止。"
+          }
+        }
+      }
+    },
+    "speech.keyboardMode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to keyboard"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换键盘输入"
+          }
+        }
+      }
+    },
+    "speech.voiceMode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to voice input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换语音输入"
           }
         }
       }

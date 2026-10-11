@@ -12,23 +12,24 @@ struct AssistantView: View {
     @State private var showsFiles = false
     @State private var showsCamera = false
     @State private var speech = SpeechInputController()
+    @State private var isVoiceMode = false
+    @State private var showsRunHistory = false
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if let conversation = model.selectedConversation, !conversation.messages.isEmpty {
+                    if let conversation = model.selectedConversation, !model.conversationFeed.isEmpty {
                         transcript(conversation)
                     } else { welcome }
                     if !model.streamingText.isEmpty {
                         AssistantMessageContent(text: model.streamingText)
-                            .textSelection(.enabled)
+                            .equatable()
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18)
-                            .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 22))
                             .accessibilityElement(children: .contain)
                             .accessibilityIdentifier("streamingResponse")
                     }
+                    if model.activeRun != nil || model.isSubmittingMessage { AssistantReplyIndicator() }
                     runStatus
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -54,6 +55,18 @@ struct AssistantView: View {
                 }
                 .labelStyle(.iconOnly)
                 .accessibilityIdentifier("historyButton")
+            }
+            ToolbarItem(placement: .principal) {
+                Menu {
+                    Button("runs.conversationTitle", systemImage: "clock.arrow.circlepath") { showsRunHistory = true }
+                        .accessibilityIdentifier("conversationRunHistoryButton")
+                } label: {
+                    HStack(spacing: 5) {
+                        Text("Eiscue").font(.headline)
+                        Image(systemName: "chevron.down").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }.accessibilityLabel(chatText("chat.conversationMenu"))
+                    .accessibilityIdentifier("conversationMenuButton")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: AppDestination.device) {
@@ -87,6 +100,12 @@ struct AssistantView: View {
         .onChange(of: model.composerSessionID) {
             speech.cancel()
             showsPhotoPicker = false; showsFiles = false; showsCamera = false
+        }
+        .sheet(isPresented: $showsRunHistory) {
+            NavigationStack {
+                RunHistoryView(conversationID: model.selectedConversationID)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("common.done") { showsRunHistory = false } } }
+            }
         }
         .onDisappear { speech.cancel() }
     }
@@ -122,86 +141,33 @@ struct AssistantView: View {
     }
 
     private func transcript(_ conversation: Conversation) -> some View {
-        VStack(spacing: 22) {
-            Text(conversation.createdAt, format: .dateTime.month().day()).font(.caption).foregroundStyle(.tertiary)
-            ForEach(conversation.messages) { message in
-                HStack(alignment: .top) {
-                    if message.role == .user { Spacer(minLength: 36) }
-                    VStack(alignment: .leading, spacing: 10) {
-                        if message.role == .assistant { AssistantMessageContent(text: message.text) }
-                        else if !message.text.isEmpty { Text(message.text) }
-                        if !message.attachments.isEmpty {
-                            ForEach(message.attachments) { attachment in
-                                MessageAttachmentView(attachment: attachment)
-                            }
-                        }
-                        if model.unsubmittedMessageIDs.contains(message.id) {
-                            Text("assistant.unsubmittedMessage").font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-                    .font(.body).textSelection(.enabled)
-                    .padding(.horizontal, 18).padding(.vertical, 14)
-                    .background(message.role == .user ? EiscueStyle.accent.opacity(0.1) : EiscueStyle.surface,
-                                in: RoundedRectangle(cornerRadius: 22))
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("messageBubble")
-                    if message.role != .user { Spacer(minLength: 36) }
+        VStack(alignment: .leading, spacing: 22) {
+            Text(conversation.createdAt, format: .dateTime.month().day())
+                .font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity)
+            ForEach(model.conversationFeed) { item in
+                switch item {
+                case .message(let message): ChatMessageRow(message: message)
+                case .activity(let activity): ToolActivityRow(activity: activity)
                 }
             }
         }
     }
+
     @ViewBuilder private var runStatus: some View {
-        if let run = model.activeRun {
-            SurfaceCard {
-                HStack(spacing: 12) {
-                    ProgressView()
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(run.state.title).font(.subheadline.weight(.medium))
-                        if run.state == .failed || run.state == .interrupted {
-                            Text(run.detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Button("common.stop", role: .destructive) { Task { await model.stop() } }
-                        .foregroundStyle(.primary)
-                        .accessibilityIdentifier("stopRunButton")
+        if model.activeRun == nil, model.needsRecovery {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("assistant.interrupted", systemImage: "pause.circle").font(.subheadline.weight(.medium))
+                Text("assistant.recoveryDetail").font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("assistant.resume") { Task { await model.continueInterruptedRun() } }
+                        .buttonStyle(.glassProminent).accessibilityIdentifier("resumeRunButton")
+                    Button("assistant.endTask") { Task { await model.abandonInterruptedRun() } }
+                        .buttonStyle(.glass)
                 }
-            }
-        } else if model.needsRecovery {
-            SurfaceCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("assistant.interrupted", systemImage: "pause.circle").font(.subheadline.weight(.semibold))
-                    Text("assistant.recoveryDetail")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button("assistant.resume") { Task { await model.continueInterruptedRun() } }
-                            .buttonStyle(.glassProminent)
-                            .accessibilityIdentifier("resumeRunButton")
-                        Button("assistant.endTask") { Task { await model.abandonInterruptedRun() } }
-                            .buttonStyle(.glass)
-                    }
-                }
-            }
-        } else if let run = model.selectedRuns.first {
-            NavigationLink {
-                RunHistoryView(conversationID: model.selectedConversationID)
-            } label: {
-                HStack(alignment: .top) {
-                    Image(systemName: run.state == .completed ? "checkmark.circle" : "exclamationmark.circle")
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(run.state.title).font(.subheadline.weight(.medium))
-                        if run.state == .failed || run.state == .interrupted {
-                            Text(run.detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption)
-                }
-                .foregroundStyle(.primary)
-                .padding(16)
-            }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.roundedRectangle(radius: 18))
+            }.padding(.vertical, 8)
+        } else if model.activeRun == nil, let run = model.selectedRuns.first, run.state == .failed {
+            Label(run.detail, systemImage: "exclamationmark.circle")
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         }
     }
 
@@ -211,6 +177,8 @@ struct AssistantView: View {
         let receiveDictation: @MainActor (String) -> Void = { transcript in
             guard model.composerSessionID == dictationSessionID else { return }
             appendDictation(transcript)
+            isVoiceMode = false
+            isComposerFocused = true
         }
         return VStack(spacing: 10) {
             if !model.draftAttachments.isEmpty {
@@ -305,30 +273,46 @@ struct AssistantView: View {
                     .controlSize(.large)
                     .disabled(model.isBusy || speech.isBusy)
                     .accessibilityLabel(text("composer.add")).accessibilityIdentifier("composerAddButton")
-                    HStack(alignment: .bottom, spacing: 0) {
-                        TextField("assistant.composerPlaceholder", text: $model.draft, axis: .vertical)
-                            .lineLimit(1...5).font(.body).padding(.vertical, 14)
-                            // Include the padded edges in the input's hit region above the glass.
-                            .contentShape(Rectangle())
-                            .focused($isComposerFocused).disabled(model.isBusy)
-                            .accessibilityIdentifier("messageInput")
-                            .simultaneousGesture(LongPressGesture(minimumDuration: 0.7).onEnded { _ in
-                                guard !model.isBusy, model.draft.isEmpty else { return }
-                                isComposerFocused = false
-                                speech.toggle(onTranscript: receiveDictation)
-                            })
-                        SpeechInputButton(controller: speech, isDisabled: model.isBusy, onTranscript: receiveDictation)
-                            .frame(width: 44, height: 48).disabled(model.isBusy)
+                    Button {
+                        speech.cancel()
+                        isVoiceMode.toggle()
+                        isComposerFocused = !isVoiceMode
+                    } label: {
+                        Image(systemName: isVoiceMode ? "keyboard" : "waveform")
+                            .font(.system(size: 18, weight: .medium)).frame(width: 22, height: 22)
                     }
-                    .padding(.leading, 18).padding(.trailing, 4)
-                    .frame(minHeight: 50)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 26))
+                    .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.large)
+                    .disabled(model.isBusy)
+                    .accessibilityLabel(String(localized: isVoiceMode ? "speech.keyboardMode" : "speech.voiceMode", table: "Speech"))
+                    .accessibilityIdentifier("speechInputButton")
+                    if isVoiceMode {
+                        SpeechInputButton(controller: speech, isDisabled: model.isBusy, onTranscript: receiveDictation)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        HStack {
+                            TextField("assistant.composerPlaceholder", text: $model.draft, axis: .vertical)
+                                .lineLimit(1...5).font(.body).padding(.vertical, 14).padding(.horizontal, 18)
+                                .contentShape(Rectangle())
+                                .focused($isComposerFocused).disabled(model.isSaving)
+                                .accessibilityIdentifier("messageInput")
+                        }
+                        .frame(minHeight: 50)
+                        .glassEffect(.regular, in: .rect(cornerRadius: 26))
+                    }
+                    if model.activeRun != nil {
+                        Button { Task { await model.stop() } } label: {
+                            Image(systemName: "stop.fill").font(.system(size: 16, weight: .semibold))
+                                .frame(width: 22, height: 22)
+                        }
+                        .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.large)
+                        .accessibilityLabel("common.stop").accessibilityIdentifier("stopRunButton")
+                    } else if !isVoiceMode {
                     Button {
                         isComposerFocused = false
                         Task { await model.sendMessage() }
                     } label: {
                         Group {
-                            if model.isSaving { ProgressView().controlSize(.small) }
+                            if model.isSaving || model.isSubmittingMessage { ProgressView().controlSize(.small) }
                             else { Image(systemName: "arrow.up").font(.system(size: 20, weight: .semibold)) }
                         }
                         .frame(width: 22, height: 22)
@@ -338,6 +322,7 @@ struct AssistantView: View {
                     .controlSize(.large)
                     .disabled(!model.canSend || speech.isBusy)
                     .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
+                    }
                 }
             }
         }
@@ -351,18 +336,4 @@ struct AssistantView: View {
         model.draft += separator + transcript
     }
     private func text(_ key: String.LocalizationValue) -> String { String(localized: key, table: "Composer") }
-}
-
-private struct MessageAttachmentView: View {
-    let attachment: AgentAttachment
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let data = attachment.imageData, let image = UIImage(data: data) {
-                Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 240)
-                    .clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel(attachment.name)
-            } else {
-                Label(attachment.name, systemImage: "doc.text").font(.subheadline).foregroundStyle(EiscueStyle.accent)
-            }
-        }
-    }
 }

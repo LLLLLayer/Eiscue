@@ -13,7 +13,7 @@ extension AppModel {
     }
 
     func startLocalTunnel() async {
-        guard !isBusy else { return }
+        guard !isBusy, deviceConnectionMethod == .localVPN else { return }
         isManagingTunnel = true
         deviceConnectionError = nil
         defer { isManagingTunnel = false }
@@ -31,7 +31,9 @@ extension AppModel {
         defer { isStoppingTunnel = false }
         // Stop is available while the system is still authorizing or starting.
         // Device media must be released before its network route is removed.
-        await disconnectDevice(stopChatRun: false, stopReason: String(localized: "connection.localStopping"))
+        if activeDeviceConnectionMethod == .localVPN || isPairing {
+            await disconnectDevice(stopChatRun: false, stopReason: String(localized: "connection.localStopping"))
+        }
         do { try await localTunnel.stop() }
         catch { errorMessage = error.localizedDescription }
     }
@@ -44,18 +46,61 @@ extension AppModel {
 
     func connectDevice() async {
         guard !isBusy, !isConnecting else { return }
-        guard localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
+        let method = deviceConnectionMethod
+        guard method == .usbBoard || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
         let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true; deviceConnectionError = nil; connectionMessage = String(localized: "connection.discovering")
-        defer { if deviceOperationID == operationID { isConnecting = false } }
+        isConnecting = true; activeDeviceConnectionMethod = method; deviceConnectionError = nil
+        connectionMessage = method == .usbBoard ? String(localized: "connection.boardDiscovering") : String(localized: "connection.discovering")
+        let client = deviceClient
+        let task = Task { try await client.connect(method: method, configuration: .defaults) }
+        deviceConnectionTask = task
+        defer {
+            if deviceOperationID == operationID {
+                isConnecting = false; deviceConnectionTask = nil
+                if !isDeviceReady { activeDeviceConnectionMethod = nil }
+            }
+        }
         do {
-            try await deviceClient.connectLocalVPN(configuration: .defaults)
-            guard deviceOperationID == operationID else { return }
+            try await task.value
+            guard deviceOperationID == operationID, deviceConnectionMethod == method else { return }
             deviceConnectionError = nil
-            connectionMessage = String(localized: "connection.ready")
+            await refreshDeviceStatus()
+            // Completing discovery/diagnostics is not a control capability.
+            if isDeviceReady { connectionMessage = String(localized: "connection.ready") }
+            else if case .unavailable(let reason) = deviceStatus { connectionMessage = reason }
+        } catch is CancellationError {
+            if deviceOperationID == operationID { connectionMessage = String(localized: "connection.disconnected") }
         } catch { if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
         guard deviceOperationID == operationID else { return }
         await refreshDeviceStatus()
+    }
+
+    /// The primary button starts only the selected connection method. USB never
+    /// starts a tunnel, changes VPN preferences, or falls back onto local VPN.
+    func enableDeviceControl() async {
+        guard !isBusy, !isChangingDeviceConnectionMethod else { return }
+        let method = deviceConnectionMethod
+        if method == .localVPN, !localTunnel.isConnected {
+            await startLocalTunnel()
+        }
+        guard deviceConnectionMethod == method else { return }
+        await connectDevice()
+    }
+
+    func selectDeviceConnectionMethod(_ method: DeviceConnectionMethod) async {
+        guard method != deviceConnectionMethod, !isChangingDeviceConnectionMethod,
+              !isSaving, !isStopping, !isManagingTunnel, !isStoppingTunnel, !isImportingAttachments else { return }
+        isChangingDeviceConnectionMethod = true
+        defer { isChangingDeviceConnectionMethod = false }
+        await disconnectDevice(stopChatRun: false, stopReason: String(localized: "connection.methodChanged"))
+        // Stop only Eiscue's owned tunnel when leaving this method, making room
+        // for another VPN. LocalTunnelManager never adopts another app's VPN.
+        if deviceConnectionMethod == .localVPN, (localTunnel.isConnected || localTunnel.isTransitioning) {
+            await stopLocalTunnel()
+        }
+        deviceConnectionMethod = method
+        deviceConnectionError = nil
+        connectionMessage = method == .usbBoard ? String(localized: "connection.boardSelected") : String(localized: "connection.vpnSelected")
     }
 
     func disconnectDevice(expectedPairingID: UUID? = nil, stopChatRun: Bool = true,
@@ -75,7 +120,12 @@ extension AppModel {
     }
 
     func releaseDeviceConnection() async {
+        activeDeviceConnectionMethod = nil
+        let pending = deviceConnectionTask
+        deviceConnectionTask = nil
+        pending?.cancel()
         await deviceClient.disconnect()
+        if let pending { _ = await pending.result }
         screenshot = nil
         await refreshDeviceStatus()
         if case .unavailable(let reason) = deviceStatus { connectionMessage = reason }
@@ -89,9 +139,14 @@ extension AppModel {
             connectionMessage = String(localized: "connection.requiresUSBPairing")
             return
         }
+        guard deviceConnectionMethod == .localVPN else {
+            connectionMessage = String(localized: "connection.boardPairingImport")
+            return
+        }
         guard localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalBeforePairing"); return }
         deviceConnectionError = nil
         isPairing = true; pairingCode = nil
+        activeDeviceConnectionMethod = .localVPN
         connectionMessage = String(localized: "connection.preparingPairing")
         let id = UUID(); pairingLeaseID = id; deviceOperationID = id
         pairingTask = Task {
@@ -132,6 +187,7 @@ extension AppModel {
             guard pairingLeaseID == id else { return }
             isPairing = false; pairingCode = nil; pairingLeaseID = nil
             await refreshDeviceStatus()
+            if !isDeviceReady { activeDeviceConnectionMethod = nil }
         }
     }
 
@@ -158,7 +214,7 @@ extension AppModel {
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true
         defer { if deviceOperationID == operationID { isConnecting = false } }
-        await deviceClient.disconnect()
+        await releaseDeviceConnection()
         guard deviceOperationID == operationID else { return }
         do {
             try await deviceClient.removePairingIdentity()

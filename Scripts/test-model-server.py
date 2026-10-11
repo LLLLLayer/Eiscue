@@ -3,6 +3,7 @@
 import argparse
 import json
 import time
+from threading import Event
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -13,11 +14,16 @@ def message_text(message):
     return content
 
 
+stream_release = Event()
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
     def do_GET(self):
+        if self.path == "/fixture/release-stream":
+            stream_release.set()
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"fixture ready")
@@ -53,6 +59,25 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return
         answer = "Fixture response: " + content
+        markdown = ("# Markdown title\n\nParagraph **bold** with [link](https://example.com).\n\n"
+                    "- First item\n- Second item\n\n> Quoted text\n\n"
+                    "```swift\nlet answer = 42\n```\n\n"
+                    "| Name | Value |\n| --- | ---: |\n| One | 1 |")
+        if content == "markdown rendering fixture":
+            answer = markdown
+        if content == "streaming ui fixture":
+            answer = "Streaming response arrived incrementally and is now complete."
+        timeline = content in ("timeline fixture", "timeline no prose fixture")
+        tool_results = [m for m in body.get("messages", []) if m.get("role") == "tool"]
+        if timeline and tool_results:
+            if not any(message_text(m) == "Fixture document content" for m in tool_results):
+                self.send_error(400, "Expected the real fixture tool result")
+                return
+            answer = "File inspection finished.\n\n" + markdown
+        elif timeline:
+            if not any(t.get("function", {}).get("name") == "fixture_read_file" for t in body.get("tools", [])):
+                self.send_error(400, "Expected the opt-in timeline test tool")
+                return
         if content in ("plain chat fixture", "plain chat follow-up fixture"):
             messages = body.get("messages", [])
             instructions = [message_text(m) for m in messages
@@ -89,6 +114,21 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             event({"role": "assistant", "content": ""})
+            if timeline and not tool_results:
+                if content == "timeline fixture":
+                    event({"content": "I will inspect the file first."})
+                event({"tool_calls": [{"index": 0, "id": "fixture-call", "type": "function",
+                      "function": {"name": "fixture_read_file", "arguments": ""}}]})
+                event({"tool_calls": [{"index": 0, "function": {"arguments": '{"path":"fixture.txt"}'}}]})
+                event({}, "tool_calls")
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                return
+            if content == "streaming ui fixture":
+                stream_release.clear()
+                event({"content": "Streaming response"})
+                stream_release.wait(timeout=30)
+                answer = answer[len("Streaming response"):]
             if "slow fixture" in content:
                 event({"content": "Waiting for cancellation"})
                 time.sleep(15)

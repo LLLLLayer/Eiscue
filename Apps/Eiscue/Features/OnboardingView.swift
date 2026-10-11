@@ -44,9 +44,10 @@ struct OnboardingView: View {
                     } else {
                         symbol(model.device.platform == .iPadOS ? "ipad" : "iphone.gen3")
                         heading("setup.deviceSetup", "setup.deviceSetupDetail")
+                        DeviceConnectionMethodPicker()
                         row("1.circle", "setup.developerMode", "setup.developerModeDetail")
-                        row("2.circle", "setup.pairing", model.supportsSystemPairing ? "setup.systemPairingDetail" : "setup.usbPairingDetail")
-                        if !model.supportsSystemPairing {
+                        row("2.circle", "setup.pairing", model.deviceConnectionMethod == .usbBoard ? "setup.boardPairingDetail" : model.supportsSystemPairing ? "setup.systemPairingDetail" : "setup.usbPairingDetail")
+                        if !model.supportsSystemPairing || model.deviceConnectionMethod == .usbBoard {
                             Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/blob/main/docs/device-setup.md")!) {
                                 Label(text("setup.computerGuide"), systemImage: "arrow.up.right")
                             }.font(.subheadline)
@@ -60,22 +61,26 @@ struct OnboardingView: View {
                                 Task { await model.importTransferredPairingIdentity() }
                             }
                                 .buttonStyle(.glass).disabled(model.isBusy)
-                        } else if !model.supportsSystemPairing {
+                        } else if !model.supportsSystemPairing || model.deviceConnectionMethod == .usbBoard {
                             Button(text("setup.importFile")) { importsIdentity = true }
                                 .buttonStyle(.glass).disabled(model.isBusy)
                         }
                         if showsPairingFeedback {
                             Text(model.connectionMessage).font(.caption).foregroundStyle(.secondary)
                         }
-                        row("3.circle", "setup.localConnection", "setup.localConnectionDetail")
-                        if model.localTunnel.isConnected {
-                            Label(text("setup.localReady"), systemImage: "checkmark.circle.fill")
-                                .font(.subheadline).foregroundStyle(EiscueStyle.accent)
+                        if model.deviceConnectionMethod == .usbBoard {
+                            row("3.circle", "setup.boardConnection", "setup.boardConnectionDetail")
                         } else {
-                            Button(text("setup.enableConnection")) { Task { await model.startLocalTunnel() } }
-                                .buttonStyle(.glass).disabled(model.isBusy)
+                            row("3.circle", "setup.localConnection", "setup.localConnectionDetail")
+                            if model.localTunnel.isConnected {
+                                Label(text("setup.localReady"), systemImage: "checkmark.circle.fill")
+                                    .font(.subheadline).foregroundStyle(EiscueStyle.accent)
+                            } else {
+                                Button(text("setup.enableConnection")) { Task { await model.startLocalTunnel() } }
+                                    .buttonStyle(.glass).disabled(model.isBusy)
+                            }
                         }
-                        if let error = model.localTunnel.lastError ?? model.errorMessage {
+                        if let error = (model.deviceConnectionMethod == .localVPN ? model.localTunnel.lastError : nil) ?? model.errorMessage {
                             Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.primary)
                         }
                         Text(text("setup.deviceLater")).font(.subheadline).foregroundStyle(.secondary)

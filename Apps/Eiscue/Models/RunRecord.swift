@@ -28,6 +28,17 @@ struct RunRecord: Identifiable, Codable, Sendable {
     var detail: String
     var events: [RunLogEntry]
     var submission: RunSubmission? = nil
+    var activities: [ToolActivity]? = nil
+
+    mutating func interruptOpenActivities(at date: Date = Date()) {
+        guard var activities else { return }
+        for index in activities.indices where activities[index].isRunning {
+            activities[index].endedAt = date
+            activities[index].isError = true
+            activities[index].output = String(localized: "activity.interrupted", table: "Activities")
+        }
+        self.activities = activities
+    }
 }
 
 struct RunLogEntry: Identifiable, Codable, Sendable {

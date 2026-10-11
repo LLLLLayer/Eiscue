@@ -4274,6 +4274,227 @@
           }
         }
       }
+    },
+    "device.connectionMethod": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection method"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接方式"
+          }
+        }
+      }
+    },
+    "device.appConnectionMethod": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In app"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App 内连接"
+          }
+        }
+      }
+    },
+    "device.boardConnectionMethod": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB board"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB 开发板"
+          }
+        }
+      }
+    },
+    "device.appConnectionDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uses Eiscue’s local VPN. Other VPN connections cannot be active at the same time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 Eiscue 本机 VPN 回环，不能同时使用其他 VPN。"
+          }
+        }
+      }
+    },
+    "device.boardConnectionDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect through a USB board while using another VPN. Your device’s pairing authorization is still required."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 USB 开发板连接，可同时使用其他 VPN。仍需先保存这台设备的配对授权。"
+          }
+        }
+      }
+    },
+    "device.boardHardwareRequirement": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires an ESP32-S3 board with Eiscue NCM firmware. TRAE Passport C3 cannot act as the required USB network adapter."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 ESP32-S3 开发板和 Eiscue NCM 固件。TRAE Passport C3 不支持所需的 USB 网卡能力。"
+          }
+        }
+      }
+    },
+    "device.boardFirmwareGuide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Board setup guide"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开发板配置说明"
+          }
+        }
+      }
+    },
+    "device.boardPairingRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import this device’s Eiscue pairing authorization first. Connecting a board does not replace pairing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先导入这台设备的 Eiscue 配对授权。插入开发板不能代替配对。"
+          }
+        }
+      }
+    },
+    "connection.boardDiscovering": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting through the USB board…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在通过 USB 开发板连接…"
+          }
+        }
+      }
+    },
+    "connection.boardSelected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect the configured ESP32-S3 board when you want AI to operate this device. Chat works without it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 AI 操作设备时，再接入已配置好的 ESP32-S3 开发板。聊天不需要连接开发板。"
+          }
+        }
+      }
+    },
+    "connection.vpnSelected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable the local connection when you want AI to operate this device. Chat works without it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 AI 操作设备时，再开启本机连接。聊天不需要开启连接。"
+          }
+        }
+      }
+    },
+    "connection.methodChanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device control stopped because the connection method changed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接方式已切换，设备控制已停止。"
+          }
+        }
+      }
+    },
+    "connection.boardPairingImport": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import this device’s Eiscue pairing authorization before connecting the board."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接开发板前，请先导入这台设备的 Eiscue 配对授权。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

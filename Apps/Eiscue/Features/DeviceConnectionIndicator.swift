@@ -30,7 +30,8 @@ enum ConnectionIndicatorState: Equatable {
 extension AppModel {
     var connectionIndicator: ConnectionIndicatorState {
         .resolve(isReady: isDeviceReady, isConnecting: isConnecting || isPairing || isManagingTunnel,
-                 hasIdentity: hasPairingIdentity, hasError: deviceConnectionError != nil || localTunnel.lastError != nil)
+                 hasIdentity: hasPairingIdentity,
+                 hasError: deviceConnectionError != nil || (deviceConnectionMethod == .localVPN && localTunnel.lastError != nil))
     }
 }
 

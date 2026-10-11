@@ -561,6 +561,57 @@
           }
         }
       }
+    },
+    "setup.boardPairingDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import an Eiscue RemotePairing identity for this device. The board uses this authorization and cannot pair on your behalf."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入这台设备的 Eiscue 配对授权。开发板会复用该授权，不能替你完成配对。"
+          }
+        }
+      }
+    },
+    "setup.boardConnection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect a USB board"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接入 USB 开发板"
+          }
+        }
+      }
+    },
+    "setup.boardConnectionDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use an ESP32-S3 board running Eiscue NCM firmware. TRAE Passport C3 does not support this USB network connection. You can keep your other VPN active."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用已刷写 Eiscue NCM 固件的 ESP32-S3 开发板。TRAE Passport C3 不支持这种 USB 网卡连接。你可以继续使用其他 VPN。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

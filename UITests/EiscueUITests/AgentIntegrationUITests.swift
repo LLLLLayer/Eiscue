@@ -3,10 +3,11 @@ import XCTest
 /// Run Scripts/test-model-server.py first. The runtime is the real Pi engine;
 /// only the model HTTP endpoint is replaced by a deterministic loopback server.
 final class AgentIntegrationUITests: XCTestCase {
-    @MainActor private func launch(reset: Bool = true) -> XCUIApplication {
+    @MainActor private func launch(reset: Bool = true, timeline: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         if reset { app.launchArguments.append("--reset-state") }
+        if timeline { app.launchArguments.append("--tool-timeline-fixture") }
         app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
         app.launch()
         return app
@@ -24,7 +25,8 @@ final class AgentIntegrationUITests: XCTestCase {
         var app = launch()
         send("Plan a calm morning", in: app)
         XCTAssertTrue(app.staticTexts["Fixture response: Plan a calm morning"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.staticTexts["已完成"].waitForExistence(timeout: 5))
+        waitUntilIdle(in: app)
+        XCTAssertFalse(app.staticTexts["已完成"].exists)
         app.terminate()
         app = launch(reset: false)
         XCTAssertTrue(app.staticTexts["Fixture response: Plan a calm morning"].waitForExistence(timeout: 10))
@@ -76,12 +78,10 @@ final class AgentIntegrationUITests: XCTestCase {
         let idle = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
                                             object: app.buttons["stopRunButton"])
         XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 10), .completed, file: file, line: line)
-        let canSend = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"),
-                                               object: app.buttons["sendMessageButton"])
-        XCTAssertEqual(XCTWaiter.wait(for: [canSend], timeout: 5), .completed, file: file, line: line)
         let field = app.textFields["messageInput"]
         let input = field.exists ? field : app.textViews["messageInput"]
-        XCTAssertEqual(input.value as? String, prompt, file: file, line: line)
+        XCTAssertNotEqual(input.value as? String, prompt, "A submitted message stays on the transcript after a service failure.", file: file, line: line)
+        XCTAssertTrue(app.staticTexts[prompt].exists, file: file, line: line)
         XCTAssertFalse(app.debugDescription.contains("local-fixture-key"),
                        "A provider error must not expose the configured credential", file: file, line: line)
 
@@ -94,8 +94,83 @@ final class AgentIntegrationUITests: XCTestCase {
         send("Conversation after service failure", in: app)
         XCTAssertTrue(app.staticTexts["Fixture response: Conversation after service failure"].waitForExistence(timeout: 20),
                       file: file, line: line)
-        XCTAssertTrue(app.staticTexts["已完成"].waitForExistence(timeout: 5), file: file, line: line)
+        waitUntilIdle(in: app, file: file, line: line)
+        XCTAssertFalse(app.staticTexts["已完成"].exists, file: file, line: line)
         XCTAssertEqual(app.state, .runningForeground, file: file, line: line)
+    }
+
+    @MainActor func testSendClearsComposerBeforeStreamFinishes() async throws {
+        let app = launch()
+        let field = app.textFields["messageInput"]
+        let input = field.exists ? field : app.textViews["messageInput"]
+        XCTAssertTrue(input.waitForExistence(timeout: 8))
+        let emptyValue = input.value as? String
+        send("streaming ui fixture", in: app)
+        XCTAssertTrue(app.staticTexts["streaming ui fixture"].waitForExistence(timeout: 3))
+        XCTAssertEqual(input.value as? String, emptyValue)
+        XCTAssertTrue(app.descendants(matching: .any)["assistantReplyIndicator"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Streaming response"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Streaming response arrived incrementally and is now complete."].exists,
+                       "The response must be visible before its final chunk.")
+        XCTAssertTrue(app.buttons["stopRunButton"].exists)
+        _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:18765/fixture/release-stream")!)
+        XCTAssertTrue(app.staticTexts["Streaming response arrived incrementally and is now complete."].waitForExistence(timeout: 15))
+        waitUntilIdle(in: app)
+        XCTAssertFalse(app.descendants(matching: .any)["assistantReplyIndicator"].exists)
+    }
+
+    @MainActor func testRealToolActivityInterleavesAndSurvivesRelaunch() {
+        var app = launch(timeline: true)
+        send("timeline fixture", in: app)
+        XCTAssertTrue(app.staticTexts["I will inspect the file first."].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Markdown title"].waitForExistence(timeout: 15))
+        waitUntilIdle(in: app)
+        assertTimeline(in: app)
+        app.terminate()
+        app = launch(reset: false, timeline: true)
+        XCTAssertTrue(app.staticTexts["Markdown title"].waitForExistence(timeout: 10))
+        assertTimeline(in: app)
+        XCTAssertFalse(app.staticTexts["已完成"].exists)
+    }
+
+    @MainActor func testToolWithoutPrefaceKeepsUserAnchorAcrossRelaunch() {
+        var app = launch(timeline: true)
+        send("timeline no prose fixture", in: app)
+        XCTAssertTrue(app.staticTexts["Markdown title"].waitForExistence(timeout: 15))
+        waitUntilIdle(in: app)
+        assertToolOnlyTimeline(in: app)
+        app.terminate()
+        app = launch(reset: false, timeline: true)
+        XCTAssertTrue(app.staticTexts["Markdown title"].waitForExistence(timeout: 10))
+        assertToolOnlyTimeline(in: app)
+    }
+
+    @MainActor private func assertToolOnlyTimeline(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let user = app.staticTexts["timeline no prose fixture"]
+        let tool = app.descendants(matching: .any)["toolActivityRow"].firstMatch
+        let reply = app.staticTexts["File inspection finished."]
+        XCTAssertTrue(user.exists && tool.exists && reply.exists, file: file, line: line)
+        XCTAssertLessThan(user.frame.midY, tool.frame.midY, file: file, line: line)
+        XCTAssertLessThan(tool.frame.midY, reply.frame.midY, file: file, line: line)
+        XCTAssertFalse(app.staticTexts["I will inspect the file first."].exists, file: file, line: line)
+    }
+
+    @MainActor private func assertTimeline(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let firstReply = app.staticTexts["I will inspect the file first."]
+        let tool = app.descendants(matching: .any)["toolActivityRow"].firstMatch
+        let finalReply = app.staticTexts["File inspection finished."]
+        XCTAssertTrue(tool.exists, file: file, line: line)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 1, file: file, line: line)
+        XCTAssertLessThan(firstReply.frame.midY, tool.frame.midY, file: file, line: line)
+        XCTAssertLessThan(tool.frame.midY, finalReply.frame.midY, file: file, line: line)
+        if !tool.isHittable { app.swipeDown() }
+        tool.tap()
+        XCTAssertTrue(app.staticTexts["Fixture document content"].waitForExistence(timeout: 5), file: file, line: line)
+    }
+
+    @MainActor private func waitUntilIdle(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let idle = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
+        XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 10), .completed, file: file, line: line)
     }
 
     @MainActor func testSidebarOrderPinAndDeletePersistAcrossLaunches() throws {
