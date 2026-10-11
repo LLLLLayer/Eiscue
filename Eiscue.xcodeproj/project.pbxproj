@@ -61,7 +61,6 @@
 		9D3928AF4F7625FE481F138E /* ios-navigation.md in Resources */ = {isa = PBXBuildFile; fileRef = A66379A812D3C89AAE2ED92F /* ios-navigation.md */; };
 		9DE47B041261AEEF75F702FE /* BackgroundStatus.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 90CF9E90D067F4E45B51B53B /* BackgroundStatus.xcstrings */; };
 		A2D195A62AB15BEC9729CCBC /* Attachments.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 99BE7FEB9D6CE3C2A17C25A1 /* Attachments.xcstrings */; };
-		A440005D541B447BCF56BFAD /* eiscue-stickers.md in Resources */ = {isa = PBXBuildFile; fileRef = 3A0C77B0B9A4F9DB3CFA3FC9 /* eiscue-stickers.md */; };
 		A988E817500C9D7E12208F23 /* BackgroundExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5DA2E68A4377D4B76AD9CC /* BackgroundExecution.swift */; };
 		AFE01C39F200061750F93B6E /* AppLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCA2E1255BE860C03B2D7D2 /* AppLocalizationTests.swift */; };
 		AFF5BAFF1AA096C424054BBE /* MessageAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5349182DB47DC593791EC351 /* MessageAttachments.swift */; };
@@ -159,7 +158,6 @@
 		34AC8ABABC1676BF5AD324B2 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
 		368D71E0423BB477CF0EEC8F /* Eiscue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Eiscue.entitlements; sourceTree = "<group>"; };
 		369A186D03AD1B77A10984A0 /* PairingTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingTransfer.swift; sourceTree = "<group>"; };
-		3A0C77B0B9A4F9DB3CFA3FC9 /* eiscue-stickers.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "eiscue-stickers.md"; sourceTree = "<group>"; };
 		3C2715D754945BFFCB698F91 /* LocalizationResourcesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationResourcesTests.swift; sourceTree = "<group>"; };
 		3C3263DD13486C0532D98C2A /* MessageAttachmentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageAttachmentsTests.swift; sourceTree = "<group>"; };
 		42CF02C0AE15013B45B39912 /* EiscueTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EiscueTunnel.entitlements; sourceTree = "<group>"; };
@@ -300,7 +298,6 @@
 		7D4B7AC68501D50E737749EF /* Skills */ = {
 			isa = PBXGroup;
 			children = (
-				3A0C77B0B9A4F9DB3CFA3FC9 /* eiscue-stickers.md */,
 				AE8FF5FBC3248D3E092A0B6F /* failure-recovery.md */,
 				A66379A812D3C89AAE2ED92F /* ios-navigation.md */,
 				0C6151CD048ACF400CBF0CBB /* search-smoke-test.md */,
@@ -651,7 +648,6 @@
 				C5D5B11972031426686CB168 /* Speech.xcstrings in Resources */,
 				2FE688868E3F9C410C131F99 /* Stickers.json in Resources */,
 				2C5C93121F230E36902D3397 /* TaskStatus.xcstrings in Resources */,
-				A440005D541B447BCF56BFAD /* eiscue-stickers.md in Resources */,
 				B64A0FF7B8E06DB51C0ED42F /* failure-recovery.md in Resources */,
 				9D3928AF4F7625FE481F138E /* ios-navigation.md in Resources */,
 				1C1D4CC676D0758763A53063 /* search-smoke-test.md in Resources */,

@@ -1,6 +1,6 @@
 import XCTest
 
-/// Start Scripts/test-model-server.py before running the sticker integration test.
+/// Start Scripts/test-model-server.py before running the plain-chat integration test.
 /// These tests never request microphone, camera, or photo-library permission.
 final class RichComposerUITests: XCTestCase {
     @MainActor private func launch(reset: Bool = true) -> XCUIApplication {
@@ -50,25 +50,18 @@ final class RichComposerUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["speechPreview"].exists)
     }
 
-    @MainActor func testAssistantStickerStreamsAndSurvivesRelaunch() throws {
+    @MainActor func testPlainChatWithoutPluginsSurvivesRelaunch() throws {
         var app = launch()
-        let input = messageInput(in: app)
-        input.tap()
-        input.typeText("sticker fixture")
-        app.buttons["sendMessageButton"].tap()
-
-        XCTAssertTrue(app.images["assistantSticker-wave"].firstMatch.waitForExistence(timeout: 20))
-        let completed = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
-        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 10), .completed)
-        assertStickerReply(in: app)
+        sendPlainChat("plain chat fixture", in: app)
         app.terminate()
 
         app = launch(reset: false)
-        XCTAssertTrue(app.images["assistantSticker-wave"].firstMatch.waitForExistence(timeout: 10))
-        assertStickerReply(in: app)
+        XCTAssertTrue(app.staticTexts["Fixture response: plain chat fixture"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["stopRunButton"].exists)
         XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+        // The fixture verifies the actual model request: minimal instructions,
+        // no tools, and the complete previous turn restored after relaunch.
+        sendPlainChat("plain chat follow-up fixture", in: app)
     }
 
     @MainActor private func messageInput(in app: XCUIApplication) -> XCUIElement {
@@ -78,11 +71,20 @@ final class RichComposerUITests: XCTestCase {
         return input
     }
 
-    @MainActor private func assertStickerReply(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Hello")).firstMatch.exists,
+    @MainActor private func sendPlainChat(_ text: String, in app: XCUIApplication,
+                                         file: StaticString = #filePath, line: UInt = #line) {
+        let input = messageInput(in: app)
+        input.tap()
+        input.typeText(text)
+        app.buttons["sendMessageButton"].tap()
+        XCTAssertTrue(app.staticTexts["Fixture response: \(text)"].waitForExistence(timeout: 20),
                       file: file, line: line)
-        XCTAssertEqual(app.images.matching(identifier: "assistantSticker-wave").count, 1, file: file, line: line)
-        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "[[eiscue:wave]]")).firstMatch.exists,
+        let completed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 10), .completed, file: file, line: line)
+        XCTAssertEqual(app.images.matching(NSPredicate(format: "identifier BEGINSWITH %@", "assistantSticker-")).count,
+                       0, file: file, line: line)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "[[eiscue:")).firstMatch.exists,
                        file: file, line: line)
     }
 }

@@ -24,14 +24,6 @@ enum StickerCatalog {
         return entries.filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
     }()
 
-    static var instructions: String {
-        guard !stickers.isEmpty else { return "" }
-        let rules = Bundle.main.url(forResource: "eiscue-stickers", withExtension: "md", subdirectory: "Skills")
-            ?? Bundle.main.url(forResource: "eiscue-stickers", withExtension: "md")
-        let text = rules.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-        return text + "\nAvailable stickers:\n" + stickers.map { "\($0.token): \($0.meaning)" }.joined(separator: "\n")
-    }
-
     /// Only exact, known tokens in assistant messages become local images. No remote URLs execute.
     static func segments(in text: String, catalog: [EiscueSticker] = stickers) -> [StickerSegment] {
         guard let regex = try? NSRegularExpression(pattern: #"\[\[eiscue:([a-z0-9-]+)\]\]"#) else { return [.text(text)] }

@@ -2,6 +2,16 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## 普通聊天移除表情 Skill（同日）
+
+用户报告“你好”长时间等待后收到回复。指定 iPhone 14 Pro 的任务记录显示该轮以 `completed` 结束，耗时约 25 秒，只有 `run.started` 事件，没有设备工具调用。原 App 会无条件提供表情 Skill、表情目录和设备说明；此次移除表情 Skill 资源及注入，普通聊天只保留简短的身份、语言和简洁回复提示。设备规则只在非聊天范围加入，其他 Skill 仍由用户明确选择。插画资产及旧消息显示保留。
+
+定向 UI 回归 `testPlainChatWithoutPluginsSurvivesRelaunch` 通过：首轮发送、重启恢复、第二轮继续聊天全部完成。本地 HTTP fixture 对真实运行时生成的两轮请求精确检查唯一的简短指令（含 Pi 固定 `<instructions>` 包装）、没有 tools/functions，以及重启后保留完整历史。UI 检查文本回复、任务结束和未显示表情；未调用真实模型服务。测试先后发现未签名模拟器构建无法访问 Keychain，以及 fixture 预期漏算 Pi 包装；修正测试签名和精确预期后复测通过，未为通过测试修改生产行为。
+
+签名 Release 构建和签名验证通过，正常 App 已覆盖安装并启动到指定 iPhone 14 Pro，原配置与对话保留。最终测试产物为 `.build/results/PlainChatWithoutPluginsVerified.xcresult`、`/tmp/eiscue-plain-chat-verified-test.log`；构建、安装与启动日志为 `/tmp/eiscue-plain-chat-release.log`、`/tmp/eiscue-plain-chat-install.log`、`/tmp/eiscue-plain-chat-launch.log`。
+
+USB 配对核对：指定测试机的电脑侧状态为 `paired`、`wired`，开发者模式已启用且 DDI 服务可用。电脑信任正常不等于 App 已取得自己的身份；本文没有进行 Eiscue 身份生成、导入或设备控制验收。已补充文档，说明既有信任无需重复弹窗，以及当前命令行流程尚不是面向普通用户的一键配置体验。
+
 ## Gemini Chat Completions 400 修正（同日）
 
 闪退修复后的真机任务记录提供了实际失败原因：Google 返回 `INVALID_ARGUMENT`，明确拒绝 JSON 中的 `store` 字段。该请求为普通聊天，接口和模型为用户配置的官方 Gemini OpenAI 兼容端点及 `gemini-3.8-flash`。此次只读取任务错误详情，没有读取 Keychain 凭据。

@@ -53,13 +53,28 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return
         answer = "Fixture response: " + content
-        if content == "sticker fixture":
-            instructions = "\n".join(message_text(m) for m in body.get("messages", [])
-                                     if m.get("role") in ("system", "developer"))
-            if "[[eiscue:wave]]" not in instructions:
-                self.send_error(400, "Sticker catalog missing from model instructions")
+        if content in ("plain chat fixture", "plain chat follow-up fixture"):
+            messages = body.get("messages", [])
+            instructions = [message_text(m) for m in messages
+                            if m.get("role") in ("system", "developer")]
+            # Pi renders AgentChange.instructions as one tagged prompt section.
+            expected = ("<instructions>\n"
+                        "You are Eiscue. Reply concisely in the user's language.\n"
+                        "</instructions>")
+            if instructions != [expected]:
+                self.send_error(400, "Plain chat must use only the minimal instructions")
                 return
-            answer = "Hello [[eiscue:wave]]"
+            if body.get("tools") or body.get("functions"):
+                self.send_error(400, "Plain chat must not expose tools")
+                return
+            if content == "plain chat follow-up fixture":
+                history = [(m.get("role"), message_text(m)) for m in messages
+                           if m.get("role") in ("user", "assistant")]
+                if history != [("user", "plain chat fixture"),
+                               ("assistant", "Fixture response: plain chat fixture"),
+                               ("user", "plain chat follow-up fixture")]:
+                    self.send_error(400, "Plain chat history must survive relaunch")
+                    return
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")

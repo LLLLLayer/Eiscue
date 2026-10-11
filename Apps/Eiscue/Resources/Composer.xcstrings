@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask Eiscue for a sticker in a conversation."
+            "value": "Eiscue illustrations used throughout the app."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聊天时可以让 Eiscue 发一个表情。"
+            "value": "用于 App 各处的 Eiscue 插画。"
           }
         }
       }
