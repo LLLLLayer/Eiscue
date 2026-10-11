@@ -12,11 +12,10 @@ struct IceMark: View {
     var size: CGFloat = 52
 
     var body: some View {
-        Image("Mascot")
+        Image("MascotCutout")
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
             .accessibilityHidden(true)
     }
 }

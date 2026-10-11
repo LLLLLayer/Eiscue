@@ -21,8 +21,8 @@ struct OnboardingView: View {
                     .accessibilityLabel(text("setup.progress \(step + 1)"))
 
                     if step == 0 {
-                        Image("Mascot").resizable().scaledToFit().frame(height: 220)
-                            .clipShape(RoundedRectangle(cornerRadius: 32)).frame(maxWidth: .infinity)
+                        Image("MascotCutout").resizable().scaledToFit().frame(height: 220)
+                            .frame(maxWidth: .infinity)
                             .accessibilityHidden(true)
                         heading("setup.welcome", "setup.welcomeDetail")
                         row("bubble.left.and.bubble.right", "setup.chat", "setup.chatDetail")
@@ -60,7 +60,7 @@ struct OnboardingView: View {
                                 Task { await model.importTransferredPairingIdentity() }
                             }
                                 .buttonStyle(.bordered).disabled(model.isBusy)
-                        } else {
+                        } else if !model.supportsSystemPairing {
                             Button(text("setup.importFile")) { importsIdentity = true }
                                 .buttonStyle(.bordered).disabled(model.isBusy)
                         }
@@ -98,15 +98,6 @@ struct OnboardingView: View {
                 .accessibilityIdentifier("onboardingContinueButton")
                 .frame(maxWidth: 520).padding(.horizontal, 28).padding(.vertical, 16)
                 .frame(maxWidth: .infinity).background(EiscueStyle.background)
-            }
-            .toolbar {
-                if step > 0 {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { step -= 1 } label: {
-                            Image(systemName: "chevron.left")
-                        }.accessibilityLabel(text("setup.back"))
-                    }
-                }
             }
             .sheet(isPresented: $showsModelSettings) { ModelSettingsView() }
             .onChange(of: step) { _, value in

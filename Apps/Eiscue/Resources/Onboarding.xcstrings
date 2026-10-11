@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This one-time setup lets Eiscue operate your device."
+            "value": "Device control needs pairing and a prepared developer environment. You can start with chat."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成一次准备，Eiscue 就能连接并操作设备。"
+            "value": "操作设备需要先配对，并准备好系统开发环境。你也可以先使用聊天。"
           }
         }
       }
@@ -330,13 +330,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On iOS or iPadOS 26, connect to a computer with USB once. Use the Eiscue pairing tool, then import the file it creates."
+            "value": "This version still needs a computer for initial pairing on iOS or iPadOS 26. The Eiscue tool creates a pairing identity; import it here to authorize the connection."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "iOS / iPadOS 26 需要先用数据线连接电脑。运行 Eiscue 配对工具，再导入它生成的文件。"
+            "value": "当前版本在 iOS / iPadOS 26 上仍需电脑完成首次配对。电脑工具生成配对身份，导入后用于连接认证。"
           }
         }
       }
@@ -558,23 +558,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "稍后配置 AI"
-          }
-        }
-      }
-    },
-    "setup.back": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Back"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上一步"
           }
         }
       }
