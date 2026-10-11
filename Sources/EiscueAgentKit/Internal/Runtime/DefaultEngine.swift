@@ -327,8 +327,21 @@ actor DefaultEngine: AgentEngine {
         try await models.register(CustomProvider(id: "eiscue", baseURL: baseURL, api: api,
             apiKey: configuration.apiKey.isEmpty ? nil : configuration.apiKey,
             models: [.init(id: configuration.model, input: configuration.supportsImages ? ["text", "image"] : ["text"],
-                           contextWindow: configuration.contextWindow, maxTokens: configuration.maxOutputTokens)]))
+                           contextWindow: configuration.contextWindow, maxTokens: configuration.maxOutputTokens,
+                           compat: completionCompatibility(for: configuration))]))
         return (models, ModelRef(provider: "eiscue", modelId: configuration.model))
+    }
+
+    private static func completionCompatibility(for configuration: AgentConfiguration) -> PiDurableKit.JSONObject? {
+        let url = configuration.baseURL
+        guard configuration.api == .openAICompletions,
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "generativelanguage.googleapis.com",
+              url.port == nil || url.port == 443,
+              url.path == "/v1beta/openai" || url.path == "/v1beta/openai/" else { return nil }
+        // Google's OpenAI compatibility endpoint rejects even `store: false`.
+        // Disable Pi's default field only for this endpoint and wire protocol.
+        return ["supportsStore": .bool(false)]
     }
 
     private func importHistory(_ history: [AgentMessage], into conversation: PiDurableKit.Conversation) async throws {

@@ -23,6 +23,8 @@ func makeAgent(configuration: AgentConfiguration, storage: URL) -> AgentClient {
 
 `AgentConfiguration` 接受接口类型、服务地址、模型 ID、密钥、图片能力和 token 上限。宿主负责从自己的安全存储获取密钥，避免把包含密钥的配置写入普通文件。实例在内存中保存配置，修改配置后创建新的 client；先停止旧 client，避免两个运行时同时写同一会话。
 
+Google Gemini 使用 `.openAICompletions` 和官方服务地址 `https://generativelanguage.googleapis.com/v1beta/openai/`。AgentKit 自动省略该端点不接受的 `store` 请求字段，无需额外配置；此兼容规则只应用于该 HTTPS 端点和协议，不改变其他自定义服务或 Responses / Messages 的行为。
+
 工具的参数和结果使用 Eiscue 自有类型。副作用工具将 `mayHaveSideEffects` 保持为默认的 `true`；图片通过 `AgentToolResult.image(data,mimeType:caption:)` 返回。权限、用户确认、设备输入门控和结果未知后的停止，由提供工具的宿主落实。
 
 ## 执行与停止

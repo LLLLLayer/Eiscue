@@ -2,13 +2,25 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## Gemini Chat Completions 400 修正（同日）
+
+闪退修复后的真机任务记录提供了实际失败原因：Google 返回 `INVALID_ARGUMENT`，明确拒绝 JSON 中的 `store` 字段。该请求为普通聊天，接口和模型为用户配置的官方 Gemini OpenAI 兼容端点及 `gemini-3.8-flash`。此次只读取任务错误详情，没有读取 Keychain 凭据。
+
+AgentKit 对该官方 HTTPS 端点的 Chat Completions 请求设置 Pi 的 `supportsStore=false`，使发出的 JSON 完全省略 `store`。匹配限定协议、精确域名、路径和默认 HTTPS 端口；不改用户配置，不把规则套用到其他自定义服务或 Responses / Messages。
+
+`swift test --filter ProviderIntegrationTests` 的 2 项参数化测试、共 11 个用例全部通过。测试使用 URLProtocol 截获真实运行时生成的请求，验证 Google 端点省略 `store`、普通 OpenAI / 相似域名 / 不同路径及其他协议保持原行为，同时检查模型、图片、鉴权、请求路径和模拟流式回复。所有请求均在本地拦截，未使用真实凭据，也未验证 Google 账号的实际请求结果。
+
+签名 Release 构建和 `codesign --verify --deep --strict` 通过。正常 App 已覆盖安装并启动到指定 iPhone 14 Pro，保留现有配置与对话。可使用原配置再次发送消息验证 Google 的实际响应。
+
+本地产物：`/tmp/eiscue-google-provider-tests.log`、`/tmp/eiscue-gemini-store-release.log`、`/tmp/eiscue-gemini-store-install.log`、`/tmp/eiscue-gemini-store-launch.log`。
+
 ## 普通聊天请求失败时闪退修正（同日）
 
 指定 iPhone 14 Pro 的 16:05:31、16:05:40 两份崩溃报告与本地 Release dSYM UUID 匹配，符号化均定位到 `AppModel.perform` 的错误处理分支。可选链修改 `activeRun?.state` 时，赋值右侧又读取 `activeRun?.submission`，触发 Swift 独占访问冲突并终止进程；普通发送和继续中断任务共用此路径。修正为先读取并计算状态，再单独写入，保留原有失败/中断语义。
 
 新增本地 HTTP 401、503 错误 fixture 与端到端 UI 回归。未修版本在 401 用例中复现 App 退出；修正版两项错误用例与原停止/重启用例共 3 项通过。覆盖具体错误可见、草稿保留、解除忙碌状态、假凭据脱敏，以及同一 App 会话内新建对话后正常收到回复。签名 Release 构建与签名验证通过，正常 App 已更新并启动到指定 iPhone 14 Pro。
 
-用户提供的 Gemini 兼容接口地址及 `gemini-3.8-flash` 与 [Google 官方兼容接口文档](https://ai.google.dev/gemini-api/docs/openai) 一致。本次没有读取或使用用户的真实 API Key；真实模型请求失败的具体原因尚未取得，不能把修复崩溃等同于已验证 Google 模型请求成功。
+用户提供的 Gemini 兼容接口地址及 `gemini-3.8-flash` 与 [Google 官方兼容接口文档](https://ai.google.dev/gemini-api/docs/openai) 一致。本次没有读取或使用用户的真实 API Key；在此阶段尚未取得请求失败的具体原因，后续 400 修正见上节，修复崩溃本身不代表已验证 Google 模型请求成功。
 
 本地产物：`.build/results/ChatFailureReproduction.xcresult`（修复前失败）、`.build/results/ChatFailureFixTests.xcresult`（修复后 3 项通过）、`.build/diagnostics/chat-crash/`（仅本地崩溃报告及匹配符号）、`/tmp/eiscue-chat-failure-release.log`、`/tmp/eiscue-chat-failure-install.log`、`/tmp/eiscue-chat-failure-launch.log`。
 

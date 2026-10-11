@@ -6,6 +6,82 @@ import os
 
 @Suite("Custom provider protocols")
 struct ProviderIntegrationTests {
+    struct StoreEndpoint: Sendable, CustomStringConvertible {
+        let url: String
+        let api: AgentAPI
+        let sendsStore: Bool
+        var description: String { "\(api.rawValue): \(url)" }
+    }
+
+    @Test(arguments: [
+        StoreEndpoint(url: "https://generativelanguage.googleapis.com/v1beta/openai", api: .openAICompletions, sendsStore: false),
+        StoreEndpoint(url: "https://generativelanguage.googleapis.com:443/v1beta/openai/", api: .openAICompletions, sendsStore: false),
+        StoreEndpoint(url: "https://api.openai.com/v1", api: .openAICompletions, sendsStore: true),
+        StoreEndpoint(url: "https://generativelanguage.googleapis.com.fixture.invalid/v1beta/openai", api: .openAICompletions, sendsStore: true),
+        StoreEndpoint(url: "https://proxy.generativelanguage.googleapis.com/v1beta/openai", api: .openAICompletions, sendsStore: true),
+        StoreEndpoint(url: "https://generativelanguage.googleapis.com/v1", api: .openAICompletions, sendsStore: true),
+        StoreEndpoint(url: "https://generativelanguage.googleapis.com/v1beta/openai", api: .openAIResponses, sendsStore: true),
+        StoreEndpoint(url: "https://generativelanguage.googleapis.com/v1beta/openai", api: .anthropicMessages, sendsStore: false),
+    ])
+    func googleStoreCompatibilityPreservesOtherProviderRequests(_ endpoint: StoreEndpoint) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-google-compat-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: endpoint.api, baseURL: try #require(URL(string: endpoint.url)),
+                                               model: "gemini-3.8-flash", apiKey: "google-compat-fixture-\(UUID())",
+                                               supportsImages: true)
+        // Intercept every URL in this session, including the official hosts;
+        // no DNS lookup, external request, or real credential is involved.
+        let network = URLSessionConfiguration.ephemeral
+        network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        let photo = AgentAttachment(name: "photo.png", mimeType: "image/png", content: .image(Data([137, 80, 78, 71])))
+        var messages: [AgentMessage] = []
+        var partials: [String] = []
+        for try await event in try await client.run(request: .init(conversationID: UUID(), prompt: "Describe this photo", attachments: [photo])) {
+            if case .message(let message) = event { messages.append(message) }
+            if case .assistantText(let text) = event { partials.append(text) }
+        }
+        #expect(messages.last?.text == "Hello world")
+        #expect(partials.contains { !$0.isEmpty })
+        if endpoint.api == .openAICompletions {
+            #expect(partials.contains { !$0.isEmpty && $0 != "Hello world" && "Hello world".hasPrefix($0) })
+        }
+
+        // Unique credentials distinguish parallel cases sharing Google's host.
+        let requests = ProviderFixtureProtocol.requests.withLock {
+            $0.filter { $0.authorization == "Bearer \(configuration.apiKey)" || $0.apiKey == configuration.apiKey }
+        }
+        #expect(requests.count == 1)
+        let request = try #require(requests.first)
+        #expect(request.url.scheme == "https")
+        #expect(request.url.host == configuration.baseURL.host)
+        let path = configuration.baseURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let suffix: String = switch endpoint.api {
+        case .openAICompletions: "/chat/completions"
+        case .openAIResponses: "/responses"
+        case .anthropicMessages: "/v1/messages"
+        }
+        #expect(request.url.path == "/" + path + suffix)
+        #expect(request.body["model"] == "gemini-3.8-flash")
+        #expect(request.body["stream"] == true)
+        if endpoint.sendsStore {
+            #expect(request.body["store"] == false)
+        } else {
+            #expect(request.body["store"] == nil)
+        }
+        if endpoint.api == .anthropicMessages {
+            #expect(request.apiKey == configuration.apiKey)
+        } else {
+            #expect(request.authorization == "Bearer \(configuration.apiKey)")
+        }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
+        let wireBody = try #require(String(data: encoder.encode(request.body), encoding: .utf8))
+        #expect(wireBody.contains("iVBORw=="))
+        #expect(wireBody.contains("image/png"))
+    }
+
     @Test(arguments: AgentAPI.allCases)
     func customProviderUsesConfiguredEndpointAndCredential(_ api: AgentAPI) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-provider-\(UUID())")
