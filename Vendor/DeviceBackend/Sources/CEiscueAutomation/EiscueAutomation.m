@@ -160,6 +160,11 @@ static void finishGeometry(EiscueOwnedAutomation *owner, uint64_t query, uint64_
             bounds.origin.x != 0 || bounds.origin.y != 0 || orientation < 1 || orientation > 4) {
             fail(owner, EISCUE_AUTOMATION_GEOMETRY); return;
         }
+        // XCTScreenService forwards CADisplay.bounds in physical pixels. Keep
+        // this bridge's bounds in points so image validation applies scale once
+        // and XCPointerEventPath receives the matching point coordinates.
+        bounds.size.width /= scale;
+        bounds.size.height /= scale;
         eiscue_automation_state state = owner.status;
         if (state.scale && (state.display_id != (uint64_t)display || state.scale != scale ||
             state.bounds_width != bounds.size.width || state.bounds_height != bounds.size.height ||
@@ -447,6 +452,7 @@ int32_t eiscue_automation_touch(uint64_t lease, uint64_t request, uint64_t revis
             !signature(path, @"moveToPoint:atOffset:", "v40@0:8{CGPoint=dd}16d32") ||
             !signature(record, @"initWithName:displayID:interfaceOrientation:", "@40@0:8@16Q24q32") ||
             !signature(record, @"addPointerEventPath:", "v24@0:8@16") ||
+            !signature(owner.session, @"useLegacyEventCoordinateTransformationPath", "B16@0:8") ||
             !signature(owner.session, @"synthesizeEvent:completion:", "@32@0:8@16@?24")) return EISCUE_AUTOMATION_SIGNATURE;
         double bw = state.bounds_width * state.scale, bh = state.bounds_height * state.scale;
         BOOL direct = fabs(width - bw) <= 1 && fabs(height - bh) <= 1;
@@ -454,11 +460,30 @@ int32_t eiscue_automation_touch(uint64_t lease, uint64_t request, uint64_t revis
         if ((!direct && !swapped) || !isfinite(state.scale) || state.scale <= 0) return EISCUE_AUTOMATION_GEOMETRY;
         CGPoint start = CGPointMake((double)x / 65535 * (width - 1) / state.scale, (double)y / 65535 * (height - 1) / state.scale);
         CGPoint end = CGPointMake((double)endX / 65535 * (width - 1) / state.scale, (double)endY / 65535 * (height - 1) / state.scale);
+        BOOL legacy = ((BOOL (*)(id, SEL))objc_msgSend)(owner.session, NSSelectorFromString(@"useLegacyEventCoordinateTransformationPath"));
+        NSInteger eventOrientation = state.orientation;
+        if (!legacy) {
+            // Modern XCTest consumes fixed portrait screen points and removes
+            // the event's orientation. Match XCUICoordinate.screenPoint's
+            // transform before building both ends of the gesture.
+            double nativeWidth = fmin(state.bounds_width, state.bounds_height);
+            double nativeHeight = fmax(state.bounds_width, state.bounds_height);
+            for (int index = 0; index < 2; index++) {
+                CGPoint p = index ? end : start;
+                switch (state.orientation) {
+                    case 2: p = CGPointMake(nativeWidth - p.x, nativeHeight - p.y); break;
+                    case 3: p = CGPointMake(nativeWidth - p.y, p.x); break;
+                    case 4: p = CGPointMake(p.y, nativeHeight - p.x); break;
+                }
+                if (index) end = p; else start = p;
+            }
+            eventOrientation = 1;
+        }
         path = ((id (*)(id, SEL, CGPoint, double))objc_msgSend)(path, NSSelectorFromString(@"initForTouchAtPoint:offset:"), start, 0);
         if (duration) ((void (*)(id, SEL, CGPoint, double))objc_msgSend)(path, NSSelectorFromString(@"moveToPoint:atOffset:"), end, duration / 1000.0);
         ((void (*)(id, SEL, double))objc_msgSend)(path, NSSelectorFromString(@"liftUpAtOffset:"), duration ? duration / 1000.0 + 0.02 : 0.1);
         record = ((id (*)(id, SEL, id, uint64_t, NSInteger))objc_msgSend)(record,
-            NSSelectorFromString(@"initWithName:displayID:interfaceOrientation:"), @"Eiscue", state.display_id, state.orientation);
+            NSSelectorFromString(@"initWithName:displayID:interfaceOrientation:"), @"Eiscue", state.display_id, eventOrientation);
         if (!path || !record) return EISCUE_AUTOMATION_CONFIGURATION;
         ((void (*)(id, SEL, id))objc_msgSend)(record, NSSelectorFromString(@"addPointerEventPath:"), path);
         return submitOwnedEvent(owner, request, revision, record, NO, nil);

@@ -26,6 +26,8 @@ static uint32_t capturedPage, capturedUsage;
 static double capturedDuration, capturedOffset;
 static NSUInteger capturedModifiers, clipboardWrites;
 static BOOL dirtyDuringConstruction, throwOnSend, throwOnClipboardWrite;
+static BOOL legacyCoordinates;
+static CGPoint capturedTouchPoint;
 static NSInteger capturedOrientation;
 static uint64_t capturedDisplay;
 static NSString *capturedText, *capturedName, *capturedKey;
@@ -88,7 +90,7 @@ static id deviceEvent(id cls, SEL sel, uint32_t page, uint32_t usage, double dur
     return [cls new];
 }
 static id initText(id receiver, SEL selector) { constructions++; return receiver; }
-static id initTouch(id receiver, SEL selector, CGPoint point, double offset) { constructions++; return receiver; }
+static id initTouch(id receiver, SEL selector, CGPoint point, double offset) { constructions++; capturedTouchPoint=point; return receiver; }
 static void moveTouch(id receiver, SEL selector, CGPoint point, double offset) {}
 static void liftTouch(id receiver, SEL selector, double offset) {}
 static void fixtureTypeKey(id receiver, SEL selector, id key, NSUInteger modifiers, double offset) {
@@ -107,6 +109,7 @@ static void receiveEvent(id receiver, id event, id completion) {
 static void performDevice(id receiver, SEL selector, id event, id completion) { receiveEvent(receiver,event,completion); }
 static id synthesize(id receiver, SEL selector, id event, id completion) { receiveEvent(receiver,event,completion); return nil; }
 static id fixtureConnection(id receiver, SEL selector) { return sessionConnection; }
+static BOOL fixtureLegacyCoordinates(id receiver, SEL selector) { return legacyCoordinates; }
 static void method(Class cls, const char *selector, IMP implementation, const char *types) {
     CHECK(class_addMethod(cls,sel_registerName(selector),implementation,types));
 }
@@ -129,6 +132,7 @@ static void installFixtures(void) {
     method(fakeSessionClass,"performDeviceEvent:completion:",(IMP)performDevice,"v32@0:8@16@?24");
     method(fakeSessionClass,"synthesizeEvent:completion:",(IMP)synthesize,"@32@0:8@16@?24");
     method(fakeSessionClass,"connection",(IMP)fixtureConnection,"@16@0:8");
+    method(fakeSessionClass,"useLegacyEventCoordinateTransformationPath",(IMP)fixtureLegacyCoordinates,"B16@0:8");
     wrongSignatureSessionClass=fixtureClass("EiscueFixtureWrongSignatureSession");
     method(wrongSignatureSessionClass,"performDeviceEvent:completion:",(IMP)performDevice,"v24@0:8@16");
     method(wrongSignatureSessionClass,"synthesizeEvent:completion:",(IMP)synthesize,"v32@0:8@16@?24");
@@ -140,6 +144,7 @@ static void resetOwner(void) {
     current.session=[fakeSessionClass new]; current.observers=[NSMutableArray new];
     submissions=0; constructions=0; clipboardWrites=0;
     dirtyDuringConstruction=NO; throwOnSend=NO; throwOnClipboardWrite=NO;
+    legacyCoordinates=NO;
     capturedText=nil; capturedName=nil; capturedKey=nil; capturedPath=nil; capturedEvent=nil; lastCompletion=nil;
     sessionConnection=nil;
 }
@@ -385,6 +390,26 @@ int main(void) { @autoreleasepool {
     NSError *error=[NSError errorWithDomain:@"Fixture" code:1 userInfo:nil];
     CHECK(eiscue_automation_type_text(19,2,7,(const uint8_t *)"hello",5)==0);
     receipt(YES,error); CHECK(current.status.phase==EISCUE_AUTOMATION_FAILED && current.status.error==EISCUE_AUTOMATION_DELIVERY_UNKNOWN);
+    // Actual iPhone 14 Pro screen-service geometry is pixels, at scale three.
+    // Converting twice rejected its first 1179x2556 screenshot as stale.
+    resetOwner();
+    finishGeometry(current,0,7,3,3,CGRectMake(0,0,1179,2556),1,nil);
+    CHECK(current.status.bounds_width==393 && current.status.bounds_height==852);
+    CHECK(current.status.scale==3 && current.status.revision==8);
+    finishGeometry(current,0,8,3,3,CGRectMake(0,0,1179,2556),1,nil);
+    CHECK(current.status.revision==8);
+    CHECK(eiscue_automation_touch(19,1,8,1179,2556,0,0,0,0,0)==0);
+    receipt(YES,nil); CHECK(current.status.phase==EISCUE_AUTOMATION_READY);
+    for (NSInteger orientation=3;orientation<=4;orientation++) {
+        resetOwner();
+        finishGeometry(current,0,7,3,3,CGRectMake(0,0,1179,2556),orientation,nil);
+        CHECK(eiscue_automation_touch(19,1,8,2556,1179,16384,32768,16384,32768,0)==0);
+        double x=16384.0/65535*2555/3, y=32768.0/65535*1178/3;
+        CHECK(fabs(capturedTouchPoint.x-(orientation==3?393-y:y))<0.001);
+        CHECK(fabs(capturedTouchPoint.y-(orientation==3?x:852-x))<0.001);
+        CHECK(capturedOrientation==1);
+        receipt(YES,nil);
+    }
     eiscue_automation_abort(19);
     alarm(0);
     printf("PASS: %lu owned home/text/touch checks (UTF-8, geometry, receipts, unknown delivery, abort)\n", (unsigned long)checks);

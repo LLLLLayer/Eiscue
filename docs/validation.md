@@ -2,7 +2,37 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
-## Passport 无线开发板（同日，当前）
+## 最新无线真机验收（同日）
+
+指定 **iPhone 14 Pro / iOS 26.5.2** 经 Passport 无线开发板完成一次完整动作
+闭环，最终报告 `/tmp/eiscue-wireless-final-check-result.json` 为
+**`state = passed`、`phase = finished`**。两次连接、两次点击及各自点击后截图、
+两次本地断开均通过；另验证合法 `1179 × 2556` PNG、180° 旋转后的旧帧拒绝且
+无效果、新帧点击、滑动、Unicode `你好，Eiscue 🧊` 输入、Home 和启动 App。
+开始及两次连接时本地 VPN 均为未连接，连接方式保持 `wirelessBoard`。
+
+新固件已刷入，600 秒采集中 6 次发现均 `status = 0`，一次手机关联和预期
+`.2` DHCP 租约，没有断开、panic 或错误。最新 Objective-C fixture 为 **220 项
+通过**。Home 和文本输入的生产能力限制已移除；更新后的签名 Release 完整构建
+通过（17.545 秒），`codesign --verify --deep --strict` 返回 0，覆盖安装和空参数
+普通启动均成功。正常 RootView 启动后的进程检查确认 App 仍运行，未自动重跑
+Debug 验证。Release 构建、安装和启动证据为
+`/tmp/eiscue-wireless-verified-release-build.log`、
+`/tmp/eiscue-wireless-verified-release-install.json`、
+`/tmp/eiscue-wireless-verified-release-launch.json`。
+
+**通过范围仅为上述实际闭环。** 本地断开不等于远端 daemon 释放 ACK，Home 的
+短暂前后台切换不证明长时后台稳定运行；蜂窝模型联网与公司 VPN 共存仍未验收。
+首次扫码加入失败的原因仍未知。详细过程、早期失败及证据见
+[无线真机验证增量记录](board-validation-2026-10-11.md)。
+
+下面的 Passport 和 XCTest 小节是同日早期记录，保留其当时的未完成状态和测试
+结果；其中“停在授权页”“手机连接待验”不代表当前最新状态。
+
+## Passport 无线开发板（同日，早期记录）
+
+**历史范围：本节记录当时的备份、刷写、AP 启动与安装；后续无线关联及动作闭环
+已经推进，最新结果见上方小节。**
 
 用户随后接入的真实开发板已由 ROM 确认为 **ESP32-C3 / 8 MB Flash**。其固定
 USB Serial/JTAG 不能实现 USB NCM，因此新增 `Firmware/Passport-Relay` 独立
@@ -25,7 +55,7 @@ Wi-Fi 固件使用 WPA2-PSK / CCMP、最多一个客户端，板子 `.1/30`、�
 地址 `.2`，不发布路由器或 DNS，不提供 NAT 或互联网转发。Swift 只接受所选
 Wi-Fi 接口及 `.2/30`；USB 仍严格使用 Ethernet `.2/24`。每次发现保留传输类型、
 完整接口和 3 秒有效期，原生连接前重新核对；Rust 仍按指定 index 和源地址绑定。
-这些是当前实现边界，实际手机联网效果不由 AP 就绪日志代替。按用户要求，本轮
+这些是该阶段的实现边界，实际手机联网效果不由 AP 就绪日志代替。按用户要求，当轮
 优先完成实现、构建和实板启动，没有新增单元测试通过数，也未重跑历史完整套件。
 
 本地证据：`/tmp/eiscue-passport-app-partition-update.log`（修复版 App 分区写入、
@@ -41,12 +71,15 @@ Wi-Fi 接口及 `.2/30`；USB 仍严格使用 Ethernet `.2/24`。每次发现保
 EiscueTunnel CodeSign 失败，`/tmp/eiscue-sign-after-user-run.log` 的
 `errSecInternalComponent` 保留为历史失败；用户后来在系统终端直接输入自己的
 密码解锁登录钥匙串，未在聊天或代码中提供密码。无线关联与设备控制未随安装
-自动执行，App 内 XCTest 的系统密码授权仍是另一个待完成步骤。配置和烧录步骤见
+自动执行，当时 App 内 XCTest 的系统密码授权还是另一个待完成步骤。配置和烧录步骤见
 [开发板说明](board-setup.md)。
 
-## iOS 26 App 内 XCTest 会话（同日，当前）
+## iOS 26 App 内 XCTest 会话（同日，早期记录）
 
-iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换该系统版本上缺失服务的 DisplayService/HID 选择。iOS 27+ 保留原路径。下面区分当前代码、已取得的真机证据和未完成的验收；后面的同日条目保留各阶段的历史结果。
+**历史范围：本节停在当时的系统授权页，保留准备阶段证据；后续授权、触控和重连
+已在无线闭环中验证，最新结果见上方小节。**
+
+iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换该系统版本上缺失服务的 DisplayService/HID 选择。iOS 27+ 保留原路径。下面区分该阶段代码、当时取得的真机证据和未完成的验收；最新无线动作结果见本文首节。
 
 实现使用既有 RemotePairing 身份与认证隧道，不重新生成身份。Rust 拥有两个 testmanagerd DTX 通道，为同一 UUID 初始化会话，并仅为当前进程的 `getpid()` 请求授权；接受相关请求的明确布尔 `true` 回复，Swift 再校验 UUID、PID 与授权值。独立 Objective-C 桥接动态使用 DDI 中的开发者框架，新建本 App 的 runner/XPC 会话，异步请求启用 UI 自动化。正常 App 不嵌入 Apple 测试 Runner 框架，不需要另装 UI Test Runner；这仍依赖开发者环境和私有接口，不能据此承诺 App Store 分发。
 
@@ -57,7 +90,7 @@ iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换
 - 异步启用自动化请求后，延迟抓取的画面明确显示 **“为 XCTest 输入 iPhone 密码 / Enable UI Automation”** 系统页。
 - 已有认证通道返回合法 Instruments PNG，尺寸 **1179 × 2556**。
 
-**当前真机验证停在系统密码授权页。** 需要用户直接在手机上输入密码；App、Agent 和聊天不接收密码。尚未取得启用自动化完成或生产连接 `ready` 的证据，也未发送并验证真实点击、滑动、文本、Home。停止后重新连接、180° 旋转后的旧帧拒绝和持续后台操作同样未验收。当前代码与系统提示证明路径已推进到这一步，不能写成设备控制已完成。
+**该阶段真机验证停在系统密码授权页。** 当时需要用户直接在手机上输入密码；App、Agent 和聊天不接收密码。该阶段尚未取得启用自动化完成或生产连接 `ready` 的证据，也未发送并验证真实点击、滑动、文本、Home。停止后重新连接、180° 旋转后的旧帧拒绝和持续后台操作当时同样未验收。这些早期证据不能替代后续实际动作记录。
 
 | 验证 | 结果及实际范围 |
 |---|---|
@@ -69,15 +102,15 @@ iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换
 | App 单元测试 | iPad 模拟器完整 112 项通过，其中连接生命周期 21 项包含 7 项新增授权/后台用例：连接中的系统页不触发主动取消，返回前台保留结果，后台空闲连接延迟释放，显式停止仍可取消；使用注入 controller 验证，尚未在完成授权的真机上复测。首次 iPhone 模拟器运行卡在安装/启动阶段，被中止，没有计作通过 |
 | 真机授权准备 | 新会话工厂与异步系统授权请求得到上方证据；等待密码时超时并清理，没有把准备成功误标为控制就绪 |
 
-坐标输入实现核对本会话的显示 ID、方向、缩放、几何修订和截图尺寸，截图前后几何不一致则拒绝；事件使用递增请求回执，未知结果不自动重试。文本验证实现只在最终提交门禁通过后将给定文字写入系统剪贴板，再发送一个本会话的 Command-V，不读取旧剪贴板；焦点、粘贴授权与可见内容仍需真机确认。**iOS 26 Release 暂不声明 Home 和文本输入能力**，仅在显式 Debug 验证入口开放。
+坐标输入实现核对本会话的显示 ID、方向、缩放、几何修订和截图尺寸，截图前后几何不一致则拒绝；事件使用递增请求回执，未知结果不自动重试。文本验证实现只在最终提交门禁通过后将给定文字写入系统剪贴板，再发送一个本会话的 Command-V，不读取旧剪贴板；焦点、粘贴授权与可见内容当时仍需真机确认。**该阶段 iOS 26 Release 不声明 Home 和文本输入能力**，仅在显式 Debug 验证入口开放；后续实际验证与生产入口变化见最新小节。
 
 独立审查发现并修复了几何查询完成后的取消检查缺口，以及原生公开方法可绕过 Home / 文本能力限制的问题。等待系统授权超时现在给出系统密码页的中英文指引，不解释为服务缺失或用户拒绝。修复后的 DeviceKit 56 项、App 112 项及最终 Release 构建通过。
 
-`--owned-device-check` 是正常 App 内的显式 Debug 验证页面，不依赖模型或额外 Runner。计划通过截图坐标触发页面上的按钮、滚动与文本框，再检查真实计数、位置、文本及 Home 后的前后台状态，并做停止/重连；目前检查在连接准备阶段结束，后续断言均未执行。验证页现在使用实际窗口、场景、屏幕与截图几何计算坐标，额外要求真实横屏方向改变 180°，拒绝转向前的未使用旧帧，再以新截图点击并核对计数；仅源码和构建检查通过，没有真机旋转证据。本地关闭 DTX/XPC 只记录为本地断开，不称为远端释放确认。Debug 为核查授权页保存过受保护的准备截图，图片留在本地；正常截图 API 只在内存返回。密码页图片、配对身份和完整原始手机日志不提交 Git。
+`--owned-device-check` 是正常 App 内的显式 Debug 验证页面，不依赖模型或额外 Runner。计划通过截图坐标触发页面上的按钮、滚动与文本框，再检查真实计数、位置、文本及 Home 后的前后台状态，并做停止/重连；该阶段检查在连接准备阶段结束，后续断言当时均未执行。验证页使用实际窗口、场景、屏幕与截图几何计算坐标，额外要求真实横屏方向改变 180°，拒绝转向前的未使用旧帧，再以新截图点击并核对计数；该阶段仅源码和构建检查通过，当时没有真机旋转证据。本地关闭 DTX/XPC 只记录为本地断开，不称为远端释放确认。Debug 为核查授权页保存过受保护的准备截图，图片留在本地；正常截图 API 只在内存返回。密码页图片、配对身份和完整原始手机日志不提交 Git。
 
 本地证据：`/tmp/eiscue-xctest-session-tests.log`（64 项）、`/tmp/eiscue-xctest-idevice-tests.log`（184 项）、`/tmp/eiscue-ios26-devicekit-all.log`（56 项）、`/tmp/eiscue-owned-final-fixtures.log`（203 项）、`/tmp/eiscue-auth-ux-tests.log`（21 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_19-56-27-+0800.xcresult`。真机准备的构建及阶段日志为 `/tmp/eiscue-owned-async-build.log`、`/tmp/eiscue-owned-device-async-console.log`；失败检查的结构化报告为 `/tmp/eiscue-owned-check-ddi.json`，不把失败报告算作动作通过。
 
-开发板的后续实板进展见本文首节：用户的 Passport 已由 ROM 确认为 C3 / 8 MB，完成原 Flash 备份、MD5 校验、无线固件写入及实际 AP/relay 就绪日志。无线 App 已通过签名 Release 构建并覆盖安装、正常启动到指定测试机；手机关联、RemotePairing、屏幕/触控与公司 VPN 共存仍未验证。C3 固定 USB Serial/JTAG 不能实现 USB NCM 的硬件限制保持不变。见 [开发板说明](board-setup.md)。
+此处关联的早期开发板进度为：用户的 Passport 已由 ROM 确认为 C3 / 8 MB，完成原 Flash 备份、MD5 校验、无线固件写入及实际 AP/relay 就绪日志，App 已签名安装；当时尚未验证手机关联与操作。后续完整无线动作闭环见本文最新小节，公司 VPN 共存仍未验收。C3 固定 USB Serial/JTAG 不能实现 USB NCM 的硬件限制保持不变。见 [开发板说明](board-setup.md)。
 
 最终补充证据：`/tmp/eiscue-owned-final-devicekit-tests.log`、`/tmp/eiscue-owned-final-app-ipad-tests.log`（112 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_20-09-37-+0800.xcresult`、`/tmp/eiscue-owned-final-release-build.log`、`/tmp/eiscue-owned-final-release-install.json`、`/tmp/eiscue-owned-final-release-launch.json`。首次中止的完整 App 测试日志为 `/tmp/eiscue-owned-final-app-tests.log`。
 
@@ -125,7 +158,7 @@ iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换
 - `com.apple.dt.testmanagerd.remote` 的 DTX 握手成功。
 - 无重新配对、无导入 Mac Lockdown 私钥、无额外 Runner 安装；未启用自动化或发送触控。
 
-这证明当时的授权可访问 iOS 26 的另一条截图通道及测试服务。**该探针本身不证明 App 内 XCTest 会话、实际点击或脱离电脑后的持续后台控制已经完成**；此阶段生产设备连接仍使用旧控制后端，探针不会把其标为 ready。后续已接入本 App 的独立测试会话并触发系统授权页，当前结果和剩余验收见上方「iOS 26 App 内 XCTest 会话」章节。
+这证明当时的授权可访问 iOS 26 的另一条截图通道及测试服务。**该探针本身不证明 App 内 XCTest 会话、实际点击或脱离电脑后的持续后台控制已经完成**；此阶段生产设备连接仍使用旧控制后端，探针不会把其标为 ready。后续已接入本 App 的独立测试会话并触发系统授权页，准备阶段见上方「iOS 26 App 内 XCTest 会话」历史章节，最新动作结果见本文首节。
 
 探针仅由 Debug 启动参数 `--legacy-device-probe` 显式触发；`--resume-existing-local-tunnel` 只恢复安装更新后断开的、已启用的本应用 VPN 配置，不创建或保存配置，不申请新授权。首次探针在 VPN 断开时直接结束；恢复既有配置后的第二次实测才得到上述结果。测试完成后已按正常参数重新启动 App，不会自动再执行探针。
 

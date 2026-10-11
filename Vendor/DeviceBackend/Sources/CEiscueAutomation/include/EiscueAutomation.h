@@ -37,6 +37,7 @@ typedef struct {
     uint64_t display_id;
     int64_t orientation;
     double scale;
+    // Point dimensions, normalized from the screen service's physical pixels.
     double bounds_width;
     double bounds_height;
     uint64_t request_id;

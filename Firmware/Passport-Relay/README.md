@@ -29,6 +29,9 @@ and company VPN coexistence still require device validation.
   client. AP stop, client disconnect and reconnect change the link epoch, so
   active relay work is revoked. A disconnect also releases the single DHCP lease
   for a different phone or a changed private Wi-Fi MAC address.
+- Discovery retries service PTR questions on each existing 900 ms follow-up,
+  including when no record has arrived yet, within the same 3-second window.
+  Firmware diagnostics log only numeric packet/record counts and result codes.
 - No stored phone pairing key, no microphone use, no Bluetooth startup, and no
   relay opened until the App requests it.
 
@@ -87,12 +90,18 @@ source and provenance. Local C and build files carry GPL-3.0-or-later headers.
 ## Validation boundary
 
 ESP32-C3 cross build passed with ESP-IDF 5.5.3 and the matching RISC-V GCC 14.2.0
-toolchain on 2026-10-11. The application is `0xC9750` bytes (825,168 bytes), with
+toolchain on 2026-10-11. The application is `0xC9900` bytes (825,600 bytes), with
 61% of its 2 MiB partition free. The generated partition table and 8 MB image
 header were checked by the IDF build.
 
-This build does not prove AP/DHCP association, disconnect revocation, iPhone relay
-or screen/touch authorization on a physical board. Those require separate device
-validation. Board identification, backup and flashing belong to the
-[board setup workflow](../../docs/board-setup.md). This change prioritizes the
-implementation and cross build; additional unit tests are deferred.
+Physical ESP32-C3 and iPhone 14 Pro / iOS 26.5.2 validation also passed AP/DHCP
+association, wireless discovery and authorization, screenshots, portrait and
+landscape touch, stale-frame rejection, swiping, Unicode input, Home/App return,
+and a second connection cycle. The App's local VPN stayed disconnected. A
+600-second board capture had one association, one lease and no disconnect/error.
+See the [device validation record](../../docs/board-validation-2026-10-11.md).
+
+Local disconnection is not a remote daemon teardown acknowledgement. Sustained
+background work, cellular model requests and company VPN coexistence remain
+unverified. Board identification, backup and flashing belong to the
+[board setup workflow](../../docs/board-setup.md).

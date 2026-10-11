@@ -3,7 +3,7 @@ import Foundation
 import Network
 
 /// Short, bounded connections to board diagnostics, never to the phone's own
-/// RemotePairing address. One command at a time; no reconnect or action replay.
+/// RemotePairing address. One command at a time; no authentication or input replay.
 @MainActor public final class NCMProbeClient {
     private struct Pending {
         let id: UUID
@@ -18,25 +18,39 @@ import Network
     public init(transport: NCMBoardTransport = .usb) { self.transport = transport }
 
     /// Refresh candidates on the board, keeping discovery on the selected interface.
-    /// IPv4 is attempted only when IPv6 discovery has no pairing candidate.
+    /// The multicast query family does not determine a returned endpoint's family.
+    /// Repeat the two-query discovery round at most once for missing services only.
     public func discoverRemotePairing() async throws -> NCMDiscoveredEndpoint {
         guard pending == nil else { throw NCMError.busy }
         try Task.checkCancellation()
         let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: transport)
-        for (command, family) in [(DiagnosticCommand.discoverIPv6, 6), (.discoverIPv4, 4)] {
-            let connection = NWConnection(host: .ipv4(binding.remoteAddress), port: 28767, using: binding.parameters())
-            let reply = try await exchange(command, connection: connection)
-            try Task.checkCancellation()
-            // A changed interface never causes discovery to move onto another
-            // transport, a corporate VPN, or another attached board.
-            try binding.validateCurrent()
-            if reply.layer == "discovery", reply.result == "candidates",
-               reply.endpoints?.contains(where: { $0.service == "remotepairing" && $0.family == family }) == true {
-                return try NCMDiscoveredEndpoint(reply: reply, family: family, interface: binding.row, transport: transport)
+        for attempt in 0..<2 {
+            var missingPairingService = false
+            for command in [DiagnosticCommand.discoverIPv6, .discoverIPv4] {
+                try Task.checkCancellation()
+                try binding.validateCurrent()
+                let connection = NWConnection(host: .ipv4(binding.remoteAddress), port: 28767, using: binding.parameters())
+                let reply = try await exchange(command, connection: connection)
+                try Task.checkCancellation()
+                // A changed interface never causes discovery to move onto another
+                // transport, a corporate VPN, or another attached board.
+                try binding.validateCurrent()
+                guard reply.layer == "discovery", ["candidates", "no-candidates", "unsupported", "not_found"].contains(reply.result) else {
+                    throw NCMError.malformedReply
+                }
+                if reply.result == "candidates" {
+                    for family in [6, 4] where reply.endpoints?.contains(where: { $0.service == "remotepairing" && $0.family == family }) == true {
+                        // Initialization still rejects multiple candidates in the
+                        // preferred family. Such ambiguity never triggers a retry
+                        // or fallback to another family.
+                        return try NCMDiscoveredEndpoint(reply: reply, family: family, interface: binding.row, transport: transport)
+                    }
+                    missingPairingService = true
+                } else if reply.result == "no-candidates" || reply.result == "not_found" {
+                    missingPairingService = true
+                }
             }
-            guard reply.layer == "discovery", ["candidates", "no-candidates", "unsupported", "not_found"].contains(reply.result) else {
-                throw NCMError.malformedReply
-            }
+            guard attempt == 0, missingPairingService else { break }
         }
         throw NCMError.pairingServiceUnavailable
     }

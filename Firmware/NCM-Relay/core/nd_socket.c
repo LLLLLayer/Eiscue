@@ -6,6 +6,7 @@
 #include <unistd.h>
 #ifdef ESP_PLATFORM
 #include "esp_timer.h"
+#include "esp_log.h"
 #else
 #include <arpa/inet.h>
 #include <sys/select.h>
@@ -84,6 +85,7 @@ bridge_status nd_discover(const nd_link *link,int family,nd_catalog *catalog,uin
     nd_socket s={.fd=socket(family==4?AF_INET:AF_INET6,SOCK_DGRAM,IPPROTO_UDP),.link=link};
     if (s.fd<0) { if (os_error) *os_error=errno; return BRIDGE_E_IO; }
     bridge_status result=BRIDGE_E_IO; int yes=1;
+    unsigned queries=0, received=0, accepted_peers=0, parsed=0;
     struct sockaddr_storage dest={0}; socklen_t dest_size;
     if (setsockopt(s.fd,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof yes) || fcntl(s.fd,F_SETFL,O_NONBLOCK)<0) goto done;
     if (family==4) {
@@ -110,12 +112,20 @@ bridge_status nd_discover(const nd_link *link,int family,nd_catalog *catalog,uin
     }
     uint8_t packet[ND_DNS_LIMIT];
     for (int kind=1;kind<=3;kind++) { size_t n=nd_dns_query((nd_service)kind,packet,sizeof packet);
-        if (sendto(s.fd,packet,n,0,(struct sockaddr *)&dest,dest_size)!=(ssize_t)n) goto done; }
+        if (sendto(s.fd,packet,n,0,(struct sockaddr *)&dest,dest_size)!=(ssize_t)n) goto done;
+        queries++; }
     result=BRIDGE_OK; uint64_t followup=nd_now(NULL)+900;
     while (nd_now(NULL)<deadline) {
         bridge_status ready=wait_fd(&s,false,followup<deadline?followup:deadline);
         if (ready==BRIDGE_E_TIMEOUT) {
             if (nd_now(NULL)>=deadline) break;
+            /* A lost initial query/response must not leave an empty catalog
+             * silent for the rest of this bounded discovery window. */
+            for (int kind=1;kind<=3;kind++) {
+                size_t n=nd_dns_query((nd_service)kind,packet,sizeof packet);
+                if (!n || sendto(s.fd,packet,n,0,(struct sockaddr *)&dest,dest_size)!=(ssize_t)n) { result=BRIDGE_E_IO; goto done; }
+                queries++;
+            }
             /* PTR-only replies need SRV; a later SRV may need A/AAAA. Repeat
              * bounded follow-ups, allowing records to arrive in separate packets. */
             for (size_t i=0;i<catalog->count;i++) {
@@ -125,6 +135,7 @@ bridge_status nd_discover(const nd_link *link,int family,nd_catalog *catalog,uin
                 for (size_t q=0;q<count;q++) {
                     size_t n=nd_dns_question(r->target,r->type==12?33:(q?28:1),packet,sizeof packet);
                     if (!n || sendto(s.fd,packet,n,0,(struct sockaddr *)&dest,dest_size)!=(ssize_t)n) { result=BRIDGE_E_IO; goto done; }
+                    queries++;
                 }
             }
             followup=nd_now(NULL)+900; continue;
@@ -133,13 +144,31 @@ bridge_status nd_discover(const nd_link *link,int family,nd_catalog *catalog,uin
         struct sockaddr_storage peer={0}; socklen_t peer_size=sizeof peer;
         ssize_t n=recvfrom(s.fd,packet,sizeof packet,0,(struct sockaddr *)&peer,&peer_size);
         if (n<0) { if (errno==EAGAIN || errno==EINTR) continue; result=BRIDGE_E_IO; break; }
+        received++;
         bool accepted=false;
         if (family==4 && peer.ss_family==AF_INET) { struct sockaddr_in *p=(void *)&peer; accepted=p->sin_port==htons(5353) && !memcmp(&p->sin_addr,link->peer4,4); }
         if (family==6 && peer.ss_family==AF_INET6) { struct sockaddr_in6 *p=(void *)&peer; const uint8_t *a=(void *)&p->sin6_addr;
             accepted=p->sin6_port==htons(5353) && p->sin6_scope_id==link->interface_index && a[0]==0xfe && (a[1]&0xc0)==0x80; }
-        if (accepted && n>=12 && (packet[2]&0x80)) { result=nd_dns_ingest(catalog,packet,(size_t)n,nd_now(NULL)); if (result!=BRIDGE_OK) break; }
+        if (accepted) accepted_peers++;
+        if (accepted && n>=12 && (packet[2]&0x80)) { result=nd_dns_ingest(catalog,packet,(size_t)n,nd_now(NULL)); if (result!=BRIDGE_OK) break; parsed++; }
     }
 done:
     if (result==BRIDGE_E_IO && os_error) *os_error=s.error?s.error:errno;
+#ifdef ESP_PLATFORM
+    unsigned ptr=0, srv=0, a=0, aaaa=0;
+    for (size_t i=0;i<catalog->count;i++) {
+        switch(catalog->records[i].type) {
+            case 12: ptr++; break;
+            case 33: srv++; break;
+            case 1: a++; break;
+            case 28: aaaa++; break;
+        }
+    }
+    /* Counts only: never log DNS names, addresses, TXT or packet contents. */
+    ESP_LOGI("relay_discovery","family=%d queries=%u rx=%u accepted=%u parsed=%u ptr=%u srv=%u a=%u aaaa=%u status=%d",
+             family,queries,received,accepted_peers,parsed,ptr,srv,a,aaaa,(int)result);
+#else
+    (void)queries; (void)received; (void)accepted_peers; (void)parsed;
+#endif
     nd_socket_close(&s); if (result!=BRIDGE_OK) memset(catalog,0,sizeof *catalog); return result;
 }

@@ -50,7 +50,7 @@ extension AppModel {
         guard method != .localVPN || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true; activeDeviceConnectionMethod = method; deviceConnectionError = nil
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
+        if method == .localVPN, ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
             connectionMessage = String(localized: "connection.automationAuthorization")
         } else {
             connectionMessage = switch method {

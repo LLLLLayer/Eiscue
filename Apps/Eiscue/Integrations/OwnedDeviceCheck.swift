@@ -150,6 +150,17 @@ struct OwnedDeviceCheckView: View {
         button == other.button && scroll == other.scroll && field == other.field && layout == other.layout && rowY == other.rowY
     }
 
+    func changedGeometryNames(comparedTo other: Self) -> [String] {
+        let differences: [(String, Bool)] = [
+            ("window", window !== other.window), ("scene", scene !== other.scene),
+            ("screenBounds", screenBounds != other.screenBounds), ("windowBounds", windowBounds != other.windowBounds),
+            ("scale", scale != other.scale), ("orientation", orientation != other.orientation),
+            ("button", button != other.button), ("scroll", scroll != other.scroll), ("field", field != other.field),
+            ("layout", layout != other.layout), ("rowY", rowY != other.rowY),
+        ]
+        return differences.compactMap { $0.1 ? $0.0 : nil }
+    }
+
     func point(_ point: CGPoint, frame: DeviceScreenshot) throws -> DevicePoint {
         let screenPoint = window.convert(point, to: scene.screen.coordinateSpace)
         guard screenPoint.x.isFinite, screenPoint.y.isFinite, screenBounds.contains(screenPoint) else {
@@ -190,6 +201,10 @@ extension AppModel {
         var previous: OwnedSceneGeometry?, stableSince: ContinuousClock.Instant?
         while ContinuousClock.now < deadline {
             if let error = request?.error { throw error }
+            // A 180° rotation keeps the same dimensions and may not trigger
+            // layoutSubviews. Read the attached window's actual scene geometry
+            // on every poll instead of waiting for a layout callback to refresh it.
+            proof.observeWindow(proof.window)
             if let current = try? OwnedSceneGeometry(proof: proof, orientation: orientation) {
                 if let previous, previous.matches(current) {
                     if let stableSince, stableSince.duration(to: .now) >= .milliseconds(200) { return current }
@@ -203,12 +218,21 @@ extension AppModel {
 
     private func ownedCapture(_ proof: OwnedDeviceCheckState, orientation: UIInterfaceOrientation? = nil) async throws
         -> (frame: DeviceScreenshot, geometry: OwnedSceneGeometry) {
-        let before = try await ownedGeometry(proof, orientation: orientation)
-        let frame = try await deviceClient.captureScreenshot()
-        let after = try OwnedSceneGeometry(proof: proof, orientation: orientation)
-        guard before.matches(after) else { throw DeviceControlError.staleFrame }
-        try after.validatePNG(frame)
-        return (frame, after)
+        // Only repeat observation when SwiftUI geometry moved during capture.
+        // Native capture failures propagate immediately; no input is replayed.
+        for _ in 0..<3 {
+            let before = try await ownedGeometry(proof, orientation: orientation)
+            let frame = try await deviceClient.captureScreenshot()
+            proof.observeWindow(proof.window)
+            let after = try OwnedSceneGeometry(proof: proof, orientation: orientation)
+            guard before.matches(after) else {
+                print("Owned capture changed geometry: \(before.changedGeometryNames(comparedTo: after).joined(separator: ","))")
+                continue
+            }
+            try after.validatePNG(frame)
+            return (frame, after)
+        }
+        throw DeviceControlError.staleFrame
     }
 
     private func ownedRotate(_ proof: OwnedDeviceCheckState, scene: UIWindowScene,
@@ -232,27 +256,73 @@ extension AppModel {
         return geometry
     }
 
-    func runOwnedDeviceCheck() async {
+    func runOwnedDeviceCheck(method: DeviceConnectionMethod = .localVPN) async {
         let proof = OwnedDeviceCheckState.shared
         let destination = URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json")
-        var report: [String: Any] = ["version": 2, "state": "started", "phase": "tunnel"]
+        var report: [String: Any] = ["version": 3, "state": "started", "phase": "preparation",
+            "connectionMethod": method.rawValue, "localTunnelConnectedAtStart": localTunnel.isConnected]
         var orientationToRestore: (scene: UIWindowScene, orientation: UIInterfaceOrientation)?
         func save(_ phase: String) {
             proof.phase = phase; report["phase"] = phase
             guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { return }
             try? data.write(to: destination, options: [.atomic, .completeFileProtection])
         }
-        save("tunnel")
+        save("preparation")
         do {
-            if !localTunnel.isConnected, ProcessInfo.processInfo.arguments.contains("--resume-existing-local-tunnel") {
-                try await localTunnel.resumeExistingForDiagnostics()
+            // Use only an already saved identity. This route never imports,
+            // exports or replaces pairing credentials. Wireless never starts
+            // or resumes a local VPN.
+            let hasIdentity = try await deviceClient.hasPairingIdentity()
+            report["identitySaved"] = hasIdentity
+            guard hasIdentity else { throw DeviceControlError.noIdentity }
+            if method == .localVPN {
+                save("tunnel")
+                if !localTunnel.isConnected, ProcessInfo.processInfo.arguments.contains("--resume-existing-local-tunnel") {
+                    try await localTunnel.resumeExistingForDiagnostics()
+                }
+                guard localTunnel.isConnected else { throw DeviceControlError.notConnected }
+            } else {
+                save("select_connection")
+                try await localTunnel.refresh()
+                report["localTunnelConnectedAtStart"] = localTunnel.isConnected
+                // Reuse the production switch flow and retain the user's
+                // explicitly requested board method for subsequent manual use.
+                await selectDeviceConnectionMethod(method)
+                guard deviceConnectionMethod == method else { throw DeviceControlError.busy }
+                // A stale owned tunnel may exist even when the saved method was
+                // already wireless. Stop only Eiscue's provider configuration.
+                if localTunnel.isConnected || localTunnel.isTransitioning {
+                    save("stop_owned_tunnel")
+                    await stopLocalTunnel()
+                }
+                try await localTunnel.refresh()
+                guard !localTunnel.isConnected, !localTunnel.isTransitioning else {
+                    throw DeviceControlError.connection("Eiscue's local VPN has not stopped; wireless verification was not started")
+                }
+                report["selectedConnectionMethod"] = deviceConnectionMethod.rawValue
+                report["connectionSelectionRetained"] = true
             }
-            guard localTunnel.isConnected else { throw DeviceControlError.notConnected }
             // Require the native target's attached scene and settled view frames.
+            save("geometry")
             _ = try await ownedGeometry(proof)
             for cycle in 1...2 {
+                if method != .localVPN {
+                    save("verify_board_route_\(cycle)")
+                    try await localTunnel.refresh()
+                    report["localTunnelConnectedAtConnect_\(cycle)"] = localTunnel.isConnected
+                    guard deviceConnectionMethod == method, !localTunnel.isConnected, !localTunnel.isTransitioning else {
+                        throw DeviceControlError.connection("The selected board route changed; wireless verification was stopped")
+                    }
+                }
                 save("connect_\(cycle)")
-                try await deviceClient.connectLocalVPN()
+                // The same entry point used by AppModel.connectDevice. Board
+                // discovery is not success: this returns only after production
+                // identity verification, developer readiness and media startup.
+                try await deviceClient.connect(method: method)
+                guard case .ready(let capabilities) = await deviceClient.status() else {
+                    throw DeviceControlError.notConnected
+                }
+                report["capabilities_\(cycle)"] = capabilities.map(\.rawValue).sorted()
                 report["connected_\(cycle)"] = true
                 save("screenshot_\(cycle)")
                 let capture = try await ownedCapture(proof)
@@ -329,6 +399,7 @@ extension AppModel {
                     try await Task.sleep(for: .milliseconds(400))
                     guard proof.input == testText else { throw DeviceControlError.connection("Owned text input did not match") }
                     report["unicodeTextVerified"] = true
+                    save("after_text_screenshot")
                     _ = try await ownedCapture(proof)
                     save("home")
                     try await deviceClient.home()
@@ -355,6 +426,7 @@ extension AppModel {
             report["state"] = "passed"
         } catch {
             report["state"] = "failed"
+            report["failedPhase"] = report["phase"]
             report["errorCategory"] = String(describing: type(of: error))
             report["reason"] = error.localizedDescription
             await deviceClient.disconnect()

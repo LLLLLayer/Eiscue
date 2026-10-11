@@ -60,7 +60,7 @@
     "core/nd_socket.c": {
       "upstream": "ncm-dev/core/nd_socket.c",
       "sha256": "8837759bfe1edf4f417818c902fbe741536ed76658f95afd592dd915a8f2c950",
-      "local_sha256": "8837759bfe1edf4f417818c902fbe741536ed76658f95afd592dd915a8f2c950"
+      "local_sha256": "ca24b7325beca9436861c4ec03494f999aeb059470eb442d806e9218e1dfee80"
     },
     "core/nd_socket.h": {
       "upstream": "ncm-dev/core/nd_socket.h",
@@ -265,6 +265,7 @@
     "USB manufacturer/product/version strings identify Eiscue NCM Relay 1.0.0.",
     "Python flash/inventory/package/link tools and safety guard tests are Eiscue additions.",
     "Shared developer-service startup log no longer claims absence of radio; the Passport-Relay target uses Wi-Fi.",
-    "Developer diagnostic page uses transport-neutral text for shared USB and Wi-Fi targets; wire protocol fields are unchanged."
+    "Developer diagnostic page uses transport-neutral text for shared USB and Wi-Fi targets; wire protocol fields are unchanged.",
+    "Discovery resends service PTR queries during existing bounded follow-ups and emits numeric-only firmware receive/record counters; deadlines and source filters are unchanged."
   ]
 }

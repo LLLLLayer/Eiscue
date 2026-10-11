@@ -100,13 +100,6 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
     }
     public var supportedControlActions: Set<NativeControlAction> {
         guard mediaStartCompleted else { return [] }
-        if Self.usesOwnedXCTest {
-            var actions: Set<NativeControlAction> = [.screenshot, .tap, .swipe, .launchApplication, .listApplications]
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--owned-device-check") { actions.formUnion([.home, .textInput]) }
-            #endif
-            return actions
-        }
         return Set(NativeControlAction.allCases)
     }
     public init() {}
@@ -629,6 +622,17 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         let before = try await refreshOwnedScreen(lease: lease, token: token)
         let png = try await performOperation(UInt32(NCM_ACTION_LEGACY_SCREENSHOT), expectedKind: 4)
         let after = try await refreshOwnedScreen(lease: lease, token: token)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
+            automationDiagnostic("NCM owned geometry beforeRevision=\(before.revision) afterRevision=\(after.revision) beforeOrientation=\(before.orientation) afterOrientation=\(after.orientation) scale=\(after.scale) boundsWidth=\(after.boundsWidth) boundsHeight=\(after.boundsHeight)")
+            if let source = CGImageSourceCreateWithData(png as CFData, nil),
+               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+               let width = properties[kCGImagePropertyPixelWidth] as? Int,
+               let height = properties[kCGImagePropertyPixelHeight] as? Int {
+                automationDiagnostic("NCM owned PNG width=\(width) height=\(height)")
+            }
+        }
+        #endif
         guard before == after else { throw NativeBackendError.coordinateSpaceChanged }
         let layout = try NCMXCTestLayout(png: png, screen: after)
         automationLayout = layout
@@ -669,8 +673,8 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         try checkAutomationSubmission(code)
         return try await awaitOwnedDelivery(lease: lease, token: token, request: request)
     }
-    /// Used for direct diagnostics until these actions have been verified and
-    /// included in supportedControlActions. No DisplayService/HID fallback.
+    /// Delivers Home or text through the owned iOS 26 XCTest session, with the
+    /// same bounded receipt and no-replay rules as touch input.
     private func deliverOwnedNonCoordinate(text: Data?) async throws -> InputDelivery {
         try Task.checkCancellation()
         guard !busy, !automationStopping else { throw NativeBackendError.busy }
