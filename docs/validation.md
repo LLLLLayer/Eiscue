@@ -2,6 +2,18 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## 真机控制服务兼容性与状态提示（同日）
+
+通过 Xcode 对指定 iPhone 14 Pro 截图，确认实际界面显示“屏幕或触控服务未就绪（阶段 10，原因 4）”，本机通道已连接。该错误只会在身份验证、隧道、服务发现和开发环境检查通过后出现；临时导入文件也已被 App 消费。因此配对导入已完成，无需重复生成。确认后已删除电脑上本次生成的临时身份副本。
+
+使用 `remotectl show` 读取并按 UDID 核对该测试机的服务表：没有 `com.apple.coredevice.displayservice`、`com.apple.coredevice.universalhidservice`、`com.apple.coredevice.screencaptureservice`，存在 App 服务和 XCTest 服务。`devicectl device info ddiServices --no-auto-mount-ddis` 报告当前镜像兼容且可用。结论是当前后端与这台 iOS 26.5.2 的屏幕/触控服务不兼容；本轮没有完成设备操作，也没有通过重新配对或修改系统版本规避问题。
+
+界面修正：已有身份时明确显示授权已保存，避免把本地保存当作已验证；隐藏首次配对说明和重复导入入口；未连接时按钮明确表示开启/重试设备控制，控制验证入口仅在控制就绪时出现。Kit 主错误文案区分缺少屏幕服务、缺少触控服务与超时，中英文同步，保留继续聊天的说明。阶段/原因编号改为 `org.eiscue.device` / `connection` 本地 OSLog，只记录操作名及数值，不记录身份、凭据或原始协议内容。
+
+35 项 DeviceKit 测试通过，包含 5 项新增状态/中英文文案回归。原始画面只保存在本地 `.build/diagnostics/device-services/iphone14-service-unavailable.png`；服务清单和 DDI 结果保存在 `/tmp/eiscue-14pro-rsd.txt`、`/tmp/eiscue-14pro-ddiservices.json`，不提交设备私有记录。
+
+签名 Release 构建及签名验证通过，正常 App 已覆盖安装并启动到指定 iPhone 14 Pro。日志：`/tmp/eiscue-device-error-copy-tests.log`、`/tmp/eiscue-device-guidance-release-final.log`、`/tmp/eiscue-device-guidance-install.log`、`/tmp/eiscue-device-guidance-launch.log`。本轮修正状态和指引，没有宣称已修复底层服务缺失。
+
 ## 首次真机 USB 身份生成与传输（同日）
 
 指定 iPhone 14 Pro 已通过系统 USB 信任，开发者模式开启且开发服务可用。本次使用现有电脑工具，显式指定该测试机，完成创建 Eiscue 自有身份、Pair Setup 签名校验、断开后重新建立会话的 Pair Verify；为本机服务发现启用并读回确认 Wi-Fi 开发连接。生成文件权限为 `0600`，只保存在 Git 忽略的本地构建目录，没有读取或输出私钥内容。

@@ -2,6 +2,12 @@
 
 EiscueDeviceKit 内置 iPhone / iPad 本机控制后端。上层 App 的最低系统版本为 iOS / iPadOS 26.0。控制使用系统 RemotePairing / CoreDevice 服务与本地回环 VPN；Eiscue App 已随包内置该扩展，无需额外安装 LocalDevVPN。模拟器不能完成真实配对或设备控制，Mac 目前只支持构建、测试和注入自定义 controller。
 
+## 当前真机兼容性
+
+2026-10-11，指定 iPhone 14 Pro（iOS 26.5.2）已完成身份导入、本机通道、配对认证和开发环境检查，但启动控制时失败。其系统服务表没有 `com.apple.coredevice.displayservice`、`com.apple.coredevice.universalhidservice` 或 `com.apple.coredevice.screencaptureservice`；电脑报告当前开发者镜像兼容且可用。当前后端依赖这些服务，因此这台设备的屏幕与触控能力尚不可用，不能靠重新导入身份或重复信任解决。
+
+App 最低支持 iOS 26 仅表示应用可运行；普通聊天可用，不能据此承诺 iOS 26 整机控制已实现。其他系统版本仍需逐台验证，本项目尚未完成截图、触控的真机闭环。主界面使用可理解的状态说明，内部阶段与原因编号只写本地诊断日志。
+
 ## 首次准备
 
 **当前实现还没有达到“首次使用起完全不需要电脑”的目标。** 内置 VPN 解决了额外安装 VPN App 的问题，但不负责建立配对身份，也不准备开发者镜像。iOS 26 的电脑工具和文件导入是当前后端的兼容路径；文件用于传递设备授权身份，不是让用户选择控制方案。iOS 27 的系统配对入口解决了机端建立身份这一环，但当前 Kit 仍未接入 DDI 自动准备，不能据此承诺全流程无电脑。这里描述的是 Eiscue 当前实现的边界，不代表已经证明其他实现也无法做到。
@@ -43,7 +49,7 @@ xcrun devicectl device copy to --device '<USB_UDID>' \
 
 工具输出文件权限为 `0600`，拒绝覆盖已有文件，只有 Pair Setup 签名验证和重新连接后的 Pair Verify 成功才导出完整身份。文件包含私钥，导入成功后删除电脑上的这份临时文件，不要放进 Git、聊天或网盘。普通 Lockdown 文件和标准 RPPairing 文件不能直接替代 Eiscue 的完整格式。
 
-USB 身份生成不代表设备控制已经验收；后续仍需依次验证内置 VPN、本机服务发现、截图和输入。2026-10-11 已在指定 iPhone 14 Pro（iOS 26.5.2）完成真实 USB 身份生成、Pair Setup 签名验证、重新连接后的 Pair Verify，并将身份传入 App 的固定临时路径。App 内导入和后续设备控制尚待验证。
+USB 身份生成不代表设备控制已经验收。2026-10-11 已在指定 iPhone 14 Pro（iOS 26.5.2）完成真实 USB 身份生成、Pair Setup 签名验证、重新连接后的 Pair Verify、App 内导入和本地通道连接；其后的屏幕/触控服务不兼容，见上方说明。
 
 上述传输文件位于 App 私有临时目录，不会显示在系统“文件”App 中。电脑传输完成后，重新打开 Eiscue 右上角的设备页，点击「导入电脑发送的配对」即可，无需在文件选择器里寻找它；停留在设备页时，可返回对话再进入以刷新按钮。
 

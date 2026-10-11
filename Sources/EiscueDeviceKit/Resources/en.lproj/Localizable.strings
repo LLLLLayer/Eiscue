@@ -1,14 +1,14 @@
 // Official Foundation localization resources for this Swift package target.
 "device.app-list.too-large" = "The app list is too large.";
-"device.backend.app-list-failed" = "The app list could not be read (stage %@, cause %@).";
+"device.backend.app-list-failed" = "The list of installed apps could not be read. Try connecting again.";
 "device.backend.closed" = "The device connection is closed.";
-"device.backend.ddi-not-ready" = "The Developer Disk Image (DDI) is not ready. Connect the device to Xcode and complete development preparation before retrying. This app does not download or mount images.";
+"device.backend.ddi-not-ready" = "The device is not ready for development. Connect it to Xcode on your computer and wait for device preparation to finish, then try again.";
 "device.backend.developer-mode" = "Developer Mode is not ready. Enable it in Settings and restart when the system asks.";
-"device.backend.invalid-state" = "The device backend is in an invalid state. Connect again.";
-"device.backend.protocol-failed" = "The device protocol failed (stage %@, cause %@).";
-"device.backend.screenshot-failed" = "A valid screen image could not be captured (stage %@, cause %@).";
-"device.backend.touch-not-ready" = "The screen or touch service is not ready (stage %@, cause %@).";
-"device.backend.transport-failed" = "The device connection failed (%@). Check the VPN and system pairing authorization.";
+"device.backend.invalid-state" = "The device connection could not be completed. Try connecting again.";
+"device.backend.protocol-failed" = "The device connection could not be completed. Keep the device unlocked and try again. You can keep chatting.";
+"device.backend.screenshot-failed" = "The device screen could not be read. Keep the device unlocked and try connecting again.";
+"device.backend.touch-not-ready" = "Device control could not be started. You can keep chatting; device control is currently unavailable.";
+"device.backend.transport-failed" = "The local connection was interrupted. Try connecting again. You can keep chatting.";
 "device.error.busy" = "The device is performing another operation. Wait for it to finish.";
 "device.error.delivery-unknown" = "It is unknown whether the operation was delivered. Do not retry automatically. %@ Reconnect and capture a screenshot to verify.";
 "device.error.invalid-bundle-id" = "The app bundle ID is invalid.";
@@ -43,3 +43,7 @@
 "device.vpn.inactive" = "The local loopback VPN is off, or its interface address does not match the configuration.";
 "device.vpn.invalid-configuration" = "The local and peer addresses must be distinct, valid IPv4 addresses.";
 "device.vpn.service-not-found" = "The local pairing service was not found. Check Developer Mode and the VPN connection.";
+"device.backend.screen-service-unavailable" = "Pairing is complete, but the screen service needed for device control could not be found. You can keep chatting; device control is currently unavailable.";
+"device.backend.touch-service-unavailable" = "Pairing is complete, but the touch service needed for device control could not be found. You can keep chatting; device control is currently unavailable.";
+"device.backend.touch-timed-out" = "Preparing device control timed out. Keep the device unlocked and try again. You can keep chatting.";
+"device.backend.timed-out" = "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.";

@@ -2,6 +2,8 @@
 
 运行在 iPhone / iPad 上的 Agent 设备助手。App 最低 **iOS / iPadOS 26.0**。任务编排和工具执行在手机上，模型通过用户配置的网络服务调用。
 
+**当前真机限制：** iPhone 14 Pro / iOS 26.5.2 已完成 USB 身份生成、App 导入、本地通道及配对认证，但未提供当前后端依赖的屏幕与触控服务，设备控制尚不可用。普通聊天可用；App 最低支持 iOS 26 不代表该版本的整机控制已支持。详见 [设备兼容性](docs/device-setup.md)。
+
 ## 已实现
 
 - 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，自定义地址和模型 ID，API Key 使用系统 Keychain。
@@ -27,7 +29,7 @@
 
 内置扩展与主 App 都需要匹配 Network Extension capability 的签名。首次添加 VPN 配置仍需系统授权，详见 [内置本地连接](docs/local-tunnel.md)。
 
-iOS 26 的开发者模式页没有本后端要求的系统配对入口。首次连接请使用 [USB 配对步骤](docs/device-setup.md#ios-26-的首次-usb-配对)，不要等待系统显示不存在的菜单。USB 首配、内置连接与真实控制的完整链路仍待真机验收。
+iOS 26 的开发者模式页没有本后端要求的系统配对入口。[USB 配对步骤](docs/device-setup.md#ios-26-的首次-usb-配对) 已在上述测试机上完成身份建立；其后的屏幕、触控服务兼容问题仍需解决，重新生成配对文件不能补齐这些服务。
 
 App 当前仅接受 HTTPS 模型服务地址。OpenAI 兼容接口通常填写带 `/v1` 的地址；Anthropic 默认填写 `https://api.anthropic.com`。Kit 允许宿主自行配置本地 HTTP 服务。测试专用 loopback 配置只在 DEBUG 且显式 UI 测试模式下启用。
 

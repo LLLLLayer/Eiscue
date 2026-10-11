@@ -1,14 +1,14 @@
 // Official Foundation localization resources for this Swift package target.
 "device.app-list.too-large" = "App 列表过大。";
-"device.backend.app-list-failed" = "读取 App 列表失败（阶段 %@，原因 %@）。";
+"device.backend.app-list-failed" = "无法读取已安装的 App 列表，请重新连接设备后再试。";
 "device.backend.closed" = "设备连接已关闭。";
-"device.backend.ddi-not-ready" = "开发者镜像（DDI）尚未就绪。请将设备连接 Xcode，完成开发准备后重试；本 App 不下载或挂载镜像。";
+"device.backend.ddi-not-ready" = "设备的开发准备尚未完成。请在电脑上用 Xcode 连接这台设备，等待准备完成后再试。";
 "device.backend.developer-mode" = "开发者模式尚未就绪，请在系统设置中启用并按系统提示重启。";
-"device.backend.invalid-state" = "设备后端状态无效，请重新连接。";
-"device.backend.protocol-failed" = "设备协议失败（阶段 %@，原因 %@）。";
-"device.backend.screenshot-failed" = "无法获取有效屏幕画面（阶段 %@，原因 %@）。";
-"device.backend.touch-not-ready" = "屏幕或触控服务未就绪（阶段 %@，原因 %@）。";
-"device.backend.transport-failed" = "设备连接失败（%@）。请检查 VPN 和系统配对授权。";
+"device.backend.invalid-state" = "暂时无法连接设备，请重新连接后再试。";
+"device.backend.protocol-failed" = "设备连接未能完成，请保持设备解锁后重试。你可以继续聊天。";
+"device.backend.screenshot-failed" = "无法读取设备屏幕，请保持设备解锁并重新连接后再试。";
+"device.backend.touch-not-ready" = "暂时无法启动设备操作。你可以继续聊天，设备操作暂不可用。";
+"device.backend.transport-failed" = "本地连接已中断，请重新连接后再试。你可以继续聊天。";
 "device.error.busy" = "设备正在执行另一项操作，请等待完成。";
 "device.error.delivery-unknown" = "操作发送结果未知，不能自动重试。%@ 请重新连接并截图确认。";
 "device.error.invalid-bundle-id" = "App Bundle ID 无效。";
@@ -43,3 +43,7 @@
 "device.vpn.inactive" = "本地回环 VPN 未开启，或接口地址与配置不一致。";
 "device.vpn.invalid-configuration" = "本地地址和对端地址必须是不同的有效 IPv4 地址。";
 "device.vpn.service-not-found" = "未发现本机配对服务，请检查开发者模式和 VPN 连接。";
+"device.backend.screen-service-unavailable" = "配对已完成，但无法找到当前控制方式需要的屏幕服务。你可以继续聊天，设备操作暂不可用。";
+"device.backend.touch-service-unavailable" = "配对已完成，但无法找到当前控制方式需要的触控服务。你可以继续聊天，设备操作暂不可用。";
+"device.backend.touch-timed-out" = "设备操作准备超时，请保持设备解锁后重试。你可以继续聊天。";
+"device.backend.timed-out" = "设备暂时没有响应，请保持设备解锁后重新连接。你可以继续聊天。";

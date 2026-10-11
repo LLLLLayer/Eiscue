@@ -70,6 +70,15 @@ struct DeviceView: View {
                         Text("device.systemPairingShort")
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
+                } else {
+                    Label(model.isDeviceReady ? String(localized: "device.controlReady") : String(localized: "device.pairingSaved"),
+                          systemImage: "checkmark.shield")
+                        .font(.headline)
+                        .accessibilityIdentifier("devicePairingComplete")
+                    if !model.isDeviceReady {
+                        Text("device.pairingSavedDetail")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
                 }
 
                 if let code = model.pairingCode {
@@ -97,7 +106,7 @@ struct DeviceView: View {
                 .buttonStyle(.glass)
                 .foregroundStyle(.primary)
         } else {
-            if model.hasTransferredPairingIdentity {
+            if !model.hasPairingIdentity && model.hasTransferredPairingIdentity {
                 Button("device.importTransferredPairing") {
                     Task { await model.importTransferredPairingIdentity() }
                 }
@@ -121,7 +130,7 @@ struct DeviceView: View {
                 .accessibilityIdentifier("startPairingButton")
             }
             if model.hasPairingIdentity {
-                Button("device.connect") {
+                Button(model.deviceConnectionError == nil ? String(localized: "device.enableControl") : String(localized: "device.retryControl")) {
                     Task {
                         if !model.localTunnel.isConnected { await model.startLocalTunnel() }
                         if model.localTunnel.isConnected { await model.connectDevice() }
@@ -140,20 +149,23 @@ struct DeviceView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     localConnection
                     Divider()
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("device.preparation").font(.subheadline.weight(.semibold))
-                        Text("device.developerModeDetail")
-                        Text(model.supportsSystemPairing ? String(localized: "device.pairingSetup") : String(localized: "device.usbPairingSetup"))
-                        Text("device.compatibilityDetail")
-                    }
-                    .font(.caption).foregroundStyle(.secondary)
+                    if !model.hasPairingIdentity {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("device.preparation").font(.subheadline.weight(.semibold))
+                            Text("device.developerModeDetail")
+                            Text(model.supportsSystemPairing ? String(localized: "device.pairingSetup") : String(localized: "device.usbPairingSetup"))
+                            Text("device.compatibilityDetail")
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
 
-                    Button("device.importIdentity") { importsIdentity = true }
-                        .buttonStyle(.glass)
-                        .disabled(model.isBusy)
-                        .accessibilityIdentifier("importPairingIdentityFromFilesButton")
-                    Divider()
-                    verification
+                        Button("device.importIdentity") { importsIdentity = true }
+                            .buttonStyle(.glass)
+                            .disabled(model.isBusy)
+                            .accessibilityIdentifier("importPairingIdentityFromFilesButton")
+                    }
+                    if model.isDeviceReady {
+                        verification
+                    }
                     if model.hasPairingIdentity {
                         Button("device.removePairing", role: .destructive) { confirmsForget = true }
                             .buttonStyle(.glass)

@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import OSLog
 @preconcurrency import PhoneAgentNCM
 
 @MainActor final class LocalDeviceController: NSObject, DeviceController, @preconcurrency NetServiceDelegate {
@@ -352,6 +353,7 @@ import ImageIO
 
     private static func convert(_ error: Error) -> Error {
         if error is CancellationError || error is DeviceControlError { return error }
+        if let native = error as? NativeBackendError { NativeDeviceErrorPresentation.record(native) }
         return DeviceControlError.connection(message(error))
     }
 
@@ -368,22 +370,55 @@ import ImageIO
             case .invalidConfiguration: return String(localized: "device.vpn.invalid-configuration", defaultValue: "The local and peer addresses must be distinct, valid IPv4 addresses.", bundle: .module)
             }
         }
-        if let error = error as? NativeBackendError {
-            switch error {
-            case .invalidIdentity: return DeviceControlError.invalidIdentity.localizedDescription
-            case .protocolFailure(stage: 7, cause: _): return String(localized: "device.backend.developer-mode", defaultValue: "Developer Mode is not ready. Enable it in Settings and restart when the system asks.", bundle: .module)
-            case .protocolFailure(stage: 8, cause: _): return String(localized: "device.backend.ddi-not-ready", defaultValue: "The Developer Disk Image (DDI) is not ready. Connect the device to Xcode and complete development preparation before retrying. This app does not download or mount images.", bundle: .module)
-            case .protocolFailure(let stage, let cause): return String(localized: "device.backend.protocol-failed", defaultValue: "The device protocol failed (stage \(String(describing: stage)), cause \(String(describing: cause))).", bundle: .module)
-            case .touchPreparationFailure(let stage, let cause): return String(localized: "device.backend.touch-not-ready", defaultValue: "The screen or touch service is not ready (stage \(String(describing: stage)), cause \(String(describing: cause))).", bundle: .module)
-            case .screenshotFailure(let stage, let cause): return String(localized: "device.backend.screenshot-failed", defaultValue: "A valid screen image could not be captured (stage \(String(describing: stage)), cause \(String(describing: cause))).", bundle: .module)
-            case .applicationQueryFailure(let stage, let cause): return String(localized: "device.backend.app-list-failed", defaultValue: "The app list could not be read (stage \(String(describing: stage)), cause \(String(describing: cause))).", bundle: .module)
-            case .busy: return DeviceControlError.busy.localizedDescription
-            case .closed: return String(localized: "device.backend.closed", defaultValue: "The device connection is closed.", bundle: .module)
-            case .transport(let code): return String(localized: "device.backend.transport-failed", defaultValue: "The device connection failed (\(String(describing: code))). Check the VPN and system pairing authorization.", bundle: .module)
-            default: return String(localized: "device.backend.invalid-state", defaultValue: "The device backend is in an invalid state. Connect again.", bundle: .module)
-            }
+        if let error = error as? NativeBackendError { return NativeDeviceErrorPresentation.message(error) }
+        if let error = error as? NCMError, error == .timeout {
+            return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.", bundle: .module)
         }
         return String(localized: "device.operation.failed", defaultValue: "The device operation failed. Check local network permission, VPN configuration, and system pairing authorization.", bundle: .module)
+    }
+}
+
+/// Translates native diagnostic categories into instructions suitable for the app.
+/// Keep the native codes in local diagnostics, never in the main error message.
+enum NativeDeviceErrorPresentation {
+    private static let logger = Logger(subsystem: "org.eiscue.device", category: "connection")
+
+    static func message(_ error: NativeBackendError, bundle: Bundle = .module) -> String {
+        switch error {
+        case .invalidIdentity: return DeviceControlError.invalidIdentity.localizedDescription
+        case .protocolFailure(stage: _, cause: 2): return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.", bundle: bundle)
+        case .protocolFailure(stage: 7, cause: _): return String(localized: "device.backend.developer-mode", defaultValue: "Developer Mode is not ready. Enable it in Settings and restart when the system asks.", bundle: bundle)
+        case .protocolFailure(stage: 8, cause: _): return String(localized: "device.backend.ddi-not-ready", defaultValue: "The device is not ready for development. Connect it to Xcode on your computer and wait for device preparation to finish, then try again.", bundle: bundle)
+        case .protocolFailure: return String(localized: "device.backend.protocol-failed", defaultValue: "The device connection could not be completed. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
+        // Media service lookup runs only after identity verification and developer preparation.
+        // MissingService includes unusable ports or service flags, so do not claim iOS lacks it.
+        case .touchPreparationFailure(stage: 10, cause: 4): return String(localized: "device.backend.screen-service-unavailable", defaultValue: "Pairing is complete, but the screen service needed for device control could not be found. You can keep chatting; device control is currently unavailable.", bundle: bundle)
+        case .touchPreparationFailure(stage: 11, cause: 4): return String(localized: "device.backend.touch-service-unavailable", defaultValue: "Pairing is complete, but the touch service needed for device control could not be found. You can keep chatting; device control is currently unavailable.", bundle: bundle)
+        case .touchPreparationFailure(stage: _, cause: 2): return String(localized: "device.backend.touch-timed-out", defaultValue: "Preparing device control timed out. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
+        case .touchPreparationFailure: return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not be started. You can keep chatting; device control is currently unavailable.", bundle: bundle)
+        case .screenshotFailure: return String(localized: "device.backend.screenshot-failed", defaultValue: "The device screen could not be read. Keep the device unlocked and try connecting again.", bundle: bundle)
+        case .applicationQueryFailure: return String(localized: "device.backend.app-list-failed", defaultValue: "The list of installed apps could not be read. Try connecting again.", bundle: bundle)
+        case .busy: return DeviceControlError.busy.localizedDescription
+        case .closed: return String(localized: "device.backend.closed", defaultValue: "The device connection is closed.", bundle: bundle)
+        case .transport: return String(localized: "device.backend.transport-failed", defaultValue: "The local connection was interrupted. Try connecting again. You can keep chatting.", bundle: bundle)
+        default: return String(localized: "device.backend.invalid-state", defaultValue: "The device connection could not be completed. Try connecting again.", bundle: bundle)
+        }
+    }
+
+    static func record(_ error: NativeBackendError) {
+        // Only allowlisted operation names and numeric categories: no peer data or credentials.
+        let diagnostic: (operation: String, stage: UInt32, cause: UInt32)
+        switch error {
+        case .protocolFailure(let stage, let cause): diagnostic = ("connection", stage, cause)
+        case .touchPreparationFailure(let stage, let cause): diagnostic = ("prepare-control", stage, cause)
+        case .screenshotFailure(let stage, let cause): diagnostic = ("screenshot", stage, cause)
+        case .applicationQueryFailure(let stage, let cause): diagnostic = ("app-list", stage, cause)
+        case .transport(let code):
+            logger.error("operation=transport code=\(code, privacy: .public)")
+            return
+        default: return
+        }
+        logger.error("operation=\(diagnostic.operation, privacy: .public) stage=\(diagnostic.stage, privacy: .public) cause=\(diagnostic.cause, privacy: .public)")
     }
 }
 

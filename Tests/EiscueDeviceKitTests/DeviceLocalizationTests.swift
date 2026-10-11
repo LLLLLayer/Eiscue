@@ -34,9 +34,9 @@ import Testing
     func bothLanguagesCanBeReadAndFormattedByFoundation(language: String) throws {
         let resource = try #require(Bundle.module.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
         let bundle = try #require(Bundle(url: resource.deletingLastPathComponent()))
-        let message = String(localized: "device.backend.protocol-failed",
-                             defaultValue: "MISSING RESOURCE \(String(12)) \(String(34))", bundle: bundle)
-        #expect(message.contains("12") && message.contains("34"))
+        let message = String(localized: "device.error.delivery-unknown",
+                             defaultValue: "MISSING RESOURCE \(String("delivery-detail"))", bundle: bundle)
+        #expect(message.contains("delivery-detail"))
         #expect(!message.contains("MISSING RESOURCE"))
         #expect(!message.contains("%@"))
     }
