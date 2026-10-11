@@ -18,6 +18,7 @@ struct AgentSkill: Identifiable, Equatable {
             case "ios-navigation": String(localized: "skills.navigationName")
             case "search-smoke-test": String(localized: "skills.searchName")
             case "failure-recovery": String(localized: "skills.recoveryName")
+            case "eiscue-stickers": String(localized: "composer.stickers", table: "Composer")
             default: contentName
             }
         } else {
@@ -31,7 +32,7 @@ struct SkillLibrary {
     let directory: URL
 
     func load() throws -> [AgentSkill] {
-        let bundled = ["ios-navigation", "search-smoke-test", "failure-recovery"].compactMap { id -> AgentSkill? in
+        let bundled = ["ios-navigation", "search-smoke-test", "failure-recovery", "eiscue-stickers"].compactMap { id -> AgentSkill? in
             guard let url = Bundle.main.url(forResource: id, withExtension: "md", subdirectory: "Skills") ?? Bundle.main.url(forResource: id, withExtension: "md"),
                   let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
             return AgentSkill(id: id, text: text, source: String(localized: "skills.builtInSource"), isBuiltIn: true)

@@ -235,6 +235,31 @@ struct AgentRuntimeTests {
         try await fixture.client.removeConversation(id: request.conversationID)
         #expect(try await fixture.client.recover(conversationID: request.conversationID).messages.isEmpty)
     }
+
+    @Test func userAttachmentsReachModelAndSurviveRetryRecoveryAndHistoryImport() async throws {
+        let fixture = try await RuntimeFixture()
+        defer { fixture.remove() }
+        let photo = AgentAttachment(name: "selected.jpg", mimeType: "image/jpeg", content: .image(Data([1, 2, 3, 4])))
+        let document = AgentAttachment(name: "report.pdf", mimeType: "application/pdf", content: .text("Extracted report text"))
+        let history = [AgentMessage(role: .user, text: "old image", attachments: [photo])]
+        try await fixture.faux.respond { messages, count in
+            #expect(count == 1)
+            let users = messages.compactMap { if case .user(let user) = $0 { user } else { nil } }
+            #expect(users.count == 2)
+            #expect(users.last?.content.contains(.image(ImageContent(data: Data([1, 2, 3, 4]), mimeType: "image/jpeg"))) == true)
+            #expect(users.last?.content.contains(.text("Extracted report text")) == true)
+            return .text("Read both attachments")
+        }
+        let request = AgentRequest(conversationID: UUID(), prompt: "", history: history, attachments: [photo, document])
+        try await collect(fixture.client.run(request: request))
+        try await collect(fixture.client.run(request: request))
+        let recovery = try await fixture.client.recover(conversationID: request.conversationID)
+        #expect(recovery.messages.count == 3)
+        #expect(recovery.messages[0] == history[0])
+        #expect(recovery.messages[1].id == request.requestID)
+        #expect(recovery.messages[1].text == "")
+        #expect(recovery.messages[1].attachments == [photo, document])
+    }
 }
 
 private let emptySchema: AgentJSONValue = ["type": "object", "properties": [:], "additionalProperties": false]

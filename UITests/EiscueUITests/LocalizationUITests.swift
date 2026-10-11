@@ -35,9 +35,13 @@ final class LocalizationUITests: XCTestCase {
     @MainActor
     func testEnglishInterfaceAndOptionalNotifications() {
         let app = launch(language: "en", locale: "en_US")
-        XCTAssertTrue(app.tabBars.buttons["Assistant"].exists)
-        XCTAssertTrue(app.tabBars.buttons["Device"].exists)
-        app.tabBars.buttons["Settings"].tap()
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertTrue(app.buttons["deviceNavigationLink"].label.contains("Device"))
+        openSidebar(in: app)
+        XCTAssertEqual(app.buttons["sidebarSettingsButton"].label, "Settings")
+        XCTAssertEqual(app.buttons["newConversationButton"].label, "New conversation")
+        closeSidebar(in: app)
+        openSettings(in: app)
         XCTAssertTrue(app.buttons["appLanguageSettingsButton"].exists)
         XCTAssertTrue(app.staticTexts["Model settings"].exists)
         app.buttons["modelSettingsButton"].tap()
@@ -55,7 +59,7 @@ final class LocalizationUITests: XCTestCase {
     @MainActor
     func testChineseBackgroundSettingsUseResourcesWithoutRequestingPermission() {
         let app = launch(language: "zh-Hans", locale: "zh_CN")
-        app.tabBars.buttons["设置"].tap()
+        openSettings(in: app)
         app.buttons["taskStatusSettingsButton"].tap()
         let toggle = app.switches["taskNotificationsToggle"]
         reveal(toggle, in: app)

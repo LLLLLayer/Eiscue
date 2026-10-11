@@ -50,7 +50,9 @@ actor DefaultEngine: AgentEngine {
               request.timeoutSeconds <= 86_400, request.maxToolCalls >= 0 else {
             throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-budget", defaultValue: "The task time limit or tool call limit is invalid.", bundle: .module))
         }
-        if request.mode == .message, request.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        try AgentAttachment.validate(request.attachments, supportsImages: configuration?.supportsImages ?? false)
+        for message in request.history { try AgentAttachment.validate(message.attachments, supportsImages: configuration?.supportsImages ?? false) }
+        if request.mode == .message, request.attachments.isEmpty, request.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw AgentError.invalidConfiguration(String(localized: "agent.configuration.empty-message", defaultValue: "The message must not be empty.", bundle: .module))
         }
         let id = UUID()
@@ -158,6 +160,10 @@ actor DefaultEngine: AgentEngine {
                 try await importHistory(request.history, into: opened.conversation)
                 view = try await opened.conversation.view()
             }
+            if configuration?.supportsImages == false,
+               view.entries.contains(where: { ($0.userMessage?.content ?? []).contains { if case .image = $0 { true } else { false } } }) {
+                throw AgentError.invalidConfiguration(String(localized: "agent.attachment.images-unavailable", defaultValue: "Select a model that supports images to send this attachment.", bundle: .module))
+            }
             try await opened.conversation.configure(AgentChange(model: opened.model, instructions: request.systemPrompt))
             try checkRunning(id)
             let events = try await opened.harness.watchEvents(opened.conversation.id)
@@ -175,7 +181,17 @@ actor DefaultEngine: AgentEngine {
             }
             var submissions: [PiDurableKit.Submission] = []
             if request.mode == .message {
-                let submission = try await opened.conversation.submit(request.prompt, whenBusy: .reject,
+                if !request.attachments.isEmpty,
+                   !view.entries.contains(where: { RuntimeMapping.storedMessage($0)?.id == request.requestID }) {
+                    let message = AgentMessage(id: request.requestID, role: .user, text: request.prompt, attachments: request.attachments)
+                    // Persist display metadata before admission. No model context
+                    // is contributed by this entry; orphaned metadata is ignored.
+                    try await opened.conversation.commit { transaction in
+                        _ = try await transaction.append(EntryDraft(kind: RuntimeMapping.attachmentEntryKind,
+                            data: ["eiscueMessage": try PiDurableKit.JSONValue(encoding: message)]), to: opened.conversation.id)
+                    }
+                }
+                let submission = try await opened.conversation.submit(RuntimeMapping.userContent(text: request.prompt, attachments: request.attachments), whenBusy: .reject,
                                                                       requestId: request.requestID.uuidString)
                 admitted = true
                 continuation.yield(.requestAccepted(request.requestID))
@@ -323,14 +339,14 @@ actor DefaultEngine: AgentEngine {
                 switch message.role {
                 case .user:
                     kind = .user
-                    model = .user(UserMessage(content: [.text(message.text)], timestamp: message.createdAt))
+                    model = .user(UserMessage(content: RuntimeMapping.userContent(text: message.text, attachments: message.attachments), timestamp: message.createdAt))
                 case .assistant:
                     kind = .assistant
                     model = .assistant(AssistantMessage(content: [.text(message.text)], timestamp: message.createdAt))
                 case .system, .tool: continue
                 }
                 _ = try await transaction.append(EntryDraft(kind: kind,
-                    data: ["eiscueID": .string(message.id.uuidString)], model: [model]), to: conversation.id)
+                    data: ["eiscueID": .string(message.id.uuidString), "eiscueMessage": try PiDurableKit.JSONValue(encoding: message)], model: [model]), to: conversation.id)
             }
         }
     }

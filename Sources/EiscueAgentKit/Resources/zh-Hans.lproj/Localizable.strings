@@ -18,3 +18,9 @@
 "agent.storage.duplicate-conversation" = "会话文件包含重复记录。原文件已保留。";
 "agent.storage.unsupported-version" = "暂不支持会话文件版本 %@。原文件已保留。";
 "agent.tool.interrupted" = "工具执行已中断。";
+
+"agent.attachment.limit" = "一条消息最多包含 4 个附件，总大小不超过 8 MB。";
+
+"agent.attachment.invalid" = "附件为空、格式不受支持或超过大小限制。";
+
+"agent.attachment.images-unavailable" = "请选择支持图片的模型再发送此附件。";

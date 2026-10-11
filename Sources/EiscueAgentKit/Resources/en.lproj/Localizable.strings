@@ -18,3 +18,9 @@
 "agent.storage.duplicate-conversation" = "The conversation file contains duplicate records. The original file has been preserved.";
 "agent.storage.unsupported-version" = "Conversation file version %@ is not supported. The original file has been preserved.";
 "agent.tool.interrupted" = "Tool execution was interrupted.";
+
+"agent.attachment.limit" = "A message can include up to 4 attachments (8 MB total).";
+
+"agent.attachment.invalid" = "The attachment is empty, unsupported, or exceeds the allowed size.";
+
+"agent.attachment.images-unavailable" = "Select a model that supports images to send this attachment.";

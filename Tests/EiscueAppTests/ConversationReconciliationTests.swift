@@ -5,6 +5,15 @@ import XCTest
 
 @MainActor
 final class ConversationReconciliationTests: XCTestCase {
+    func testIdenticalTextWithDifferentAttachmentsDoesNotLoseTheUnsubmittedFile() {
+        let first = AgentAttachment(name: "one.txt", mimeType: "text/plain", content: .text("first document"))
+        let second = AgentAttachment(name: "two.txt", mimeType: "text/plain", content: .text("second document"))
+        let accepted = AgentMessage(role: .user, text: "Read this", attachments: [first])
+        let pending = AgentMessage(role: .user, text: "Read this", attachments: [second])
+        let runtime = AgentMessage(role: .user, text: "Read this", attachments: [first])
+        XCTAssertEqual(AppModel.reconciled(local: [accepted, pending], runtime: [runtime]), [runtime, pending])
+    }
+
     func testEmptyRuntimePreservesUnsubmittedLocalConversation() {
         let local = [AgentMessage(role: .user, text: "尚未发送的任务")]
 

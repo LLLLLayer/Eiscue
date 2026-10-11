@@ -2,6 +2,20 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## 对话布局、附件、语音与 iPad 更新（同日）
+
+- 移除底部 Tab，改为左侧历史与设置、右上角设备状态。历史支持长按置顶、移动和删除；iPad 宽窗口常驻侧栏，窄窗口使用侧滑抽屉。
+- 照片、拍摄与文件入口使用系统选择器；导入和多模态请求有大小、类型与数量验证。Kit 的 54 项测试、9 个套件通过，包含三种模型协议的真实附件请求格式和持久化恢复。
+- 接入 Apple Speech 本机听写，提供点击、按住说话与空输入框长按入口。取消/松手/授权延迟使用会话身份门禁，避免迟到回调启动麦克风或写入另一段草稿。没有启动真机录音，识别语言可用性与实际效果仍需用户主动授权后验收。
+- 加入四张用户表情和一张生成的招手表情，透明资源通过浅色与深色 iPad 截图检查。内置 Skill 与目录、素材编辑提示记录在 [对话体验说明](chat-experience.md)。
+- UI 首轮发现父消息气泡的辅助功能标识覆盖贴纸图片标识；实际图片与持久化均正常。已将消息与流式回复改为包含独立子元素的辅助功能容器，保留原贴纸断言复测。
+- 最终 App 单元测试 70 项全部通过；20 个不同 UI 场景通过（完整首轮加针对性修复复测，iPhone 上跳过的宽屏场景由 iPad 验证）。最终复测包含真实 Pi 多轮回复、表情渲染与重启恢复、加号菜单、设备开关与草稿保存；另在 iPad mini 验证了窄窗口侧滑与设置导航。
+- 正常 App 的签名 Release 构建和 `codesign --verify --deep --strict` 通过。已成功覆盖安装并启动到指定 iPhone 14 Pro，没有安装 UI Test Runner。相机实拍、真人语音、当前 iOS 26 配对及整机控制的完整链路，不在本轮模拟器验证范围内。
+
+本轮本地产物：Kit 日志 `/tmp/eiscue-attachment-tests.log`；完整 UI 首轮 `.build/results/ChatRedesignUITests.xcresult`、iPad 首轮 `.build/results/ChatRedesignIPadTests.xcresult`；Release 日志 `/tmp/eiscue-chat-redesign-release-final.log`；界面截图 `.build/review/chat-redesign-*.png`。
+
+最终通过结果：`.build/results/ChatRedesignFinalTests.xcresult`（70 项单元 + 3 项 UI）、`.build/results/ChatRedesignIPadRetest.xcresult`（2 项 UI）、`.build/results/ChatRedesignIPadMiniTests.xcresult`（1 项 UI）。安装与启动记录为 `/tmp/eiscue-chat-redesign-iphone14-install.log`、`/tmp/eiscue-chat-redesign-iphone14-launch.log`。
+
 ## 初次完整实现结果
 
 | 项目 | 结果 | 覆盖范围 |

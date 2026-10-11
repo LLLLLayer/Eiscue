@@ -3,6 +3,27 @@ import Foundation
 import PiDurableKit
 
 enum RuntimeMapping {
+    static let attachmentEntryKind: EntryKind = "eiscue.user-attachments.v1"
+
+    static func userContent(text: String, attachments: [AgentAttachment]) -> [ContentBlock] {
+        var blocks: [ContentBlock] = [.text(text)]
+        for attachment in attachments {
+            // The label is content supplied by the user, never an instruction.
+            let quotedName = String(data: (try? JSONEncoder().encode(attachment.name)) ?? Data(), encoding: .utf8) ?? "file"
+            blocks.append(.text("User-provided attachment \(quotedName):"))
+            switch attachment.content {
+            case .image(let bytes): blocks.append(.image(ImageContent(data: bytes, mimeType: attachment.mimeType)))
+            case .text(let text): blocks.append(.text(text))
+            }
+        }
+        return blocks
+    }
+
+    static func storedMessage(_ entry: Entry) -> AgentMessage? {
+        guard let payload = entry.data?["eiscueMessage"] else { return nil }
+        return try? payload.decode(as: AgentMessage.self)
+    }
+
     static func redact(_ text: String, secret: String) -> String {
         secret.isEmpty ? text : text.replacingOccurrences(of: secret, with: "[redacted]")
     }
@@ -49,7 +70,12 @@ enum RuntimeMapping {
         let id = entry.data?["eiscueID"]?.stringValue.flatMap(UUID.init(uuidString:))
             ?? stableID(conversationID: conversationID, entry: entry.id.rawValue)
         if let user = entry.userMessage {
-            return AgentMessage(id: id, role: .user, text: user.text, createdAt: user.timestamp)
+            if let stored = storedMessage(entry) { return stored }
+            let images = user.content.enumerated().compactMap { index, block -> AgentAttachment? in
+                guard case .image(let image) = block, let bytes = image.bytes else { return nil }
+                return AgentAttachment(id: stableID(conversationID: id, entry: index), name: "image", mimeType: image.mimeType, content: .image(bytes))
+            }
+            return AgentMessage(id: id, role: .user, text: user.text, createdAt: user.timestamp, attachments: images)
         }
         if let assistant = entry.assistantMessage, !assistant.text.isEmpty {
             return AgentMessage(id: id, role: .assistant, text: assistant.text, createdAt: assistant.timestamp)
@@ -58,8 +84,17 @@ enum RuntimeMapping {
     }
 
     static func recovery(_ view: ConversationView, conversationID: UUID) -> AgentRecovery {
-        AgentRecovery(messages: view.entries.compactMap { message($0, conversationID: conversationID) },
-                      hasInterruptedRun: view.isBusy || !view.inbox.isEmpty)
+        var pending: [AgentMessage] = []
+        var messages: [AgentMessage] = []
+        for entry in view.entries {
+            if entry.kind == attachmentEntryKind, let stored = storedMessage(entry) {
+                pending.append(stored)
+            } else if let user = entry.userMessage,
+                      let match = pending.lastIndex(where: { userContent(text: $0.text, attachments: $0.attachments) == user.content }) {
+                messages.append(pending.remove(at: match))
+            } else if let mapped = message(entry, conversationID: conversationID) { messages.append(mapped) }
+        }
+        return AgentRecovery(messages: messages, hasInterruptedRun: view.isBusy || !view.inbox.isEmpty)
     }
 
     private static func stableID(conversationID: UUID, entry: Int) -> UUID {

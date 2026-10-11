@@ -10,7 +10,7 @@ struct DeviceView: View {
     @State private var showsAdvanced = false
 
     var body: some View {
-        NavigationStack {
+        Group {
             ScrollView {
                 VStack(spacing: 24) {
                     deviceHeader
@@ -45,8 +45,7 @@ struct DeviceView: View {
             Text(model.device.name).font(.title2.weight(.semibold))
             Text("\(model.device.platform == .iPadOS ? "iPadOS" : "iOS") \(model.device.systemVersion)")
                 .font(.subheadline).foregroundStyle(.secondary)
-            StatusLabel(title: model.isDeviceReady ? String(localized: "device.connected") : String(localized: "device.waiting"),
-                        color: model.isDeviceReady ? EiscueStyle.accent : .secondary)
+            StatusLabel(title: model.connectionIndicator.title, color: model.connectionIndicator.color)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)

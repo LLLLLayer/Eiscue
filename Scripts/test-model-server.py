@@ -6,6 +6,13 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+def message_text(message):
+    content = message.get("content", "")
+    if isinstance(content, list):
+        return " ".join(p.get("text", "") for p in content if p.get("type") == "text")
+    return content
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
@@ -25,10 +32,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = json.loads(self.rfile.read(size))
         users = [m for m in body.get("messages", []) if m.get("role") == "user"]
-        content = users[-1].get("content", "") if users else ""
-        if isinstance(content, list):
-            content = " ".join(p.get("text", "") for p in content if p.get("type") == "text")
+        content = message_text(users[-1]) if users else ""
         answer = "Fixture response: " + content
+        if content == "sticker fixture":
+            instructions = "\n".join(message_text(m) for m in body.get("messages", [])
+                                     if m.get("role") in ("system", "developer"))
+            if "[[eiscue:wave]]" not in instructions:
+                self.send_error(400, "Sticker catalog missing from model instructions")
+                return
+            answer = "Hello [[eiscue:wave]]"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")

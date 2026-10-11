@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect your device, choose Control Device above the message box, then describe your task."
+            "value": "Connect your device using the top-right button. Tap + beside the message field to let AI control it."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接后，在输入框上方选择「操作设备」，再告诉我任务。"
+            "value": "通过右上角按钮连接设备，再点输入框旁的加号，允许 AI 操作设备。"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On the Device tab, start pairing. Then choose Eiscue in the system pairing settings and enter the code shown in the app."
+            "value": "After this guide, use the device button at the top right to start pairing. Choose Eiscue in the system pairing settings and enter the code shown in the app."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "到「设备」页开始配对，再到系统配对设置选择 Eiscue，输入 App 显示的配对码。"
+            "value": "完成引导后，点右上角设备按钮开始配对。再到系统配对设置选择 Eiscue，输入 App 显示的配对码。"
           }
         }
       }
@@ -483,13 +483,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You can chat first and finish device setup later in the Device tab."
+            "value": "You can chat first and finish setup later using the device button at the top right."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "也可以先聊天，之后再到「设备」页完成连接。"
+            "value": "可以先聊天，之后再点右上角设备按钮完成连接。"
           }
         }
       }

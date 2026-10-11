@@ -30,11 +30,13 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Fixture response: Plan a calm morning"].waitForExistence(timeout: 10))
         send("Next step", in: app)
         XCTAssertTrue(app.staticTexts["Fixture response: Next step"].waitForExistence(timeout: 20))
+        openSidebar(in: app)
         app.buttons["newConversationButton"].tap()
-        app.buttons["historyButton"].tap()
-        let row = app.buttons.containing(.staticText, identifier: "Plan a calm morning").firstMatch
+        openSidebar(in: app)
+        let row = row(titled: "Plan a calm morning", in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        row.swipeLeft(); app.buttons["删除"].tap()
+        row.press(forDuration: 1)
+        app.buttons["deleteConversationButton"].tap()
         XCTAssertTrue(app.staticTexts["还没有会话"].waitForExistence(timeout: 5))
     }
 
@@ -51,5 +53,55 @@ final class AgentIntegrationUITests: XCTestCase {
         app.buttons["结束任务"].tap()
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+    }
+
+    @MainActor func testSidebarOrderPinAndDeletePersistAcrossLaunches() throws {
+        var app = launch()
+        for (index, title) in ["First conversation", "Second conversation", "Third conversation"].enumerated() {
+            if index > 0 {
+                openSidebar(in: app)
+                app.buttons["newConversationButton"].tap()
+            }
+            send(title, in: app)
+            XCTAssertTrue(app.staticTexts["Fixture response: \(title)"].waitForExistence(timeout: 20))
+            let idle = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
+            XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 10), .completed)
+        }
+        openSidebar(in: app)
+        assertOrder(["Third conversation", "Second conversation", "First conversation"], in: app)
+        row(titled: "First conversation", in: app).press(forDuration: 1)
+        app.buttons["moveConversationUpButton"].tap()
+        assertOrder(["Third conversation", "First conversation", "Second conversation"], in: app)
+        row(titled: "Second conversation", in: app).press(forDuration: 1)
+        app.buttons["pinConversationButton"].tap()
+        assertOrder(["Second conversation", "Third conversation", "First conversation"], in: app)
+        XCTAssertEqual(row(titled: "Second conversation", in: app).value as? String, "已置顶")
+        app.terminate()
+
+        app = launch(reset: false)
+        XCTAssertTrue(app.buttons["historyButton"].waitForExistence(timeout: 10))
+        openSidebar(in: app)
+        assertOrder(["Second conversation", "Third conversation", "First conversation"], in: app)
+        XCTAssertEqual(row(titled: "Second conversation", in: app).value as? String, "已置顶")
+        row(titled: "Third conversation", in: app).press(forDuration: 1)
+        app.buttons["moveConversationDownButton"].tap()
+        assertOrder(["Second conversation", "First conversation", "Third conversation"], in: app)
+        row(titled: "First conversation", in: app).press(forDuration: 1)
+        app.buttons["deleteConversationButton"].tap()
+        let deleted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: row(titled: "First conversation", in: app))
+        XCTAssertEqual(XCTWaiter.wait(for: [deleted], timeout: 10), .completed)
+        assertOrder(["Second conversation", "Third conversation"], in: app)
+    }
+
+    @MainActor private func row(titled title: String, in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "conversationRow_", title)).firstMatch
+    }
+
+    @MainActor private func assertOrder(_ titles: [String], in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let rows = titles.map { row(titled: $0, in: app) }
+        for row in rows { XCTAssertTrue(row.waitForExistence(timeout: 5), file: file, line: line) }
+        for (above, below) in zip(rows, rows.dropFirst()) {
+            XCTAssertLessThan(above.frame.midY, below.frame.midY, file: file, line: line)
+        }
     }
 }

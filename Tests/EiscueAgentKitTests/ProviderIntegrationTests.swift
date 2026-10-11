@@ -21,7 +21,9 @@ struct ProviderIntegrationTests {
         let id = UUID()
         var messages: [AgentMessage] = []
         var partials: [String] = []
-        for try await event in try await client.run(request: .init(conversationID: id, prompt: "Say hello")) {
+        let photo = AgentAttachment(name: "photo.png", mimeType: "image/png", content: .image(Data([137, 80, 78, 71])))
+        let document = AgentAttachment(name: "notes.txt", mimeType: "text/plain", content: .text("USER_FILE_CONTENT_42"))
+        for try await event in try await client.run(request: .init(conversationID: id, prompt: "Say hello", attachments: [photo, document])) {
             if case .message(let message) = event { messages.append(message) }
             if case .assistantText(let text) = event { partials.append(text) }
         }
@@ -35,6 +37,11 @@ struct ProviderIntegrationTests {
         #expect(request.url.path == expectedPath)
         #expect(request.body["model"] == "fixture-model")
         #expect(request.body["stream"] == true)
+        let wireEncoder = JSONEncoder(); wireEncoder.outputFormatting = [.withoutEscapingSlashes]
+        let wireBody = String(data: try wireEncoder.encode(request.body), encoding: .utf8) ?? ""
+        #expect(wireBody.contains("iVBORw=="))
+        #expect(wireBody.contains("image/png"))
+        #expect(wireBody.contains("USER_FILE_CONTENT_42"))
         if api == .anthropicMessages {
             #expect(request.apiKey == configuration.apiKey)
         } else {
@@ -49,6 +56,7 @@ struct ProviderIntegrationTests {
         let offline = AgentClient(storageDirectory: directory)
         #expect(await offline.availability == .unconfigured)
         #expect(try await offline.recover(conversationID: id).messages.last?.text == "Hello world")
+        #expect(try await offline.recover(conversationID: id).messages.first?.attachments == [photo, document])
         try await offline.removeConversation(id: id)
         #expect(try await offline.recover(conversationID: id).messages.isEmpty)
     }

@@ -15,11 +15,12 @@ public struct AgentRequest: Sendable {
     public let mode: AgentRunMode
     /// Used only when the runtime transcript is empty, to import existing local conversations.
     public let history: [AgentMessage]
+    public let attachments: [AgentAttachment]
 
     public init(
         conversationID: UUID, requestID: UUID = UUID(), prompt: String, systemPrompt: String = "",
         maxToolCalls: Int = 30, timeoutSeconds: Double = 180, mode: AgentRunMode = .message,
-        history: [AgentMessage] = []
+        history: [AgentMessage] = [], attachments: [AgentAttachment] = []
     ) {
         self.conversationID = conversationID
         self.requestID = requestID
@@ -29,6 +30,7 @@ public struct AgentRequest: Sendable {
         self.timeoutSeconds = timeoutSeconds
         self.mode = mode
         self.history = history
+        self.attachments = attachments
     }
 }
 

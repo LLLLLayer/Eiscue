@@ -17,7 +17,7 @@ final class EiscueUITests: XCTestCase {
 
     @MainActor
     private func openModelSettings(in app: XCUIApplication) {
-        app.tabBars.buttons["设置"].tap()
+        openSettings(in: app)
         app.buttons["modelSettingsButton"].tap()
         XCTAssertTrue(app.textFields["modelBaseURL"].waitForExistence(timeout: 5))
     }
@@ -72,7 +72,7 @@ final class EiscueUITests: XCTestCase {
         reveal(outputLimit, in: app)
         XCTAssertTrue(outputLimit.exists)
         app.navigationBars.buttons["取消"].tap()
-        app.tabBars.buttons["设备"].tap()
+        openDevice(in: app)
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
         XCTAssertFalse(app.buttons["打开验证页面"].exists)
         expandDeviceOptions(in: app)
@@ -93,9 +93,9 @@ final class EiscueUITests: XCTestCase {
         XCTAssertFalse(app.buttons["saveModelSettingsButton"].isEnabled)
         app.navigationBars.buttons["取消"].tap()
 
-        app.buttons["historyButton"].tap()
+        openSidebar(in: app)
         XCTAssertTrue(app.staticTexts["还没有会话"].waitForExistence(timeout: 5))
-        app.navigationBars.buttons["完成"].tap()
+        closeSidebar(in: app)
         XCTAssertTrue(field.value as? String == "Help me plan a morning")
     }
 
@@ -142,7 +142,7 @@ final class EiscueUITests: XCTestCase {
     @MainActor
     func testAppearancePersistsAcrossLaunches() throws {
         var app = launch()
-        app.tabBars.buttons["设置"].tap()
+        openSettings(in: app)
         let picker = app.buttons["appearancePicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         picker.tap()
@@ -151,7 +151,7 @@ final class EiscueUITests: XCTestCase {
         app.terminate()
 
         app = launch(reset: false)
-        app.tabBars.buttons["设置"].tap()
+        openSettings(in: app)
         let restored = app.buttons["appearancePicker"]
         XCTAssertTrue(restored.waitForExistence(timeout: 5))
         XCTAssertTrue((restored.label + (restored.value as? String ?? "")).contains("深色"))
@@ -162,7 +162,7 @@ final class EiscueUITests: XCTestCase {
     @MainActor
     func testBuiltInSkillCanBePreviewedAndSelected() throws {
         let app = launch()
-        app.tabBars.buttons["设置"].tap()
+        openSettings(in: app)
         app.buttons["skillsNavigationLink"].tap()
         let skill = app.buttons["skillRow_ios-navigation"]
         XCTAssertTrue(skill.waitForExistence(timeout: 5))
@@ -187,7 +187,7 @@ final class EiscueUITests: XCTestCase {
         throw XCTSkip("This case checks the simulator-only rejection and must not start a real VPN.")
         #else
         let app = launch()
-        app.tabBars.buttons["设备"].tap()
+        openDevice(in: app)
         expandDeviceOptions(in: app)
         let start = app.buttons["startLocalTunnelButton"]
         reveal(start, in: app)
@@ -213,7 +213,7 @@ final class EiscueUITests: XCTestCase {
             throw XCTSkip("This case checks the iOS 26 USB setup path.")
         }
         let app = launch()
-        app.tabBars.buttons["设备"].tap()
+        openDevice(in: app)
         let guidance = app.staticTexts["usbPairingGuidance"]
         reveal(guidance, in: app)
         XCTAssertTrue(guidance.label.contains("USB"))
@@ -230,7 +230,7 @@ final class EiscueUITests: XCTestCase {
     @MainActor
     func testDeviceControlProbeRespondsToTapInputAndScroll() throws {
         let app = launch()
-        app.tabBars.buttons["设备"].tap()
+        openDevice(in: app)
         expandDeviceOptions(in: app)
         XCTAssertTrue(app.staticTexts["连接准备"].waitForExistence(timeout: 5))
         let openProbe = app.buttons["打开验证页面"]
@@ -256,7 +256,7 @@ final class EiscueUITests: XCTestCase {
     @MainActor
     func testRunHistoryIsEmptyBeforeFirstRun() throws {
         let app = launch()
-        app.tabBars.buttons["设置"].tap()
+        openSettings(in: app)
         app.buttons["runHistoryNavigationLink"].tap()
         XCTAssertTrue(app.staticTexts["还没有运行记录"].waitForExistence(timeout: 5))
     }

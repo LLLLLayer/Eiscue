@@ -11,7 +11,14 @@ final class LocalizationResourcesTests: XCTestCase {
             for (table, key) in [("Runtime", "settings.title"), ("Localizable", "common.device"),
                                  ("Connections", "notifications.task.completed"),
                                  ("TaskStatus", "task.status.phase.waiting"),
-                                 ("InfoPlist", "NSLocalNetworkUsageDescription")] {
+                                 ("InfoPlist", "NSLocalNetworkUsageDescription"),
+                                 ("InfoPlist", "NSCameraUsageDescription"),
+                                 ("InfoPlist", "NSMicrophoneUsageDescription"),
+                                 ("InfoPlist", "NSSpeechRecognitionUsageDescription"),
+                                 ("Composer", "composer.controlDevice"),
+                                 ("Speech", "speech.start"),
+                                 ("Attachments", "attachment.error.fileSize"),
+                                 ("Navigation", "sidebar.settings")] {
                 let translated = bundle.localizedString(forKey: key, value: nil, table: table)
                 XCTAssertNotEqual(translated, key, "Missing \(language)/\(table)/\(key)")
                 XCTAssertFalse(translated.isEmpty)

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "wave",
+    "assetName": "StickerWave",
+    "labelKey": "sticker.wave",
+    "meaning": "A warm hello or thank you."
+  },
+  {
+    "id": "sit",
+    "assetName": "StickerSit",
+    "labelKey": "sticker.sit",
+    "meaning": "Listening patiently or keeping the user company."
+  },
+  {
+    "id": "peek",
+    "assetName": "StickerPeek",
+    "labelKey": "sticker.peek",
+    "meaning": "Curiosity or a gentle check-in."
+  },
+  {
+    "id": "roll",
+    "assetName": "StickerRoll",
+    "labelKey": "sticker.roll",
+    "meaning": "A playful reaction."
+  },
+  {
+    "id": "rest",
+    "assetName": "StickerRest",
+    "labelKey": "sticker.rest",
+    "meaning": "Resting or taking a break."
+  }
+]

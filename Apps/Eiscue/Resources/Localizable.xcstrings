@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pair and connect in the Device tab"
+            "value": "Use the top-right device button to pair and connect"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在设备页完成配对与连接"
+            "value": "点右上角设备按钮，完成配对与连接"
           }
         }
       }

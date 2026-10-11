@@ -35,10 +35,14 @@ extension AppModel {
             defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
             try await deviceClient.importPairingIdentity(data)
             guard deviceOperationID == operationID else { return }
+            deviceConnectionError = nil
             connectionMessage = String(localized: "connection.identityImported")
             await refreshDeviceStatus()
         } catch {
-            if deviceOperationID == operationID { connectionMessage = error.localizedDescription }
+            if deviceOperationID == operationID {
+                deviceConnectionError = error.localizedDescription
+                connectionMessage = error.localizedDescription
+            }
         }
     }
 }

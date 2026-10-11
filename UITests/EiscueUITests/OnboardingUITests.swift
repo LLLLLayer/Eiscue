@@ -51,11 +51,14 @@ final class OnboardingUITests: XCTestCase {
     @MainActor
     private func assertGuideHasNoNavigationExit(_ app: XCUIApplication) {
         XCTAssertTrue(app.buttons["onboardingContinueButton"].isHittable)
-        // The full-screen cover can leave Assistant's history/new-conversation
-        // buttons in the accessibility tree. Only exposed controls can exit the guide.
+        // Full-screen presentation can leave underlying controls in the AX tree,
+        // including the persistent iPad sidebar. None may be reachable.
         let reachableButtons = app.navigationBars.buttons.allElementsBoundByIndex.filter { $0.isHittable }
         XCTAssertTrue(reachableButtons.isEmpty,
                       "The unfinished guide exposes navigation controls: \(reachableButtons.map(\.label))")
+        for identifier in ["historyButton", "deviceNavigationLink", "newConversationButton", "sidebarSettingsButton", "closeSidebarButton"] {
+            XCTAssertFalse(app.buttons[identifier].isHittable, "The guide exposes \(identifier)")
+        }
     }
 
     @MainActor

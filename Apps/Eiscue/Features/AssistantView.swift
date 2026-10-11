@@ -1,91 +1,113 @@
 import EiscueAgentKit
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
-    @State private var showsHistory = false
+    let openSidebar: () -> Void
     @FocusState private var isComposerFocused: Bool
+    @State private var showsPhotoPicker = false
+    @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var showsFiles = false
+    @State private var showsCamera = false
+    @State private var speech = SpeechInputController()
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        if let conversation = model.selectedConversation, !conversation.messages.isEmpty {
-                            transcript(conversation)
-                        } else {
-                            welcome
-                        }
-                        if !model.streamingText.isEmpty {
-                            Text(model.streamingText)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18)
-                                .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 22))
-                                .accessibilityIdentifier("streamingResponse")
-                        }
-                        runStatus
-                        Color.clear.frame(height: 1).id("bottom")
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let conversation = model.selectedConversation, !conversation.messages.isEmpty {
+                        transcript(conversation)
+                    } else { welcome }
+                    if !model.streamingText.isEmpty {
+                        AssistantMessageContent(text: model.streamingText)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(18)
+                            .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 22))
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("streamingResponse")
                     }
-                    .frame(maxWidth: 680)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 20)
-                    .frame(maxWidth: .infinity)
+                    runStatus
+                    Color.clear.frame(height: 1).id("bottom")
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .defaultScrollAnchor(.bottom, for: .sizeChanges)
-                .onChange(of: model.selectedConversation?.messages.count) {
-                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-                }
+                .frame(maxWidth: 720)
+                .padding(.horizontal, 24).padding(.top, 20)
+                .frame(maxWidth: .infinity)
             }
-            .background(EiscueStyle.background)
-            .navigationTitle("Eiscue")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("assistant.history", systemImage: "sidebar.left") { showsHistory = true }
-                        .disabled(model.isBusy)
-                        .accessibilityIdentifier("historyButton")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("assistant.newConversation", systemImage: "square.and.pencil") {
-                        model.newConversation()
-                        isComposerFocused = false
-                    }
-                    .disabled(model.isBusy)
-                    .accessibilityIdentifier("newConversationButton")
-                }
+            .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .onChange(of: model.selectedConversation?.messages.count) {
+                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) { composer }
-            .sheet(isPresented: $showsHistory) { ConversationHistoryView() }
         }
+        .background(EiscueStyle.background)
+        .navigationTitle("Eiscue")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("assistant.history", systemImage: "sidebar.left") {
+                    isComposerFocused = false
+                    speech.cancel()
+                    openSidebar()
+                }.accessibilityIdentifier("historyButton")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: AppDestination.device) {
+                    DeviceConnectionIndicator(state: model.connectionIndicator, isIPad: model.device.platform == .iPadOS)
+                }
+                .accessibilityLabel("common.device")
+                .accessibilityValue(model.connectionIndicator.title)
+                .accessibilityIdentifier("deviceNavigationLink")
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        .photosPicker(isPresented: $showsPhotoPicker, selection: $selectedPhotos,
+                      maxSelectionCount: max(1, 4 - model.draftAttachments.count), matching: .images)
+        .onChange(of: selectedPhotos) { _, items in
+            guard !items.isEmpty else { return }
+            selectedPhotos = []
+            Task { await model.addAttachmentPhotos(items) }
+        }
+        .fileImporter(isPresented: $showsFiles, allowedContentTypes: MessageAttachments.allowedFileTypes, allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): Task { await model.addAttachmentFiles(urls) }
+            case .failure(let error): model.errorMessage = error.localizedDescription
+            }
+        }
+        .fullScreenCover(isPresented: $showsCamera) {
+            EiscueCameraPicker(onCapture: { image in
+                showsCamera = false
+                Task { await model.addCameraImage(image) }
+            }, onCancel: { showsCamera = false }).ignoresSafeArea()
+        }
+        .onChange(of: model.composerSessionID) {
+            speech.cancel()
+            showsPhotoPicker = false; showsFiles = false; showsCamera = false
+        }
+        .onDisappear { speech.cancel() }
     }
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 28) {
-            IceMark(size: 88)
+            Image("StickerWave").resizable().scaledToFit().frame(width: 112, height: 112).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 12) {
                 Text("assistant.welcome")
                     .font(.system(size: 32, weight: .semibold, design: .rounded))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("welcomeTitle")
-                Text("assistant.welcomeDetail")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text("assistant.welcomeDetail").font(.subheadline).foregroundStyle(.secondary)
                 if !model.hasConfiguredModel {
                     Button("assistant.configureModel") { model.showsModelSettings = true }
-                        .font(.subheadline.weight(.medium))
-                        .padding(.top, 4)
+                        .font(.subheadline.weight(.medium)).padding(.top, 4)
                 }
             }
             VStack(alignment: .leading, spacing: 16) {
-                suggestion(symbol: "magnifyingglass", title: String(localized: "assistant.findInformation"),
-                           prompt: String(localized: "assistant.findInformationPrompt"))
-                suggestion(symbol: "checklist", title: String(localized: "assistant.completeTask"),
-                           prompt: String(localized: "assistant.completeTaskPrompt"))
+                suggestion(symbol: "magnifyingglass", title: String(localized: "assistant.findInformation"), prompt: String(localized: "assistant.findInformationPrompt"))
+                suggestion(symbol: "checklist", title: String(localized: "assistant.completeTask"), prompt: String(localized: "assistant.completeTaskPrompt"))
             }
-        }
-        .padding(.vertical, 24)
+        }.padding(.vertical, 24)
     }
 
     private func suggestion(symbol: String, title: String, prompt: String) -> some View {
@@ -93,44 +115,39 @@ struct AssistantView: View {
             model.draft = prompt
             isComposerFocused = true
         } label: {
-            Label(title, systemImage: symbol)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(model.isBusy)
+            Label(title, systemImage: symbol).font(.subheadline).foregroundStyle(.secondary).contentShape(Rectangle())
+        }.buttonStyle(.plain).disabled(model.isBusy || speech.isBusy)
     }
 
     private func transcript(_ conversation: Conversation) -> some View {
         VStack(spacing: 22) {
-            Text(conversation.createdAt, format: .dateTime.month().day())
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            Text(conversation.createdAt, format: .dateTime.month().day()).font(.caption).foregroundStyle(.tertiary)
             ForEach(conversation.messages) { message in
-                HStack {
+                HStack(alignment: .top) {
                     if message.role == .user { Spacer(minLength: 36) }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(message.text)
+                    VStack(alignment: .leading, spacing: 10) {
+                        if message.role == .assistant { AssistantMessageContent(text: message.text) }
+                        else if !message.text.isEmpty { Text(message.text) }
+                        if !message.attachments.isEmpty {
+                            ForEach(message.attachments) { attachment in
+                                MessageAttachmentView(attachment: attachment)
+                            }
+                        }
                         if model.unsubmittedMessageIDs.contains(message.id) {
                             Text("assistant.unsubmittedMessage").font(.caption2).foregroundStyle(.secondary)
                         }
                     }
-                        .font(.body)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 14)
-                        .background(
-                            message.role == .user ? EiscueStyle.accent.opacity(0.1) : EiscueStyle.surface,
-                            in: RoundedRectangle(cornerRadius: 22)
-                        )
-                        .accessibilityIdentifier("messageBubble")
+                    .font(.body).textSelection(.enabled)
+                    .padding(.horizontal, 18).padding(.vertical, 14)
+                    .background(message.role == .user ? EiscueStyle.accent.opacity(0.1) : EiscueStyle.surface,
+                                in: RoundedRectangle(cornerRadius: 22))
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("messageBubble")
                     if message.role != .user { Spacer(minLength: 36) }
                 }
             }
         }
     }
-
     @ViewBuilder private var runStatus: some View {
         if let run = model.activeRun {
             SurfaceCard {
@@ -138,7 +155,9 @@ struct AssistantView: View {
                     ProgressView()
                     VStack(alignment: .leading, spacing: 5) {
                         Text(run.state.title).font(.subheadline.weight(.medium))
-                        Text(run.detail).font(.caption).foregroundStyle(.secondary)
+                        if run.state == .failed || run.state == .interrupted {
+                            Text(run.detail).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Button("common.stop", role: .destructive) { Task { await model.stop() } }
@@ -168,7 +187,9 @@ struct AssistantView: View {
                     Image(systemName: run.state == .completed ? "checkmark.circle" : "exclamationmark.circle")
                     VStack(alignment: .leading, spacing: 6) {
                         Text(run.state.title).font(.subheadline.weight(.medium))
-                        Text(run.detail).font(.caption).foregroundStyle(.secondary)
+                        if run.state == .failed || run.state == .interrupted {
+                            Text(run.detail).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption)
@@ -182,138 +203,141 @@ struct AssistantView: View {
 
     private var composer: some View {
         @Bindable var model = model
+        let dictationSessionID = model.composerSessionID
+        let receiveDictation: @MainActor (String) -> Void = { transcript in
+            guard model.composerSessionID == dictationSessionID else { return }
+            appendDictation(transcript)
+        }
         return VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                Menu {
-                    Picker("assistant.taskScope", selection: $model.scope) {
-                        ForEach(TaskScope.allCases) { scope in Text(scope.title).tag(scope) }
-                    }
-                    Picker("assistant.workflow", selection: $model.selectedSkillID) {
-                        Text("assistant.noSkill").tag(String?.none)
-                        ForEach(model.skills) { skill in Text(skill.name).tag(Optional(skill.id)) }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "slider.horizontal.3")
-                        Text(model.scope.title)
-                        if model.selectedSkill != nil {
-                            Image(systemName: "list.bullet.clipboard")
+            if !model.draftAttachments.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 10) {
+                        ForEach(model.draftAttachments) { attachment in
+                            HStack(spacing: 8) {
+                                if let data = attachment.imageData, let image = UIImage(data: data) {
+                                    Image(uiImage: image).resizable().scaledToFill().frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else {
+                                    Image(systemName: "doc.text").foregroundStyle(EiscueStyle.accent)
+                                }
+                                Text(attachment.name).font(.caption).lineLimit(1).frame(maxWidth: 120)
+                                Button { model.removeDraftAttachment(id: attachment.id) } label: {
+                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                                }
+                                .accessibilityLabel(text("composer.removeAttachment"))
+                                .disabled(model.isBusy)
+                            }.padding(8).background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 12))
                         }
-                        Image(systemName: "chevron.down").font(.caption2)
                     }
-                    .font(.caption.weight(.medium))
-                }
-                .accessibilityIdentifier("taskScopePicker")
-                Spacer()
-                if !model.modelSettings.model.isEmpty {
-                    Text(model.modelSettings.model).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }
+                }.scrollIndicators(.hidden).accessibilityIdentifier("draftAttachments")
             }
-            .disabled(model.isBusy)
-            HStack(alignment: .bottom, spacing: 12) {
+            if model.isImportingAttachments {
+                HStack { ProgressView(); Text(text("composer.importing")).font(.caption); Spacer() }
+            }
+            if model.scope == .control {
+                HStack(spacing: 8) {
+                    Label(text("composer.controlEnabled"), systemImage: "hand.tap").font(.caption)
+                    Spacer()
+                    if !model.isDeviceReady {
+                        NavigationLink(value: AppDestination.device) { Text(text("composer.pairDevice")).font(.caption) }
+                    }
+                    Button { model.scope = .chat } label: { Image(systemName: "xmark.circle.fill") }
+                        .accessibilityLabel(text("composer.controlOff")).disabled(model.isBusy)
+                }.foregroundStyle(EiscueStyle.accent).accessibilityIdentifier("deviceControlEnabled")
+            }
+            if speech.isBusy {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "waveform").foregroundStyle(EiscueStyle.accent)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(speech.statusText).font(.caption).foregroundStyle(.secondary)
+                        if !speech.transcript.isEmpty { Text(speech.transcript).font(.subheadline).lineLimit(3) }
+                    }
+                    Spacer()
+                    Button { speech.cancel() } label: { Image(systemName: "xmark.circle.fill") }
+                        .accessibilityLabel(text("composer.cancelVoice"))
+                }.accessibilityIdentifier("speechPreview")
+            }
+            if let error = speech.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(alignment: .bottom, spacing: 4) {
+                Menu {
+                    Button(text("composer.photos"), systemImage: "photo.on.rectangle") { isComposerFocused = false; showsPhotoPicker = true }
+                        .disabled(!model.canAddAttachments)
+                    Button(text("composer.camera"), systemImage: "camera") {
+                        isComposerFocused = false
+                        let sessionID = model.composerSessionID
+                        Task {
+                            do {
+                                try await AttachmentCamera.requestAccess()
+                                guard model.composerSessionID == sessionID, !model.isBusy else { return }
+                                showsCamera = true
+                            }
+                            catch { model.errorMessage = error.localizedDescription }
+                        }
+                    }.disabled(!model.canAddAttachments)
+                    Button(text("composer.files"), systemImage: "doc") { isComposerFocused = false; showsFiles = true }
+                        .disabled(!model.canAddAttachments)
+                    Divider()
+                    Toggle(isOn: Binding(get: { model.scope == .control }, set: { model.scope = $0 ? .control : .chat })) {
+                        Label(text("composer.controlDevice"), systemImage: "hand.tap")
+                    }.accessibilityIdentifier("deviceControlToggle")
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 20, weight: .medium)).frame(width: 44, height: 44)
+                }
+                .disabled(model.isBusy || speech.isBusy)
+                .accessibilityLabel(text("composer.add")).accessibilityIdentifier("composerAddButton")
                 TextField("assistant.composerPlaceholder", text: $model.draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .font(.body)
-                    .padding(.vertical, 11)
-                    .focused($isComposerFocused)
-                    .disabled(model.isBusy)
+                    .lineLimit(1...5).font(.body).padding(.vertical, 11)
+                    .focused($isComposerFocused).disabled(model.isBusy)
                     .accessibilityIdentifier("messageInput")
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.7).onEnded { _ in
+                        guard !model.isBusy, model.draft.isEmpty else { return }
+                        isComposerFocused = false
+                        speech.toggle(onTranscript: receiveDictation)
+                    })
+                SpeechInputButton(controller: speech, isDisabled: model.isBusy, onTranscript: receiveDictation)
+                    .frame(width: 44, height: 44).disabled(model.isBusy)
                 Button {
                     isComposerFocused = false
                     Task { await model.sendMessage() }
                 } label: {
                     Group {
-                        if model.isSaving {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold))
-                        }
+                        if model.isSaving { ProgressView().tint(.white) }
+                        else { Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)) }
                     }
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(model.canSend ? EiscueStyle.accent : Color.secondary.opacity(0.25), in: Circle())
+                    .foregroundStyle(.white).frame(width: 40, height: 40)
+                    .background(model.canSend && !speech.isBusy ? EiscueStyle.accent : Color.secondary.opacity(0.25), in: Circle())
                 }
-                .disabled(!model.canSend)
-                .accessibilityLabel("assistant.send")
-                .accessibilityIdentifier("sendMessageButton")
-                .padding(.bottom, 3)
+                .disabled(!model.canSend || speech.isBusy)
+                .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
+                .padding(.bottom, 2)
             }
-            .padding(.leading, 18)
-            .padding(.trailing, 9)
-            .padding(.vertical, 7)
-            .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 22))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22).strokeBorder(Color.primary.opacity(0.06))
-            }
-            if model.scope != .chat {
-                Text(model.scope.explanation)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
+            .padding(.leading, 5).padding(.trailing, 8).padding(.vertical, 6)
+            .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 26))
+            .overlay { RoundedRectangle(cornerRadius: 26).strokeBorder(Color.primary.opacity(0.06)) }
         }
-        .frame(maxWidth: 680)
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 9)
-        .frame(maxWidth: .infinity)
-        .background(EiscueStyle.background)
+        .frame(maxWidth: 720).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 9)
+        .frame(maxWidth: .infinity).background(EiscueStyle.background)
     }
+
+    private func appendDictation(_ transcript: String) {
+        guard !transcript.isEmpty else { return }
+        let separator = model.draft.isEmpty || model.draft.last?.isWhitespace == true ? "" : " "
+        model.draft += separator + transcript
+    }
+    private func text(_ key: String.LocalizationValue) -> String { String(localized: key, table: "Composer") }
 }
 
-private struct ConversationHistoryView: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
-
+private struct MessageAttachmentView: View {
+    let attachment: AgentAttachment
     var body: some View {
-        NavigationStack {
-            Group {
-                if model.conversations.isEmpty {
-                    ContentUnavailableView("assistant.emptyHistory", systemImage: "bubble.left.and.bubble.right", description: Text("assistant.emptyHistoryDetail"))
-                } else {
-                    List {
-                        ForEach(model.conversations) { conversation in
-                            Button {
-                                model.select(conversation)
-                                dismiss()
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "bubble.left")
-                                        .foregroundStyle(EiscueStyle.accent)
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(conversation.title)
-                                            .font(.body.weight(.medium))
-                                            .foregroundStyle(.primary)
-                                            .lineLimit(1)
-                                        Text(conversation.updatedAt, format: .dateTime.month().day().hour().minute())
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if conversation.id == model.selectedConversationID {
-                                        Image(systemName: "checkmark").foregroundStyle(EiscueStyle.accent)
-                                    }
-                                }
-                                .padding(.vertical, 5)
-                            }
-                            .disabled(model.isBusy)
-                            .swipeActions {
-                                Button("common.delete", role: .destructive) {
-                                    Task { await model.delete(conversation) }
-                                }
-                                .disabled(model.isBusy)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                }
-            }
-            .navigationTitle("assistant.history")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("common.done") { dismiss() }
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            if let data = attachment.imageData, let image = UIImage(data: data) {
+                Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel(attachment.name)
+            } else {
+                Label(attachment.name, systemImage: "doc.text").font(.subheadline).foregroundStyle(EiscueStyle.accent)
             }
         }
     }

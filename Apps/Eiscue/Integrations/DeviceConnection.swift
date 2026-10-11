@@ -15,13 +15,14 @@ extension AppModel {
     func startLocalTunnel() async {
         guard !isBusy else { return }
         isManagingTunnel = true
+        deviceConnectionError = nil
         defer { isManagingTunnel = false }
         do {
             try await localTunnel.start()
             connectionMessage = String(localized: "connection.localReady")
         } catch is CancellationError {
             connectionMessage = String(localized: "connection.localCancelled")
-        } catch { errorMessage = error.localizedDescription }
+        } catch { deviceConnectionError = error.localizedDescription; errorMessage = error.localizedDescription }
     }
 
     func stopLocalTunnel() async {
@@ -38,20 +39,21 @@ extension AppModel {
     func refreshDeviceStatus() async {
         deviceStatus = await deviceClient.status()
         do { hasPairingIdentity = try await deviceClient.hasPairingIdentity() }
-        catch { connectionMessage = error.localizedDescription }
+        catch { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
     }
 
     func connectDevice() async {
         guard !isBusy, !isConnecting else { return }
         guard localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
         let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true; connectionMessage = String(localized: "connection.discovering")
+        isConnecting = true; deviceConnectionError = nil; connectionMessage = String(localized: "connection.discovering")
         defer { if deviceOperationID == operationID { isConnecting = false } }
         do {
             try await deviceClient.connectLocalVPN(configuration: .defaults)
             guard deviceOperationID == operationID else { return }
+            deviceConnectionError = nil
             connectionMessage = String(localized: "connection.ready")
-        } catch { if deviceOperationID == operationID { connectionMessage = error.localizedDescription } }
+        } catch { if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
         guard deviceOperationID == operationID else { return }
         await refreshDeviceStatus()
     }
@@ -88,6 +90,7 @@ extension AppModel {
             return
         }
         guard localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalBeforePairing"); return }
+        deviceConnectionError = nil
         isPairing = true; pairingCode = nil
         connectionMessage = String(localized: "connection.preparingPairing")
         let id = UUID(); pairingLeaseID = id; deviceOperationID = id
@@ -124,7 +127,7 @@ extension AppModel {
                 background.end(taskID: id, success: true)
             } catch {
                 background.end(taskID: id, success: false)
-                if !Task.isCancelled, pairingLeaseID == id { connectionMessage = error.localizedDescription }
+                if !Task.isCancelled, pairingLeaseID == id { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
             }
             guard pairingLeaseID == id else { return }
             isPairing = false; pairingCode = nil; pairingLeaseID = nil
@@ -144,9 +147,10 @@ extension AppModel {
             guard size <= 1_048_576 else { throw SkillError.tooLarge }
             try await deviceClient.importPairingIdentity(Data(contentsOf: url))
             guard deviceOperationID == operationID else { return }
+            deviceConnectionError = nil
             connectionMessage = String(localized: "connection.identityImported")
             await refreshDeviceStatus()
-        } catch { if deviceOperationID == operationID { connectionMessage = error.localizedDescription } }
+        } catch { if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
     }
 
     func forgetPairingIdentity() async {
@@ -159,8 +163,9 @@ extension AppModel {
         do {
             try await deviceClient.removePairingIdentity()
             guard deviceOperationID == operationID else { return }
+            deviceConnectionError = nil
             connectionMessage = String(localized: "connection.identityRemoved")
-        } catch { if deviceOperationID == operationID { connectionMessage = error.localizedDescription } }
+        } catch { if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
         guard deviceOperationID == operationID else { return }
         await refreshDeviceStatus()
     }
@@ -173,7 +178,8 @@ extension AppModel {
         do {
             let frame = try await deviceClient.captureScreenshot()
             guard deviceOperationID == operationID else { return }
+            deviceConnectionError = nil
             screenshot = frame; connectionMessage = String(localized: "connection.previewCaptured")
-        } catch { if deviceOperationID == operationID { screenshot = nil; connectionMessage = error.localizedDescription } }
+        } catch { if deviceOperationID == operationID { screenshot = nil; deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
     }
 }
