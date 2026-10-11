@@ -8,6 +8,9 @@ extension AppModel {
     /// import or connection. Diagnostics never contain credentials or screen data.
     func runRequestedDeviceSetupCheck() async {
         let arguments = ProcessInfo.processInfo.arguments
+        // The BLE fixture owns its own transport and diagnostics. Never start
+        // any network/XCTest device path alongside this independent check.
+        if arguments.contains("--ble-device-check") { return }
         // This read-only mode takes precedence over every other debug action.
         // It never enters pairing, VPN, native service or owned-input setup.
         if arguments.contains("--wireless-board-probe") {

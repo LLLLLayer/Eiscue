@@ -39,6 +39,8 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to attach to your message.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connect to your Eiscue board to control this device over Bluetooth.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board.</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -1,0 +1,176 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "bleCheck.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth input check"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "蓝牙输入验证"
+          }
+        }
+      }
+    },
+    "bleCheck.instruction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep this page open and leave the screen untouched during the check. Allow the iOS Bluetooth and pairing prompts. Mouse input may require AssistiveTouch. Your Wi-Fi settings stay unchanged."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请保持本页面打开，验证期间不要触摸屏幕。请按 iOS 提示允许蓝牙和配对；鼠标可能需要开启辅助触控。此验证不会更改 Wi-Fi 设置。"
+          }
+        }
+      }
+    },
+    "bleCheck.field": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth keyboard target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "蓝牙键盘输入目标"
+          }
+        }
+      }
+    },
+    "bleCheck.target": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth pointer target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "蓝牙鼠标点击目标"
+          }
+        }
+      }
+    },
+    "bleCheck.clicked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Real input received"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收到实际输入"
+          }
+        }
+      }
+    },
+    "bleCheck.waiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking Bluetooth input…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在验证蓝牙输入…"
+          }
+        }
+      }
+    },
+    "bleCheck.passed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard and pointer input verified."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "键盘输入和鼠标点击已验证。"
+          }
+        }
+      }
+    },
+    "bleCheck.stopped": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check stopped. See the diagnostic stage below."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证已停止，请查看下方诊断阶段。"
+          }
+        }
+      }
+    },
+    "bleCheck.reportFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save the protected diagnostic report."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存受保护的诊断记录。"
+          }
+        }
+      }
+    },
+    "bleCheck.coverageTarget": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One Bluetooth click\nKeep the screen untouched"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证一次蓝牙点击\n请不要触摸屏幕"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

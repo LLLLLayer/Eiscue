@@ -9,7 +9,9 @@ struct EiscueApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
+                if ProcessInfo.processInfo.arguments.contains("--ble-device-check") {
+                    BLEDeviceCheckView()
+                } else if ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
                     OwnedDeviceCheckView()
                 } else if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                           ProcessInfo.processInfo.arguments.contains("--message-sharing-fixture") {
@@ -22,8 +24,18 @@ struct EiscueApp: App {
                 .environment(model)
                 .preferredColorScheme(model.appearance.colorScheme)
                 .tint(EiscueStyle.accent)
-                .task { await model.load() }
-                .onChange(of: scenePhase) { _, phase in model.sceneChanged(phase) }
+                .task {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ble-device-check") { return }
+                    #endif
+                    await model.load()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ble-device-check") { return }
+                    #endif
+                    model.sceneChanged(phase)
+                }
         }
     }
 }

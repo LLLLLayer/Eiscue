@@ -1,6 +1,23 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "NSBluetoothAlwaysUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to your Eiscue board to control this device over Bluetooth."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过蓝牙连接你的 Eiscue 开发板，以操作这台设备。"
+          }
+        }
+      }
+    },
     "NSLocalNetworkUsageDescription": {
       "extractionState": "manual",
       "localizations": {

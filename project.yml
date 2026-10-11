@@ -38,6 +38,7 @@ targets:
         BGTaskSchedulerPermittedIdentifiers:
           - $(PRODUCT_BUNDLE_IDENTIFIER).agent.continued-processing
         NSCameraUsageDescription: "Take a photo to attach to your message."
+        NSBluetoothAlwaysUsageDescription: "Connect to your Eiscue board to control this device over Bluetooth."
         NSMicrophoneUsageDescription: "Turn your speech into text in the message field."
         NSSpeechRecognitionUsageDescription: "Transcribe speech on this device without sending a message automatically."
         NSLocalNetworkUsageDescription: "Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board."
@@ -105,6 +106,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.app.uitests
+        DEVELOPMENT_TEAM: Q2T8TN4ZW6
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Eiscue
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -125,6 +127,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.app.tests
+        DEVELOPMENT_TEAM: Q2T8TN4ZW6
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:

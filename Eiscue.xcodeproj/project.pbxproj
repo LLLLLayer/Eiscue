@@ -18,6 +18,7 @@
 		143F8C10629C01BAFCD84EA8 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6825B2E1C563FEEE8C4308D9 /* AppModel.swift */; };
 		16E09731981B3E1F189F3CAE /* EiscueAgentKit in Frameworks */ = {isa = PBXBuildFile; productRef = FA0B3DC5C1F457A78F8AF869 /* EiscueAgentKit */; };
 		17BE3AA38BF1B6E419C6D52D /* MessageSharingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F2A114454C7F7646FCAE261 /* MessageSharingUITests.swift */; };
+		1BCFB013159E81A4813AAE28 /* BLEDeviceCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A306F8F720473F37E62E16 /* BLEDeviceCheck.swift */; };
 		1C1D4CC676D0758763A53063 /* search-smoke-test.md in Resources */ = {isa = PBXBuildFile; fileRef = 0C6151CD048ACF400CBF0CBB /* search-smoke-test.md */; };
 		1F4D6479392293BB759215CC /* MessageSharing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3FB553685957C0A8B3B443 /* MessageSharing.swift */; };
 		25BD052E7A9D995C08814641 /* ConversationFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9E8086023CA557ED7EA1C9 /* ConversationFeedTests.swift */; };
@@ -67,6 +68,7 @@
 		805A02F8C0D581450254E802 /* AttachmentPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95168E1FA41910A807A7533B /* AttachmentPickers.swift */; };
 		8395165BFFDC4AF21C4C4474 /* PairingTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369A186D03AD1B77A10984A0 /* PairingTransfer.swift */; };
 		896303C2BDDBBDC6DD804881 /* ConversationReconciliationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A505109E0ECA9E58007AD2 /* ConversationReconciliationTests.swift */; };
+		8D63DAD3BE3E7636F13CFD04 /* BLEDeviceCheck.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D4377AB2A53B09E91C850162 /* BLEDeviceCheck.xcstrings */; };
 		938002817B2BFE9218AF6752 /* MessageSharing.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 7338105B6EC033F9E970BC32 /* MessageSharing.xcstrings */; };
 		93923A433779533C2F3B232D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52BD4DE32F6EAD3627D0B45F /* SettingsView.swift */; };
 		9631EFE00297FB7586C6CF16 /* OwnedDeviceCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05200116E330E7BE947E261B /* OwnedDeviceCheck.swift */; };
@@ -74,6 +76,7 @@
 		9AE4C9FABB5F9145F6BAF78B /* StickerCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9239958A19CD8580D1B4EA06 /* StickerCatalog.swift */; };
 		9D3928AF4F7625FE481F138E /* ios-navigation.md in Resources */ = {isa = PBXBuildFile; fileRef = A66379A812D3C89AAE2ED92F /* ios-navigation.md */; };
 		9DE47B041261AEEF75F702FE /* BackgroundStatus.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 90CF9E90D067F4E45B51B53B /* BackgroundStatus.xcstrings */; };
+		9FBA2E40AF1AB05D1AE84647 /* BLEBoardCheckClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5756FE9D03C2FBFB3D6C15 /* BLEBoardCheckClient.swift */; };
 		A2D195A62AB15BEC9729CCBC /* Attachments.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 99BE7FEB9D6CE3C2A17C25A1 /* Attachments.xcstrings */; };
 		A988E817500C9D7E12208F23 /* BackgroundExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5DA2E68A4377D4B76AD9CC /* BackgroundExecution.swift */; };
 		A9FB19EA670CB2D1206BCAE2 /* DebugMessageSharingFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6C3BABD980923EA1EB9715 /* DebugMessageSharingFixture.swift */; };
@@ -178,6 +181,7 @@
 		1F0E1EF85EE0267162AB31D0 /* SpeechInputController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechInputController.swift; sourceTree = "<group>"; };
 		1FB8C39464D515E019541550 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
 		223AC6A711BD949C6EDD63E1 /* swift-cmark.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swift-cmark.txt"; sourceTree = "<group>"; };
+		24A306F8F720473F37E62E16 /* BLEDeviceCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEDeviceCheck.swift; sourceTree = "<group>"; };
 		24E7147A3B261B1E481387A7 /* Connections.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Connections.xcstrings; sourceTree = "<group>"; };
 		2AAB2DFA9E5E2331A793E397 /* DebugTimelineFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugTimelineFixture.swift; sourceTree = "<group>"; };
 		2BE71B266875AC09F5F63AFF /* PairingTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingTransferTests.swift; sourceTree = "<group>"; };
@@ -202,6 +206,7 @@
 		52BD4DE32F6EAD3627D0B45F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		5349182DB47DC593791EC351 /* MessageAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageAttachments.swift; sourceTree = "<group>"; };
 		5BE9CC030267FDA8C3D28EED /* AgentIntegrationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIntegrationUITests.swift; sourceTree = "<group>"; };
+		5F5756FE9D03C2FBFB3D6C15 /* BLEBoardCheckClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEBoardCheckClient.swift; sourceTree = "<group>"; };
 		6033C5D9F847A7C78BF6C0E9 /* ConversationFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationFeed.swift; sourceTree = "<group>"; };
 		604E70845A3BA6FE465D6878 /* TaskNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskNotificationManager.swift; sourceTree = "<group>"; };
 		61CCF7D1613FCC89E14553DD /* EiscueApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EiscueApp.swift; sourceTree = "<group>"; };
@@ -251,6 +256,7 @@
 		CCC10611FD53034B59BC1279 /* AppModel+ConversationOrdering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+ConversationOrdering.swift"; sourceTree = "<group>"; };
 		CF149E0D4A67DA407B75918A /* Stickers.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Stickers.json; sourceTree = "<group>"; };
 		D01D4FB3D16D345F97887C60 /* OnboardingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingUITests.swift; sourceTree = "<group>"; };
+		D4377AB2A53B09E91C850162 /* BLEDeviceCheck.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = BLEDeviceCheck.xcstrings; sourceTree = "<group>"; };
 		DB0B5A7C6AD30EB9D52EC75A /* ConnectionIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionIndicatorTests.swift; sourceTree = "<group>"; };
 		E34C4F754435B4D37E796F42 /* PacketReflectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketReflectorTests.swift; sourceTree = "<group>"; };
 		E4340173F725948EB4EBCB29 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -326,6 +332,7 @@
 				83419005CFB2850C52F954E6 /* Assets.xcassets */,
 				99BE7FEB9D6CE3C2A17C25A1 /* Attachments.xcstrings */,
 				90CF9E90D067F4E45B51B53B /* BackgroundStatus.xcstrings */,
+				D4377AB2A53B09E91C850162 /* BLEDeviceCheck.xcstrings */,
 				AD4E96AAF2837F0255F59155 /* Chat.xcstrings */,
 				E81CC9CC6C37A50BB6439E54 /* Composer.xcstrings */,
 				24E7147A3B261B1E481387A7 /* Connections.xcstrings */,
@@ -517,6 +524,8 @@
 		FAD9C1F77A7D42B8F7D9D8DF /* Integrations */ = {
 			isa = PBXGroup;
 			children = (
+				5F5756FE9D03C2FBFB3D6C15 /* BLEBoardCheckClient.swift */,
+				24A306F8F720473F37E62E16 /* BLEDeviceCheck.swift */,
 				1CB21C2665301FA81BFDCAD9 /* DebugDeviceSetup.swift */,
 				1D6C3BABD980923EA1EB9715 /* DebugMessageSharingFixture.swift */,
 				2AAB2DFA9E5E2331A793E397 /* DebugTimelineFixture.swift */,
@@ -656,6 +665,7 @@
 						ProvisioningStyle = Automatic;
 					};
 					48A4B18762D2BA21F81EFCA5 = {
+						DevelopmentTeam = Q2T8TN4ZW6;
 						ProvisioningStyle = Automatic;
 					};
 					53732733BF21E4F8E25187CC = {
@@ -663,6 +673,7 @@
 						ProvisioningStyle = Automatic;
 					};
 					808C43BBC13FDCECE0D6AFCC = {
+						DevelopmentTeam = Q2T8TN4ZW6;
 						ProvisioningStyle = Automatic;
 						TestTargetID = 53732733BF21E4F8E25187CC;
 					};
@@ -712,6 +723,7 @@
 				783B33974E9366867F40518A /* Activities.xcstrings in Resources */,
 				3A487D870AFA0B2E120F3CED /* Assets.xcassets in Resources */,
 				A2D195A62AB15BEC9729CCBC /* Attachments.xcstrings in Resources */,
+				8D63DAD3BE3E7636F13CFD04 /* BLEDeviceCheck.xcstrings in Resources */,
 				9DE47B041261AEEF75F702FE /* BackgroundStatus.xcstrings in Resources */,
 				2A89A606D632C02735C7762A /* Chat.xcstrings in Resources */,
 				332B5F305D966610AAB798C8 /* Composer.xcstrings in Resources */,
@@ -772,6 +784,8 @@
 				143F8C10629C01BAFCD84EA8 /* AppModel.swift in Sources */,
 				6152EF03E4375C154B4464CC /* AssistantView.swift in Sources */,
 				805A02F8C0D581450254E802 /* AttachmentPickers.swift in Sources */,
+				9FBA2E40AF1AB05D1AE84647 /* BLEBoardCheckClient.swift in Sources */,
+				1BCFB013159E81A4813AAE28 /* BLEDeviceCheck.swift in Sources */,
 				A988E817500C9D7E12208F23 /* BackgroundExecution.swift in Sources */,
 				38CB403F0E1D721E1CF7C144 /* ChatMarkdownParser.swift in Sources */,
 				CFF78BCF546CC562A0B49EF6 /* ChatMarkdownView.swift in Sources */,

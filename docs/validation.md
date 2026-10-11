@@ -1,8 +1,24 @@
 # 验证记录
 
-日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
+更新日期：2026-10-12。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
-## 最新无线真机验收（同日）
+## BLE 真机实验（2026-10-12）
+
+现有 **ESP32-C3 / 8 MiB** 板以纯 BLE 固件，与指定 **iPhone 14 Pro / iOS 26.5.2**
+完成加密 GATT → 系统 HID → UIKit 的真实输入验证。三轮各自生成的 12 位数字均由
+实际文本框回调确认；最后一轮只发送一次鼠标点击，安全区域内的大按钮收到一次真实
+触摸事件。三轮禁用蜂窝的 HTTPS 请求均返回 200，前后网络接口均为 Wi-Fi。
+
+最终报告为 `passed`，但 `absoluteCoordinatesVerified=false`：这是键盘和鼠标点击
+传输验证，没有证明精确坐标定位、跨 App、ReplayKit 读屏或 Agent 后台运行。iPhone
+未提供预期 hover，且辅助触控状态 API 与用户看到的小圆点不一致，因此保留最初两轮
+`partial_pass`，另用显式 Debug 参数验证大目标点击，没有把回执当成点击成功。
+
+板子当前保留 BLE 实验固件；完整 Flash 备份、原有 Wi-Fi 镜像和配置均保留。Debug /
+Release 签名构建及指定真机安装通过，没有加装 UI Test Runner。详见
+[BLE 实验记录](ble-board-validation-2026-10-12.md)。下方为 10 月 11 日原 Wi-Fi 路径的历史结果。
+
+## 无线真机验收（2026-10-11）
 
 指定 **iPhone 14 Pro / iOS 26.5.2** 经 Passport 无线开发板完成一次完整动作
 闭环，最终报告 `/tmp/eiscue-wireless-final-check-result.json` 为
