@@ -181,8 +181,7 @@ actor DefaultEngine: AgentEngine {
             }
             var submissions: [PiDurableKit.Submission] = []
             if request.mode == .message {
-                if !request.attachments.isEmpty,
-                   !view.entries.contains(where: { RuntimeMapping.storedMessage($0)?.id == request.requestID }) {
+                if !view.entries.contains(where: { RuntimeMapping.storedMessage($0)?.id == request.requestID }) {
                     let message = AgentMessage(id: request.requestID, role: .user, text: request.prompt, attachments: request.attachments)
                     // Persist display metadata before admission. No model context
                     // is contributed by this entry; orphaned metadata is ignored.

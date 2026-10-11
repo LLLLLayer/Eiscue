@@ -236,6 +236,96 @@ struct AgentRuntimeTests {
         #expect(try await fixture.client.recover(conversationID: request.conversationID).messages.isEmpty)
     }
 
+    @Test func plainTextRequestRetainsItsIdentityAfterOpeningAnOfflineClient() async throws {
+        let fixture = try await RuntimeFixture()
+        defer { fixture.remove() }
+        try await fixture.faux.respond { messages, count in
+            #expect(count == 1)
+            #expect(messages.map(\.text) == ["", "Plain text question"])
+            return .text("Plain text reply")
+        }
+        let request = AgentRequest(conversationID: UUID(), prompt: "Plain text question",
+            systemPrompt: "You are Eiscue. Reply concisely in the user's language.")
+        let events = try await collect(fixture.client.run(request: request))
+        #expect(events.first == .requestAccepted(request.requestID))
+        let reopened = AgentClient(storageDirectory: fixture.directory)
+        let recovery = try await reopened.recover(conversationID: request.conversationID)
+        #expect(recovery.messages.map(\.text) == [request.prompt, "Plain text reply"])
+        #expect(recovery.messages.first?.id == request.requestID)
+        #expect(recovery.messages.first?.attachments.isEmpty == true)
+        #expect(!recovery.hasInterruptedRun)
+    }
+
+    @Test func repeatedPlainTextRequestsKeepDistinctIdentitiesAndRetryDoesNotMixThem() async throws {
+        let fixture = try await RuntimeFixture()
+        defer { fixture.remove() }
+        try await fixture.faux.respond { messages, count in
+            #expect(count <= 2)
+            #expect(messages.filter { if case .user = $0 { true } else { false } }.count == count)
+            return .text("Reply \(count)")
+        }
+        let id = UUID()
+        let first = AgentRequest(conversationID: id, prompt: "Same question")
+        let second = AgentRequest(conversationID: id, prompt: "Same question")
+        #expect(first.requestID != second.requestID)
+        try await collect(fixture.client.run(request: first))
+        try await collect(fixture.client.run(request: second))
+        try await collect(fixture.client.run(request: first))
+        let reopened = AgentClient(storageDirectory: fixture.directory)
+        let recovery = try await reopened.recover(conversationID: id)
+        let users = recovery.messages.filter { $0.role == .user }
+        #expect(users.map(\.id) == [first.requestID, second.requestID])
+        #expect(users.map(\.text) == ["Same question", "Same question"])
+        #expect(recovery.messages.map(\.text) == ["Same question", "Reply 1", "Same question", "Reply 2"])
+    }
+
+    @Test func orphanedDisplayMetadataIsIgnoredAndCannotReplaceTheNextIdenticalRequest() async throws {
+        let fixture = try await RuntimeFixture()
+        defer { fixture.remove() }
+        let id = UUID()
+        let orphan = AgentMessage(role: .user, text: "Same question")
+        let harness = try await Harness.open(.sqlite(at: fixture.fileURL(id)), models: fixture.models, resume: false)
+        let root = try await harness.root(agent: AgentChange(model: fixture.faux.model))
+        try await root.commit { transaction in
+            _ = try await transaction.append(EntryDraft(kind: RuntimeMapping.attachmentEntryKind,
+                data: ["eiscueMessage": try PiDurableKit.JSONValue(encoding: orphan)]), to: root.id)
+        }
+        try await harness.close()
+        let empty = try await fixture.client.recover(conversationID: id)
+        #expect(empty.messages.isEmpty)
+        #expect(!empty.hasInterruptedRun)
+        try await fixture.faux.respond { messages, count in
+            #expect(count == 1)
+            #expect(messages.compactMap { if case .user(let user) = $0 { user.text } else { nil } } == ["Same question"])
+            return .text("Accepted reply")
+        }
+        let accepted = AgentRequest(conversationID: id, prompt: "Same question")
+        try await collect(fixture.client.run(request: accepted))
+        let reopened = AgentClient(storageDirectory: fixture.directory)
+        let recovery = try await reopened.recover(conversationID: id)
+        #expect(recovery.messages.map(\.text) == ["Same question", "Accepted reply"])
+        #expect(recovery.messages.first?.id == accepted.requestID)
+        #expect(!recovery.messages.contains { $0.id == orphan.id })
+    }
+
+    @Test func oldPlainTextTranscriptWithoutDisplayMetadataStillRecovers() async throws {
+        let fixture = try await RuntimeFixture()
+        defer { fixture.remove() }
+        let id = UUID()
+        let harness = try await Harness.open(.sqlite(at: fixture.fileURL(id)), models: fixture.models, resume: false)
+        let root = try await harness.root(agent: AgentChange(model: fixture.faux.model))
+        try await root.commit { transaction in
+            _ = try await transaction.append(EntryDraft(kind: .user,
+                model: [.user(UserMessage(content: [.text("Legacy plain text")]))]), to: root.id)
+        }
+        try await harness.close()
+        let first = try await fixture.client.recover(conversationID: id)
+        let second = try await AgentClient(storageDirectory: fixture.directory).recover(conversationID: id)
+        #expect(first.messages.map(\.text) == ["Legacy plain text"])
+        #expect(first.messages == second.messages)
+        #expect(!first.hasInterruptedRun)
+    }
+
     @Test func userAttachmentsReachModelAndSurviveRetryRecoveryAndHistoryImport() async throws {
         let fixture = try await RuntimeFixture()
         defer { fixture.remove() }

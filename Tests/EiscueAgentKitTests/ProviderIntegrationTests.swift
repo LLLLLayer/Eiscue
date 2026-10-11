@@ -6,6 +6,32 @@ import os
 
 @Suite("Custom provider protocols")
 struct ProviderIntegrationTests {
+    @Test func plainTextDisplayMetadataDoesNotChangeInstructionsOrBecomeModelContext() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-plain-context-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: .openAICompletions,
+            baseURL: URL(string: "https://plain-context.fixture.invalid/v1")!, model: "fixture-model",
+            apiKey: "plain-context-fixture-\(UUID())")
+        let network = URLSessionConfiguration.ephemeral
+        network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        let request = AgentRequest(conversationID: UUID(), prompt: "Plain text question",
+            systemPrompt: "You are Eiscue. Reply concisely in the user's language.")
+        for try await _ in try await client.run(request: request) {}
+        let recorded = try #require(ProviderFixtureProtocol.requests.withLock {
+            $0.last(where: { $0.authorization == "Bearer \(configuration.apiKey)" })
+        })
+        #expect(recorded.body["tools"] == nil || recorded.body["tools"] == .array([]))
+        #expect(recorded.body["messages"] == .array([
+            ["role": "system", "content": "<instructions>\nYou are Eiscue. Reply concisely in the user's language.\n</instructions>"],
+            ["role": "user", "content": "Plain text question"],
+        ]))
+        let recovered = try await AgentClient(storageDirectory: directory).recover(conversationID: request.conversationID)
+        #expect(recovered.messages.first?.id == request.requestID)
+    }
+
     struct StoreEndpoint: Sendable, CustomStringConvertible {
         let url: String
         let api: AgentAPI
