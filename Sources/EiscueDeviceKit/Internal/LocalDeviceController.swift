@@ -5,8 +5,10 @@ import OSLog
 
 @MainActor final class LocalDeviceController: NSObject, DeviceController, @preconcurrency NetServiceDelegate {
     private let identityStore: any PairingIdentityStore
-    private var services: NativeDeveloperServices?
-    private var discovery: LocalVPNDiscovery?
+    private let dependencies: LocalDeviceConnectionDependencies
+    private var services: (any LocalDeviceSession)?
+    private var discovery: (any LocalVPNDiscovering)?
+    private var boardDiscovery: (any USBBoardDiscovering)?
     private var pairing: RemotePairingSession?
     private var advertisement: NetService?
     private var pairingTask: Task<Void, Never>?
@@ -21,21 +23,14 @@ import OSLog
     private var releaseUnconfirmed = false
     private var mediaRequested = false
 
-    nonisolated init(identityStore: any PairingIdentityStore) {
+    nonisolated init(identityStore: any PairingIdentityStore, dependencies: LocalDeviceConnectionDependencies = .live) {
         self.identityStore = identityStore
+        self.dependencies = dependencies
         super.init()
     }
 
-    private static var supported: Bool {
-        #if os(iOS) && !targetEnvironment(simulator)
-        true
-        #else
-        false
-        #endif
-    }
-
     func status() async -> DeviceStatus {
-        guard Self.supported else { return .unavailable(reason: DeviceControlError.unsupported.localizedDescription) }
+        guard dependencies.supportsPhysicalDevice else { return .unavailable(reason: DeviceControlError.unsupported.localizedDescription) }
         return ready ? .ready(capabilities: Set(DeviceCapability.allCases)) : .unavailable(reason: failure)
     }
 
@@ -63,7 +58,7 @@ import OSLog
     func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<DevicePairingEvent, Error>.makeStream(bufferingPolicy: .bufferingNewest(16))
         do {
-            guard Self.supported else { throw DeviceControlError.unsupported }
+            guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
             // Reject before starting the listener or reading an identity. The
             // responder protocol cannot make a missing iOS 26 Settings UI appear.
             try LocalPairingRequirements.validateSystemPairing(on: ProcessInfo.processInfo.operatingSystemVersion)
@@ -139,11 +134,20 @@ import OSLog
     }
 
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws {
-        guard Self.supported else { throw DeviceControlError.unsupported }
-        guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
+        guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
         let vpn: VPNLoopbackConfiguration
         do { vpn = try VPNLoopbackConfiguration(localAddress: configuration.localAddress, peerAddress: configuration.peerAddress) }
         catch { throw Self.convert(error) }
+        try await connect(method: .localVPN, vpn: vpn)
+    }
+
+    func connectUSBBoard() async throws {
+        try await connect(method: .usbBoard, vpn: nil)
+    }
+
+    private func connect(method: DeviceConnectionMethod, vpn: VPNLoopbackConfiguration?) async throws {
+        guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
+        guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
         guard var data = try identityStore.load() else { throw DeviceControlError.noIdentity }
         defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
         let record = try PairingIdentityCodec.decode(data)
@@ -159,18 +163,37 @@ import OSLog
         try ensureCurrent(connectionEpoch)
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
         let token = epoch
-        busy = true; failure = String(localized: "device.status.discovering", defaultValue: "Discovering the local VPN connection.", bundle: .module)
-        let discovery = LocalVPNDiscovery()
-        let service = NativeDeveloperServices()
-        self.discovery = discovery; services = service
-        defer { if epoch == token { busy = false; self.discovery = nil } }
+        busy = true
+        failure = method == .localVPN
+            ? String(localized: "device.status.discovering", defaultValue: "Discovering the local VPN connection.", bundle: .module)
+            : String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB board.", bundle: .module)
+        let service = dependencies.makeSession()
+        services = service
+        defer {
+            if epoch == token {
+                busy = false; discovery?.cancel(); discovery = nil
+                boardDiscovery?.cancel(); boardDiscovery = nil
+            }
+        }
         do {
             try await withTaskCancellationHandler {
-                let port = try await discovery.discoverPort(configuration: vpn)
-                try ensureCurrent(token)
-                try await service.connectLocalVPN(identity: identity,
-                    authorization: ExistingSessionAuthorization(verifyExistingIdentity: true, screen: true, screenVideoStream: true, input: true),
-                    pairingPort: port, configuration: vpn)
+                let authorization = ExistingSessionAuthorization(verifyExistingIdentity: true, screen: true, screenVideoStream: true, input: true)
+                switch method {
+                case .localVPN:
+                    guard let vpn else { throw LocalVPNError.invalidConfiguration }
+                    let discovery = dependencies.makeVPNDiscovery()
+                    self.discovery = discovery
+                    let port = try await discovery.discoverPort(configuration: vpn)
+                    try ensureCurrent(token)
+                    try await service.connectLocalVPN(identity: identity, authorization: authorization,
+                                                      pairingPort: port, configuration: vpn)
+                case .usbBoard:
+                    let discovery = dependencies.makeBoardDiscovery()
+                    boardDiscovery = discovery
+                    let candidate = try await discovery.discoverRemotePairing()
+                    try ensureCurrent(token)
+                    try await service.connect(identity: identity, authorization: authorization, discovery: candidate)
+                }
                 try ensureCurrent(token)
                 try await service.checkDeveloperReadiness()
                 try ensureCurrent(token)
@@ -194,7 +217,7 @@ import OSLog
     /// Check the iOS 26 developer route with the existing identity. This creates
     /// no media/input session and does not change production readiness state.
     func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data {
-        guard Self.supported else { throw DeviceControlError.unsupported }
+        guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
         guard !busy, !ready, pairingTask == nil, mediaReleaseTask == nil else { throw DeviceControlError.busy }
         let vpn = try VPNLoopbackConfiguration(localAddress: configuration.localAddress, peerAddress: configuration.peerAddress)
         guard var data = try identityStore.load() else { throw DeviceControlError.noIdentity }
@@ -238,6 +261,7 @@ import OSLog
         pairingContinuation?.finish(throwing: CancellationError()); pairingContinuation = nil
         advertisement?.stop(); advertisement = nil
         discovery?.cancel(); discovery = nil
+        boardDiscovery?.cancel(); boardDiscovery = nil
         let previous = services; services = nil
         let shouldReleaseMedia = mediaRequested; mediaRequested = false
         if let previous, shouldReleaseMedia {
@@ -346,7 +370,7 @@ import OSLog
         guard token == epoch else { throw CancellationError() }
     }
 
-    private func consumeFrame(service: NativeDeveloperServices, id: UUID, points: [DevicePoint]) async throws -> [(UInt16, UInt16)] {
+    private func consumeFrame(service: any LocalDeviceSession, id: UUID, points: [DevicePoint]) async throws -> [(UInt16, UInt16)] {
         let token = epoch
         let geometry = try await service.currentVideoGeometry()
         try ensureCurrent(token)
@@ -359,7 +383,7 @@ import OSLog
         catch { throw DeviceControlError.deliveryUnknown(Self.message(error)) }
     }
 
-    private func operation<T: Sendable>(_ body: (NativeDeveloperServices) async throws -> T) async throws -> T {
+    private func operation<T: Sendable>(_ body: (any LocalDeviceSession) async throws -> T) async throws -> T {
         try Task.checkCancellation()
         guard ready, let services else { throw DeviceControlError.notConnected }
         guard !busy else { throw DeviceControlError.busy }
@@ -409,10 +433,30 @@ import OSLog
             }
         }
         if let error = error as? NativeBackendError { return NativeDeviceErrorPresentation.message(error) }
-        if let error = error as? NCMError, error == .timeout {
-            return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.", bundle: .module)
+        if let error = error as? NCMError { return NCMDeviceErrorPresentation.message(error) }
+        return String(localized: "device.operation.failed", defaultValue: "The device operation failed. Check local network permission, the selected connection method, and system pairing authorization.", bundle: .module)
+    }
+}
+
+enum NCMDeviceErrorPresentation {
+    static func message(_ error: NCMError, bundle: Bundle = .module) -> String {
+        switch error {
+        case .interfaceUnavailable:
+            return String(localized: "device.board.not-attached", defaultValue: "No USB board was found. Connect the configured board to this device and try again. You can keep chatting.", bundle: bundle)
+        case .interfaceAmbiguous:
+            return String(localized: "device.board.multiple-boards", defaultValue: "More than one USB board connection was found. Keep one board connected and try again.", bundle: bundle)
+        case .interfaceInvalid, .interfaceScopeUnsupported, .staleDiscovery:
+            return String(localized: "device.board.connection-changed", defaultValue: "The USB board connection changed. Reconnect the board and try again.", bundle: bundle)
+        case .pairingServiceUnavailable:
+            return String(localized: "device.board.pairing-service-unavailable", defaultValue: "The board is connected, but this device's pairing service was not found. Keep the device unlocked with Developer Mode on, then try again.", bundle: bundle)
+        case .malformedReply, .unavailableBackend:
+            return String(localized: "device.board.firmware-unavailable", defaultValue: "The board did not provide the required connection service. Install the Eiscue board firmware and try again.", bundle: bundle)
+        case .network, .disconnected:
+            return String(localized: "device.board.interrupted", defaultValue: "The USB board connection was interrupted. Check its cable and power, then try again.", bundle: bundle)
+        case .timeout:
+            return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.", bundle: bundle)
+        case .busy: return DeviceControlError.busy.localizedDescription
         }
-        return String(localized: "device.operation.failed", defaultValue: "The device operation failed. Check local network permission, VPN configuration, and system pairing authorization.", bundle: .module)
     }
 }
 

@@ -1,5 +1,12 @@
 import Foundation
 
+/// The host selects one transport explicitly. Selection never starts a VPN,
+/// changes the default route, or falls back to the other transport.
+public enum DeviceConnectionMethod: String, Codable, Sendable, CaseIterable {
+    case localVPN
+    case usbBoard
+}
+
 public struct LocalVPNConfiguration: Codable, Sendable, Equatable {
     public var localAddress: String
     public var peerAddress: String
@@ -58,7 +65,7 @@ public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
     public var errorDescription: String? {
         switch self {
         case .unsupported: String(localized: "device.error.unsupported", defaultValue: "Local device control requires a physical iOS device. Simulators and Macs cannot establish this connection.", bundle: .module)
-        case .notConnected: String(localized: "device.error.not-connected", defaultValue: "The device is not connected. Complete pairing and connect the local VPN first.", bundle: .module)
+        case .notConnected: String(localized: "device.error.not-connected", defaultValue: "The device is not connected. Complete pairing and connect using your selected connection method first.", bundle: .module)
         case .busy: String(localized: "device.error.busy", defaultValue: "The device is performing another operation. Wait for it to finish.", bundle: .module)
         case .noIdentity: String(localized: "device.error.no-identity", defaultValue: "System pairing is incomplete. Pair the device or import this app's pairing identity first.", bundle: .module)
         case .invalidIdentity: String(localized: "device.error.invalid-identity", defaultValue: "The pairing identity is invalid or incomplete. A completed version 1 RemotePairing identity is required.", bundle: .module)

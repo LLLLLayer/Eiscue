@@ -4,6 +4,7 @@ import Foundation
 public enum NCMError: String, Error, LocalizedError {
     case interfaceUnavailable, interfaceAmbiguous, interfaceInvalid, interfaceScopeUnsupported
     case busy, timeout, disconnected, network, malformedReply, unavailableBackend
+    case pairingServiceUnavailable, staleDiscovery
     public var errorDescription: String? { rawValue }
 }
 public enum DiagnosticCommand: Equatable, Sendable {

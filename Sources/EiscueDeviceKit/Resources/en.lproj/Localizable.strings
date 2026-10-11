@@ -18,7 +18,7 @@
 "device.error.invalid-text" = "Input text must not be empty or exceed 8 KB in UTF-8. The encoded request must not exceed 16 KB.";
 "device.error.keychain" = "Secure storage could not be accessed (%@).";
 "device.error.no-identity" = "System pairing is incomplete. Pair the device or import this app's pairing identity first.";
-"device.error.not-connected" = "The device is not connected. Complete pairing and connect the local VPN first.";
+"device.error.not-connected" = "The device is not connected. Complete pairing and connect using your selected connection method first.";
 "device.error.pairing-exists" = "A pairing identity is already saved. Remove the local identity before pairing again.";
 "device.error.system-pairing-unavailable" = "Starting a new pairing from Settings requires iOS 27 or later. On iOS 26, import a compatible RemotePairing identity created on a computer.";
 "device.error.stale-frame" = "The screenshot has expired, has already been used, or belongs to an old connection. Capture a new screenshot before acting.";
@@ -26,7 +26,7 @@
 "device.media.invalid-image" = "The received screen image is invalid.";
 "device.media.previous-release-unconfirmed" = "The previous screen session's release is unconfirmed. Check the system remote control status before connecting again.";
 "device.media.start-incomplete" = "Screen startup did not complete. The remote release cannot be confirmed.";
-"device.operation.failed" = "The device operation failed. Check local network permission, VPN configuration, and system pairing authorization.";
+"device.operation.failed" = "The device operation failed. Check local network permission, the selected connection method, and system pairing authorization.";
 "device.operation.stopped" = "The operation has stopped.";
 "device.pairing.network-denied" = "The system pairing entry point could not be published. Check local network permission.";
 "device.pairing.publish-failed" = "The system pairing entry point could not be published.";
@@ -47,3 +47,10 @@
 "device.backend.touch-service-unavailable" = "Pairing is complete, but the touch service needed for device control could not be found. You can keep chatting; device control is currently unavailable.";
 "device.backend.touch-timed-out" = "Preparing device control timed out. Keep the device unlocked and try again. You can keep chatting.";
 "device.backend.timed-out" = "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.";
+"device.status.discovering-board" = "Connecting to the USB board.";
+"device.board.not-attached" = "No USB board was found. Connect the configured board to this device and try again. You can keep chatting.";
+"device.board.multiple-boards" = "More than one USB board connection was found. Keep one board connected and try again.";
+"device.board.connection-changed" = "The USB board connection changed. Reconnect the board and try again.";
+"device.board.pairing-service-unavailable" = "The board is connected, but this device's pairing service was not found. Keep the device unlocked with Developer Mode on, then try again.";
+"device.board.firmware-unavailable" = "The board did not provide the required connection service. Install the Eiscue board firmware and try again.";
+"device.board.interrupted" = "The USB board connection was interrupted. Check its cable and power, then try again.";

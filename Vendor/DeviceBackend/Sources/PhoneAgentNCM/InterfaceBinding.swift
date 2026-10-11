@@ -8,7 +8,7 @@ struct NCMInterfaceBinding {
     static let localIP = "192.168.7.2"
     static let remoteIP = "192.168.7.1"
     static let netmask = "255.255.255.0"
-    struct Row: Equatable {
+    struct Row: Equatable, Sendable {
         let name: String
         let index: UInt32
         let address: String

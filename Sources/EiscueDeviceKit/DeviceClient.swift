@@ -22,7 +22,14 @@ public struct DeviceClient: Sendable {
     public func importPairingIdentity(_ data: Data) async throws { try await controller.importPairingIdentity(data) }
     public func removePairingIdentity() async throws { try await controller.removePairingIdentity() }
     public func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> { await controller.beginPairing() }
+    public func connect(method: DeviceConnectionMethod, configuration: LocalVPNConfiguration = .defaults) async throws {
+        switch method {
+        case .localVPN: try await controller.connectLocalVPN(configuration: configuration)
+        case .usbBoard: try await controller.connectUSBBoard()
+        }
+    }
     public func connectLocalVPN(configuration: LocalVPNConfiguration = .defaults) async throws { try await controller.connectLocalVPN(configuration: configuration) }
+    public func connectUSBBoard() async throws { try await controller.connectUSBBoard() }
     #if DEBUG
     /// Explicit development probe. Never marks device control ready or sends input.
     public func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration = .defaults) async throws -> Data {

@@ -90,7 +90,9 @@ public struct NativeVideoSnapshot: Sendable {
         guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
         guard !busy, handle == 0 else { throw NativeBackendError.busy }
         guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
-        guard let generation = discovery.generation, generation > 0, endpoint.service == "remotepairing",
+        guard discovery.layer == "discovery", discovery.result == "candidates", !discovery.authenticated,
+              discovery.screenCaptured != true, discovery.inputExecuted != true,
+              let generation = discovery.generation, generation > 0, endpoint.service == "remotepairing",
               discovery.endpoints?.contains(where: { $0.index == endpoint.index && $0.family == endpoint.family && $0.port == endpoint.port && $0.service == endpoint.service }) == true else { throw NativeBackendError.invalidCandidate }
         let row = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory()).row
         var config = ncm_config(abi: 1, interface_index: row.index, generation: generation, endpoint_index: UInt32(endpoint.index), permissions: authorization.mask)
@@ -104,6 +106,16 @@ public struct NativeVideoSnapshot: Sendable {
         guard code == 0, started != 0 else { throw NativeBackendError.transport(code: code) }
         handle = started
         try await finishConnect(started)
+    }
+    /// Preferred scoped path. Rejects expired discovery and interface changes
+    /// before importing the identity into the native transport worker.
+    public func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
+                        discovery: NCMDiscoveredEndpoint) async throws {
+        try Task.checkCancellation()
+        let current = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory()).row
+        try discovery.validate(currentInterface: current)
+        try await connect(identity: identity, authorization: authorization,
+                          discovery: discovery.reply, endpoint: discovery.endpoint)
     }
     /// Reuses the exact authenticated CoreDevice session over a bound local VPN socket.
     public func connectLocalVPN(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,

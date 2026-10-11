@@ -23,6 +23,7 @@ public protocol DeviceController: Sendable {
     func removePairingIdentity() async throws
     func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error>
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws
+    func connectUSBBoard() async throws
     func disconnect() async
     func captureScreenshot() async throws -> DeviceScreenshot
     func tap(at point: DevicePoint, frameID: UUID) async throws
@@ -42,6 +43,7 @@ public extension DeviceController {
         AsyncThrowingStream { $0.finish(throwing: DeviceControlError.unsupported) }
     }
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws { throw DeviceControlError.unsupported }
+    func connectUSBBoard() async throws { throw DeviceControlError.unsupported }
     func disconnect() async {}
     func captureScreenshot() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
     func tap(at point: DevicePoint, frameID: UUID) async throws { throw DeviceControlError.notConnected }

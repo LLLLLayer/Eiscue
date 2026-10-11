@@ -16,6 +16,31 @@ import Network
     private var timer: Task<Void, Never>?
     public init() {}
 
+    /// Refresh candidates on the board, keeping discovery on one NCM interface.
+    /// IPv4 is attempted only when IPv6 discovery has no pairing candidate.
+    public func discoverRemotePairing() async throws -> NCMDiscoveredEndpoint {
+        guard pending == nil else { throw NCMError.busy }
+        try Task.checkCancellation()
+        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory())
+        for (command, family) in [(DiagnosticCommand.discoverIPv6, 6), (.discoverIPv4, 4)] {
+            let connection = NWConnection(host: .ipv4(binding.remoteAddress), port: 28767, using: binding.parameters())
+            let reply = try await exchange(command, connection: connection)
+            try Task.checkCancellation()
+            // A changed interface never causes discovery or connection to move
+            // onto Wi-Fi, a corporate VPN, or another attached board.
+            let current = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory())
+            guard current.row == binding.row else { throw NCMError.interfaceInvalid }
+            if reply.layer == "discovery", reply.result == "candidates",
+               reply.endpoints?.contains(where: { $0.service == "remotepairing" && $0.family == family }) == true {
+                return try NCMDiscoveredEndpoint(reply: reply, family: family, interface: binding.row)
+            }
+            guard reply.layer == "discovery", ["candidates", "no-candidates", "unsupported", "not_found"].contains(reply.result) else {
+                throw NCMError.malformedReply
+            }
+        }
+        throw NCMError.pairingServiceUnavailable
+    }
+
     public func request(_ command: DiagnosticCommand) async throws -> DiagnosticReply {
         guard pending == nil else { throw NCMError.busy }
         try Task.checkCancellation()
