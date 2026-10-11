@@ -6,6 +6,8 @@
 
 **代码接入与真机结果：** 新版蓝牙固件已完成构建、烧录读回及加密连接能力查询；在指定 iPhone 14 Pro / iOS 26.5.2 上，普通 App 已通过 ReplayKit 屏幕共享、四点实际点击和中文文字检查，显示已就绪。当前仍需验证蓝牙滑动、完整跨 App 的 Agent 任务和长时间后台行为；本次未重复“禁用蜂窝访问的 Wi-Fi HTTPS”检查，该联网结论来自旧版蓝牙基线。Wi-Fi 开发板的独立控制路径已于 2026-10-11 在指定样机上通过。详见 [蓝牙接入验收记录](docs/ble-production-validation-2026-10-12.md)、[开发板说明](docs/board-setup.md) 和 [设备准备](docs/device-setup.md)。
 
+当前路线与下一阶段设计见 [设备 Agent 方案 v0.4](docs/design-v0.4.md)，包括 VPN、蓝牙、USB NCM 与 iCTRL 的对比，以及首次配置和日常使用的区别。iCTRL 已完成源码调研，尚未集成。
+
 ## 已实现
 
 - 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，自定义地址和模型 ID，API Key 使用系统 Keychain。

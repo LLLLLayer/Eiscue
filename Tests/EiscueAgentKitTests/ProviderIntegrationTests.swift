@@ -39,6 +39,59 @@ struct ProviderIntegrationTests {
         var description: String { "\(api.rawValue): \(url)" }
     }
 
+    @Test func googleCompatibleProviderRoundTripsDeviceImageTool() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-google-device-tools-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: .openAICompletions,
+            baseURL: URL(string: "https://generativelanguage.googleapis.com/v1beta/openai/")!,
+            model: "gemini-3.8-flash", apiKey: "google-device-tools-fixture-\(UUID())", supportsImages: true)
+        let calls = OSAllocatedUnfairLock(initialState: 0)
+        let screenshot = AgentTool(name: "device_screenshot", description: "Observe the current screen",
+            parameters: ["type": "object", "properties": [:], "additionalProperties": false],
+            mayHaveSideEffects: false) { _ in
+                calls.withLock { $0 += 1 }
+                return .image(Data([137, 80, 78, 71]), mimeType: "image/png", caption: "Frame fixture-frame-1")
+            }
+        // Exercise the real runtime and HTTP encoder entirely through the local fixture.
+        let network = URLSessionConfiguration.ephemeral
+        network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            tools: [screenshot], modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        var events: [EiscueAgentKit.AgentEvent] = []
+        for try await event in try await client.run(request: .init(conversationID: UUID(), prompt: "Observe my screen")) {
+            events.append(event)
+        }
+        #expect(calls.withLock { $0 } == 1)
+        #expect(events.contains(.finished(.completed)))
+        #expect(events.contains { if case .message(let message) = $0 { message.text == "Hello world" } else { false } })
+        #expect(events.contains { if case .toolFinished(let completion) = $0 {
+            completion.result.content.contains(.image(data: Data([137, 80, 78, 71]), mimeType: "image/png"))
+        } else { false } })
+
+        let requests = ProviderFixtureProtocol.requests.withLock {
+            $0.filter { $0.authorization == "Bearer \(configuration.apiKey)" }
+        }
+        #expect(requests.count == 2)
+        for request in requests {
+            #expect(request.url.path == "/v1beta/openai/chat/completions")
+            #expect(request.body["store"] == nil)
+            let tools = try #require(request.body["tools"]?.arrayValue)
+            #expect(tools.count == 1)
+            #expect(tools.first?["type"] == "function")
+            #expect(tools.first?["function"]?["name"] == "device_screenshot")
+            #expect(tools.first?["function"]?["parameters"]?["type"] == "object")
+        }
+        let second = try #require(requests.last)
+        let messages = try #require(second.body["messages"]?.arrayValue)
+        let result = try #require(messages.first { $0["role"] == "tool" })
+        #expect(result["tool_call_id"] == "screen-1")
+        #expect(result["content"]?.stringValue?.contains("Frame fixture-frame-1") == true)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
+        let wireBody = try #require(String(data: encoder.encode(second.body), encoding: .utf8))
+        #expect(wireBody.contains("data:image/png;base64,iVBORw=="))
+    }
+
     @Test(arguments: [
         StoreEndpoint(url: "https://generativelanguage.googleapis.com/v1beta/openai", api: .openAICompletions, sendsStore: false),
         StoreEndpoint(url: "https://generativelanguage.googleapis.com:443/v1beta/openai/", api: .openAICompletions, sendsStore: false),
@@ -198,7 +251,11 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
                                        headerFields: ["Content-Type": "text/event-stream"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         let chunks: [String]
-        if url.path.hasSuffix("chat/completions") { chunks = Self.completions }
+        if recorded.authorization?.hasPrefix("Bearer google-device-tools-fixture-") == true,
+           !(recorded.body["messages"]?.arrayValue?.contains { $0["role"] == "tool" } ?? false) {
+            chunks = Self.deviceToolCall
+        }
+        else if url.path.hasSuffix("chat/completions") { chunks = Self.completions }
         else if url.path.hasSuffix("responses") { chunks = Self.responses }
         else { chunks = Self.anthropic }
         work.withLock { task in
@@ -222,6 +279,12 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
     static let completions = [
         sse(#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#),
         sse(#"{"id":"c1","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":"stop"}]}"#),
+        "data: [DONE]\n\n",
+    ]
+
+    static let deviceToolCall = [
+        sse(#"{"id":"c-tool","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"screen-1","type":"function","function":{"name":"device_screenshot","arguments":"{}"}}]},"finish_reason":null}]}"#),
+        sse(#"{"id":"c-tool","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#),
         "data: [DONE]\n\n",
     ]
 

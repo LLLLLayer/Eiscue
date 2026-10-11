@@ -17,11 +17,16 @@ separate [Wi-Fi firmware](../Passport-Relay/README.md) uses WPA2, one client and
 `.1/.2` on a `/30` subnet; this S3 USB firmware keeps `/24`. The C3 Wi-Fi route
 passed actual iPhone 14 Pro / iOS 26.5.2 control on 2026-10-11, including screen
 capture, touch, swipe, Unicode input, Home/App return, reconnect and rotation
-checks. The same board's [BLE experiment](../Passport-BLE/README.md) passed three
-12-digit inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access
-disabled for that request on 2026-10-12; it remains Debug-only and is not
-integrated with normal App connection selection or the Agent. These independent
-C3 results do not validate USB NCM on an S3. See the [Wi-Fi build, private
+checks. The same board's [BLE firmware](../Passport-BLE/README.md) is now
+integrated with normal App connection selection, ReplayKit sharing and Agent
+tools. On 2026-10-12, version 0.2 passed ordinary App connection, screen sharing,
+four actual calibration touches and Chinese text checks on that phone. BLE
+swiping, complete cross-App Agent tasks and sustained background sharing remain
+unverified; see the [current BLE record](../../docs/ble-production-validation-2026-10-12.md).
+The earlier version 0.1 Debug baseline on the same date passed three 12-digit
+inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access disabled
+for each request. That Internet check was not repeated in the version 0.2 run.
+These independent C3 results do not validate USB NCM on an S3. See the [Wi-Fi build, private
 provisioning and phone setup](../../docs/board-setup.md#给-esp32-c3-开发板烧录-wi-fi-固件).
 Company VPN coexistence remains unverified for all routes.
 
@@ -108,7 +113,8 @@ or screenshot succeeded.
 | Python flash-tool guards | Historical PASS for the USB S3 profile: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory. Wi-Fi now has a separate C3 profile; no new unit-test result is claimed. |
 | Separate C3 sample identification and backup | PASS: ROM reports ESP32-C3 / 8 MB; full Flash saved privately and checked against ROM MD5 |
 | Separate C3 Wi-Fi write/readback and phone control | PASS: firmware readback, AP/DHCP, discovery/authorization, capture, touch, swipe, Unicode input, Home/App return, reconnect and rotation checks; local VPN stayed disconnected. See [Wi-Fi evidence](../../docs/board-validation-2026-10-11.md). |
-| Separate C3 BLE Debug experiment | PASS for three 12-digit inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access disabled for each request; no normal App/Agent integration or calibrated-coordinate claim. See [BLE evidence](../../docs/ble-board-validation-2026-10-12.md). |
+| Separate C3 BLE 0.1 Debug baseline (2026-10-12) | Historical PASS for three 12-digit inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access disabled for each request. This earlier experiment did not validate the later absolute-coordinate path. See [baseline evidence](../../docs/ble-board-validation-2026-10-12.md). |
+| Separate C3 BLE 0.2 ordinary App flow (2026-10-12) | PASS: firmware build/write/readback, encrypted capability query, ordinary App connection, ReplayKit sharing, four actual calibration touches and Chinese text checks. Normal App/Agent integration is implemented; BLE swiping, complete cross-App Agent tasks and sustained background sharing remain unverified. Wi-Fi HTTPS was not repeated in this run. See [current BLE evidence](../../docs/ble-production-validation-2026-10-12.md). |
 | Flash/readback on physical S3 | NOT RUN: the current sample is C3, not an S3 board |
 | USB NCM enumeration and ND1 on Mac/phone | NOT RUN |
 | Company VPN coexistence | NOT RUN |
