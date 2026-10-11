@@ -43,7 +43,9 @@ xcrun devicectl device copy to --device '<USB_UDID>' \
 
 工具输出文件权限为 `0600`，拒绝覆盖已有文件，只有 Pair Setup 签名验证和重新连接后的 Pair Verify 成功才导出完整身份。文件包含私钥，导入成功后删除电脑上的这份临时文件，不要放进 Git、聊天或网盘。普通 Lockdown 文件和标准 RPPairing 文件不能直接替代 Eiscue 的完整格式。
 
-USB 身份生成不代表设备控制已经验收；后续仍需依次验证内置 VPN、本机服务发现、截图和输入。此路径目前完成编译与离线测试，真机验收尚未完成。
+USB 身份生成不代表设备控制已经验收；后续仍需依次验证内置 VPN、本机服务发现、截图和输入。2026-10-11 已在指定 iPhone 14 Pro（iOS 26.5.2）完成真实 USB 身份生成、Pair Setup 签名验证、重新连接后的 Pair Verify，并将身份传入 App 的固定临时路径。App 内导入和后续设备控制尚待验证。
+
+上述传输文件位于 App 私有临时目录，不会显示在系统“文件”App 中。电脑传输完成后，重新打开 Eiscue 右上角的设备页，点击「导入电脑发送的配对」即可，无需在文件选择器里寻找它；停留在设备页时，可返回对话再进入以刷新按钮。
 
 开发版可显式传入 `--import-pairing-transfer` 导入上述固定文件；不会覆盖已有身份。`--device-connection-check` 只在已连接的本地通道上连接、抓取一次截图尺寸并断开，诊断写入 `Library/Caches/EiscueDeviceCheck.json`，不保存屏幕内容或密钥。Release 不包含这些自动化入口；正常用户通过界面操作。
 
