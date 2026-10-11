@@ -55,6 +55,49 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["resumeRunButton"].exists)
     }
 
+    @MainActor func testAuthenticationFailureKeepsAppAndDraftUsable() throws {
+        assertServiceFailureCanRecover(prompt: "unauthorized fixture", error: "Fixture authentication failed")
+    }
+
+    @MainActor func testServerFailureKeepsAppAndDraftUsable() throws {
+        assertServiceFailureCanRecover(prompt: "unavailable fixture", error: "Fixture service unavailable")
+    }
+
+    @MainActor private func assertServiceFailureCanRecover(prompt: String, error: String,
+                                                          file: StaticString = #filePath, line: UInt = #line) {
+        let app = launch()
+        send(prompt, in: app)
+        let detail = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", error)).firstMatch
+        guard detail.waitForExistence(timeout: 20) else {
+            XCTFail("Expected a visible service error without terminating the app", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(app.state, .runningForeground, file: file, line: line)
+        let idle = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                            object: app.buttons["stopRunButton"])
+        XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 10), .completed, file: file, line: line)
+        let canSend = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"),
+                                               object: app.buttons["sendMessageButton"])
+        XCTAssertEqual(XCTWaiter.wait(for: [canSend], timeout: 5), .completed, file: file, line: line)
+        let field = app.textFields["messageInput"]
+        let input = field.exists ? field : app.textViews["messageInput"]
+        XCTAssertEqual(input.value as? String, prompt, file: file, line: line)
+        XCTAssertFalse(app.debugDescription.contains("local-fixture-key"),
+                       "A provider error must not expose the configured credential", file: file, line: line)
+
+        // No relaunch or direct state reset: the failed app session must still
+        // allow ordinary navigation and another real model request.
+        openSidebar(in: app)
+        let newConversation = app.buttons["newConversationButton"]
+        XCTAssertTrue(newConversation.isEnabled, file: file, line: line)
+        newConversation.tap()
+        send("Conversation after service failure", in: app)
+        XCTAssertTrue(app.staticTexts["Fixture response: Conversation after service failure"].waitForExistence(timeout: 20),
+                      file: file, line: line)
+        XCTAssertTrue(app.staticTexts["已完成"].waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(app.state, .runningForeground, file: file, line: line)
+    }
+
     @MainActor func testSidebarOrderPinAndDeletePersistAcrossLaunches() throws {
         var app = launch()
         for (index, title) in ["First conversation", "Second conversation", "Third conversation"].enumerated() {

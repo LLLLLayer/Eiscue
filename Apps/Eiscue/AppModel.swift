@@ -432,7 +432,10 @@ final class AppModel {
             // releasing the UI lock or allowing another engine to open this DB.
             deviceTools?.stop()
             try? await runningAgent?.cancel()
-            activeRun?.state = stopRequested || error is CancellationError || activeRun?.submission == .pending ? .interrupted : .failed
+            // Read the submission before the optional-chain write begins its
+            // exclusive access to activeRun; reading it in the RHS traps.
+            let interrupted = stopRequested || error is CancellationError || activeRun?.submission == .pending
+            activeRun?.state = interrupted ? .interrupted : .failed
             if !stopRequested { activeRun?.detail = safeError(error) }
         }
         deviceTools?.stop()

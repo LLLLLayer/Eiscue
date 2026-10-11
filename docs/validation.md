@@ -2,6 +2,16 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## 普通聊天请求失败时闪退修正（同日）
+
+指定 iPhone 14 Pro 的 16:05:31、16:05:40 两份崩溃报告与本地 Release dSYM UUID 匹配，符号化均定位到 `AppModel.perform` 的错误处理分支。可选链修改 `activeRun?.state` 时，赋值右侧又读取 `activeRun?.submission`，触发 Swift 独占访问冲突并终止进程；普通发送和继续中断任务共用此路径。修正为先读取并计算状态，再单独写入，保留原有失败/中断语义。
+
+新增本地 HTTP 401、503 错误 fixture 与端到端 UI 回归。未修版本在 401 用例中复现 App 退出；修正版两项错误用例与原停止/重启用例共 3 项通过。覆盖具体错误可见、草稿保留、解除忙碌状态、假凭据脱敏，以及同一 App 会话内新建对话后正常收到回复。签名 Release 构建与签名验证通过，正常 App 已更新并启动到指定 iPhone 14 Pro。
+
+用户提供的 Gemini 兼容接口地址及 `gemini-3.8-flash` 与 [Google 官方兼容接口文档](https://ai.google.dev/gemini-api/docs/openai) 一致。本次没有读取或使用用户的真实 API Key；真实模型请求失败的具体原因尚未取得，不能把修复崩溃等同于已验证 Google 模型请求成功。
+
+本地产物：`.build/results/ChatFailureReproduction.xcresult`（修复前失败）、`.build/results/ChatFailureFixTests.xcresult`（修复后 3 项通过）、`.build/diagnostics/chat-crash/`（仅本地崩溃报告及匹配符号）、`/tmp/eiscue-chat-failure-release.log`、`/tmp/eiscue-chat-failure-install.log`、`/tmp/eiscue-chat-failure-launch.log`。
+
 ## 黑白灰配色更新（同日）
 
 根据最新配色要求，将 AccentColor 调整为浅色近黑、深色近白；按钮、SF Symbols、麦克风和运行状态统一灰阶。错误提示增加感叹号，设备状态保留不同图形与文字，角标随主题反转前景/背景；系统确认弹窗保留原生 destructive 语义。贴纸和 App 图标保留原图。
