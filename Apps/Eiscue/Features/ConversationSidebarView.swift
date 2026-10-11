@@ -18,8 +18,10 @@ struct ConversationSidebarView: View {
                 if let closeSidebar {
                     Button(action: closeSidebar) {
                         Image(systemName: "sidebar.left")
-                            .frame(width: 44, height: 44)
                     }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
                     .foregroundStyle(EiscueStyle.accent)
                     .accessibilityLabel(Text("sidebar.close", tableName: "Navigation"))
                     .accessibilityIdentifier("closeSidebarButton")
@@ -50,37 +52,41 @@ struct ConversationSidebarView: View {
                 .scrollContentBackground(.hidden)
             }
 
-            Divider().padding(.horizontal, 20)
-            VStack(spacing: 0) {
-                Button(action: newConversation) {
-                    sidebarAction("sidebar.newConversation", systemImage: "square.and.pencil")
+            GlassEffectContainer(spacing: 16) {
+                HStack(spacing: 12) {
+                    Button(action: newConversation) {
+                        Label {
+                            Text("sidebar.newConversation", tableName: "Navigation")
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        } icon: {
+                            Image(systemName: "square.and.pencil")
+                                .foregroundStyle(EiscueStyle.accent)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
+                    .disabled(model.isBusy)
+                    .accessibilityIdentifier("newConversationButton")
+                    Spacer(minLength: 0)
+                    Button(action: openSettings) {
+                        Image(systemName: "gearshape")
+                            .foregroundStyle(EiscueStyle.accent)
+                    }
+                    .buttonStyle(.glass(.clear))
+                    .buttonBorderShape(.circle)
+                    .fixedSize()
+                    .accessibilityLabel(Text("sidebar.settings", tableName: "Navigation"))
+                    .accessibilityIdentifier("sidebarSettingsButton")
                 }
-                .disabled(model.isBusy)
-                .accessibilityIdentifier("newConversationButton")
-                Button(action: openSettings) {
-                    sidebarAction("sidebar.settings", systemImage: "gearshape")
-                }
-                .accessibilityIdentifier("sidebarSettingsButton")
+                .controlSize(.large)
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .background(EiscueStyle.background)
-    }
-
-    private func sidebarAction(_ key: LocalizedStringKey, systemImage: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .foregroundStyle(EiscueStyle.accent)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            Text(key, tableName: "Navigation").foregroundStyle(.primary)
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .frame(minHeight: 50)
-        .contentShape(Rectangle())
     }
 
     private func conversationRow(_ conversation: Conversation) -> some View {

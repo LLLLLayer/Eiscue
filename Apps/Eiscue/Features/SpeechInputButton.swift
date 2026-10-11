@@ -55,10 +55,12 @@ private struct MicrophoneControl: UIViewRepresentable {
         context.coordinator.parent = self
         button.isEnabled = !isDisabled
         var configuration = UIButton.Configuration.plain()
-        configuration.image = UIImage(systemName: isRecording ? "stop.circle.fill" : "mic.fill")
-        configuration.preferredSymbolConfigurationForImage = .init(pointSize: 21, weight: .medium)
+        configuration.image = UIImage(systemName: isRecording ? "stop.fill" : "mic")
+        configuration.preferredSymbolConfigurationForImage = .init(pointSize: 18, weight: .medium, scale: .medium)
+        configuration.contentInsets = .zero
+        configuration.imagePadding = 0
         configuration.showsActivityIndicator = isPreparing
-        configuration.baseForegroundColor = isRecording ? .systemRed : .systemBlue
+        configuration.baseForegroundColor = isRecording ? .systemRed : UIColor(named: "AccentColor") ?? .systemBlue
         button.configuration = configuration
         button.accessibilityLabel = isBusy
             ? String(localized: "speech.stop", table: "Speech")

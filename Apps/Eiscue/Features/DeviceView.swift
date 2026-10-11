@@ -94,18 +94,18 @@ struct DeviceView: View {
     @ViewBuilder private var connectionActions: some View {
         if model.isDeviceReady || model.isPairing || model.isConnecting {
             Button("device.disconnectAndStop", role: .destructive) { Task { await model.disconnectDevice() } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
         } else {
             if model.hasTransferredPairingIdentity {
                 Button("device.importTransferredPairing") {
                     Task { await model.importTransferredPairingIdentity() }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("importTransferredPairingButton")
             } else if !model.hasPairingIdentity && !model.supportsSystemPairing {
                 Button("device.importIdentity") { importsIdentity = true }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled(model.isBusy)
                     .accessibilityIdentifier("importPairingIdentityButton")
             } else if !model.hasPairingIdentity {
@@ -115,7 +115,7 @@ struct DeviceView: View {
                         if model.localTunnel.isConnected { model.startPairing() }
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("startPairingButton")
             }
@@ -126,7 +126,7 @@ struct DeviceView: View {
                         if model.localTunnel.isConnected { await model.connectDevice() }
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("connectDeviceButton")
             }
@@ -148,12 +148,14 @@ struct DeviceView: View {
                     .font(.caption).foregroundStyle(.secondary)
 
                     Button("device.importIdentity") { importsIdentity = true }
+                        .buttonStyle(.glass)
                         .disabled(model.isBusy)
                         .accessibilityIdentifier("importPairingIdentityFromFilesButton")
                     Divider()
                     verification
                     if model.hasPairingIdentity {
                         Button("device.removePairing", role: .destructive) { confirmsForget = true }
+                            .buttonStyle(.glass)
                             .disabled(model.isBusy)
                     }
                 }
@@ -182,12 +184,12 @@ struct DeviceView: View {
                 Button(model.isStoppingTunnel ? String(localized: "device.stoppingLocalConnection") : String(localized: "device.stopLocalConnection"), role: .destructive) {
                     Task { await model.stopLocalTunnel() }
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .disabled(model.isStoppingTunnel)
                 .accessibilityIdentifier("stopLocalTunnelButton")
             } else {
                 Button("device.startLocalConnection") { Task { await model.startLocalTunnel() } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .disabled(model.isBusy)
                     .accessibilityIdentifier("startLocalTunnelButton")
             }
@@ -198,8 +200,10 @@ struct DeviceView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("device.verifyControl").font(.subheadline.weight(.semibold))
             Button("device.captureScreenshot") { Task { await model.previewScreenshot() } }
+                .buttonStyle(.glass)
                 .disabled(!model.isDeviceReady || model.isBusy || model.isConnecting)
             Button("device.openProbe") { showsProbe = true }
+                .buttonStyle(.glass)
                 .disabled(model.isBusy)
             if let frame = model.screenshot, let image = UIImage(data: frame.data) {
                 Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 360)

@@ -2,6 +2,15 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## Liquid Glass 界面调整（同日）
+
+- 顶部沿用系统工具栏玻璃；侧栏底部改为左侧新对话玻璃胶囊、右侧设置透明玻璃圆钮。输入区及设备、引导、模型、技能等页面的独立按钮使用原生玻璃材质，统一 SF Symbols 尺寸；正文与列表保留语义背景。
+- 首轮 iPad 输入测试发现输入框边缘点击不聚焦。为带内边距的 TextField 明确设置矩形命中范围，保留原来的 `input.tap()` 断言，最终在 iPhone 与 iPad 均通过输入、附件菜单、设备操作开关、导航返回及草稿保留测试。
+- 8 项语音回调/会话单元测试通过。7 种 UI 场景通过，覆盖引导与模型设置返回、技能选择、高级选项、侧栏底部布局和设置导航、宽屏侧栏展开/收起、输入框交互。iPhone 首轮 6 项 UI 全通过；iPad 的 2 项侧栏测试通过，输入问题修正后的最终双端复测通过。
+- 最终中文浅色 iPhone 与深色 iPad 截图已检查：输入文字及麦克风清晰，侧栏底部按钮同排且无重叠。签名 Release 构建与 `codesign --verify --deep --strict` 通过，正常 App 已覆盖安装并启动到指定 iPhone 14 Pro，未在真机安装 UI Test Runner。
+
+本地产物：`.build/results/LiquidGlassTests.xcresult`（8 项单元 + 6 项 UI）、`.build/results/LiquidGlassIPadTests.xcresult`（含首轮输入失败与 2 项侧栏通过）、`.build/results/LiquidGlassComposerFinalTests.xcresult`（最终 iPhone/iPad 输入复测）；截图 `.build/review/glass-verified-*.png`；Release 日志 `/tmp/eiscue-glass-release-verified.log`、安装及启动日志 `/tmp/eiscue-glass-verified-install.log`、`/tmp/eiscue-glass-verified-launch.log`。
+
 ## 真机语音闪退修正（同日）
 
 指定 iPhone 14 Pro 的四份 Eiscue 崩溃报告确认：首次语音授权在系统后台队列回调，后续三次在 AVAudioEngine 音频队列收到首帧时，均触发 `_dispatch_assert_queue_fail`。原因是旧版 Swift 6 代码在 `@MainActor` 方法中创建了未标记并发边界的 Objective-C 回调，编译器为它们插入主线程执行器检查。识别结果回调也有同样的潜在问题；在回调内部启动 `Task { @MainActor ... }` 无法避免入口处先发生断言。

@@ -16,9 +16,16 @@ final class SidebarUITests: XCTestCase {
         XCTAssertFalse(app.tabBars.firstMatch.exists)
         openSidebar(in: app)
         let settings = app.buttons["sidebarSettingsButton"]
+        let newConversation = app.buttons["newConversationButton"]
         XCTAssertTrue(app.staticTexts["No conversations yet"].exists)
-        XCTAssertTrue(app.buttons["newConversationButton"].isHittable)
-        XCTAssertLessThan(settings.frame.midX, app.frame.midX, "The sidebar must open at the leading edge, not as a bottom sheet.")
+        XCTAssertTrue(newConversation.isHittable)
+        XCTAssertEqual(settings.label, "Settings", "The icon-only control must retain its full accessible label.")
+        XCTAssertEqual(newConversation.label, "New conversation")
+        XCTAssertEqual(newConversation.frame.midY, settings.frame.midY, accuracy: 2,
+                       "The footer actions must share one horizontal row.")
+        XCTAssertLessThan(newConversation.frame.maxX, settings.frame.minX)
+        XCTAssertLessThan(newConversation.frame.midX, app.frame.midX,
+                          "The sidebar must open at the leading edge, not as a bottom sheet.")
         if app.buttons["closeSidebarButton"].exists {
             XCTAssertFalse(app.buttons["deviceNavigationLink"].isHittable, "A compact drawer must hide the underlying controls.")
         }

@@ -35,6 +35,7 @@ struct SkillsView: View {
                 } label: {
                     Label("skills.import", systemImage: "square.and.arrow.down")
                 }
+                .buttonStyle(.glass)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("importSkillButton")
             } footer: {
@@ -117,6 +118,7 @@ private struct SkillDetailView: View {
                             Label(model.selectedSkillID == skill.id ? String(localized: "skills.deselect") : String(localized: "skills.select"),
                                   systemImage: model.selectedSkillID == skill.id ? "checkmark.circle.fill" : "plus.circle")
                         }
+                        .buttonStyle(.glassProminent)
                         .disabled(model.isBusy)
                         .accessibilityIdentifier("selectSkillButton")
                     }
@@ -143,6 +145,7 @@ private struct SkillDetailView: View {
                                 model.deleteSkill(skill)
                                 if !model.skills.contains(where: { $0.id == skill.id }) { dismiss() }
                             }
+                            .buttonStyle(.glass)
                             .disabled(model.isBusy)
                         }
                     }

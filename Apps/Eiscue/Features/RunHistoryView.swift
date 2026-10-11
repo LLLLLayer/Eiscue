@@ -123,6 +123,7 @@ private struct RunDetailView: View {
                 ShareLink(item: RunReport.text(record), subject: Text("runs.reportTitle")) {
                     Label("runs.shareReport", systemImage: "square.and.arrow.up")
                 }
+                .buttonStyle(.glass)
                 .accessibilityIdentifier("shareRunReportButton")
             }
         }

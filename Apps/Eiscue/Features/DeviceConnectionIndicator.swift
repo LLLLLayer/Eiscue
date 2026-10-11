@@ -41,17 +41,21 @@ struct DeviceConnectionIndicator: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Image(systemName: isIPad ? "ipad" : "iphone.gen3")
-                .font(.system(size: 23)).frame(width: 34, height: 34)
+                .font(.system(size: 20, weight: .medium))
+                .frame(width: 24, height: 24)
             Group {
                 switch state {
                 case .ready: Image(systemName: "checkmark.circle.fill")
                 case .failed: Image(systemName: "exclamationmark.circle.fill")
                 case .unpaired: Image(systemName: "questionmark.circle.fill")
                 case .paired: Image(systemName: "minus.circle.fill")
-                case .connecting: ProgressView().controlSize(.mini)
+                case .connecting: ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
                 }
-            }.font(.system(size: 12, weight: .semibold))
-                .background(EiscueStyle.background, in: Circle()).offset(x: 2, y: 1)
+            }
+                .font(.system(size: 10, weight: .semibold))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, state.color)
+                .offset(x: 2, y: 1)
         }.foregroundStyle(state.color).accessibilityHidden(true)
     }
 }

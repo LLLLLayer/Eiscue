@@ -66,6 +66,7 @@ struct ModelSettingsView: View {
                         Button("model.removeSavedKey", role: .destructive) {
                             confirmsKeyRemoval = true
                         }
+                        .buttonStyle(.glass)
                         .accessibilityIdentifier("removeAPIKeyButton")
                     }
                 } header: {

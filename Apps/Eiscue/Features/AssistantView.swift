@@ -51,7 +51,9 @@ struct AssistantView: View {
                     isComposerFocused = false
                     speech.cancel()
                     openSidebar()
-                }.accessibilityIdentifier("historyButton")
+                }
+                .labelStyle(.iconOnly)
+                .accessibilityIdentifier("historyButton")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: AppDestination.device) {
@@ -172,10 +174,10 @@ struct AssistantView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Button("assistant.resume") { Task { await model.continueInterruptedRun() } }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.glassProminent)
                             .accessibilityIdentifier("resumeRunButton")
                         Button("assistant.endTask") { Task { await model.abandonInterruptedRun() } }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.glass)
                     }
                 }
             }
@@ -196,8 +198,9 @@ struct AssistantView: View {
                 }
                 .foregroundStyle(.primary)
                 .padding(16)
-                .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 18))
             }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.roundedRectangle(radius: 18))
         }
     }
 
@@ -233,6 +236,7 @@ struct AssistantView: View {
             }
             if model.isImportingAttachments {
                 HStack { ProgressView(); Text(text("composer.importing")).font(.caption); Spacer() }
+                    .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
             }
             if model.scope == .control {
                 HStack(spacing: 8) {
@@ -243,7 +247,10 @@ struct AssistantView: View {
                     }
                     Button { model.scope = .chat } label: { Image(systemName: "xmark.circle.fill") }
                         .accessibilityLabel(text("composer.controlOff")).disabled(model.isBusy)
-                }.foregroundStyle(EiscueStyle.accent).accessibilityIdentifier("deviceControlEnabled")
+                }
+                .foregroundStyle(EiscueStyle.accent)
+                .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
+                .accessibilityIdentifier("deviceControlEnabled")
             }
             if speech.isBusy {
                 HStack(alignment: .top, spacing: 10) {
@@ -255,70 +262,85 @@ struct AssistantView: View {
                     Spacer()
                     Button { speech.cancel() } label: { Image(systemName: "xmark.circle.fill") }
                         .accessibilityLabel(text("composer.cancelVoice"))
-                }.accessibilityIdentifier("speechPreview")
+                }
+                .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
+                .accessibilityIdentifier("speechPreview")
             }
             if let error = speech.errorMessage {
                 Text(error).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
             }
-            HStack(alignment: .bottom, spacing: 4) {
-                Menu {
-                    Button(text("composer.photos"), systemImage: "photo.on.rectangle") { isComposerFocused = false; showsPhotoPicker = true }
-                        .disabled(!model.canAddAttachments)
-                    Button(text("composer.camera"), systemImage: "camera") {
-                        isComposerFocused = false
-                        let sessionID = model.composerSessionID
-                        Task {
-                            do {
-                                try await AttachmentCamera.requestAccess()
-                                guard model.composerSessionID == sessionID, !model.isBusy else { return }
-                                showsCamera = true
+            GlassEffectContainer(spacing: 8) {
+                HStack(alignment: .bottom, spacing: 8) {
+                    Menu {
+                        Button(text("composer.photos"), systemImage: "photo.on.rectangle") { isComposerFocused = false; showsPhotoPicker = true }
+                            .disabled(!model.canAddAttachments)
+                        Button(text("composer.camera"), systemImage: "camera") {
+                            isComposerFocused = false
+                            let sessionID = model.composerSessionID
+                            Task {
+                                do {
+                                    try await AttachmentCamera.requestAccess()
+                                    guard model.composerSessionID == sessionID, !model.isBusy else { return }
+                                    showsCamera = true
+                                }
+                                catch { model.errorMessage = error.localizedDescription }
                             }
-                            catch { model.errorMessage = error.localizedDescription }
-                        }
-                    }.disabled(!model.canAddAttachments)
-                    Button(text("composer.files"), systemImage: "doc") { isComposerFocused = false; showsFiles = true }
-                        .disabled(!model.canAddAttachments)
-                    Divider()
-                    Toggle(isOn: Binding(get: { model.scope == .control }, set: { model.scope = $0 ? .control : .chat })) {
-                        Label(text("composer.controlDevice"), systemImage: "hand.tap")
-                    }.accessibilityIdentifier("deviceControlToggle")
-                } label: {
-                    Image(systemName: "plus").font(.system(size: 20, weight: .medium)).frame(width: 44, height: 44)
-                }
-                .disabled(model.isBusy || speech.isBusy)
-                .accessibilityLabel(text("composer.add")).accessibilityIdentifier("composerAddButton")
-                TextField("assistant.composerPlaceholder", text: $model.draft, axis: .vertical)
-                    .lineLimit(1...5).font(.body).padding(.vertical, 11)
-                    .focused($isComposerFocused).disabled(model.isBusy)
-                    .accessibilityIdentifier("messageInput")
-                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.7).onEnded { _ in
-                        guard !model.isBusy, model.draft.isEmpty else { return }
-                        isComposerFocused = false
-                        speech.toggle(onTranscript: receiveDictation)
-                    })
-                SpeechInputButton(controller: speech, isDisabled: model.isBusy, onTranscript: receiveDictation)
-                    .frame(width: 44, height: 44).disabled(model.isBusy)
-                Button {
-                    isComposerFocused = false
-                    Task { await model.sendMessage() }
-                } label: {
-                    Group {
-                        if model.isSaving { ProgressView().tint(.white) }
-                        else { Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)) }
+                        }.disabled(!model.canAddAttachments)
+                        Button(text("composer.files"), systemImage: "doc") { isComposerFocused = false; showsFiles = true }
+                            .disabled(!model.canAddAttachments)
+                        Divider()
+                        Toggle(isOn: Binding(get: { model.scope == .control }, set: { model.scope = $0 ? .control : .chat })) {
+                            Label(text("composer.controlDevice"), systemImage: "hand.tap")
+                        }.accessibilityIdentifier("deviceControlToggle")
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 20, weight: .medium))
+                            .frame(width: 22, height: 22)
                     }
-                    .foregroundStyle(.white).frame(width: 40, height: 40)
-                    .background(model.canSend && !speech.isBusy ? EiscueStyle.accent : Color.secondary.opacity(0.25), in: Circle())
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .disabled(model.isBusy || speech.isBusy)
+                    .accessibilityLabel(text("composer.add")).accessibilityIdentifier("composerAddButton")
+                    HStack(alignment: .bottom, spacing: 0) {
+                        TextField("assistant.composerPlaceholder", text: $model.draft, axis: .vertical)
+                            .lineLimit(1...5).font(.body).padding(.vertical, 14)
+                            // Include the padded edges in the input's hit region above the glass.
+                            .contentShape(Rectangle())
+                            .focused($isComposerFocused).disabled(model.isBusy)
+                            .accessibilityIdentifier("messageInput")
+                            .simultaneousGesture(LongPressGesture(minimumDuration: 0.7).onEnded { _ in
+                                guard !model.isBusy, model.draft.isEmpty else { return }
+                                isComposerFocused = false
+                                speech.toggle(onTranscript: receiveDictation)
+                            })
+                        SpeechInputButton(controller: speech, isDisabled: model.isBusy, onTranscript: receiveDictation)
+                            .frame(width: 44, height: 48).disabled(model.isBusy)
+                    }
+                    .padding(.leading, 18).padding(.trailing, 4)
+                    .frame(minHeight: 50)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 26))
+                    Button {
+                        isComposerFocused = false
+                        Task { await model.sendMessage() }
+                    } label: {
+                        Group {
+                            if model.isSaving { ProgressView().controlSize(.small) }
+                            else { Image(systemName: "arrow.up").font(.system(size: 20, weight: .semibold)) }
+                        }
+                        .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .disabled(!model.canSend || speech.isBusy)
+                    .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
                 }
-                .disabled(!model.canSend || speech.isBusy)
-                .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
-                .padding(.bottom, 2)
             }
-            .padding(.leading, 5).padding(.trailing, 8).padding(.vertical, 6)
-            .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 26))
-            .overlay { RoundedRectangle(cornerRadius: 26).strokeBorder(Color.primary.opacity(0.06)) }
         }
         .frame(maxWidth: 720).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 9)
-        .frame(maxWidth: .infinity).background(EiscueStyle.background)
+        .frame(maxWidth: .infinity)
     }
 
     private func appendDictation(_ transcript: String) {

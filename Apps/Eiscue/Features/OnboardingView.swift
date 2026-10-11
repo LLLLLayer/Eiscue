@@ -38,7 +38,7 @@ struct OnboardingView: View {
                             Label(text(model.hasConfiguredModel ? "setup.editModel" : "setup.configureModel"), systemImage: "key")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(.bordered).controlSize(.large)
+                        .buttonStyle(.glass).controlSize(.large)
                         .accessibilityIdentifier("onboardingConfigureModel")
                         Text(text("setup.modelHint")).font(.subheadline).foregroundStyle(.secondary)
                     } else {
@@ -59,10 +59,10 @@ struct OnboardingView: View {
                                 showsPairingFeedback = true
                                 Task { await model.importTransferredPairingIdentity() }
                             }
-                                .buttonStyle(.bordered).disabled(model.isBusy)
+                                .buttonStyle(.glass).disabled(model.isBusy)
                         } else if !model.supportsSystemPairing {
                             Button(text("setup.importFile")) { importsIdentity = true }
-                                .buttonStyle(.bordered).disabled(model.isBusy)
+                                .buttonStyle(.glass).disabled(model.isBusy)
                         }
                         if showsPairingFeedback {
                             Text(model.connectionMessage).font(.caption).foregroundStyle(.secondary)
@@ -73,7 +73,7 @@ struct OnboardingView: View {
                                 .font(.subheadline).foregroundStyle(EiscueStyle.accent)
                         } else {
                             Button(text("setup.enableConnection")) { Task { await model.startLocalTunnel() } }
-                                .buttonStyle(.bordered).disabled(model.isBusy)
+                                .buttonStyle(.glass).disabled(model.isBusy)
                         }
                         if let error = model.localTunnel.lastError ?? model.errorMessage {
                             Text(error).font(.caption).foregroundStyle(.red)
@@ -93,7 +93,7 @@ struct OnboardingView: View {
                     Text(text(step == 2 ? "setup.finish" : step == 0 ? "setup.begin" : model.hasConfiguredModel ? "setup.continue" : "setup.configureLater"))
                         .fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent).controlSize(.large)
+                .buttonStyle(.glassProminent).controlSize(.large)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("onboardingContinueButton")
                 .frame(maxWidth: 520).padding(.horizontal, 28).padding(.vertical, 16)
