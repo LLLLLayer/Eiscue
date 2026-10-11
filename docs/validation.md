@@ -2,6 +2,16 @@
 
 日期：2026-10-11。Xcode 26.3 / Swift 6.2.4；App 与内置扩展最低 iOS / iPadOS 26.0。
 
+## 真机语音闪退修正（同日）
+
+指定 iPhone 14 Pro 的四份 Eiscue 崩溃报告确认：首次语音授权在系统后台队列回调，后续三次在 AVAudioEngine 音频队列收到首帧时，均触发 `_dispatch_assert_queue_fail`。原因是旧版 Swift 6 代码在 `@MainActor` 方法中创建了未标记并发边界的 Objective-C 回调，编译器为它们插入主线程执行器检查。识别结果回调也有同样的潜在问题；在回调内部启动 `Task { @MainActor ... }` 无法避免入口处先发生断言。
+
+修正将授权、音频、识别结果的回调明确创建为不隔离于主线程的可发送闭包，只有提取后的识别文本和状态进入 MainActor 更新 UI。回归直接在后台队列调用生产使用的回调，覆盖此前只验证会话代次、未执行系统回调的缺口。原始崩溃报告留在本地，没有提交设备日志。
+
+验证结果：74 项 App 单元测试通过，包含 4 项新增后台回调用例；Release 构建、签名验证通过。Release 优化编译的 SIL 复核确认三种回调不再插入错误的 MainActor 入口断言。修正版正常 App 已覆盖安装并启动到指定 iPhone 14 Pro。此次没有采集真人音频，实际听写效果仍由用户确认。
+
+本地产物：`.build/results/SpeechCallbackFixTests.xcresult`、`/tmp/eiscue-speech-callback-tests.log`、`/tmp/eiscue-speech-fix-release.log`、`/tmp/eiscue-speech-fix-install.log`、`/tmp/eiscue-speech-fix-launch.log`。
+
 ## 对话布局、附件、语音与 iPad 更新（同日）
 
 - 移除底部 Tab，改为左侧历史与设置、右上角设备状态。历史支持长按置顶、移动和删除；iPad 宽窗口常驻侧栏，窄窗口使用侧滑抽屉。

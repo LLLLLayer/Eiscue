@@ -146,7 +146,7 @@ final class SpeechInputController {
         let authorization: SFSpeechRecognizerAuthorizationStatus
         if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
             authorization = await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
+                SFSpeechRecognizer.requestAuthorization(SpeechInputCallbacks.authorization(continuation))
             }
         } else { authorization = SFSpeechRecognizer.authorizationStatus() }
         try Task.checkCancellation()
@@ -184,23 +184,17 @@ final class SpeechInputController {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw Failure.microphoneUnavailable }
-        input.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in pipe.append(buffer) }
+        input.installTap(onBus: 0, bufferSize: 1024, format: nil, block: SpeechInputCallbacks.audioTap(pipe: pipe))
         hasTap = true
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            // Only Sendable values cross from the Speech callback to MainActor.
-            let text = result?.bestTranscription.formattedString
-            let final = result?.isFinal == true
-            let failed = error != nil
-            Task { @MainActor in
-                guard let self, self.gate.accepts(token) else { return }
-                if let text { self.transcript = text }
-                if final { self.complete(token: token) }
-                else if failed {
-                    if self.state == .finishing || !self.transcript.isEmpty { self.complete(token: token) }
-                    else { self.fail(.unavailable) }
-                }
+        recognitionTask = recognizer.recognitionTask(with: request, resultHandler: SpeechInputCallbacks.recognition { [weak self] update in
+            guard let self, self.gate.accepts(token) else { return }
+            if let text = update.text { self.transcript = text }
+            if update.isFinal { self.complete(token: token) }
+            else if update.hasError {
+                if self.state == .finishing || !self.transcript.isEmpty { self.complete(token: token) }
+                else { self.fail(.unavailable) }
             }
-        }
+        })
         engine.prepare()
         try engine.start()
         state = .recording
@@ -272,6 +266,39 @@ final class SpeechInputController {
     }
 }
 
+/// These Objective-C APIs do not annotate their blocks as Sendable. Creating
+/// their closures in the controller would inherit MainActor and trap before
+/// the callback body runs on a Speech or real-time audio queue. Keep the actual
+/// production callbacks explicitly nonisolated and Sendable.
+enum SpeechInputCallbacks {
+    struct RecognitionUpdate: Sendable, Equatable {
+        let text: String?
+        let isFinal: Bool
+        let hasError: Bool
+    }
+
+    nonisolated static func authorization(
+        _ continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>
+    ) -> @Sendable (SFSpeechRecognizerAuthorizationStatus) -> Void {
+        { @Sendable status in continuation.resume(returning: status) }
+    }
+
+    nonisolated static func audioTap(pipe: SpeechAudioPipe) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+        { @Sendable buffer, _ in pipe.append(buffer) }
+    }
+
+    nonisolated static func recognition(
+        onUpdate: @escaping @MainActor @Sendable (RecognitionUpdate) -> Void
+    ) -> @Sendable (SFSpeechRecognitionResult?, (any Error)?) -> Void {
+        { @Sendable result, error in
+            // Speech objects stay on their callback queue; only values cross.
+            let update = RecognitionUpdate(text: result?.bestTranscription.formattedString,
+                                           isFinal: result?.isFinal == true, hasError: error != nil)
+            Task { @MainActor in onUpdate(update) }
+        }
+    }
+}
+
 /// Identity gates delayed authorization, recognition, and timeout callbacks.
 struct SpeechInputSessionGate {
     enum Mode { case toggle, hold }
@@ -289,7 +316,7 @@ struct SpeechInputSessionGate {
 
 /// The audio callback is outside MainActor. Serialize append/end so a late
 /// buffer after a stop cannot reopen or extend a recognition request.
-private final class SpeechAudioPipe: @unchecked Sendable {
+final class SpeechAudioPipe: @unchecked Sendable {
     private let lock = NSLock()
     private let request: SFSpeechAudioBufferRecognitionRequest
     private var ended = false
