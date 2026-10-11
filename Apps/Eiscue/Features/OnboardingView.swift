@@ -43,8 +43,19 @@ struct OnboardingView: View {
                         Text(text("setup.modelHint")).font(.subheadline).foregroundStyle(.secondary)
                     } else {
                         symbol(model.device.platform == .iPadOS ? "ipad" : "iphone.gen3")
-                        heading("setup.deviceSetup", "setup.deviceSetupDetail")
+                        if model.deviceConnectionMethod == .bluetoothBoard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(text("setup.deviceSetup")).font(.largeTitle.bold())
+                                Text(String(localized: "bluetooth.powerDetail", table: "Bluetooth"))
+                                    .font(.body).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            heading("setup.deviceSetup", "setup.deviceSetupDetail")
+                        }
                         DeviceConnectionMethodPicker()
+                        if model.deviceConnectionMethod == .bluetoothBoard {
+                            BluetoothBoardSetupView()
+                        } else {
                         row("1.circle", "setup.developerMode", "setup.developerModeDetail")
                         row("2.circle", "setup.pairing", model.deviceConnectionMethod != .localVPN ? "setup.boardPairingDetail" : model.supportsSystemPairing ? "setup.systemPairingDetail" : "setup.usbPairingDetail")
                         if !model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN {
@@ -89,6 +100,7 @@ struct OnboardingView: View {
                         }
                         if let error = (model.deviceConnectionMethod == .localVPN ? model.localTunnel.lastError : nil) ?? model.errorMessage {
                             Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.primary)
+                        }
                         }
                         Text(text("setup.deviceLater")).font(.subheadline).foregroundStyle(.secondary)
                     }

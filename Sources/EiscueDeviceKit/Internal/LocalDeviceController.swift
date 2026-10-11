@@ -171,6 +171,7 @@ import OSLog
         let token = epoch
         busy = true
         failure = switch method {
+        case .bluetoothBoard: throw DeviceControlError.unsupported
         case .localVPN: String(localized: "device.status.discovering", defaultValue: "Discovering the local VPN connection.", bundle: .module)
         case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB board.", bundle: .module)
         case .wirelessBoard: String(localized: "device.wireless.discovering", defaultValue: "Connecting to the wireless board.", bundle: .module)
@@ -187,6 +188,7 @@ import OSLog
             try await withTaskCancellationHandler {
                 let authorization = ExistingSessionAuthorization(verifyExistingIdentity: true, screen: true, screenVideoStream: true, input: true)
                 switch method {
+                case .bluetoothBoard: throw DeviceControlError.unsupported
                 case .localVPN:
                     guard let vpn else { throw LocalVPNError.invalidConfiguration }
                     let discovery = dependencies.makeVPNDiscovery()

@@ -43,6 +43,7 @@ targets:
         NSSpeechRecognitionUsageDescription: "Transcribe speech on this device without sending a message automatically."
         NSLocalNetworkUsageDescription: "Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board."
         CFBundleLocalizations: [en, zh-Hans]
+        UIBackgroundModes: [bluetooth-central]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSBonjourServices:
@@ -50,6 +51,8 @@ targets:
           - _remotepairing-pairable-host._tcp
     dependencies:
       - target: EiscueTunnel
+        embed: true
+      - target: EiscueBroadcast
         embed: true
       - package: EiscueKit
         product: EiscueAgentKit
@@ -91,6 +94,33 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.app.tunnel
         DEVELOPMENT_TEAM: Q2T8TN4ZW6
         CODE_SIGN_ENTITLEMENTS: Apps/EiscueTunnel/EiscueTunnel.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+
+  EiscueBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Apps/EiscueBroadcast
+      # Compile only the Foundation frame store, without device-control backends.
+      - path: Sources/EiscueDeviceKit/ScreenBroadcast/ScreenBroadcastStore.swift
+    info:
+      path: Apps/EiscueBroadcast/Info.plist
+      properties:
+        CFBundleDisplayName: Eiscue
+        CFBundleLocalizations: [en, zh-Hans]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          NSExtensionAttributes:
+            RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.app.broadcast
+        DEVELOPMENT_TEAM: Q2T8TN4ZW6
+        CODE_SIGN_ENTITLEMENTS: Apps/EiscueBroadcast/EiscueBroadcast.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES

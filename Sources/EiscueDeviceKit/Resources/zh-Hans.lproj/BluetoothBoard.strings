@@ -1,0 +1,13 @@
+"bluetooth.unavailable" = "请开启蓝牙后重新连接。";
+"bluetooth.denied" = "请在系统设置中允许 Eiscue 使用蓝牙后重试。";
+"bluetooth.multiple-boards" = "发现多个蓝牙开发板，请只保留要使用的开发板通电后重试。";
+"bluetooth.not-found" = "蓝牙开发板没有响应，请确认已配置好的开发板就在附近并已通电，然后重试。";
+"bluetooth.firmware-required" = "开发板未提供所需的蓝牙服务，请使用已配置 Eiscue 蓝牙固件的开发板。";
+"bluetooth.disconnected" = "蓝牙开发板已断开，请检查供电后重新连接。";
+"bluetooth.busy" = "蓝牙开发板正在执行另一项操作，请等待完成。";
+"bluetooth.timed-out" = "蓝牙开发板未及时确认操作，请先查看屏幕再重新连接。";
+"bluetooth.delivery-unknown" = "操作可能已经发送到设备，因此不会重复执行。请先查看屏幕再重新连接。";
+"bluetooth.invalid-command" = "蓝牙开发板暂不支持这项输入。";
+"bluetooth.pairing-required" = "蓝牙配对尚未完成，请保持设备解锁，并在系统询问时允许配对。";
+"bluetooth.input-unavailable" = "蓝牙输入尚未就绪，请检查开发板的蓝牙配对。使用鼠标操作还需开启辅助触控。";
+"bluetooth.storage-unavailable" = "暂时无法保存蓝牙连接状态，请解锁设备后重试。";

@@ -74,6 +74,10 @@ final class AppModel {
     @ObservationIgnored let messageAttachments: MessageAttachments
     @ObservationIgnored var agent: AgentClient?
     @ObservationIgnored var deviceClient = DeviceClient()
+    @ObservationIgnored var networkDeviceClient: DeviceClient?
+    @ObservationIgnored let bluetoothController = BluetoothDeviceController()
+    var bluetoothRevision = 0
+    @ObservationIgnored var bluetoothMonitor: Task<Void, Never>?
     let localTunnel = LocalTunnelManager()
     let taskNotifications: TaskNotificationManager
     @ObservationIgnored var deviceTools: DeviceToolSession?
@@ -112,7 +116,7 @@ final class AppModel {
         if let suppliedPreferences { defaults = suppliedPreferences }
         storageDirectory = directory
         preferences = defaults
-        deviceConnectionMethod = DeviceConnectionMethod(rawValue: defaults.string(forKey: "deviceConnectionMethod") ?? "") ?? .localVPN
+        deviceConnectionMethod = DeviceConnectionMethod(rawValue: defaults.string(forKey: "deviceConnectionMethod") ?? "") ?? .bluetoothBoard
         showsOnboarding = defaults.integer(forKey: "onboardingVersion") < 1
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
@@ -130,6 +134,14 @@ final class AppModel {
         let current = UIDevice.current
         device = DeviceDescriptor(id: "local", name: current.userInterfaceIdiom == .pad ? String(localized: "device.this_ipad", table: "Runtime") : String(localized: "device.this_iphone", table: "Runtime"),
                                   platform: current.userInterfaceIdiom == .pad ? .iPadOS : .iOS, systemVersion: current.systemVersion)
+        if deviceConnectionMethod == .bluetoothBoard {
+            networkDeviceClient = deviceClient
+            deviceClient = DeviceClient(controller: bluetoothController)
+        }
+        bluetoothController.onChange = { [weak self] in
+            guard let self else { return }
+            bluetoothRevision += 1
+        }
         do { try background.register() } catch { connectionMessage = error.localizedDescription }
         localTunnel.onDisconnect = { [weak self] in
             guard let self, self.activeDeviceConnectionMethod == .localVPN || self.isPairing else { return }
@@ -217,6 +229,7 @@ final class AppModel {
             do { try await localTunnel.refresh() }
             catch { connectionMessage = error.localizedDescription }
             await refreshDeviceStatus()
+            startBluetoothMonitor()
             refreshPairingTransfer()
             #if DEBUG
             await runRequestedDeviceSetupCheck()
@@ -402,7 +415,9 @@ final class AppModel {
             }
             guard let key = try credentials.read("model-key") else { throw SettingsError.missingKey }
             let config = try modelSettings.configuration(apiKey: key)
-            let tools = DeviceToolSession(client: deviceClient, scope: scope, timeoutSeconds: modelSettings.timeoutSeconds,
+            let capabilities: Set<DeviceCapability>
+            if case .ready(let available) = await deviceClient.status() { capabilities = available } else { capabilities = [] }
+            let tools = DeviceToolSession(capabilities: capabilities, client: deviceClient, scope: scope, timeoutSeconds: modelSettings.timeoutSeconds,
                                           log: { [weak self] kind, detail in try await self?.logEvent(kind, detail) },
                                           onUnknown: { [weak self] in await self?.stop(expectedRunID: runID, reason: String(localized: "run.unknown_delivery", table: "Runtime")) })
             deviceTools = tools
@@ -517,7 +532,16 @@ final class AppModel {
         deviceTools?.stop()
         activeRun?.interruptOpenActivities()
         updateTaskStatus(isFinishing: true)
-        if activeRun?.scope != .chat { await releaseDeviceConnection() }
+        if activeRun?.scope != .chat {
+            if deviceConnectionMethod == .bluetoothBoard, activeRun?.state == .completed {
+                do { try await bluetoothController.finishTask() }
+                catch {
+                    activeRun?.state = .interrupted
+                    activeRun?.detail = safeError(error)
+                    await releaseDeviceConnection()
+                }
+            } else { await releaseDeviceConnection() }
+        }
         activeRun?.endedAt = Date()
         if activeRun?.state == .interrupted { interruptedConversationIDs.insert(conversationID) }
         else { interruptedConversationIDs.remove(conversationID) }
@@ -584,6 +608,7 @@ final class AppModel {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--owned-device-check") { return }
         #endif
+        guard deviceConnectionMethod != .bluetoothBoard else { return }
         let runID = activeRun?.id
         Task { [weak self] in
             if delay > .zero {

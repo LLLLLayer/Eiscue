@@ -5,10 +5,10 @@ import XCTest
 
 @MainActor
 final class DeviceConnectionMethodTests: XCTestCase {
-    func testExistingPreferencesDefaultToAppConnectionAndSelectionPersists() async throws {
-        let fixture = try Fixture()
+    func testNewPreferencesDefaultToBluetoothAndSelectionPersists() async throws {
+        let fixture = try Fixture(savedMethod: nil)
         let model = fixture.model
-        XCTAssertEqual(model.deviceConnectionMethod, .localVPN)
+        XCTAssertEqual(model.deviceConnectionMethod, .bluetoothBoard)
         await model.selectDeviceConnectionMethod(.usbBoard)
         XCTAssertEqual(model.deviceConnectionMethod, .usbBoard)
         XCTAssertEqual(fixture.preferences.string(forKey: "deviceConnectionMethod"), "usbBoard")
@@ -17,9 +17,36 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertNil(model.localTunnel.lastError, "Selecting a board must not try to start the VPN on a simulator.")
     }
 
-    func testUnknownSavedMethodSafelyDefaultsToPreviousVPNMethod() throws {
+    func testUnknownSavedMethodSafelyDefaultsToBluetooth() throws {
         let fixture = try Fixture(savedMethod: "future-unsupported-method")
-        XCTAssertEqual(fixture.model.deviceConnectionMethod, .localVPN)
+        XCTAssertEqual(fixture.model.deviceConnectionMethod, .bluetoothBoard)
+    }
+
+    func testNetworkMethodChangesKeepTheInjectedController() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard")
+        await fixture.model.connectDevice()
+        await fixture.model.selectDeviceConnectionMethod(.localVPN)
+        await fixture.model.selectDeviceConnectionMethod(.usbBoard)
+        await fixture.model.connectDevice()
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
+        XCTAssertEqual(calls.disconnects, 2)
+        XCTAssertTrue(fixture.model.isDeviceReady)
+        await fixture.model.disconnectDevice()
+    }
+
+    func testBluetoothRoundTripRestoresTheInjectedNetworkController() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard")
+        await fixture.model.connectDevice()
+        await fixture.model.selectDeviceConnectionMethod(.bluetoothBoard)
+        XCTAssertFalse(fixture.model.isDeviceReady)
+        await fixture.model.selectDeviceConnectionMethod(.usbBoard)
+        await fixture.model.connectDevice()
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
+        XCTAssertEqual(calls.disconnects, 1)
+        XCTAssertTrue(fixture.model.isDeviceReady)
+        await fixture.model.disconnectDevice()
     }
 
     func testBoardPrimaryActionNeverStartsLocalVPNAndUsesOnlyBoardKitAPI() async throws {
@@ -358,7 +385,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
     let controller: AppConnectionRecordingController
     let model: AppModel
 
-    init(savedMethod: String? = nil, failure: DeviceControlError? = nil,
+    init(savedMethod: String? = "localVPN", failure: DeviceControlError? = nil,
          grantsControl: Bool = true, suspendsConnection: Bool = false) throws {
         suite = "DeviceConnectionMethodTests.\(UUID().uuidString)"
         preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -366,7 +393,9 @@ final class DeviceConnectionMethodTests: XCTestCase {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
         controller = AppConnectionRecordingController(failure: failure, grantsControl: grantsControl, suspendsConnection: suspendsConnection)
         model = AppModel(storageDirectory: directory, preferences: preferences)
-        model.deviceClient = DeviceClient(controller: controller)
+        let client = DeviceClient(controller: controller)
+        if model.deviceConnectionMethod == .bluetoothBoard { model.networkDeviceClient = client }
+        else { model.deviceClient = client }
     }
     deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
 }

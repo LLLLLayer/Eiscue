@@ -36,10 +36,11 @@ bool eiscue_parse_action(const uint8_t command[EISCUE_COMMAND_SIZE], eiscue_acti
     if (command[0] != EISCUE_PROTOCOL_VERSION) return false;
     switch (command[1]) {
     case EISCUE_STOP:
+    case EISCUE_INFO:
         if (!zero_tail(command, 4)) return false;
-        action->reports[0] = (eiscue_report){.kind=EISCUE_MOUSE_REPORT, .length=4};
-        action->reports[1] = (eiscue_report){.kind=EISCUE_KEYBOARD_REPORT, .length=8};
-        action->count=2; return true;
+        // The peripheral supplies releases from current state, so releasing
+        // an absolute button preserves its last coordinates.
+        return true;
     case EISCUE_MOVE: {
         int16_t x=signed_le(command+4), y=signed_le(command+6);
         if (x < -127 || x > 127 || y < -127 || y > 127 || !zero_tail(command, 9) || command[8] == 128) return false;
@@ -53,10 +54,15 @@ bool eiscue_parse_action(const uint8_t command[EISCUE_COMMAND_SIZE], eiscue_acti
         action->reports[1]=(eiscue_report){.kind=EISCUE_MOUSE_REPORT, .length=4};
         action->count=2; return true;
     case EISCUE_ASCII:
-    case EISCUE_KEY: {
-        if (!zero_tail(command,5)) return false;
+    case EISCUE_KEY:
+    case EISCUE_KEY_COMBO: {
         uint8_t usage=0,modifier=0;
-        if (command[1]==EISCUE_ASCII) {
+        if (command[1]==EISCUE_KEY_COMBO) {
+            if (command[4]!=0x08 || (command[5]!=0x0B && command[5]!=0x19) || !zero_tail(command,6)) return false;
+            modifier=command[4];usage=command[5];
+        } else if (!zero_tail(command,5)) {
+            return false;
+        } else if (command[1]==EISCUE_ASCII) {
             if (!ascii_key(command[4], &usage, &modifier)) return false;
         } else {
             const uint8_t keys[]={0,0x28,0x4A,0x2A,0x2B,0x29,0x2C};
@@ -67,6 +73,11 @@ bool eiscue_parse_action(const uint8_t command[EISCUE_COMMAND_SIZE], eiscue_acti
         action->reports[1]=(eiscue_report){.kind=EISCUE_KEYBOARD_REPORT, .length=8};
         action->count=2; return true;
     }
+    case EISCUE_ABS_POINT:
+        if (command[5]>0x7F || command[7]>0x7F || command[8]>1 || !zero_tail(command,9)) return false;
+        action->reports[0]=(eiscue_report){.kind=EISCUE_ABSOLUTE_REPORT, .length=5,
+            .bytes={command[8],command[4],command[5],command[6],command[7]}};
+        action->count=1;return true;
     default: return false;
     }
 }

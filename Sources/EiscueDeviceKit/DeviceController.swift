@@ -25,6 +25,7 @@ public protocol DeviceController: Sendable {
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws
     func connectUSBBoard() async throws
     func connectWirelessBoard() async throws
+    func connectBluetoothBoard() async throws
     func disconnect() async
     func captureScreenshot() async throws -> DeviceScreenshot
     func tap(at point: DevicePoint, frameID: UUID) async throws
@@ -46,6 +47,7 @@ public extension DeviceController {
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws { throw DeviceControlError.unsupported }
     func connectUSBBoard() async throws { throw DeviceControlError.unsupported }
     func connectWirelessBoard() async throws { throw DeviceControlError.unsupported }
+    func connectBluetoothBoard() async throws { throw DeviceControlError.unsupported }
     func disconnect() async {}
     func captureScreenshot() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
     func tap(at point: DevicePoint, frameID: UUID) async throws { throw DeviceControlError.notConnected }

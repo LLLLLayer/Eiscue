@@ -5,6 +5,7 @@ import Foundation
 /// All native device tools pass through this per-run gate, including resumed runs.
 @MainActor
 final class DeviceToolSession {
+    private let capabilities: Set<DeviceCapability>
     private let client: DeviceClient
     private let scope: TaskScope
     private let deadline: ContinuousClock.Instant
@@ -14,9 +15,10 @@ final class DeviceToolSession {
     private var latestFrame: UUID?
     private var isExecuting = false
 
-    init(client: DeviceClient, scope: TaskScope, timeoutSeconds: Int,
+    init(capabilities: Set<DeviceCapability> = Set(DeviceCapability.allCases), client: DeviceClient, scope: TaskScope, timeoutSeconds: Int,
          log: @escaping @MainActor (String, String) async throws -> Void,
          onUnknown: @escaping @MainActor () async -> Void) {
+        self.capabilities = capabilities
         self.client = client; self.scope = scope
         deadline = .now.advanced(by: .seconds(timeoutSeconds))
         self.log = log; self.onUnknown = onUnknown
@@ -48,7 +50,12 @@ final class DeviceToolSession {
                 tool("device_home", "Return to the device home screen. Observe again afterward.", properties: [:], required: [])
             ]
         }
-        return result
+        let requirements: [String: DeviceCapability] = [
+            "device_screenshot": .screenshot, "device_list_apps": .listApplications,
+            "device_tap": .tap, "device_swipe": .swipe, "device_type_text": .textInput,
+            "device_launch_app": .launchApplication, "device_home": .home
+        ]
+        return result.filter { requirements[$0.name].map { capabilities.contains($0) } ?? false }
     }
 
     private func tool(_ name: String, _ description: String, properties: [String: AgentJSONValue], required: [String], sideEffect: Bool = true) -> AgentTool {

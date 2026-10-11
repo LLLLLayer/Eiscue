@@ -1,0 +1,8 @@
+"bluetooth.connect" = "Connect your Bluetooth board first.";
+"bluetooth.share" = "Start screen sharing in Eiscue, then return to the device page.";
+"bluetooth.calibrate" = "Run the device-control check to verify clicking positions.";
+"bluetooth.hidMissing" = "The board is connected but its input service is not ready. Turn on AssistiveTouch. If its firmware was updated, forget Eiscue BLE in Bluetooth settings and pair it again.";
+"bluetooth.clipboard" = "Could not prepare the text. Return to Eiscue and try again.";
+"bluetooth.interrupted" = "The input may have been partially delivered. Inspect the screen before starting a new task.";
+"bluetooth.appGroupUnavailable" = "Screen sharing storage is unavailable. Install the latest signed Eiscue build.";
+"bluetooth.fullScreenRequired" = "Open Eiscue full screen and keep its orientation steady, then run the check again.";

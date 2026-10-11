@@ -1,0 +1,448 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "bluetooth.method": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth board"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "蓝牙开发板"
+          }
+        }
+      }
+    },
+    "bluetooth.connectionDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep your usual Wi-Fi. Power the board and connect over Bluetooth."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续使用平常的 Wi-Fi，给开发板供电后通过蓝牙连接。"
+          }
+        }
+      }
+    },
+    "bluetooth.powerDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use an ESP32-C3 board configured with Eiscue Bluetooth firmware. Connect its USB cable to a charger or computer for power. No cable to your iPhone is needed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用已配置 Eiscue 蓝牙固件的 ESP32-C3 开发板。USB 线接充电器或电脑供电即可，不用插到 iPhone。"
+          }
+        }
+      }
+    },
+    "bluetooth.assistiveTouch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on Settings → Accessibility → Touch → AssistiveTouch. Keep Bluetooth on and allow the pairing prompt."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开「设置 → 辅助功能 → 触控 → 辅助触控」。保持蓝牙开启，出现配对提示时点「配对」。"
+          }
+        }
+      }
+    },
+    "bluetooth.connectTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect the board"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接开发板"
+          }
+        }
+      }
+    },
+    "bluetooth.connectButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Bluetooth board"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接蓝牙开发板"
+          }
+        }
+      }
+    },
+    "bluetooth.connecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接…"
+          }
+        }
+      }
+    },
+    "bluetooth.disconnect": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "断开连接"
+          }
+        }
+      }
+    },
+    "bluetooth.shareTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share your screen"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启屏幕共享"
+          }
+        }
+      }
+    },
+    "bluetooth.shareDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap the recording icon, then choose Start Broadcast in the system panel. Eiscue uses your screen to guide the AI; screenshots are sent to your configured model only during device tasks. Microphone audio is not captured."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击下方录屏图标，在系统面板中点「开始直播」。Eiscue 会读取屏幕，仅在设备任务中将截图发送给你配置的模型；不会录制麦克风声音。"
+          }
+        }
+      }
+    },
+    "bluetooth.stopSharing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop screen sharing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止屏幕共享"
+          }
+        }
+      }
+    },
+    "bluetooth.shareButtonHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open system screen sharing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统屏幕共享"
+          }
+        }
+      }
+    },
+    "bluetooth.verifyTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check device control"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证设备操作"
+          }
+        }
+      }
+    },
+    "bluetooth.verifyDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A short check confirms where the board clicks and whether it can enter text. Leave the screen untouched during the check. Repeat after rotating the device or reconnecting."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过简短检查，确认开发板能点中位置、输入文字。检查期间请不要触碰屏幕；旋转设备或重新连接后需再检查一次。"
+          }
+        }
+      }
+    },
+    "bluetooth.verifyButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start check"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始检查"
+          }
+        }
+      }
+    },
+    "bluetooth.verifyAgain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check again"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新检查"
+          }
+        }
+      }
+    },
+    "bluetooth.readyDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready. Return to chat, tap + and enable Allow AI to control device, then describe your task."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已就绪。回到对话，点输入框左侧「+」，开启「允许 AI 操作设备」，再说出你的任务。"
+          }
+        }
+      }
+    },
+    "bluetooth.verifying": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking clicks and text input…\nPlease leave the screen untouched."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查点击和文字输入…\n请不要触碰屏幕。"
+          }
+        }
+      }
+    },
+    "bluetooth.keyboardCheck": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking text input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查文字输入"
+          }
+        }
+      }
+    },
+    "bluetooth.cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
+    "bluetooth.done": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        }
+      }
+    },
+    "bluetooth.validationPassed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device control is ready"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备操作已就绪"
+          }
+        }
+      }
+    },
+    "bluetooth.validationFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The check did not finish. Keep AssistiveTouch on and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查未完成。请保持辅助触控开启，再试一次。"
+          }
+        }
+      }
+    },
+    "bluetooth.validationInterrupted": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep this page open and keep the device in the same orientation."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请保持此页面打开，不要旋转设备。"
+          }
+        }
+      }
+    },
+    "bluetooth.keyboardFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text input was not received. Check that the Bluetooth keyboard is paired."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未收到文字输入，请确认蓝牙键盘已配对。"
+          }
+        }
+      }
+    },
+    "bluetooth.stopped": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device connection or screen sharing ended. The task has stopped."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备连接或屏幕共享已结束，任务已停止。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

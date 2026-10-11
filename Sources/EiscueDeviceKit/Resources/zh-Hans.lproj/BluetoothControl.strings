@@ -1,0 +1,8 @@
+"bluetooth.connect" = "请先连接蓝牙开发板。";
+"bluetooth.share" = "请在 Eiscue 中开启屏幕共享，再回到设备页。";
+"bluetooth.calibrate" = "请完成设备操作检查，确认点击位置。";
+"bluetooth.hidMissing" = "开发板已连接，但操作服务尚未就绪。请开启辅助触控；若刚升级过固件，请在蓝牙设置中忽略 Eiscue BLE 后重新配对。";
+"bluetooth.clipboard" = "无法准备输入文字，请回到 Eiscue 后再试。";
+"bluetooth.interrupted" = "操作可能已部分执行。请先检查屏幕，再开始新任务。";
+"bluetooth.appGroupUnavailable" = "屏幕共享暂不可用，请安装最新的 Eiscue 签名版本。";
+"bluetooth.fullScreenRequired" = "请将 Eiscue 以全屏打开并保持方向不变，再重新检查。";

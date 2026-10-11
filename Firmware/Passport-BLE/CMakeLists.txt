@@ -2,4 +2,4 @@
 cmake_minimum_required(VERSION 3.16)
 set(COMPONENTS main)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(eiscue_passport_ble VERSION 0.1.0)
+project(eiscue_passport_ble VERSION 0.2.0)

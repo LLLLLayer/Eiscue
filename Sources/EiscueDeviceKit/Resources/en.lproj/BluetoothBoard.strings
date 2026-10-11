@@ -1,0 +1,13 @@
+"bluetooth.unavailable" = "Turn on Bluetooth and try connecting again.";
+"bluetooth.denied" = "Allow Eiscue to use Bluetooth in Settings, then try again.";
+"bluetooth.multiple-boards" = "More than one Bluetooth board was found. Keep only the intended board powered on and try again.";
+"bluetooth.not-found" = "No Bluetooth board responded. Check that the configured board has power and is nearby, then try again.";
+"bluetooth.firmware-required" = "This board does not provide the required Bluetooth service. Use a board configured with Eiscue Bluetooth firmware.";
+"bluetooth.disconnected" = "The Bluetooth board is disconnected. Check its power and reconnect.";
+"bluetooth.busy" = "The Bluetooth board is performing another operation. Wait for it to finish.";
+"bluetooth.timed-out" = "The Bluetooth board did not confirm the operation in time. Check the screen before reconnecting.";
+"bluetooth.delivery-unknown" = "The operation may have reached the device. It will not be repeated. Check the screen before reconnecting.";
+"bluetooth.invalid-command" = "The Bluetooth board does not support this input.";
+"bluetooth.pairing-required" = "Bluetooth pairing is incomplete. Keep this device unlocked and allow pairing when the system asks.";
+"bluetooth.input-unavailable" = "Bluetooth input is not ready. Check the board's Bluetooth pairing and enable AssistiveTouch for mouse input.";
+"bluetooth.storage-unavailable" = "The Bluetooth connection state could not be saved. Unlock this device and try again.";

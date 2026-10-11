@@ -13,10 +13,26 @@ struct DeviceView: View {
         Group {
             ScrollView {
                 VStack(spacing: 24) {
-                    deviceHeader
+                    if model.deviceConnectionMethod == .bluetoothBoard {
+                        HStack(spacing: 12) {
+                            Image(systemName: model.device.platform == .iPadOS ? "ipad" : "iphone.gen3")
+                                .font(.title)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(model.device.name).font(.headline)
+                                Text("\(model.device.platform == .iPadOS ? "iPadOS" : "iOS") \(model.device.systemVersion)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            StatusLabel(title: model.connectionIndicator.title, color: model.connectionIndicator.color)
+                        }.padding(.vertical, 8)
+                    } else { deviceHeader }
                     connectionMethod
-                    connectionCard
-                    advancedOptions
+                    if model.deviceConnectionMethod == .bluetoothBoard {
+                        BluetoothBoardSetupView()
+                    } else {
+                        connectionCard
+                        advancedOptions
+                    }
                 }
                 .frame(maxWidth: 600)
                 .padding(24)
@@ -214,6 +230,7 @@ struct DeviceView: View {
 
     private var connectionDetail: String {
         switch model.deviceConnectionMethod {
+        case .bluetoothBoard: String(localized: "bluetooth.connectionDetail", table: "Bluetooth")
         case .localVPN: String(localized: "device.appConnectionDetail")
         case .usbBoard: String(localized: "device.boardConnectionDetail")
         case .wirelessBoard: String(localized: "device.wirelessBoardConnectionDetail")
@@ -276,11 +293,12 @@ struct DeviceConnectionMethodPicker: View {
             get: { model.deviceConnectionMethod },
             set: { method in Task { await model.selectDeviceConnectionMethod(method) } }
         )) {
+            Text(String(localized: "bluetooth.method", table: "Bluetooth")).tag(DeviceConnectionMethod.bluetoothBoard)
             Text("device.appConnectionMethod").tag(DeviceConnectionMethod.localVPN)
             Text("device.boardConnectionMethod").tag(DeviceConnectionMethod.usbBoard)
             Text("device.wirelessBoardConnectionMethod").tag(DeviceConnectionMethod.wirelessBoard)
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.menu)
         .disabled(model.isChangingDeviceConnectionMethod || model.isSaving || model.isStopping || model.isManagingTunnel || model.isStoppingTunnel || model.isImportingAttachments)
         .accessibilityIdentifier("deviceConnectionMethodPicker")
     }

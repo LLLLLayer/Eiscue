@@ -3,6 +3,7 @@ import Foundation
 /// The host selects one transport explicitly. Selection never starts a VPN,
 /// changes the default route, or falls back to the other transport.
 public enum DeviceConnectionMethod: String, Codable, Sendable, CaseIterable {
+    case bluetoothBoard
     case localVPN
     case usbBoard
     case wirelessBoard

@@ -56,7 +56,7 @@ static int gap_event(struct ble_gap_event *event,void *context) {
     case BLE_GAP_EVENT_DISCONNECT:
         eiscue_ble_on_disconnect();ESP_LOGI(TAG,"disconnected reason=%d",event->disconnect.reason);advertise();return 0;
     case BLE_GAP_EVENT_ENC_CHANGE:eiscue_ble_on_security_change();return 0;
-    case BLE_GAP_EVENT_SUBSCRIBE:eiscue_ble_on_subscribe(event->subscribe.attr_handle,event->subscribe.cur_notify);return 0;
+    case BLE_GAP_EVENT_SUBSCRIBE:eiscue_ble_on_subscribe(event->subscribe.conn_handle,event->subscribe.attr_handle,event->subscribe.cur_notify);return 0;
     case BLE_GAP_EVENT_ADV_COMPLETE:advertise();return 0;
     case BLE_GAP_EVENT_REPEAT_PAIRING:
         // Do not silently replace an existing bond. Test re-pairing requires
@@ -69,6 +69,10 @@ static void host_reset(int reason) {eiscue_ble_on_disconnect();ESP_LOGW(TAG,"hos
 static void host_sync(void) {
     int rc=ble_hs_util_ensure_addr(0);if(rc){ESP_LOGE(TAG,"address init rc=%d",rc);return;}
     rc=ble_hs_id_infer_auto(0,&address_type);if(rc){ESP_LOGE(TAG,"address type rc=%d",rc);return;}
+    // The firmware may have updated its HID map and GATT handles while an
+    // iPhone retained the old bonded cache. The standard GATT indication marks
+    // the database changed for subscribed peers, including disconnected bonds.
+    ble_svc_gatt_changed(0x0001,0xFFFF);
     advertise();
 }
 static void host_task(void *arg) {(void)arg;nimble_port_run();nimble_port_freertos_deinit();}
@@ -88,6 +92,6 @@ void app_main(void) {
     assert(ble_svc_gap_device_appearance_set(0x03C2)==0);
     assert(eiscue_ble_services_init()==0);
     ble_store_config_init();
-    ESP_LOGI(TAG,"Passport BLE v0.1.0; no Wi-Fi startup; free heap=%lu",(unsigned long)esp_get_free_heap_size());
+    ESP_LOGI(TAG,"Eiscue BLE board v0.2.0; no Wi-Fi startup; free heap=%lu",(unsigned long)esp_get_free_heap_size());
     nimble_port_freertos_init(host_task);
 }

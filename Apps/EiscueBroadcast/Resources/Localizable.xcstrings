@@ -1,0 +1,20 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "broadcast.ended" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screen sharing ended." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕共享已结束。" } }
+      }
+    },
+    "broadcast.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Screen sharing stopped. Unlock your device and start sharing again in Eiscue." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "屏幕共享已停止。请解锁设备，然后回到 Eiscue 重新开启。" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

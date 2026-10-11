@@ -9,7 +9,9 @@ struct EiscueApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--ble-device-check") {
+                if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
+                    RootView(initialDestination: .device)
+                } else if ProcessInfo.processInfo.arguments.contains("--ble-device-check") {
                     BLEDeviceCheckView()
                 } else if ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
                     OwnedDeviceCheckView()
@@ -29,6 +31,16 @@ struct EiscueApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ble-device-check") { return }
                     #endif
                     await model.load()
+                    #if DEBUG
+                    // Opens the real setup UI for the explicitly requested device
+                    // validation; it never grants screen sharing or sends input.
+                    if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
+                        await model.selectDeviceConnectionMethod(.bluetoothBoard)
+                        if ProcessInfo.processInfo.arguments.contains("--bluetooth-connect-once") {
+                            await model.enableDeviceControl()
+                        }
+                    }
+                    #endif
                 }
                 .onChange(of: scenePhase) { _, phase in
                     #if DEBUG

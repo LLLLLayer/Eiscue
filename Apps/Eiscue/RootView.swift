@@ -12,6 +12,10 @@ struct RootView: View {
     @State private var showsSidebar = false
     @State private var wideSidebarIsExpanded = true
 
+    init(initialDestination: AppDestination? = nil) {
+        _path = State(initialValue: initialDestination.map { [$0] } ?? [])
+    }
+
     var body: some View {
         @Bindable var model = model
         GeometryReader { geometry in

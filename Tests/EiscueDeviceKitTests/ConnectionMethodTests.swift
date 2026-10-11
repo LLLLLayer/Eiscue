@@ -20,7 +20,7 @@ import Testing
         #expect(await controller.methods == [.usbBoard, .localVPN, .localVPN, .usbBoard])
         #expect(await controller.configurations == [configuration, .defaults])
         #expect(try JSONDecoder().decode(DeviceConnectionMethod.self, from: JSONEncoder().encode(DeviceConnectionMethod.usbBoard)) == .usbBoard)
-        #expect(Set(DeviceConnectionMethod.allCases) == [.localVPN, .usbBoard, .wirelessBoard])
+        #expect(Set(DeviceConnectionMethod.allCases) == [.bluetoothBoard, .localVPN, .usbBoard, .wirelessBoard])
     }
 
     @Test func existingCustomControllersKeepAnUnsupportedBoardDefault() async {

@@ -38,10 +38,67 @@ extension AppModel {
         catch { errorMessage = error.localizedDescription }
     }
 
+    var isBluetoothConnected: Bool { _ = bluetoothRevision; return bluetoothController.isConnected }
+    var isBluetoothScreenShared: Bool { _ = bluetoothRevision; return bluetoothController.screenState?.isActive == true }
+    var isBluetoothPointerVerified: Bool { _ = bluetoothRevision; return bluetoothController.isPointerVerified }
+
+    func startBluetoothMonitor() {
+        guard bluetoothMonitor == nil else { return }
+        bluetoothMonitor = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                guard let self else { return }
+                guard deviceConnectionMethod == .bluetoothBoard else { continue }
+                bluetoothRevision += 1
+                let wasReady = isDeviceReady
+                await refreshDeviceStatus()
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
+                    recordBluetoothSetupSnapshot()
+                }
+                #endif
+                if wasReady && !isDeviceReady, let run = activeRun, run.scope != .chat {
+                    await stop(expectedRunID: run.id, reason: String(localized: "bluetooth.stopped", table: "Bluetooth"))
+                }
+            }
+        }
+    }
+
+    #if DEBUG
+    private func recordBluetoothSetupSnapshot() {
+        let state = bluetoothController.screenState
+        let report: [String: Any] = [
+            "connected": isBluetoothConnected, "sharing": isBluetoothScreenShared,
+            "pointerVerified": isBluetoothPointerVerified, "ready": isDeviceReady,
+            "connecting": isConnecting, "stage": String(describing: bluetoothController.board.state),
+            "screenPhase": state.map { String(describing: $0.phase) } ?? "unavailable",
+            "screenWidth": state?.width ?? 0, "screenHeight": state?.height ?? 0,
+            "message": connectionMessage, "error": deviceConnectionError ?? "",
+            "timestamp": Date().timeIntervalSince1970
+        ]
+        let directory = URL.applicationSupportDirectory.appendingPathComponent("EiscueBluetoothSetup")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700, .protectionKey: FileProtectionType.complete])
+            try JSONSerialization.data(withJSONObject: report, options: .sortedKeys)
+                .write(to: directory.appendingPathComponent("status.json"), options: [.atomic, .completeFileProtection])
+        } catch { /* Explicit diagnostics never determine connection state. */ }
+    }
+    #endif
+
     func refreshDeviceStatus() async {
         deviceStatus = await deviceClient.status()
         do { hasPairingIdentity = try await deviceClient.hasPairingIdentity() }
         catch { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
+        if deviceConnectionMethod == .bluetoothBoard, !isConnecting {
+            activeDeviceConnectionMethod = isBluetoothConnected ? .bluetoothBoard : nil
+            if isDeviceReady {
+                deviceConnectionError = nil
+                connectionMessage = String(localized: "connection.ready")
+            } else if deviceConnectionError == nil, case .unavailable(let reason) = deviceStatus {
+                connectionMessage = reason
+            }
+        }
     }
 
     func connectDevice() async {
@@ -54,6 +111,7 @@ extension AppModel {
             connectionMessage = String(localized: "connection.automationAuthorization")
         } else {
             connectionMessage = switch method {
+            case .bluetoothBoard: String(localized: "bluetooth.connecting", table: "Bluetooth")
             case .localVPN: String(localized: "connection.discovering")
             case .usbBoard: String(localized: "connection.boardDiscovering")
             case .wirelessBoard: String(localized: "connection.wirelessBoardDiscovering")
@@ -109,9 +167,18 @@ extension AppModel {
         if deviceConnectionMethod == .localVPN, (localTunnel.isConnected || localTunnel.isTransitioning) {
             await stopLocalTunnel()
         }
+        if method == .bluetoothBoard {
+            networkDeviceClient = deviceClient
+            deviceClient = DeviceClient(controller: bluetoothController)
+        } else if deviceConnectionMethod == .bluetoothBoard {
+            deviceClient = networkDeviceClient ?? DeviceClient()
+            networkDeviceClient = nil
+        }
         deviceConnectionMethod = method
+        await refreshDeviceStatus()
         deviceConnectionError = nil
         connectionMessage = switch method {
+        case .bluetoothBoard: String(localized: "bluetooth.powerDetail", table: "Bluetooth")
         case .localVPN: String(localized: "connection.vpnSelected")
         case .usbBoard: String(localized: "connection.boardSelected")
         case .wirelessBoard: String(localized: "connection.wirelessBoardSelected")
