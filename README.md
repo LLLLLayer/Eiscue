@@ -10,7 +10,7 @@
 - Agent：真实 PiDurableKit 运行时、流式回答、多轮对话、图片工具结果、串行工具调用、停止、超时与调用次数限制。
 - 会话与任务：发送后立即上屏并清空输入，流式回复、分开的真实工具记录、块级 Markdown、消息时间与选段复制；侧栏历史、长按置顶/排序/删除、恢复、脱敏报告导出，运行记录从对话菜单查看。
 - 设备代码：内置本地 VPN 扩展、iOS 26 的 USB 首次配对工具和身份导入、iOS 27+ 系统配对、开发者模式/DDI 检查；iOS 26 采用独立 XCTest 会话，其他系统路径保留原后端。公开动作包含截图、点击、拖动、文字粘贴、App 列表、启动 App 和 Home，实际可用项以连接能力为准；iOS 26 Release 暂不开放 Home 和文本输入。
-- 连接方式：App 可选择本地 VPN、USB 开发板或无线开发板，Kit 提供 `DeviceClient.connect(method:)`；开发板分支不启动 VPN。S3 USB 固件在 [Firmware/NCM-Relay](Firmware/NCM-Relay)，C3 无线固件在 [Firmware/Passport-Relay](Firmware/Passport-Relay)。用户的 Passport 已由 ROM 确认为 ESP32-C3 / 8 MB，原 Flash 备份、修复版固件写入和读回校验完成，实板启动日志确认 AP/relay 就绪；手机关联、配对与控制仍待实测。无线 App 无签名构建通过，当前签名失败，尚未装到手机。C3 仍不支持 USB NCM。见 [开发板说明](docs/board-setup.md)。
+- 连接方式：App 可选择本地 VPN、USB 开发板或无线开发板，Kit 提供 `DeviceClient.connect(method:)`；开发板分支不启动 VPN。S3 USB 固件在 [Firmware/NCM-Relay](Firmware/NCM-Relay)，C3 无线固件在 [Firmware/Passport-Relay](Firmware/Passport-Relay)。用户的 Passport 已由 ROM 确认为 ESP32-C3 / 8 MB，原 Flash 备份、修复版固件写入和读回校验完成，实板启动日志确认 AP/relay 就绪；手机关联、配对与控制仍待实测。无线版 Release 已通过签名校验，覆盖安装并正常启动到指定 iPhone 14 Pro。C3 仍不支持 USB NCM。见 [开发板说明](docs/board-setup.md)。
 - 执行边界：输入框加号中可开启“允许 AI 操作设备”，默认关闭；Kit 另保留只读观察范围。坐标操作绑定新截图，单次使用，过期或重连后失效；未知操作结果不自动重发。
 - 后台：iOS 26 的 BGContinuedProcessingTask 和系统实时活动，显示真实执行阶段；可选的完成／中断本地通知默认关闭，系统取消与过期统一停止。
 - Skill：内置导航、只读搜索和中断核查流程，导入与删除 UTF-8 Markdown；不执行导入文件里的脚本。

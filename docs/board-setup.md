@@ -9,8 +9,9 @@
 完整原 Flash 备份及 ROM MD5 校验完成。首次刷写后的运行时审查发现 DHCP 服务
 遗漏显式启动；修复后的 App 分区已通过 `write_flash`、`verify_flash`，保留原
 备份和私有 Wi-Fi 配置。实板启动日志确认 AP/relay 就绪并等待手机。手机接入、
-RemotePairing 和实际屏幕/触控尚待实测。无线 App 无签名 Release 构建通过，
-当前签名失败，尚未安装到手机；不能把固件启动成功当作设备控制完成。
+RemotePairing 和实际屏幕/触控尚待实测。无线 App 无签名及签名 Release 构建、
+深度签名校验均通过，已覆盖安装并正常启动到指定 iPhone 14 Pro；不能把固件
+和 App 启动成功当作设备控制完成。
 
 ## TRAE Passport 的硬件限制
 
@@ -71,7 +72,7 @@ python Scripts/board-firmware.py flash \
 
 ## 手机连接 Passport
 
-以下是无线版本的使用步骤；当前版本仍等待解决 App 签名并安装后进行手机验收。
+无线版本已安装到指定测试机，以下连接步骤仍需在手机上验收。
 
 1. 给开发板供电，在手机「设置 → Wi-Fi」加入本机 `wifi-setup.txt` 中的网络。
 2. 输入该文件里的密码；板子只提供本地连接，保持蜂窝数据开启以供模型请求使用。
@@ -185,8 +186,10 @@ Passport，ROM 已确认 C3 / 8 MB，完整原 Flash 备份与 ROM MD5 校验完
 分区并通过写入/读回校验，原备份和私有配置保留。实板启动日志在 352 ms 显示
 `Private WPA2 AP ready; waiting for one phone` 和 ND1/NR1 relay 等待命令。
 
-C3 固件、App/Kit 无线入口和完整无签名 Release App 已编译通过；签名重试仍
-失败，尚未安装无线版。手机关联、DHCP `.2` 租约、手机 ND1、RemotePairing、
+C3 固件、App/Kit 无线入口和完整无签名 Release App 已编译通过。此前签名因
+钥匙串授权失败；用户自行解锁登录钥匙串后，使用既有证书完成签名 Release
+构建和深度签名校验，正常 App 已覆盖安装并启动到指定 iPhone 14 Pro，没有
+安装额外 UI Test Runner。手机关联、DHCP `.2` 租约、手机 ND1、RemotePairing、
 屏幕/触控、断连撤销、蜂窝联网和公司 VPN 共存均待实测。S3 仍没有实板
 烧录或 USB NCM 枚举证据。完整结果见 [固件验证表](../Firmware/NCM-Relay/README.md#validation-status-2026-10-11)
 和 [验证记录](validation.md)。

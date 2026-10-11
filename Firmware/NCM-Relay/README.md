@@ -21,8 +21,11 @@ a missing explicit DHCP start. The patched application partition has been
 written and verified while preserving the original backup and private Wi-Fi
 configuration. An actual boot log reports the private WPA2 AP and relay ready
 at 352 ms, waiting for a phone; phone association and relay/control behavior
-remain unverified. The wireless App's unsigned Release build passed, but its
-signed build still fails and has not been installed. See the [Passport build,
+remain unverified. The wireless App's unsigned and signed Release builds and
+deep signature verification passed. After the user manually unlocked the login
+keychain, the existing signing certificate was used to install and normally
+launch the App on the designated iPhone 14 Pro, without an extra UI Test Runner.
+See the [Passport build,
 private provisioning and phone
 setup](../../docs/board-setup.md#给-passport-烧录无线固件). Neither route has yet
 demonstrated company VPN coexistence or complete iOS 26 device control.
@@ -112,7 +115,7 @@ or screenshot succeeded.
 | Passport original Flash backup | PASS: full Flash saved privately and checked against ROM MD5 |
 | Passport wireless write/readback | PASS: initial image and DHCP-fixed application partition both passed `write_flash` and `verify_flash`; original backup and private provisioning preserved |
 | Passport actual boot | PASS: at 352 ms, `Private WPA2 AP ready; waiting for one phone` and ND1/NR1 relay idle; no phone association or actual diagnostic request demonstrated |
-| Wireless App build/install | Unsigned Release full build PASS; signed build still fails, so the wireless version has not been installed on the phone |
+| Wireless App build/install | Unsigned and signed Release full builds and deep signature verification PASS; after manual keychain unlock, the wireless version was installed and normally launched on the designated iPhone 14 Pro. Phone association/control remains unverified. |
 | Flash/readback on physical S3 | NOT RUN: the connected Passport is C3, not an S3 board |
 | USB NCM enumeration and ND1 on Mac/phone | NOT RUN |
 | Company VPN coexistence and iOS control | NOT RUN |

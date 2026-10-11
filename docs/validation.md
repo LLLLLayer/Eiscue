@@ -17,8 +17,8 @@ Wi-Fi AP 固件，并保留 S3 USB 固件。两者复用 ND1 / NR1 / NL1；Agent
 | DHCP 修复及最终固件更新 | 运行时审查发现自建 AP 接口遗漏显式启动 DHCP；修复后仅更新 App 分区，`write_flash`、`verify_flash` 均通过，原 Flash 备份和既有私有 Wi-Fi 配置保留 |
 | 实板启动 | PASS：串口启动日志在 352 ms 明确返回 `Private WPA2 AP ready; waiting for one phone` 与 `ND1 diagnostics / NR1 bounded relay; idle until command`；这证明固件走到 AP/relay 就绪，尚未有手机关联或实际 ND1 请求结果 |
 | 后端编译 | PASS：PhoneAgentNCM、EiscueDeviceKit 编译通过；Rust arm64 iOS / simulator / macOS 三平台 Release 及 XCFramework 重建通过 |
-| 完整 App 编译 | PASS：包含无线入口的无签名 Release 完整构建 `BUILD SUCCEEDED`；最低 iOS 26 |
-| App 签名与安装 | 未完成：用户从 Xcode GUI Run 后重试，仍在 EiscueTunnel 的 CodeSign 失败，日志为 `errSecInternalComponent`。无线版本没有覆盖安装到手机；先前安装成功的分享版本不计作无线版本安装成功 |
+| 完整 App 编译 | PASS：包含无线入口的无签名和签名 Release 完整构建均 `BUILD SUCCEEDED`；最终签名构建用时 20.436 秒，最低 iOS 26.0 |
+| App 签名与安装 | PASS：用户自行解锁登录钥匙串后，既有证书签名及 `codesign --verify --deep --strict` 通过；无线版本已覆盖安装到指定 iPhone 14 Pro，并以空启动参数正常前台启动，未安装额外 UI Test Runner、未读取 API Key。安装和启动结果均为 `info.outcome = success`；约 38 秒后进程仍在，未据此声称界面或无线连接已验收 |
 | 手机及网络验收 | 未完成：手机关联、DHCP `.2` 租约、手机 ND1、iOS 26 RemotePairing、实际屏幕/触控、断连撤销、蜂窝模型联网及公司 VPN 共存均待实测 |
 
 Wi-Fi 固件使用 WPA2-PSK / CCMP、最多一个客户端，板子 `.1/30`、唯一 DHCP
@@ -33,7 +33,15 @@ Wi-Fi 接口及 `.2/30`；USB 仍严格使用 Ethernet `.2/24`。每次发现保
 （实际启动），`/tmp/eiscue-wifi-backend-xcframework-build.log`（三平台后端），
 `/tmp/eiscue-wifi-backend-build.log`（PhoneAgentNCM），
 `/tmp/eiscue-passport-app-unsigned-retry.log`（完整无签名 Release），
-`/tmp/eiscue-sign-after-user-run.log`（签名失败）。配置和烧录步骤见
+`/tmp/eiscue-sign-after-manual-unlock.log`（解锁后既有证书签名），
+`/tmp/eiscue-passport-signed-final.log`（最终签名 Release），
+`/tmp/eiscue-passport-installed-final.json`、`/tmp/eiscue-passport-launched-final.json`
+（指定测试机安装和正常启动），`/tmp/eiscue-passport-running-final.json`
+（启动后进程存活）。此前从 Xcode GUI Run 后的签名重试仍在
+EiscueTunnel CodeSign 失败，`/tmp/eiscue-sign-after-user-run.log` 的
+`errSecInternalComponent` 保留为历史失败；用户后来在系统终端直接输入自己的
+密码解锁登录钥匙串，未在聊天或代码中提供密码。无线关联与设备控制未随安装
+自动执行，App 内 XCTest 的系统密码授权仍是另一个待完成步骤。配置和烧录步骤见
 [开发板说明](board-setup.md)。
 
 ## iOS 26 App 内 XCTest 会话（同日，当前）
@@ -69,7 +77,7 @@ iOS 26 真机控制已接入普通 App 进程内的独立 XCTest 路径，替换
 
 本地证据：`/tmp/eiscue-xctest-session-tests.log`（64 项）、`/tmp/eiscue-xctest-idevice-tests.log`（184 项）、`/tmp/eiscue-ios26-devicekit-all.log`（56 项）、`/tmp/eiscue-owned-final-fixtures.log`（203 项）、`/tmp/eiscue-auth-ux-tests.log`（21 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_19-56-27-+0800.xcresult`。真机准备的构建及阶段日志为 `/tmp/eiscue-owned-async-build.log`、`/tmp/eiscue-owned-device-async-console.log`；失败检查的结构化报告为 `/tmp/eiscue-owned-check-ddi.json`，不把失败报告算作动作通过。
 
-开发板的后续实板进展见本文首节：用户的 Passport 已由 ROM 确认为 C3 / 8 MB，完成原 Flash 备份、MD5 校验、无线固件写入及实际 AP/relay 就绪日志。手机关联、RemotePairing、屏幕/触控与公司 VPN 共存仍未验证；无线 App 构建通过但受签名失败阻碍，尚未安装。C3 固定 USB Serial/JTAG 不能实现 USB NCM 的硬件限制保持不变。见 [开发板说明](board-setup.md)。
+开发板的后续实板进展见本文首节：用户的 Passport 已由 ROM 确认为 C3 / 8 MB，完成原 Flash 备份、MD5 校验、无线固件写入及实际 AP/relay 就绪日志。无线 App 已通过签名 Release 构建并覆盖安装、正常启动到指定测试机；手机关联、RemotePairing、屏幕/触控与公司 VPN 共存仍未验证。C3 固定 USB Serial/JTAG 不能实现 USB NCM 的硬件限制保持不变。见 [开发板说明](board-setup.md)。
 
 最终补充证据：`/tmp/eiscue-owned-final-devicekit-tests.log`、`/tmp/eiscue-owned-final-app-ipad-tests.log`（112 项）、`.build/auth-ux-tests/Logs/Test/Test-Eiscue-2026.10.11_20-09-37-+0800.xcresult`、`/tmp/eiscue-owned-final-release-build.log`、`/tmp/eiscue-owned-final-release-install.json`、`/tmp/eiscue-owned-final-release-launch.json`。首次中止的完整 App 测试日志为 `/tmp/eiscue-owned-final-app-tests.log`。
 
