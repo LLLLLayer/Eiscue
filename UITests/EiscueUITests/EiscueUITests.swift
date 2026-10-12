@@ -58,6 +58,20 @@ final class EiscueUITests: XCTestCase {
         options.tap()
     }
 
+    /// New installs default to the Bluetooth board, whose page has no tunnel,
+    /// pairing or advanced options. Choose the in-app connection explicitly.
+    @MainActor
+    private func selectInAppConnection(in app: XCUIApplication) {
+        let picker = app.buttons["deviceConnectionMethodPicker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        picker.tap()
+        let option = app.buttons["App 内连接"]
+        XCTAssertTrue(option.waitForExistence(timeout: 5))
+        option.tap()
+        let options = app.descendants(matching: .any).matching(identifier: "deviceAdvancedOptions").firstMatch
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+    }
+
     @MainActor
     func testAdvancedOptionsAreHiddenUntilRequested() throws {
         let app = launch()
@@ -73,11 +87,13 @@ final class EiscueUITests: XCTestCase {
         XCTAssertTrue(outputLimit.exists)
         app.navigationBars.buttons["取消"].tap()
         openDevice(in: app)
+        selectInAppConnection(in: app)
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
         XCTAssertFalse(app.buttons["打开验证页面"].exists)
         expandDeviceOptions(in: app)
         XCTAssertTrue(app.buttons["startLocalTunnelButton"].exists)
-        XCTAssertTrue(app.buttons["打开验证页面"].exists)
+        // Verification tools appear only once device control is ready.
+        XCTAssertFalse(app.buttons["打开验证页面"].exists)
     }
 
     @MainActor
@@ -188,6 +204,7 @@ final class EiscueUITests: XCTestCase {
         #else
         let app = launch()
         openDevice(in: app)
+        selectInAppConnection(in: app)
         expandDeviceOptions(in: app)
         let start = app.buttons["startLocalTunnelButton"]
         reveal(start, in: app)
@@ -214,6 +231,7 @@ final class EiscueUITests: XCTestCase {
         }
         let app = launch()
         openDevice(in: app)
+        selectInAppConnection(in: app)
         let guidance = app.staticTexts["usbPairingGuidance"]
         reveal(guidance, in: app)
         XCTAssertTrue(guidance.label.contains("USB"))
@@ -231,9 +249,13 @@ final class EiscueUITests: XCTestCase {
     func testDeviceControlProbeRespondsToTapInputAndScroll() throws {
         let app = launch()
         openDevice(in: app)
+        selectInAppConnection(in: app)
         expandDeviceOptions(in: app)
         XCTAssertTrue(app.staticTexts["连接准备"].waitForExistence(timeout: 5))
         let openProbe = app.buttons["打开验证页面"]
+        guard openProbe.waitForExistence(timeout: 2) else {
+            throw XCTSkip("The probe entry is shown only when device control is ready, which a simulator cannot reach.")
+        }
         reveal(openProbe, in: app)
         openProbe.tap()
         XCTAssertTrue(app.staticTexts["probeCount"].waitForExistence(timeout: 5))
