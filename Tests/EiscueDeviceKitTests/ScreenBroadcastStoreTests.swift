@@ -64,6 +64,61 @@ import Testing
         #expect(fixture.store.state().phase == .stale)
         #expect(!fixture.store.state().isActive)
         #expect(throws: ScreenBroadcastError.self) { try fixture.store.snapshot() }
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
+    }
+
+    @Test func aLiveHeartbeatKeepsAnUnchangedScreenCurrent() async throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        let frameID = try fixture.publish(session)
+        try await Task.sleep(for: .seconds(ScreenBroadcastStore.maximumFrameAge + 0.15))
+        #expect(fixture.store.state().phase == .stale)
+
+        try fixture.store.heartbeat(sessionID: session, frameID: frameID, newerFramePending: false)
+        #expect(fixture.store.state().isActive)
+        let reading = try fixture.store.readCurrentFrame()
+        #expect(reading.frame.frameID == frameID)
+        #expect(reading.confirmedUptime > reading.frame.capturedUptime + ScreenBroadcastStore.maximumFrameAge)
+        // The legacy strict reader still refuses an old capture.
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readFrame() }
+    }
+
+    @Test func aHeartbeatCannotConfirmAFrameThatIsNoLongerCurrent() async throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        let frameID = try fixture.publish(session)
+        try await Task.sleep(for: .seconds(ScreenBroadcastStore.maximumFrameAge + 0.15))
+
+        // A newer buffer is waiting: the extension is alive but this frame is old.
+        try fixture.store.heartbeat(sessionID: session, frameID: frameID, newerFramePending: true)
+        #expect(fixture.store.state().isActive)
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
+        // A heartbeat naming another frame or another session confirms nothing.
+        try fixture.store.heartbeat(sessionID: session, frameID: UUID(), newerFramePending: false)
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
+        try fixture.store.heartbeat(sessionID: UUID(), frameID: frameID, newerFramePending: false)
+        #expect(fixture.store.state().phase == .stale)
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
+    }
+
+    @Test func pausingOrStoppingEndsHeartbeatConfirmation() throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        let frameID = try fixture.publish(session)
+        try fixture.store.heartbeat(sessionID: session, frameID: frameID, newerFramePending: false)
+        try fixture.store.setPaused(true, sessionID: session)
+        #expect(fixture.store.state().phase == .paused)
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
+
+        try fixture.store.setPaused(false, sessionID: session)
+        let resumed = try fixture.publish(session)
+        try fixture.store.heartbeat(sessionID: session, frameID: resumed, newerFramePending: false)
+        try fixture.store.requestStop()
+        #expect(fixture.store.state().phase == .ended)
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
     }
 }
 
@@ -86,7 +141,8 @@ private struct BroadcastStoreFixture {
         jpeg = data as Data
     }
 
-    func publish(_ session: UUID) throws {
+    @discardableResult
+    func publish(_ session: UUID) throws -> UUID {
         try store.publish(jpegData: jpeg, width: 8, height: 4, orientation: .right, sessionID: session)
     }
 

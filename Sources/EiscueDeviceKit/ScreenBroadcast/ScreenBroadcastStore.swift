@@ -39,6 +39,15 @@ public struct ScreenBroadcastFrame: Codable, Sendable, Equatable {
     public let jpegData: Data
 }
 
+/// The stored frame and the latest time it was known to be the current screen.
+/// ReplayKit delivers no buffers while the display is unchanged, so a live
+/// extension heartbeat can confirm an older frame instead of letting it expire.
+public struct ScreenBroadcastReading: Sendable, Equatable {
+    public let frame: ScreenBroadcastFrame
+    public let confirmedAt: Date
+    public let confirmedUptime: TimeInterval
+}
+
 /// Shared, local-only latest-frame storage. Only the ReplayKit extension writes
 /// sessions/frames. The host can read them and request a session-specific stop.
 /// Every state transition replaces one atomic record, so a paused/ended session
@@ -53,6 +62,7 @@ public struct ScreenBroadcastStore: Sendable {
     private let directory: URL
     private var recordURL: URL { directory.appendingPathComponent("latest.plist") }
     private var stopURL: URL { directory.appendingPathComponent("stop.plist") }
+    private var heartbeatURL: URL { directory.appendingPathComponent("heartbeat.plist") }
 
     public init(appGroupIdentifier: String = defaultAppGroupIdentifier) throws {
         guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
@@ -76,7 +86,10 @@ public struct ScreenBroadcastStore: Sendable {
             if try stopRequested(sessionID: record.sessionID) {
                 currentPhase = .ended
             } else if record.phase == .active {
-                currentPhase = isFresh(record.frame, maximumAge: Self.maximumFrameAge) ? .active : .stale
+                // A live heartbeat proves the extension is still sharing even
+                // when an unchanged screen produces no new frame.
+                currentPhase = isFresh(record.frame, maximumAge: Self.maximumFrameAge) || liveHeartbeat(for: record) != nil
+                    ? .active : .stale
             } else if record.phase == .starting && !freshUptime(record.updatedUptime, maximumAge: 10) {
                 currentPhase = .stale
             } else {
@@ -104,6 +117,28 @@ public struct ScreenBroadcastStore: Sendable {
         return frame
     }
 
+    /// The stored frame while it is still the current screen: either recently
+    /// published, or confirmed by a heartbeat that names this frame and reports
+    /// no newer buffer waiting to be published.
+    public func readCurrentFrame() throws -> ScreenBroadcastReading {
+        let record = try readRecord()
+        guard record.phase == .active, !(try stopRequested(sessionID: record.sessionID)) else {
+            throw ScreenBroadcastError.inactive
+        }
+        guard let frame = record.frame, frame.sessionID == record.sessionID else {
+            throw ScreenBroadcastError.sessionChanged
+        }
+        try validate(frame)
+        var reading = isFresh(frame, maximumAge: Self.maximumFrameAge)
+            ? ScreenBroadcastReading(frame: frame, confirmedAt: frame.capturedAt, confirmedUptime: frame.capturedUptime) : nil
+        if let heartbeat = liveHeartbeat(for: record), heartbeat.frameID == frame.frameID, !heartbeat.newerFramePending,
+           heartbeat.uptime > reading?.confirmedUptime ?? -.infinity {
+            reading = ScreenBroadcastReading(frame: frame, confirmedAt: heartbeat.date, confirmedUptime: heartbeat.uptime)
+        }
+        guard let reading else { throw ScreenBroadcastError.staleFrame }
+        return reading
+    }
+
     /// Stops reads immediately. The extension checks this signal even when no
     /// video arrives, then asks ReplayKit to end the system broadcast.
     public func requestStop() throws {
@@ -119,8 +154,9 @@ public struct ScreenBroadcastStore: Sendable {
         return sessionID
     }
 
+    @discardableResult
     public func publish(jpegData: Data, width: Int, height: Int,
-                        orientation: ScreenBroadcastOrientation, sessionID: UUID) throws {
+                        orientation: ScreenBroadcastOrientation, sessionID: UUID) throws -> UUID {
         let current = try matchingRecord(sessionID)
         guard current.phase == .starting || current.phase == .active,
               !(try stopRequested(sessionID: sessionID)) else { throw ScreenBroadcastError.inactive }
@@ -129,6 +165,14 @@ public struct ScreenBroadcastStore: Sendable {
             width: width, height: height, jpegData: jpegData)
         try validate(frame)
         try write(Record(sessionID: sessionID, phase: .active, frame: frame), to: recordURL)
+        return frame.frameID
+    }
+
+    /// Written by the extension on its own timer, independent of video delivery.
+    /// The host ignores heartbeats from other sessions or for other frames, so
+    /// this small write never needs to reread the frame record.
+    public func heartbeat(sessionID: UUID, frameID: UUID?, newerFramePending: Bool) throws {
+        try write(Heartbeat(sessionID: sessionID, frameID: frameID, newerFramePending: newerFramePending), to: heartbeatURL)
     }
 
     public func setPaused(_ paused: Bool, sessionID: UUID) throws {
@@ -156,6 +200,26 @@ public struct ScreenBroadcastStore: Sendable {
     }
 
     private struct StopRequest: Codable { let sessionID: UUID }
+
+    private struct Heartbeat: Codable {
+        var schemaVersion = 1
+        let sessionID: UUID
+        let frameID: UUID?
+        let newerFramePending: Bool
+        var date = Date()
+        var uptime = ProcessInfo.processInfo.systemUptime
+    }
+
+    /// A missing, unreadable, old, or other-session heartbeat confirms nothing.
+    private func liveHeartbeat(for record: Record) -> Heartbeat? {
+        guard record.phase == .active, FileManager.default.fileExists(atPath: heartbeatURL.path),
+              let heartbeat = try? read(Heartbeat.self, from: heartbeatURL, maximumBytes: 4096),
+              heartbeat.schemaVersion == 1, heartbeat.sessionID == record.sessionID,
+              freshUptime(heartbeat.uptime, maximumAge: Self.maximumFrameAge),
+              Date().timeIntervalSince(heartbeat.date) >= -1,
+              Date().timeIntervalSince(heartbeat.date) <= Self.maximumFrameAge else { return nil }
+        return heartbeat
+    }
 
     private func matchingRecord(_ sessionID: UUID) throws -> Record {
         let record = try readRecord()

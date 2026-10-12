@@ -24,7 +24,6 @@ public final class BluetoothDeviceController: DeviceController {
     private var keyboardVerified = false
     private var absoluteAvailable = false
     private var lastDispatchedUptime: TimeInterval = -.infinity
-    private var lastConsumedFrameID: UUID?
 
     public init(board: BluetoothBoardClient = BluetoothBoardClient(), screenStore: ScreenBroadcastStore? = nil) {
         self.board = board; store = screenStore
@@ -189,8 +188,12 @@ public final class BluetoothDeviceController: DeviceController {
         let (_, mapping) = try consume(frameID)
         guard keyboardAvailable, validation ? isCalibrating : keyboardVerified else { throw DeviceControlError.unsupported }
         if validation { try checkCalibrationGeometry() }
+        // Reading the pasteboard back fails while Eiscue is in the background,
+        // which is the normal state during a cross-app task. A changed count
+        // proves this write landed without reading any pasteboard content.
+        let before = UIPasteboard.general.changeCount
         UIPasteboard.general.setItems([["public.utf8-plain-text": text]], options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)])
-        guard UIPasteboard.general.string == text else { throw DeviceControlError.connection(message("bluetooth.clipboard")) }
+        guard UIPasteboard.general.changeCount != before else { throw DeviceControlError.connection(message("bluetooth.clipboard")) }
         try requireCurrent(mapping, token: epoch)
         lastDispatchedUptime = ProcessInfo.processInfo.systemUptime
         defer { lastDispatchedUptime = ProcessInfo.processInfo.systemUptime }
@@ -278,21 +281,27 @@ public final class BluetoothDeviceController: DeviceController {
         do { let value = try ScreenBroadcastStore(); store = value; return value }
         catch { throw DeviceControlError.connection(message("bluetooth.appGroupUnavailable")) }
     }
+    /// The current screen. An unchanged screen keeps its earlier frame while the
+    /// extension heartbeat confirms that no newer content has been delivered.
     private func observe() throws -> ObservedFrame {
         let source = try screenStore()
-        do { return ObservedFrame(try source.readFrame()) }
+        do { return ObservedFrame(try source.readCurrentFrame()) }
         catch { throw DeviceControlError.connection(message("bluetooth.share")) }
     }
+    /// A frame captured after `uptime`, or an earlier frame the extension has
+    /// confirmed unchanged for longer than its publish interval since then, so
+    /// a screen change caused by the last action would already be pending.
     private func freshFrame(after uptime: TimeInterval, token: UUID) async throws -> ObservedFrame {
-        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        let deadline = ProcessInfo.processInfo.systemUptime + 2.5
         while true {
             try requireEpoch(token)
             let frame = try observe()
-            if frame.capturedUptime > uptime, frame.screenshot.frameID != lastConsumedFrameID { return frame }
+            if frame.capturedUptime > uptime || frame.observedUptime > uptime + Self.unchangedScreenSettle { return frame }
             guard ProcessInfo.processInfo.systemUptime < deadline else { throw DeviceControlError.staleFrame }
             try await Task.sleep(for: .milliseconds(50))
         }
     }
+    private static let unchangedScreenSettle: TimeInterval = 0.75
     private func beginAction(allowCalibration: Bool = false) throws {
         try Task.checkCancellation()
         guard isConnected else { throw DeviceControlError.notConnected }
@@ -301,13 +310,13 @@ public final class BluetoothDeviceController: DeviceController {
     }
     private func consume(_ id: UUID) throws -> (ObservedFrame, Calibration) {
         let frame = latest; latest = nil
-        guard let frame, frame.screenshot.frameID == id,
-              id != lastConsumedFrameID, frame.capturedUptime > lastDispatchedUptime,
-              (0..<30).contains(ProcessInfo.processInfo.systemUptime - frame.capturedUptime),
+        // One capture authorizes one action: `latest` is cleared above, and the
+        // observation must postdate every input sent since it was taken.
+        guard let frame, frame.screenshot.frameID == id, frame.observedUptime > lastDispatchedUptime,
+              (0..<30).contains(ProcessInfo.processInfo.systemUptime - frame.observedUptime),
               let calibration, calibration.matches(frame), calibration.matches(try observe()) else {
             throw DeviceControlError.staleFrame
         }
-        lastConsumedFrameID = id
         return (frame, calibration)
     }
     private func requireConnectionEpoch(_ token: UUID) throws {
@@ -355,10 +364,16 @@ public final class BluetoothDeviceController: DeviceController {
         let sessionID: UUID
         let orientation: ScreenBroadcastOrientation
         let capturedUptime: TimeInterval
-        init(_ frame: ScreenBroadcastFrame) {
-            screenshot = DeviceScreenshot(frameID: frame.frameID, capturedAt: frame.capturedAt,
+        /// The latest time this frame was known to be the current screen.
+        let observedUptime: TimeInterval
+        /// Every observation gets its own ID. A confirmed unchanged screen can be
+        /// observed again after an action, but each capture still authorizes one.
+        init(_ reading: ScreenBroadcastReading) {
+            let frame = reading.frame
+            screenshot = DeviceScreenshot(frameID: UUID(), capturedAt: frame.capturedAt,
                 width: frame.width, height: frame.height, mimeType: "image/jpeg", data: frame.jpegData)
-            sessionID = frame.sessionID; orientation = frame.orientation; capturedUptime = frame.capturedUptime
+            sessionID = frame.sessionID; orientation = frame.orientation
+            capturedUptime = frame.capturedUptime; observedUptime = reading.confirmedUptime
         }
     }
 
