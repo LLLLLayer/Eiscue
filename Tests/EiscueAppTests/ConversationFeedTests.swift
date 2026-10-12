@@ -75,7 +75,26 @@ final class ConversationFeedTests: XCTestCase {
         let journal = RunJournal(directory: directory)
         try await journal.save(record)
         let loaded = try await journal.load()
-        XCTAssertEqual(loaded.first?.activities, record.activities)
+        XCTAssertEqual(loaded.records.first?.activities, record.activities)
+        XCTAssertTrue(loaded.failures.isEmpty)
+    }
+
+    func testUnreadableRunRecordDoesNotHideReadableHistory() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = RunJournal(directory: directory)
+        let readable = record()
+        try await journal.save(readable)
+        let damaged = directory.appendingPathComponent("\(UUID().uuidString).json")
+        try Data("{not json".utf8).write(to: damaged)
+
+        let loaded = try await journal.load()
+        XCTAssertEqual(loaded.records.map(\.id), [readable.id])
+        XCTAssertEqual(loaded.failures.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: damaged.path), "A damaged record is preserved for inspection.")
+        try await journal.delete([readable, readable])
+        let remaining = try await journal.load().records
+        XCTAssertTrue(remaining.isEmpty, "Deleting an already removed record is not an error.")
     }
 
     func testInterruptedRunClosesOnlyUnfinishedTools() {

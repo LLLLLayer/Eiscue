@@ -208,35 +208,48 @@ final class AppModel {
         guard !didLoad else { return }
         didLoad = true
         defer { isLoading = false }
+        // Each store fails independently. A damaged conversation file, run record
+        // or skill must not also disable device monitoring, tunnels or recovery.
+        var failures: [String] = []
+        do { conversations = try await repository.load() } catch { failures.append(error.localizedDescription) }
         do {
-            conversations = try await repository.load()
-            runs = try await journal.load()
+            let loaded = try await journal.load()
+            failures += loaded.failures
+            runs = loaded.records
             for index in runs.indices where runs[index].state == .running || runs[index].state == .preparing {
                 runs[index].state = .interrupted
                 runs[index].detail = String(localized: "run.recovered_interruption", table: "Runtime")
                 runs[index].endedAt = Date()
                 runs[index].interruptOpenActivities()
-                try await journal.save(runs[index])
+                do { try await journal.save(runs[index]) } catch { failures.append(error.localizedDescription) }
             }
             var latestStates: [UUID: RunState] = [:]
             for run in runs where latestStates[run.conversationID] == nil { latestStates[run.conversationID] = run.state }
             interruptedConversationIDs = Set(latestStates.filter { $0.value == .interrupted }.map(\.key))
-            skills = try skillLibrary.load()
-            if let saved = preferences.string(forKey: "selectedConversationID"),
-               let id = UUID(uuidString: saved), conversations.contains(where: { $0.id == id }) { selectedConversationID = id }
+        } catch { failures.append(error.localizedDescription) }
+        do { skills = try skillLibrary.load() } catch { failures.append(error.localizedDescription) }
+        if let saved = preferences.string(forKey: "selectedConversationID"),
+           let id = UUID(uuidString: saved), conversations.contains(where: { $0.id == id }) { selectedConversationID = id }
+        do {
             hasAPIKey = try credentials.read("model-key") != nil
             try refreshAgentConfiguration()
-            do { try await localTunnel.refresh() }
-            catch { connectionMessage = error.localizedDescription }
-            await refreshDeviceStatus()
-            startBluetoothMonitor()
-            refreshPairingTransfer()
-            #if DEBUG
-            await runRequestedDeviceSetupCheck()
-            #endif
-            await taskNotifications.refreshAuthorization()
-            await recoverSelectedConversation()
-        } catch { errorMessage = String(format: String(localized: "error.load_data", table: "Runtime"), error.localizedDescription) }
+        } catch {
+            agent = AgentClient(storageDirectory: runtimeDirectory); agentAvailability = .unconfigured
+            failures.append(error.localizedDescription)
+        }
+        do { try await localTunnel.refresh() }
+        catch { connectionMessage = error.localizedDescription }
+        await refreshDeviceStatus()
+        startBluetoothMonitor()
+        refreshPairingTransfer()
+        #if DEBUG
+        await runRequestedDeviceSetupCheck()
+        #endif
+        await taskNotifications.refreshAuthorization()
+        await recoverSelectedConversation()
+        if !failures.isEmpty {
+            errorMessage = String(format: String(localized: "error.load_data", table: "Runtime"), sanitizedText(failures.joined(separator: "\n")))
+        }
     }
 
     func saveModelSettings(_ settings: ModelSettings, newKey: String) throws {
@@ -651,7 +664,7 @@ final class AppModel {
         guard !isBusy else { return }
         isSaving = true; defer { isSaving = false }
         do {
-            let records = try await journal.load().filter { $0.conversationID == conversation.id }
+            let records = try await journal.load().records.filter { $0.conversationID == conversation.id }
             try await agent?.removeConversation(id: conversation.id)
             try await journal.delete(records)
             try await repository.delete(id: conversation.id)
@@ -708,21 +721,16 @@ final class AppModel {
         return merged
     }
 
-    func safeError(_ error: Error) -> String {
-        sanitizedText(error.localizedDescription)
-    }
+    func safeError(_ error: Error) -> String { sanitizedText(error.localizedDescription) }
 
-    private func sanitizedText(_ text: String) -> String {
-        var message = text
-        if let key = try? credentials.read("model-key"), !key.isEmpty { message = message.replacingOccurrences(of: key, with: String(localized: "privacy.redacted_key", table: "Runtime")) }
-        return String(message.prefix(1000))
-    }
+    private func sanitizedText(_ text: String) -> String { redacted(text, limit: 1000) }
+    private func sanitizedActivityText(_ text: String) -> String { redacted(text, limit: 8_192) }
 
-    private func sanitizedActivityText(_ text: String) -> String {
+    private func redacted(_ text: String, limit: Int) -> String {
         var value = text
         if let key = try? credentials.read("model-key"), !key.isEmpty {
             value = value.replacingOccurrences(of: key, with: String(localized: "privacy.redacted_key", table: "Runtime"))
         }
-        return String(value.prefix(8_192))
+        return String(value.prefix(limit))
     }
 }

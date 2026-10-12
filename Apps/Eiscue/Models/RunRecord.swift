@@ -66,23 +66,23 @@ actor RunJournal {
         var protectedURL = url; try protectedURL.setResourceValues(values)
     }
 
-    func load() throws -> [RunRecord] {
-        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+    /// An unreadable record is reported and left on disk; it never hides the
+    /// readable history or the interrupted state of other conversations.
+    func load() throws -> (records: [RunRecord], failures: [String]) {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return ([], []) }
         let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-        return try urls.filter { $0.pathExtension == "json" }.map {
-            try JSONDecoder().decode(RunRecord.self, from: Data(contentsOf: $0))
-        }.sorted { $0.startedAt > $1.startedAt }
-    }
-
-    func delete(conversationID: UUID) throws {
-        for record in try load() where record.conversationID == conversationID {
-            try FileManager.default.removeItem(at: directory.appendingPathComponent(record.id.uuidString).appendingPathExtension("json"))
+        var records: [RunRecord] = [], failures: [String] = []
+        for url in urls where url.pathExtension == "json" {
+            do { records.append(try JSONDecoder().decode(RunRecord.self, from: Data(contentsOf: url))) }
+            catch { failures.append("\(url.lastPathComponent): \(error.localizedDescription)") }
         }
+        return (records.sorted { $0.startedAt > $1.startedAt }, failures)
     }
 
     func delete(_ records: [RunRecord]) throws {
         for record in records {
-            try FileManager.default.removeItem(at: directory.appendingPathComponent(record.id.uuidString).appendingPathExtension("json"))
+            do { try FileManager.default.removeItem(at: directory.appendingPathComponent(record.id.uuidString).appendingPathExtension("json")) }
+            catch CocoaError.fileNoSuchFile { continue }
         }
     }
 }
