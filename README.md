@@ -2,15 +2,13 @@
 
 运行在 iPhone / iPad 上的 Agent 设备助手。App 最低 **iOS / iPadOS 26.0**。任务编排和工具执行在手机上，模型通过用户配置的网络服务调用。
 
-方案、使用说明和验证记录保存在本地 `docs/`，不随仓库发布；固件、工具和第三方来源说明仍保留在各目录的 README 中。
+内部方案和完整验收记录不随仓库发布；本页保留使用步骤和已验证范围，固件、工具与第三方来源说明保留在各目录的 README 中。
 
 **默认使用蓝牙开发板：** 已配置 Eiscue 蓝牙固件的 ESP32-C3 开发板接充电器或电脑供电，**不用插到 iPhone，也不用切换手机 Wi-Fi**。正常 App 已接入蓝牙连接、Apple ReplayKit 屏幕共享，以及四点点击和文字输入检查；这条路径不需要配对文件、DDI 或本地 VPN。检查通过后，才能在对话里开启“允许 AI 操作设备”。升级安装会保留已有连接偏好，可在设备页改选“蓝牙开发板”。
 
-**代码接入与真机结果：** 新版蓝牙固件已完成构建、烧录读回及加密连接能力查询；在指定 iPhone 14 Pro / iOS 26.5.2 上，普通 App 已通过 ReplayKit 屏幕共享、四点实际点击和中文文字检查，显示已就绪。当前仍需验证蓝牙滑动、完整跨 App 的 Agent 任务和长时间后台行为；本次未重复“禁用蜂窝访问的 Wi-Fi HTTPS”检查，该联网结论来自旧版蓝牙基线。Wi-Fi 开发板的独立控制路径已于 2026-10-11 在指定样机上通过。详见蓝牙接入验收记录（本地 `docs/ble-production-validation-2026-10-12.md`）、开发板说明（本地 `docs/board-setup.md`） 和 设备准备（本地 `docs/device-setup.md`）。
+**代码接入与真机结果：** 新版蓝牙固件已完成构建、烧录读回及加密连接能力查询；在指定 iPhone 14 Pro / iOS 26.5.2 上，普通 App 已通过 ReplayKit 屏幕共享、四点实际点击和中文文字检查，显示已就绪。当前仍需验证蓝牙滑动、完整跨 App 的 Agent 任务和长时间后台行为；本次未重复“禁用蜂窝访问的 Wi-Fi HTTPS”检查，该联网结论来自旧版蓝牙基线。Wi-Fi 开发板的独立控制路径已于 2026-10-11 在指定样机上通过。
 
-当前路线与下一阶段设计见设备 Agent 方案 v0.4（本地 `docs/design-v0.4.md`），包括 VPN、蓝牙、USB NCM 与 iCTRL 的对比，以及首次配置和日常使用的区别。iCTRL 已完成源码调研，尚未集成。
-
-想对照无需 Mac 的运行方式，见不依赖 Mac 的设备 Agent 运行方案（本地 `docs/mac-independent-agent-options.md`）：补充 S3 USB 键鼠候选，并区分手机独立运行、首次电脑准备和 Linux 电脑 Agent。
+iCTRL 已完成源码调研，尚未集成。
 
 ## 已实现
 
@@ -23,8 +21,8 @@
 - 后台：iOS 26 的 BGContinuedProcessingTask 和系统实时活动，显示真实执行阶段；可选的完成／中断本地通知默认关闭，系统取消与过期统一停止。
 - Skill：内置导航、只读搜索和中断核查流程，导入与删除 UTF-8 Markdown；不执行导入文件里的脚本。
 - 原生界面：首次全屏入门引导，随浅色／深色模式切换的黑白灰控件与原生 Liquid Glass；对话主页面、左侧历史与设置、右上角设备状态，iPad 宽窗口支持常驻侧栏。使用用户提供的 Eiscue 图片作为图标。
-- 附件与语音：照片、拍摄、文本/代码文件和可提取文字的 PDF；Apple Speech 本机听写，切换语音模式后按住说话、松开结束、上滑取消，无需语音 API Key。普通聊天默认使用简短提示，不注入表情 Skill 或设备工具。见对话体验说明（本地 `docs/chat-experience.md`）。
-- 多语言：Apple String Catalog 和 Swift Package 本地化资源，支持英文、简体中文，跟随系统／App 语言；新增语言无需修改业务逻辑。见本地化说明（本地 `docs/localization.md`）。
+- 附件与语音：照片、拍摄、文本/代码文件和可提取文字的 PDF；Apple Speech 本机听写，切换语音模式后按住说话、松开结束、上滑取消，无需语音 API Key。普通聊天默认使用简短提示，不注入表情 Skill 或设备工具。
+- 多语言：Apple String Catalog 和 Swift Package 本地化资源，支持英文、简体中文，跟随系统／App 语言；新增语言无需修改业务逻辑。
 
 **源码接入与真机验收是两件事。** 模拟器可验证 Agent 与 App 流程，但不能代替真机 BLE HID 输入与系统屏幕共享。指定手机的蓝牙四点和文字校验已通过，滑动、跨 App 与后台控制仍需验收；其他连接路径还涉及 DDI、回环 VPN 和配对身份。不同设备与系统版本不能直接沿用样机结果。
 
@@ -34,11 +32,11 @@
 2. 选择 `Eiscue` scheme，在 iOS 26+ 模拟器运行。保留 Xcode 默认的本地签名，Keychain 需要正确的签名环境。
 3. 真机运行时，在 Signing & Capabilities 选择自己的开发团队。默认 Bundle ID 为 `org.eiscue.app`。
 4. 首次打开会显示全屏引导；在其中或「设置 → 模型配置」填入服务地址、模型 ID 和 API Key。其余参数有默认值，保存配置不会调用模型。
-5. 仅对话可直接使用。设备任务打开右上角设备页，选择“蓝牙开发板”，依次连接、通过系统面板开启屏幕共享、完成操作检查；再回到输入框左侧“+”开启“允许 AI 操作设备”。开发板供电和辅助触控设置见使用步骤（本地 `docs/board-setup.md`）。
+5. 仅对话可直接使用。设备任务先给已刷好蓝牙固件的开发板接电源，并在 iPhone「设置 → 辅助功能 → 触控 → 辅助触控」开启辅助触控。接着打开 App 右上角设备页，选择“蓝牙开发板”，依次连接、通过系统面板开启屏幕共享、完成操作检查；再回到输入框左侧“+”开启“允许 AI 操作设备”。
 
-主 App 与 `EiscueBroadcast` 屏幕共享扩展需要匹配的 App Group 签名；仓库默认为 `group.org.eiscue.app`。随包保留的本地 VPN 扩展还需要 Network Extension capability，详见内置本地连接（本地 `docs/local-tunnel.md`）。蓝牙使用过程不添加或启动 VPN。
+主 App 与 `EiscueBroadcast` 屏幕共享扩展需要匹配的 App Group 签名；仓库默认为 `group.org.eiscue.app`。随包保留的本地 VPN 扩展还需要 Network Extension capability。蓝牙使用过程不添加或启动 VPN。
 
-下面的电脑配对说明只适用于保留的 RemotePairing 路径，不适用于蓝牙：iOS 26 的开发者模式页没有该后端要求的系统配对入口。USB 配对步骤（本地 `docs/device-setup.md`）已在上述测试机上完成身份建立；后续独立 XCTest 会话通过系统自动化授权，并完成 Wi-Fi 开发板控制验证。无需为重试控制而重复生成已经有效的身份。该路径无需额外 UI Test Runner，但依赖设备 DDI 中的开发者框架和私有接口，目前不承诺 App Store 分发。
+下面的电脑配对说明只适用于保留的 RemotePairing 路径，不适用于蓝牙：iOS 26 的开发者模式页没有该后端要求的系统配对入口。[USB 配对工具](Scripts/pair-device-usb.md)已在上述测试机上完成身份建立；后续独立 XCTest 会话通过系统自动化授权，并完成 Wi-Fi 开发板控制验证。无需为重试控制而重复生成已经有效的身份。该路径无需额外 UI Test Runner，但依赖设备 DDI 中的开发者框架和私有接口，目前不承诺 App Store 分发。
 
 App 当前仅接受 HTTPS 模型服务地址。OpenAI 兼容接口通常填写带 `/v1` 的地址；Anthropic 默认填写 `https://api.anthropic.com`。Kit 允许宿主自行配置本地 HTTP 服务。测试专用 loopback 配置只在 DEBUG 且显式 UI 测试模式下启用。
 
@@ -51,9 +49,9 @@ App 当前仅接受 HTTPS 模型服务地址。OpenAI 兼容接口通常填写�
 | EiscueAgentKit | Eiscue 自有 Agent / 工具 / 事件协议、运行时适配、会话存储 | 注册自己的 Swift 工具，或注入 `AgentEngine` 替换引擎 |
 | EiscueDeviceKit | 配对、连接、观察、设备动作与状态 | 直接使用 `DeviceClient`，或注入自己的 `DeviceController` |
 
-App 在 `Integrations/DeviceTools.swift` 组合两者。没有单独的 Plugin 产品，公开 API 不暴露 Pi 类型。具体结构与更换引擎方式见架构说明（本地 `docs/architecture.md`）。
+App 在 `Integrations/DeviceTools.swift` 组合两者。没有单独的 Plugin 产品，公开 API 不暴露 Pi 类型。更换引擎使用 `AgentClient(engine:)`，更换设备后端使用 `DeviceClient(controller:)`。
 
-接入示例：AgentKit（本地 `docs/agent-kit.md`）、DeviceKit（本地 `docs/device-setup.md`）。
+公开接口见 [AgentClient](Sources/EiscueAgentKit/AgentClient.swift) 和 [DeviceClient](Sources/EiscueDeviceKit/DeviceClient.swift)。
 
 ## 构建和测试
 
@@ -85,7 +83,7 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
   -only-testing:EiscueUITests/EiscueUITests test
 ```
 
-本轮实际测试结果和待完成的真机验收见验证记录（本地 `docs/validation.md`）。
+2026-10-13 的最终软件验证：App 单元测试 129 项通过，`EiscueUITests` 8 项通过、1 项跳过，Swift Kit 93 项通过。跳过的设备操作验证页用例需要真实设备控制就绪，模拟器无法满足。
 
 设备后端已经附带 arm64 真机、模拟器和 macOS XCFramework，可直接构建；目前不含 Intel / x86_64 slice。重新构建 Rust 后端：
 
@@ -107,8 +105,8 @@ bash Scripts/build-device-backend.sh
 
 ## 后续验证与范围
 
-App 随包包含屏幕共享扩展与保留的本地 VPN 扩展。蓝牙普通流程已接入代码，完整真机验收进度见蓝牙验收记录（本地 `docs/ble-production-validation-2026-10-12.md`）。AX 界面树、PiP、Mac / Android / 鸿蒙控制后端属于后续扩展；它们不是当前可用功能。后台运行上限和本地回环兼容性需实测，系统可能随时终止执行。后台策略（本地 `docs/background.md`）说明了当前实现。
+App 随包包含屏幕共享扩展与保留的本地 VPN 扩展。蓝牙普通流程已接入代码。AX 界面树、PiP、Mac / Android / 鸿蒙控制后端属于后续扩展；它们不是当前可用功能。后台运行上限和本地回环兼容性需实测，系统可能随时终止执行。设备任务由用户在前台发起并申请 BGContinuedProcessingTask；蓝牙和屏幕共享本身不提供 Agent 后台执行许可。
 
-保留的 RemotePairing 控制组件来自 actell 固定版本，保留其 GPL-3.0 和第三方声明；蓝牙固件和 ReplayKit 接入为本项目实现，PiDurableKit 固定到明确 commit。详见依赖说明（本地 `docs/dependencies.md`）。这里不替整个 Eiscue 项目作发行许可决定。
+保留的 RemotePairing 控制组件来自 actell 固定版本，保留其 GPL-3.0 和第三方声明；蓝牙固件和 ReplayKit 接入为本项目实现，PiDurableKit 固定到明确 commit。依赖版本见 [Package.swift](Package.swift)，设备后端来源与许可见 [后端说明](Vendor/DeviceBackend/README.md)。这里不替整个 Eiscue 项目作发行许可决定。
 
 **本地连接扩展基于 LocalDevVPN / StosVPN 的 IPv4 反射实现**，归属 Stossy11、SideStore Team 和 jkcoxson，保留其自定义 StosVPN License。详见[来源与许可](Vendor/LocalTunnel/README.md)。

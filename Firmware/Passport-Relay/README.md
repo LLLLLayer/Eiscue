@@ -100,27 +100,23 @@ association, wireless discovery and authorization, screenshots, portrait and
 landscape touch, stale-frame rejection, swiping, Unicode input, Home/App return,
 and a second connection cycle. The App's local VPN stayed disconnected. A
 600-second board capture had one association, one lease and no disconnect/error.
-See the device validation record (local `../../docs/board-validation-2026-10-11.md`).
 
 Local disconnection is not a remote daemon teardown acknowledgement. Sustained
 background work, cellular model requests and company VPN coexistence remain
-unverified. Board identification, backup and flashing belong to the
-board setup workflow (local `../../docs/board-setup.md`).
+unverified. Board flashing requires ROM identification, a complete backup, and
+verified readback.
 
 The sample now runs the separate [BLE firmware](../Passport-BLE/README.md),
 integrated with ordinary App connection selection, ReplayKit sharing and Agent
 tools. On 2026-10-12, version 0.2 passed ordinary connection, screen sharing,
 four actual calibration touches and Chinese text checks on the same iPhone.
 BLE swiping, complete cross-App Agent tasks and sustained background sharing
-remain unverified. See the current BLE validation record (local `../../docs/ble-production-validation-2026-10-12.md`).
+remain unverified.
 
 The earlier version 0.1 Debug baseline on 2026-10-12 passed three 12-digit inputs,
 one test-button click and Wi-Fi HTTPS 200 with cellular access disabled for each
 request. The version 0.2 run did not repeat that Internet check; these separate
-BLE results do not validate Internet access through this Wi-Fi AP. See the
-BLE baseline record (local `../../docs/ble-board-validation-2026-10-12.md`).
+BLE results do not validate Internet access through this Wi-Fi AP.
 
 Restore the retained Wi-Fi application image before using this Wi-Fi route;
 the two firmware images do not run simultaneously.
-
-Setup and validation notes under `docs/` are local-only and are not included in this repository.

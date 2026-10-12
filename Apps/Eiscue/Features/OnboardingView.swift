@@ -59,7 +59,7 @@ struct OnboardingView: View {
                         row("1.circle", "setup.developerMode", "setup.developerModeDetail")
                         row("2.circle", "setup.pairing", model.deviceConnectionMethod != .localVPN ? "setup.boardPairingDetail" : model.supportsSystemPairing ? "setup.systemPairingDetail" : "setup.usbPairingDetail")
                         if !model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN {
-                            Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/blob/main/docs/device-setup.md")!) {
+                            Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/blob/main/Scripts/pair-device-usb.md")!) {
                                 Label(text("setup.computerGuide"), systemImage: "arrow.up.right")
                             }.font(.subheadline)
                         }

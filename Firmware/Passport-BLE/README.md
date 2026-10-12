@@ -232,7 +232,4 @@ No credentials, original board data, serial captures or binaries are included.
   mouse click on an explicitly opted-in full-area test target. Wi-Fi HTTPS with
   cellular access disabled for that request returned 200 on each run. This does
   not establish calibrated coordinates, screen capture, Agent integration, or
-  background execution. See
-  the device validation record (local `../../docs/ble-board-validation-2026-10-12.md`).
-
-Setup and validation notes under `docs/` are local-only and are not included in this repository.
+  background execution.
