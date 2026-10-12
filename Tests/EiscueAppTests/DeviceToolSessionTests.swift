@@ -112,6 +112,58 @@ final class DeviceToolSessionTests: XCTestCase {
         XCTAssertEqual(counts.screenshots, 1)
     }
 
+    func testHIDNavigationExposesOnlyAdvertisedCapabilitiesAndConsumesFrames() async throws {
+        let controller = RecordingDeviceController()
+        let capabilities: Set<DeviceCapability> = [.screenshot, .tap, .textInput, .home, .keyboardNavigation]
+        let session = DeviceToolSession(capabilities: capabilities, client: DeviceClient(controller: controller), scope: .control,
+                                        timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+        XCTAssertNil(session.tools.first { $0.name == "device_launch_app" })
+        XCTAssertNil(session.tools.first { $0.name == "device_list_apps" })
+        let observe = DeviceToolSession(capabilities: capabilities, client: DeviceClient(controller: controller), scope: .observe,
+                                        timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+        XCTAssertNil(observe.tools.first { $0.name == "device_press_key" })
+        let screenshot = try tool("device_screenshot", in: session)
+        let press = try tool("device_press_key", in: session)
+        _ = try await screenshot.execute([:])
+        let frame = try await frameID(from: controller)
+        let arguments: AgentJSONValue = ["frameId": .string(frame.uuidString), "key": "search"]
+        _ = try await press.execute(arguments)
+        await assertRejected(press, arguments: arguments)
+        _ = try await screenshot.execute([:])
+        let invalidFrame = try await frameID(from: controller)
+        await assertRejected(press, arguments: ["frameId": .string(invalidFrame.uuidString), "key": "volumeUp"])
+        let counts = await controller.counts()
+        XCTAssertEqual(counts.keys, 1)
+
+        _ = try await screenshot.execute([:])
+        let beforeHome = try await frameID(from: controller)
+        _ = try await tool("device_home", in: session).execute([:])
+        await assertRejected(press, arguments: ["frameId": .string(beforeHome.uuidString), "key": "enter"])
+    }
+
+    func testUnknownNavigationDeliveryStopsTheRunWithoutRetry() async throws {
+        let failure = DeviceControlError.deliveryUnknown("No navigation receipt")
+        let controller = RecordingDeviceController(keyFailure: failure)
+        let stopped = expectation(description: "Navigation uncertainty stops the host")
+        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { _, _ in }, onUnknown: { stopped.fulfill() })
+        let screenshot = try tool("device_screenshot", in: session)
+        let press = try tool("device_press_key", in: session)
+        _ = try await screenshot.execute([:])
+        let frame = try await frameID(from: controller)
+        let arguments: AgentJSONValue = ["frameId": .string(frame.uuidString), "key": "search"]
+        do {
+            _ = try await press.execute(arguments)
+            XCTFail("Unknown navigation must remain visible.")
+        } catch { XCTAssertEqual(error as? DeviceControlError, failure) }
+        await fulfillment(of: [stopped], timeout: 1)
+        await assertRejected(press, arguments: arguments)
+        await assertRejected(screenshot, arguments: [:])
+        let counts = await controller.counts()
+        XCTAssertEqual(counts.keys, 1)
+        XCTAssertEqual(counts.screenshots, 1)
+    }
+
     private func controlSession(_ controller: RecordingDeviceController) -> DeviceToolSession {
         DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
                           log: { _, _ in }, onUnknown: {})
@@ -145,11 +197,15 @@ private enum TestLogError: Error, Equatable { case unavailable }
 /// exercised at the App's tool boundary, independently of a real transport.
 private actor RecordingDeviceController: DeviceController {
     private let tapFailure: DeviceControlError?
+    private let keyFailure: DeviceControlError?
     private var screenshotCount = 0
     private var tapCount = 0
+    private var keyCount = 0
     private var frameID: UUID?
 
-    init(tapFailure: DeviceControlError? = nil) { self.tapFailure = tapFailure }
+    init(tapFailure: DeviceControlError? = nil, keyFailure: DeviceControlError? = nil) {
+        self.tapFailure = tapFailure; self.keyFailure = keyFailure
+    }
 
     func status() async -> DeviceStatus { .ready(capabilities: [.screenshot, .tap]) }
 
@@ -166,5 +222,10 @@ private actor RecordingDeviceController: DeviceController {
     }
 
     func latestFrameID() -> UUID? { frameID }
-    func counts() -> (screenshots: Int, taps: Int) { (screenshotCount, tapCount) }
+    func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {
+        keyCount += 1
+        if let keyFailure { throw keyFailure }
+    }
+    func home() async throws {}
+    func counts() -> (screenshots: Int, taps: Int, keys: Int) { (screenshotCount, tapCount, keyCount) }
 }

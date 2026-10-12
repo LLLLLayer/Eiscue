@@ -8,6 +8,13 @@ public enum DeviceCapability: String, Codable, Sendable, CaseIterable {
     case launchApplication
     case home
     case listApplications
+    case keyboardNavigation
+}
+
+public enum DeviceKeyboardAction: String, Codable, Sendable, CaseIterable {
+    case search
+    case enter
+    case escape
 }
 
 public enum DeviceStatus: Sendable, Equatable {
@@ -34,6 +41,7 @@ public protocol DeviceController: Sendable {
     func typeText(_ text: String, frameID: UUID) async throws
     func launchApplication(bundleID: String) async throws
     func home() async throws
+    func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws
     func listApplications() async throws -> [DeviceApplication]
 }
 
@@ -56,5 +64,6 @@ public extension DeviceController {
     func typeText(_ text: String, frameID: UUID) async throws { try await typeText(text) }
     func launchApplication(bundleID: String) async throws { throw DeviceControlError.notConnected }
     func home() async throws { throw DeviceControlError.notConnected }
+    func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws { throw DeviceControlError.unsupported }
     func listApplications() async throws -> [DeviceApplication] { throw DeviceControlError.notConnected }
 }

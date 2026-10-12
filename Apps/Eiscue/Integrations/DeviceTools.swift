@@ -49,11 +49,16 @@ final class DeviceToolSession {
                 ], required: ["bundleId"]),
                 tool("device_home", "Return to the device home screen. Observe again afterward.", properties: [:], required: [])
             ]
+            result.append(tool("device_press_key", "Send one supported keyboard action. search opens system search (Command-Space), enter confirms the visible focused item, escape dismisses the visible panel. For another app, use home, observe, search, observe, type its display name, observe, then tap the matching visible result. This cannot launch by bundle ID. Observe again after every action.", properties: [
+                "frameId": frame,
+                "key": ["type": "string", "enum": .array(DeviceKeyboardAction.allCases.map { .string($0.rawValue) })]
+            ], required: ["frameId", "key"]))
         }
         let requirements: [String: DeviceCapability] = [
             "device_screenshot": .screenshot, "device_list_apps": .listApplications,
             "device_tap": .tap, "device_swipe": .swipe, "device_type_text": .textInput,
-            "device_launch_app": .launchApplication, "device_home": .home
+            "device_launch_app": .launchApplication, "device_home": .home,
+            "device_press_key": .keyboardNavigation
         ]
         return result.filter { requirements[$0.name].map { capabilities.contains($0) } ?? false }
     }
@@ -121,6 +126,12 @@ final class DeviceToolSession {
                 try await log("action.dispatched", name)
                 try check(sideEffect: true)
                 try await client.home()
+            case "device_press_key":
+                let id = try consumeFrame(arguments)
+                guard let raw = arguments["key"]?.stringValue, let key = DeviceKeyboardAction(rawValue: raw) else { throw ToolGateError.arguments }
+                try await log("action.dispatched", name)
+                try check(sideEffect: true)
+                try await client.pressKey(key, frameID: id)
             default: throw ToolGateError.scope
             }
             actionReturned = true

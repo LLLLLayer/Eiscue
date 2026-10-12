@@ -8,7 +8,7 @@ import Foundation
 @MainActor
 public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralManagerDelegate, @preconcurrency CBPeripheralDelegate {
     public enum State: Sendable, Equatable {
-        case idle, waitingForBluetooth, scanning, connecting, discovering, subscribing
+        case idle, waitingForBluetooth, scanning, connecting, discovering, subscribing, authenticating
         /// The custom GATT channel is ready. This alone does not prove HID input readiness.
         case ready
         case disconnected
@@ -30,14 +30,27 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     public var onStateChange: (@MainActor (State) -> Void)?
     public var connectedBoardID: UUID? { peripheral?.identifier }
     public var connectedBoardName: String? { peripheral?.name }
+    public var usesAuthenticatedCommands: Bool { authenticatedSession != nil }
 
     private static let serviceID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB3")
     private static let commandID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB4")
     private static let responseID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB5")
+    private static let challengeID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB6")
+    private static let proofID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB7")
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var commandCharacteristic: CBCharacteristic?
     private var responseCharacteristic: CBCharacteristic?
+    private var challengeCharacteristic: CBCharacteristic?
+    private var proofCharacteristic: CBCharacteristic?
+    private var requiresAuthentication = false
+    private var challengeRequested = false
+    private var handshake: BluetoothBoardHandshake?
+    private var authenticatedSession: BluetoothBoardSession?
+    private var pendingSequence: UInt32?
+    private var releaseSequence: UInt32?
+    private struct SentCommand { let requestID: UInt16; let opcode: UInt8 }
+    private var authenticatedCommands: [UInt32: SentCommand] = [:]
     private var connectWaiter: CheckedContinuation<Void, any Error>?
     private var connectToken: UUID?
     private var commandWaiter: CheckedContinuation<Receipt, any Error>?
@@ -93,7 +106,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
 
     /// Exactly one outstanding command. After an input write, cancellation,
     /// timeout or loss of connection is `DeviceControlError.deliveryUnknown`,
-    /// never a reason to retry. Read-only INFO failures are BluetoothBoardError.
+    /// never a reason to retry. Read-only INFO/QUERY failures are BluetoothBoardError.
     /// Firmware v1 opcodes: STOP 0, MOVE 1, CLICK 2, ASCII 3, KEY 4, ABS_POINT 5,
     /// KEY_COMBO 6, INFO 7. INFO reports capability bits only.
     public func command(opcode: UInt8, payload: [UInt8] = [], pairingHandshake: Bool = false) async throws -> Receipt {
@@ -106,7 +119,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
               responseCharacteristic?.isNotifying == true else { throw BluetoothBoardError.disconnected }
         let requestID = try reserveRequestID(for: peripheral.identifier)
         let token = UUID()
-        let frame = BluetoothBoardProtocol.frame(opcode: opcode, requestID: requestID, payload: payload)
+        let encoded = try encodeCommand(opcode: opcode, requestID: requestID, payload: payload)
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
@@ -114,14 +127,15 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
                 commandToken = token
                 pendingID = requestID
                 pendingOpcode = opcode
-                if opcode != 0 && opcode != 7 { inputMayBeHeld = true }
+                pendingSequence = encoded.sequence
+                if (1...6).contains(opcode) { inputMayBeHeld = true }
                 commandDeadline = Task { [weak self] in
                     do { try await Task.sleep(for: .seconds(pairingHandshake ? 90 : 5)) } catch { return }
                     guard let self, commandToken == token else { return }
                     failWrittenCommand(.commandTimeout)
                 }
                 writeTokens.append(token)
-                peripheral.writeValue(frame, for: characteristic, type: .withResponse)
+                peripheral.writeValue(encoded.data, for: characteristic, type: .withResponse)
             }
         } onCancel: {
             Task { @MainActor [weak self] in
@@ -144,7 +158,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         try Task.checkCancellation()
         if commandWaiter != nil {
             guard pendingOpcode != 0 else { throw BluetoothBoardError.busy }
-            let error: any Error = pendingOpcode == 7 ? BluetoothBoardError.busy : unknownDelivery(.deliveryUnknown)
+            let error: any Error = isReadOnly(pendingOpcode) ? BluetoothBoardError.busy : unknownDelivery(.deliveryUnknown)
             finishCommand(.failure(error))
         }
         return try await command(opcode: 0)
@@ -173,7 +187,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
             // System HID may already own the connection and suppress advertising.
             // Its name is only a discovery hint; custom GATT is verified below.
             for candidate in central.retrieveConnectedPeripherals(withServices: [CBUUID(string: "1812")])
-                where candidate.name == "Eiscue BLE" {
+                where candidate.name == "Eiscue BLE" || candidate.name == "Eiscue S3" {
                 candidates[candidate.identifier] = candidate
             }
             central.scanForPeripherals(withServices: [Self.serviceID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
@@ -208,7 +222,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     private func failWrittenCommand(_ reason: BluetoothBoardError) {
-        if pendingOpcode == 7 {
+        if isReadOnly(pendingOpcode) {
             // INFO cannot emit input. Do not attribute an uncertain action to a
             // discovery request. Earlier input still uses the usual STOP cleanup.
             let failure: BluetoothBoardError
@@ -227,6 +241,35 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         closeSession(connectError: error, finalState: .failed(error))
     }
 
+    private func isReadOnly(_ opcode: UInt8) -> Bool { opcode == 7 || opcode == 9 }
+
+    private func encodeCommand(opcode: UInt8, requestID: UInt16, payload: [UInt8]) throws -> (data: Data, sequence: UInt32?) {
+        let frame = BluetoothBoardProtocol.frame(opcode: opcode, requestID: requestID, payload: payload)
+        guard requiresAuthentication else { return (frame, nil) }
+        guard authenticatedSession != nil else { throw BluetoothBoardError.authenticationFailed }
+        let signed = try authenticatedSession!.command(frame)
+        authenticatedCommands[signed.sequence] = SentCommand(requestID: requestID, opcode: opcode)
+        if authenticatedCommands.count > 32, let first = authenticatedCommands.keys.min() { authenticatedCommands.removeValue(forKey: first) }
+        return (signed.data, signed.sequence)
+    }
+
+    private func decodeReply(_ data: Data) throws -> (bytes: [UInt8], sequence: UInt32?) {
+        guard requiresAuthentication else {
+            guard data.count == 8 else { throw BluetoothBoardError.malformedReply }
+            return ([UInt8](data), nil)
+        }
+        let raw = [UInt8](data)
+        guard raw.count == 44, let authenticatedSession else { throw BluetoothBoardError.authenticationFailed }
+        let sequence = (0..<4).reduce(UInt32(0)) { $0 | UInt32(raw[8 + $1]) << ($1 * 8) }
+        // Verify the MAC using its own sequence before matching an outstanding
+        // request: a preempted command can legally acknowledge before STOP.
+        let bytes = [UInt8](try authenticatedSession.reply(data, sequence: sequence))
+        guard let sent = authenticatedCommands[sequence],
+              sent.requestID == (UInt16(bytes[2]) | UInt16(bytes[3]) << 8),
+              sent.opcode == bytes[1] else { throw BluetoothBoardError.authenticationFailed }
+        return (bytes, sequence)
+    }
+
     private func closeSession(connectError: any Error, commandError: (any Error)? = nil, finalState: State) {
         if closingState != nil {
             if central?.state != .poweredOn || peripheral?.state != .connected {
@@ -239,7 +282,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         central?.stopScan()
         let connectContinuation = connectWaiter
         connectWaiter = nil; connectToken = nil
-        let interrupted: any Error = pendingOpcode == 7 ? BluetoothBoardError.disconnected : unknownDelivery(.disconnected)
+        let interrupted: any Error = isReadOnly(pendingOpcode) ? BluetoothBoardError.disconnected : unknownDelivery(.disconnected)
         finishCommand(.failure(commandError ?? interrupted))
         connectContinuation?.resume(throwing: connectError)
         // Cancelling custom GATT does not necessarily close the system HID link.
@@ -248,16 +291,17 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         if inputMayBeHeld, central?.state == .poweredOn,
            let peripheral, peripheral.state == .connected,
            let characteristic = commandCharacteristic, responseCharacteristic?.isNotifying == true,
-           let id = try? reserveRequestID(for: peripheral.identifier) {
+           let id = try? reserveRequestID(for: peripheral.identifier),
+           let encoded = try? encodeCommand(opcode: 0, requestID: id, payload: []) {
             let token = UUID()
-            closingState = finalState; releaseID = id; releaseToken = token
+            closingState = finalState; releaseID = id; releaseToken = token; releaseSequence = encoded.sequence
             writeTokens.append(token)
             releaseDeadline = Task { [weak self] in
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 guard let self, releaseID == id, let closingState else { return }
                 tearDownSession(finalState: closingState)
             }
-            peripheral.writeValue(BluetoothBoardProtocol.frame(opcode: 0, requestID: id, payload: []), for: characteristic, type: .withResponse)
+            peripheral.writeValue(encoded.data, for: characteristic, type: .withResponse)
             updateState(finalState)
             return
         }
@@ -267,13 +311,16 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     private func tearDownSession(finalState: State) {
         releaseDeadline?.cancel(); releaseDeadline = nil
         releaseID = nil; releaseToken = nil; closingState = nil
+        releaseSequence = nil; pendingSequence = nil
         if let peripheral {
             peripheral.delegate = nil
             central?.cancelPeripheralConnection(peripheral)
         }
         central?.delegate = nil
         central = nil; peripheral = nil
-        commandCharacteristic = nil; responseCharacteristic = nil
+        commandCharacteristic = nil; responseCharacteristic = nil; challengeCharacteristic = nil; proofCharacteristic = nil
+        requiresAuthentication = false; challengeRequested = false; handshake = nil; authenticatedSession = nil
+        authenticatedCommands.removeAll()
         candidates.removeAll(); writeTokens.removeAll()
         inputMayBeHeld = false
         updateState(finalState)
@@ -283,6 +330,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         commandDeadline?.cancel(); commandDeadline = nil
         let waiter = commandWaiter
         commandWaiter = nil; commandToken = nil
+        pendingSequence = nil
         waiter?.resume(with: result)
     }
 
@@ -322,7 +370,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == Self.serviceID }) else {
             failConnection(.missingService); return
         }
-        peripheral.discoverCharacteristics([Self.commandID, Self.responseID], for: service)
+        peripheral.discoverCharacteristics([Self.commandID, Self.responseID, Self.challengeID, Self.proofID], for: service)
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
@@ -333,14 +381,37 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
             failConnection(.missingCharacteristic); return
         }
         commandCharacteristic = command; responseCharacteristic = response
+        let challenge = service.characteristics?.first { $0.uuid == Self.challengeID }
+        let proof = service.characteristics?.first { $0.uuid == Self.proofID }
+        guard (challenge == nil) == (proof == nil) else { failConnection(.authenticationFailed); return }
+        if let challenge, let proof {
+            guard challenge.properties.contains(.read), proof.properties.contains(.write), proof.properties.contains(.notify),
+                  peripheral.maximumWriteValueLength(for: .withResponse) >= 52 else { failConnection(.authenticationFailed); return }
+            requiresAuthentication = true; challengeCharacteristic = challenge; proofCharacteristic = proof
+            peripheral.setNotifyValue(true, for: proof)
+        }
         peripheral.setNotifyValue(true, for: response)
         updateState(.subscribing)
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: (any Error)?) {
-        guard peripheral === self.peripheral, characteristic === responseCharacteristic else { return }
+        guard peripheral === self.peripheral,
+              characteristic === responseCharacteristic || characteristic === proofCharacteristic else { return }
         guard closingState == nil else { return }
         guard error == nil, characteristic.isNotifying else { failConnection(.notificationFailed); return }
+        guard responseCharacteristic?.isNotifying == true else { return }
+        if requiresAuthentication {
+            guard proofCharacteristic?.isNotifying == true, let challengeCharacteristic else { return }
+            guard !challengeRequested else { return }
+            challengeRequested = true
+            updateState(.authenticating)
+            peripheral.readValue(for: challengeCharacteristic)
+            return
+        }
+        finishConnection()
+    }
+
+    private func finishConnection() {
         connectionDeadline?.cancel(); connectionDeadline = nil
         selectionTask?.cancel(); selectionTask = nil
         let waiter = connectWaiter
@@ -351,6 +422,10 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: (any Error)?) {
+        if peripheral === self.peripheral, characteristic === proofCharacteristic {
+            if error != nil, connectWaiter != nil { failConnection(.authenticationFailed) }
+            return
+        }
         guard peripheral === self.peripheral, characteristic === commandCharacteristic, !writeTokens.isEmpty else { return }
         let token = writeTokens.removeFirst()
         if token == releaseToken, error != nil, let closingState {
@@ -361,22 +436,55 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
-        guard peripheral === self.peripheral, characteristic === responseCharacteristic else { return }
+        guard peripheral === self.peripheral else { return }
+        if characteristic === challengeCharacteristic {
+            guard connectWaiter != nil, handshake == nil else { return }
+            guard error == nil, let data = characteristic.value, let proofCharacteristic else { failConnection(.authenticationFailed); return }
+            do {
+                let challenge = try BluetoothBoardChallenge(data)
+                let key = try BluetoothBoardKeyStore(boardID: challenge.boardID).key(for: challenge)
+                let nonce = try BluetoothBoardKeyStore.random(count: 16)
+                let proof = try BluetoothBoardHandshake(challenge: challenge, key: key, clientNonce: nonce)
+                handshake = proof
+                peripheral.writeValue(proof.request, for: proofCharacteristic, type: .withResponse)
+            } catch let failure as BluetoothBoardError { failConnection(failure) }
+            catch { failConnection(.authenticationFailed) }
+            return
+        }
+        if characteristic === proofCharacteristic {
+            guard connectWaiter != nil, let handshake else { return }
+            guard error == nil, let data = characteristic.value else { failConnection(.authenticationFailed); return }
+            do {
+                authenticatedSession = try handshake.accept(data)
+                self.handshake = nil
+                finishConnection()
+            } catch { failConnection(.authenticationFailed) }
+            return
+        }
+        guard characteristic === responseCharacteristic else { return }
+        guard error == nil, let data = characteristic.value else {
+            if let closingState { tearDownSession(finalState: closingState) }
+            else if commandWaiter != nil { failWrittenCommand(.malformedReply) }
+            else { failConnection(.malformedReply) }
+            return
+        }
+        let reply: (bytes: [UInt8], sequence: UInt32?)
+        do { reply = try decodeReply(data) }
+        catch let failure as BluetoothBoardError {
+            if let closingState { tearDownSession(finalState: closingState) }
+            else if commandWaiter != nil { failWrittenCommand(failure) }
+            else { failConnection(failure) }
+            return
+        } catch { failConnection(.authenticationFailed); return }
+        let bytes = reply.bytes, id = UInt16(bytes[2]) | UInt16(bytes[3]) << 8
         if let releaseID, let closingState {
-            if error != nil { tearDownSession(finalState: closingState); return }
-            guard let data = characteristic.value, data.count == 8 else { return }
-            let bytes = [UInt8](data)
-            guard UInt16(bytes[2]) | UInt16(bytes[3]) << 8 == releaseID else { return }
+            guard id == releaseID, reply.sequence == releaseSequence else { return }
             // This is best-effort cleanup; neither errors nor ACKs authorize input.
             tearDownSession(finalState: closingState)
             return
         }
         guard commandWaiter != nil else { return }
-        guard error == nil, let data = characteristic.value, data.count == 8 else {
-            failWrittenCommand(.malformedReply); return
-        }
-        let bytes = [UInt8](data), id = UInt16(bytes[2]) | UInt16(bytes[3]) << 8
-        guard id == pendingID else { return } // A preempted or old command's ACK.
+        guard id == pendingID, reply.sequence == pendingSequence else { return }
         guard bytes[0] == 1, bytes[1] == pendingOpcode, bytes[6] <= 1, bytes[7] == 0,
               bytes[4] <= 5 else { failWrittenCommand(.malformedReply); return }
         guard bytes[4] == 0 else {

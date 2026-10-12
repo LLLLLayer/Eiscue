@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "hid_peripheral.h"
+#include "usb_hid.h"
+#include "board_auth.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
@@ -80,6 +82,10 @@ void app_main(void) {
     // Existing Wi-Fi configuration and original NVS are preserved. Never erase
     // NVS automatically if it is full or has an incompatible prior version.
     ESP_ERROR_CHECK(nvs_flash_init());
+#if BOARD_AUTH_REQUIRED
+    ESP_ERROR_CHECK(board_auth_init());
+#endif
+    eiscue_usb_hid_init();
     ESP_ERROR_CHECK(nimble_port_init());
     ble_hs_cfg.reset_cb=host_reset;ble_hs_cfg.sync_cb=host_sync;
     ble_hs_cfg.store_status_cb=store_status;
@@ -92,6 +98,6 @@ void app_main(void) {
     assert(ble_svc_gap_device_appearance_set(0x03C2)==0);
     assert(eiscue_ble_services_init()==0);
     ble_store_config_init();
-    ESP_LOGI(TAG,"Eiscue BLE board v0.2.0; no Wi-Fi startup; free heap=%lu",(unsigned long)esp_get_free_heap_size());
+    ESP_LOGI(TAG,"Eiscue HID board v0.3.0; target=%s; no Wi-Fi startup; free heap=%lu",CONFIG_IDF_TARGET,(unsigned long)esp_get_free_heap_size());
     nimble_port_freertos_init(host_task);
 }

@@ -11,3 +11,6 @@
 "bluetooth.pairing-required" = "蓝牙配对尚未完成，请保持设备解锁，并在系统询问时允许配对。";
 "bluetooth.input-unavailable" = "蓝牙输入尚未就绪，请检查开发板的蓝牙配对。使用鼠标操作还需开启辅助触控。";
 "bluetooth.storage-unavailable" = "暂时无法保存蓝牙连接状态，请解锁设备后重试。";
+"bluetooth.authentication-failed" = "开发板无法验证这次连接，请断开后重新连接。输入操作不会自动重试。";
+"bluetooth.authentication-key-unavailable" = "开发板已绑定到其他 App 安装，本机没有对应的授权密钥。";
+"bluetooth.enrollment-closed" = "首次设置请重新给开发板通电，并在一分钟内连接。已有的开发板授权不会被自动替换。";

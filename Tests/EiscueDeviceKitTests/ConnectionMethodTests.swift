@@ -27,6 +27,7 @@ import Testing
         let client = DeviceClient(controller: VPNOnlyController())
         await #expect(throws: DeviceControlError.unsupported) { try await client.connectUSBBoard() }
         await #expect(throws: DeviceControlError.unsupported) { try await client.connect(method: .usbBoard) }
+        await #expect(throws: DeviceControlError.unsupported) { try await client.pressKey(.search, frameID: UUID()) }
     }
 
     @Test func boardConnectionReusesIdentityAndNeverCreatesVPNDiscovery() async throws {
@@ -43,7 +44,7 @@ import Testing
         #expect(fixture.session.authorizedInput)
         #expect(fixture.session.developerChecks == 1)
         #expect(fixture.session.mediaStarts == 1)
-        #expect(await client.status() == .ready(capabilities: Set(DeviceCapability.allCases)))
+        #expect(await client.status() == .ready(capabilities: [.screenshot, .tap, .swipe, .textInput, .launchApplication, .home, .listApplications]))
         #expect(fixture.board.cancelled)
         await client.disconnect()
         #expect(fixture.session.closed)

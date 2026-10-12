@@ -14,25 +14,26 @@ Main pieces:
 - **App extensions**: `Apps/EiscueBroadcast` (ReplayKit broadcast upload; caches only the latest JPEG frame in the App Group) and `Apps/EiscueTunnel` (Packet Tunnel loopback reflector, used only by the local-VPN route). `Apps/Shared` holds config shared by the app and tunnel.
 - **Vendor/DeviceBackend**: GPL-3.0 control backend copied from actell at a pinned commit (Swift `PhoneAgentNCM`, C `CNCMBackend`, ObjC `CEiscueAutomation`, Rust crate + vendored `idevice`), shipped as the prebuilt `NCMNativeBackend.xcframework` (arm64 iOS, arm64 simulator, arm64 macOS only; no x86_64).
 - **Vendor/LocalTunnel**: LocalDevVPN / StosVPN–derived reflector source and license, bundled as app resources.
-- **Firmware** (ESP-IDF v5.5.3): `Passport-BLE` (ESP32-C3 BLE HID, default route), `Passport-Relay` (ESP32-C3 Wi-Fi AP relay), `NCM-Relay` (ESP32-S3 USB NCM relay, no real-board validation yet). The C3 BLE and Wi-Fi images share a partition layout and cannot run at the same time.
+- **Firmware** (ESP-IDF v5.5.3): `Passport-BLE` (ESP32-C3 BLE HID, default route), `Passport-Relay` (ESP32-C3 Wi-Fi AP relay), `NCM-Relay` (ESP32-S3 USB NCM relay, no real-board validation yet). `Passport-BLE` also builds explicitly for S3: BLE commands with selected BLE or USB HID output, independent ReplayKit observation, no VPN. Its 16 MB profile preserves the attached board's 24 KB NVS layout; do not reuse the C3 partition table. The C3 BLE and Wi-Fi images share a partition layout and cannot run at the same time.
 
 ### Architecture rules
 
 - The two Kits **must not depend on each other**. Only the app's `DeviceToolSession` (`Apps/Eiscue/Integrations/DeviceTools.swift`) depends on both; it builds tool schemas, enforces scope/frame/timeout gates, logs actions, and stops on unknown results.
 - Public Kit APIs must not expose PiDurableKit or actell types. `public` access control defines the API; directories are just organization. There is no separate "Plugin" product.
 - Engines are swappable via `AgentClient(engine:)`; device backends via `DeviceClient(controller:)`. The app defaults to `BluetoothDeviceController` and keeps the developer-services `DeviceClient()` for the other routes.
+- S3 HID commands and replies use per-connection HMAC and monotonic sequence numbers; every command, including STOP/INFO, is authenticated. First enrollment is restricted to an unclaimed board's first 60 s of power, with the candidate key saved in Keychain before enrollment. Never replace an existing board key automatically. Enrollment uses encrypted Just Works and is a trusted-nearby development flow, without a MITM guarantee.
 - Connection methods (`DeviceConnectionMethod`): `bluetoothBoard` (default; BLE HID + ReplayKit; no VPN, pairing file or DDI), `localVPN`, `usbBoard`, `wirelessBoard` (RemotePairing / CoreDevice paths that need a pairing identity and developer environment). A route never silently falls back to another one.
 - `EiscueBroadcast` compiles `Sources/EiscueDeviceKit/ScreenBroadcast/ScreenBroadcastStore.swift` directly so the extension doesn't link the device backend. Keep that file Foundation-only.
 - Selecting Bluetooth at runtime does not remove the linked GPL backend from the binary; a pure-BLE distribution would need a target split.
 
 ### Agent / device behavior contracts (do not weaken)
 
-- Task scope is `chat`, `observe`, or `control`, fixed when a run starts. Plain chat registers **no tools** and only a short system prompt. Device tools appear only when the user enables "Allow AI to operate device" and are filtered by the controller's actual `DeviceStatus` capabilities (Bluetooth currently has no Home, app list, or app launch).
+- Task scope is `chat`, `observe`, or `control`, fixed when a run starts. Plain chat registers **no tools** and only a short system prompt. Device tools appear only when the user enables "Allow AI to operate device" and are filtered by the controller's actual `DeviceStatus` capabilities (HID has no app list or bundle-ID launch; Home and restricted keyboard navigation require a supporting firmware plus verified pointer/text calibration).
 - The runtime always opens with `resume:false`. Recovery is read-only; continuing an interrupted run requires an explicit `.resume`. Unaccepted messages are retried with the same `requestID`.
 - Side-effect tools use unsafe replay at the runtime level, but the host gate stops after an unknown outcome. `DeviceControlError.deliveryUnknown` is never retried automatically.
 - Each coordinate action must use the newest screenshot's `frameID` and consumes it; actions, reconnects, rotation or geometry changes invalidate frames. RemotePairing frames last 30 s. A ReplayKit frame counts as current only if it was published within 3 s, or the broadcast extension's heartbeat (every 0.5 s) names it with no newer buffer pending; paused/stopped sessions never authorize input. Each BLE observation gets a new `frameID`. Coordinates are screenshot pixels.
 - Device operations are serialized (concurrent calls return `busy`). Success only means the command was sent; callers re-observe to confirm.
-- Bluetooth readiness needs three separate conditions: BLE connected, screen sharing active, and the four-point touch + text calibration passed. A BLE acknowledgement doesn't count as a verified action.
+- HID readiness needs three separate conditions: authenticated BLE command connection (S3), selected BLE/USB output ready, and active screen sharing plus four-point touch/text calibration passed. C3 uses the existing encrypted BLE command protocol. A BLE acknowledgement doesn't count as a verified action.
 - Stop callbacks carry a `runID` so a stale stop can't cancel a newer run. On event-save failure the host cancels and waits for the engine to close before reopening the same SQLite.
 - Background device tasks use `BGContinuedProcessingTask` (`BackgroundExecution.swift`, identifier `$(PRODUCT_BUNDLE_IDENTIFIER).agent.continued-processing`). VPN, ReplayKit and Bluetooth background modes are not execution leases.
 - Gemini's official OpenAI-compatible endpoint gets `supportsStore=false` (`DefaultEngine.swift`). This rule is scoped to that exact HTTPS host/path and to Chat Completions only.
@@ -83,7 +84,9 @@ bash Scripts/test-owned-automation.sh     # ObjC automation bridge host fixture 
 Firmware (requires `IDF_PATH` pointing to an ESP-IDF **v5.5.3** checkout. `Scripts/board-idf-env.sh` rejects any other version. `IDF_TOOLS_PATH` is optional):
 
 ```sh
-bash Scripts/build-passport-ble.sh        # C3 BLE -> .build/passport-ble-firmware/
+bash Scripts/build-passport-ble.sh esp32c3 # C3 BLE -> .build/passport-ble-firmware/
+bash Scripts/build-passport-ble.sh esp32s3 # S3 BLE / USB HID -> .build/s3-hid-firmware/
+bash Scripts/test-board-auth.sh           # real HMAC host fixture (OpenSSL), no hardware
 bash Scripts/build-passport-firmware.sh   # C3 Wi-Fi relay (builds + packages)
 bash Scripts/build-board-firmware.sh      # S3 USB NCM relay (builds + packages)
 bash Scripts/test-board-firmware.sh       # NCM-Relay host tests (UBSan, localhost) + Python tool tests

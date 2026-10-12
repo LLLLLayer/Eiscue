@@ -1,0 +1,6 @@
+# Preserve the attached S3 board's original NVS and PHY ranges.
+# Name, Type, SubType, Offset, Size, Flags
+nvs, data, nvs, 0x9000, 0x6000,
+phy_init, data, phy, 0xF000, 0x1000,
+eiscue_cfg, data, nvs, 0x10000, 0x6000,
+factory, app, factory, 0x20000, 0x200000,

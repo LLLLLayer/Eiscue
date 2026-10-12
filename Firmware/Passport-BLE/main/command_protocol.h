@@ -9,9 +9,13 @@
 
 enum eiscue_opcode { EISCUE_STOP = 0, EISCUE_MOVE = 1, EISCUE_CLICK = 2,
                      EISCUE_ASCII = 3, EISCUE_KEY = 4, EISCUE_ABS_POINT = 5,
-                     EISCUE_KEY_COMBO = 6, EISCUE_INFO = 7 };
+                     EISCUE_KEY_COMBO = 6, EISCUE_INFO = 7,
+                     EISCUE_SELECT_OUTPUT = 8, EISCUE_QUERY_OUTPUT = 9 };
 enum eiscue_status { EISCUE_SENT = 0, EISCUE_ARGUMENT = 1, EISCUE_INSECURE = 2,
-                     EISCUE_BUSY = 3, EISCUE_NOT_SUBSCRIBED = 4, EISCUE_SEND_FAILED = 5 };
+                     EISCUE_BUSY = 3, EISCUE_NOT_SUBSCRIBED = 4, EISCUE_SEND_FAILED = 5,
+                     EISCUE_AUTH_REQUIRED = 6 };
+enum eiscue_output { EISCUE_OUTPUT_BLE = 0, EISCUE_OUTPUT_USB = 1 };
+#define EISCUE_CAP_OUTPUT_SELECTION 0x80
 enum eiscue_report_kind { EISCUE_MOUSE_REPORT = 1, EISCUE_KEYBOARD_REPORT = 2,
                           EISCUE_ABSOLUTE_REPORT = 3 };
 typedef struct { uint8_t kind, length, bytes[8]; } eiscue_report;

@@ -1,5 +1,20 @@
-#if os(iOS)
 import Foundation
+
+enum BluetoothFrameAuthority {
+    static func permits(sourceFrameID: UUID, capturedUptime: TimeInterval,
+                        currentSourceFrameID: UUID, currentConfirmedUptime: TimeInterval,
+                        now: TimeInterval) -> Bool {
+        let capturedAge = now - capturedUptime, confirmedAge = now - currentConfirmedUptime
+        guard capturedAge.isFinite, capturedAge >= 0,
+              confirmedAge.isFinite, confirmedAge >= 0 else { return false }
+        // The current reading was validated by ScreenBroadcastStore. A live
+        // heartbeat for a newer buffer cannot extend an older observation.
+        return capturedAge <= ScreenBroadcastStore.maximumFrameAge ||
+            sourceFrameID == currentSourceFrameID && confirmedAge <= ScreenBroadcastStore.maximumFrameAge
+    }
+}
+
+#if os(iOS)
 import UIKit
 
 /// BLE input and user-authorized ReplayKit observation. The host presents the
@@ -10,6 +25,8 @@ public final class BluetoothDeviceController: DeviceController {
     public var onChange: (@MainActor () -> Void)?
     public private(set) var isConnected = false
     public private(set) var isCalibrating = false
+    public private(set) var inputRoute: BluetoothBoardInputRoute = .bluetooth
+    public private(set) var outputInfo: BluetoothBoardOutputInfo?
     private var store: ScreenBroadcastStore?
     private var calibration: Calibration?
     private var calibrationFrame: ObservedFrame?
@@ -23,6 +40,7 @@ public final class BluetoothDeviceController: DeviceController {
     private var keyboardAvailable = false
     private var keyboardVerified = false
     private var absoluteAvailable = false
+    private var navigationAvailable = false
     private var lastDispatchedUptime: TimeInterval = -.infinity
 
     public init(board: BluetoothBoardClient = BluetoothBoardClient(), screenStore: ScreenBroadcastStore? = nil) {
@@ -32,12 +50,14 @@ public final class BluetoothDeviceController: DeviceController {
             if state != .ready {
                 if isConnected || isCalibrating { epoch = UUID() }
                 isConnected = false; clearCalibration()
+                outputInfo = nil; navigationAvailable = false
             }
             onChange?()
         }
     }
 
     public var screenState: ScreenBroadcastState? { try? screenStore().state() }
+    public var isInputReady: Bool { isConnected && absoluteAvailable && keyboardAvailable }
     public var isPointerVerified: Bool {
         guard !isCalibrating, let calibration, let state = screenState else { return false }
         return state.isActive && state.sessionID == calibration.sessionID && state.orientation == calibration.orientation
@@ -46,16 +66,52 @@ public final class BluetoothDeviceController: DeviceController {
 
     public func status() async -> DeviceStatus {
         guard isConnected else { return .unavailable(reason: message("bluetooth.connect")) }
+        if !busy, releaseToken == nil {
+            busy = true
+            defer { busy = false }
+            let token = epoch
+            do {
+                let receipt = try await board.command(opcode: 7)
+                try requireEpoch(token)
+                absoluteAvailable = receipt.emittedReports & 1 != 0
+                keyboardAvailable = receipt.emittedReports & 2 != 0
+                if outputInfo != nil {
+                    let info = try await readOutputInfo(token: token)
+                    guard info.selectedRoute == inputRoute else { throw DeviceControlError.connection(message("bluetooth.outputMismatch")) }
+                    navigationAvailable = info.supportsNavigation
+                }
+                guard absoluteAvailable && keyboardAvailable else {
+                    clearCalibration(); onChange?()
+                    return .unavailable(reason: message(inputRoute == .usb ? "bluetooth.usbMissing" : "bluetooth.hidMissing"))
+                }
+            } catch {
+                if let failure = error as? BluetoothBoardError, failure == .authenticationFailed { board.disconnect() }
+                clearCalibration(); onChange?()
+                return .unavailable(reason: error.localizedDescription)
+            }
+        }
         do {
             guard try screenStore().state().isActive else { return .unavailable(reason: message("bluetooth.share")) }
         } catch { return .unavailable(reason: error.localizedDescription) }
         guard isPointerVerified else { return .unavailable(reason: message("bluetooth.calibrate")) }
         var capabilities: Set<DeviceCapability> = [.screenshot, .tap, .swipe]
-        if keyboardAvailable && keyboardVerified { capabilities.insert(.textInput) }
+        if keyboardAvailable && keyboardVerified {
+            capabilities.insert(.textInput)
+            if navigationAvailable { capabilities.formUnion([.home, .keyboardNavigation]) }
+        }
         return .ready(capabilities: capabilities)
     }
 
     public func hasPairingIdentity() async throws -> Bool { isConnected }
+
+    /// Change only after release/disconnect. Reconnecting requires a fresh
+    /// pointer/text check even if the next route uses the same physical board.
+    public func selectInputRoute(_ route: BluetoothBoardInputRoute) throws {
+        guard !busy, releaseToken == nil, !isConnected, board.state != .ready else { throw DeviceControlError.busy }
+        epoch = UUID(); clearCalibration()
+        inputRoute = route; outputInfo = nil; navigationAvailable = false
+        onChange?()
+    }
 
     public func connectBluetoothBoard() async throws {
         guard !busy, releaseToken == nil else { throw DeviceControlError.busy }
@@ -65,15 +121,35 @@ public final class BluetoothDeviceController: DeviceController {
         do {
             try await board.connect()
             try requireConnectionEpoch(token)
+            let first = try await board.command(opcode: 7, pairingHandshake: true)
+            try requireConnectionEpoch(token)
+            let selectable = first.emittedReports & BluetoothBoardProtocol.outputSelectionFlag != 0
+            if selectable {
+                let info = try await readOutputInfo(token: token)
+                guard inputRoute != .usb || info.supportsUSB else { throw DeviceControlError.connection(message("bluetooth.usbRequired")) }
+                _ = try await board.command(opcode: 8, payload: [inputRoute.commandValue])
+                try requireConnectionEpoch(token)
+                let selected = try await readOutputInfo(token: token)
+                guard selected.selectedRoute == inputRoute else { throw DeviceControlError.connection(message("bluetooth.outputMismatch")) }
+            } else if inputRoute == .usb {
+                throw DeviceControlError.connection(message("bluetooth.usbRequired"))
+            }
             let deadline = Date().addingTimeInterval(40)
             while true {
                 try Task.checkCancellation()
-                let receipt = try await board.command(opcode: 7, pairingHandshake: true)
+                let receipt = try await board.command(opcode: 7)
                 try requireConnectionEpoch(token)
                 absoluteAvailable = receipt.emittedReports & 1 != 0
                 keyboardAvailable = receipt.emittedReports & 2 != 0
+                if selectable {
+                    let info = try await readOutputInfo(token: token)
+                    guard info.selectedRoute == inputRoute else { throw DeviceControlError.connection(message("bluetooth.outputMismatch")) }
+                    navigationAvailable = info.supportsNavigation
+                }
                 if absoluteAvailable && keyboardAvailable { break }
-                guard Date() < deadline else { throw DeviceControlError.connection(message("bluetooth.hidMissing")) }
+                guard Date() < deadline else {
+                    throw DeviceControlError.connection(message(inputRoute == .usb ? "bluetooth.usbMissing" : "bluetooth.hidMissing"))
+                }
                 try await Task.sleep(for: .milliseconds(500))
             }
             try requireConnectionEpoch(token)
@@ -202,11 +278,44 @@ public final class BluetoothDeviceController: DeviceController {
 
     public func home() async throws {
         try beginAction(); defer { busy = false }
-        guard isPointerVerified, keyboardAvailable else { throw DeviceControlError.notConnected }
+        guard isPointerVerified, keyboardAvailable, keyboardVerified, navigationAvailable else { throw DeviceControlError.unsupported }
         _ = try observe(); latest = nil
+        try await sendKey(opcode: 6, payload: [0x08, 0x0B], token: epoch)
+    }
+
+    public func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {
+        try beginAction(); defer { busy = false }
+        let (_, mapping) = try consume(frameID)
+        guard keyboardAvailable, keyboardVerified, navigationAvailable else { throw DeviceControlError.unsupported }
+        let token = epoch
+        try requireCurrent(mapping, token: token)
+        switch key {
+        case .search: try await sendKey(opcode: 6, payload: [0x08, 0x2C], token: token)
+        case .enter: try await sendKey(opcode: 4, payload: [1], token: token)
+        case .escape: try await sendKey(opcode: 4, payload: [5], token: token)
+        }
+    }
+
+    private func sendKey(opcode: UInt8, payload: [UInt8], token: UUID) async throws {
+        try requireEpoch(token)
         lastDispatchedUptime = ProcessInfo.processInfo.systemUptime
         defer { lastDispatchedUptime = ProcessInfo.processInfo.systemUptime }
-        _ = try await board.command(opcode: 6, payload: [0x08, 0x0B])
+        _ = try await board.command(opcode: opcode, payload: payload)
+        // A shortcut can leave the app. Cancellation or disconnect after its
+        // acknowledged send must not make a second send look safe.
+        do { try requireEpoch(token) }
+        catch { throw DeviceControlError.deliveryUnknown(message("bluetooth.interrupted")) }
+    }
+
+    private func readOutputInfo(token: UUID) async throws -> BluetoothBoardOutputInfo {
+        let receipt = try await board.command(opcode: 9)
+        try requireConnectionEpoch(token)
+        let info = try BluetoothBoardOutputInfo(bits: receipt.emittedReports)
+        guard !(info.isS3 || info.supportsUSB) || board.usesAuthenticatedCommands else {
+            throw BluetoothBoardError.authenticationFailed
+        }
+        outputInfo = info; onChange?()
+        return info
     }
 
     /// Called only while the host's full-screen, non-destructive calibration
@@ -314,7 +423,14 @@ public final class BluetoothDeviceController: DeviceController {
         // observation must postdate every input sent since it was taken.
         guard let frame, frame.screenshot.frameID == id, frame.observedUptime > lastDispatchedUptime,
               (0..<30).contains(ProcessInfo.processInfo.systemUptime - frame.observedUptime),
-              let calibration, calibration.matches(frame), calibration.matches(try observe()) else {
+              let calibration, calibration.matches(frame) else {
+            throw DeviceControlError.staleFrame
+        }
+        let current = try observe()
+        guard calibration.matches(current),
+              BluetoothFrameAuthority.permits(sourceFrameID: frame.sourceFrameID,
+                  capturedUptime: frame.capturedUptime, currentSourceFrameID: current.sourceFrameID,
+                  currentConfirmedUptime: current.observedUptime, now: ProcessInfo.processInfo.systemUptime) else {
             throw DeviceControlError.staleFrame
         }
         return (frame, calibration)
@@ -361,6 +477,7 @@ public final class BluetoothDeviceController: DeviceController {
 
     private struct ObservedFrame {
         let screenshot: DeviceScreenshot
+        let sourceFrameID: UUID
         let sessionID: UUID
         let orientation: ScreenBroadcastOrientation
         let capturedUptime: TimeInterval
@@ -372,6 +489,7 @@ public final class BluetoothDeviceController: DeviceController {
             let frame = reading.frame
             screenshot = DeviceScreenshot(frameID: UUID(), capturedAt: frame.capturedAt,
                 width: frame.width, height: frame.height, mimeType: "image/jpeg", data: frame.jpegData)
+            sourceFrameID = frame.frameID
             sessionID = frame.sessionID; orientation = frame.orientation
             capturedUptime = frame.capturedUptime; observedUptime = reading.confirmedUptime
         }

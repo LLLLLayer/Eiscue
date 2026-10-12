@@ -4315,13 +4315,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB board"
+            "value": "USB network relay"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB 开发板"
+            "value": "USB 网卡中继"
           }
         }
       }
@@ -4349,13 +4349,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect through a USB board while using another VPN. Your device’s pairing authorization is still required."
+            "value": "Use the board’s USB network relay without starting Eiscue VPN. Initial developer pairing is required."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过 USB 开发板连接，可同时使用其他 VPN。仍需先保存这台设备的配对授权。"
+            "value": "通过开发板的 USB 网卡连接，不开启 Eiscue 本地 VPN；首次需完成开发者配对。"
           }
         }
       }
@@ -4417,13 +4417,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecting through the USB board…"
+            "value": "Connecting through the USB network relay…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在通过 USB 开发板连接…"
+            "value": "正在连接 USB 网卡中继…"
           }
         }
       }

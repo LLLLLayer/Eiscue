@@ -1,6 +1,6 @@
-# ESP32-C3 Bluetooth Board Firmware
+# ESP32-C3 / ESP32-S3 Device Control Firmware
 
-Original ESP32-C3 firmware, version **0.2.0**, built with ESP-IDF **5.5.3**.
+Original ESP32-C3 / ESP32-S3 firmware, version **0.3.0**, built with ESP-IDF **5.5.3**.
 No Pilot or other undeclared-license implementation was copied. The peripheral
 uses the official ESP-IDF NimBLE APIs and standard HID Usage Tables. Its purpose
 is to test encrypted App commands and actual iPhone keyboard/mouse effects while
@@ -21,16 +21,26 @@ require separate validation.
 ```sh
 export IDF_PATH=/path/to/esp-idf-v5.5.3
 export IDF_TOOLS_PATH=/path/to/espressif-tools
-bash Scripts/build-passport-ble.sh
+bash Scripts/build-passport-ble.sh esp32c3   # Legacy BLE HID
+bash Scripts/build-passport-ble.sh esp32s3   # BLE command + explicitly selected BLE / USB HID
 ```
 
-Output is `.build/passport-ble-firmware/eiscue_passport_ble.bin`. Build never
-opens serial or flashes. The partition table matches the existing
+Outputs are `.build/passport-ble-firmware/eiscue_passport_ble.bin` (C3) and
+`.build/s3-hid-firmware/eiscue_passport_ble.bin` (S3). Each target has its own
+build directory, defaults and dependency lock. TinyUSB is included only on S3.
+Build never opens serial or flashes. The C3 partition table matches the existing
 `Firmware/Passport-Relay/partitions.csv`: NVS at `0x9000`, PHY at `0xE000`, private
 configuration at `0xF000`, and the 2 MB application at **`0x20000`**. Switching
 these two experiment images should write **only the application** after reading
 and checking the actual board/partition layout. Do not write an unverified
 bootloader/table or erase private configuration.
+
+S3 uses its own `partitions.esp32s3.csv`, matching the attached board's original
+24 KB NVS at `0x9000` and PHY at `0xF000`, with reserved configuration at
+`0x10000` and the application at `0x20000`. Its Flash header is **16 MB**, matching
+the probed board. Installing it on a differently laid-out board requires its
+own full backup and explicit layout checks; the existing C3 table must not be
+written over S3's longer NVS range. Build success does not authorize Flash writes.
 
 The original full-Flash backup and the existing Wi-Fi firmware must be retained.
 BLE bonds are stored in NimBLE's NVS namespace; startup does not erase NVS on an
@@ -71,9 +81,112 @@ repeat pairing does not automatically remove an existing bond. Bond-store
 overflow fails closed instead of evicting the authorized peer. This prototype
 does not provide passkey/MITM authentication or an end-user bond-reset UI.
 
-## Fixed command protocol
+## S3 USB and authenticated command route
 
-Each command is exactly **16 bytes**:
+S3 keeps the same encrypted BLE command service, ReplayKit capture and on-phone
+Agent. It can send either BLE HID or USB HID, selected explicitly by opcode 8.
+Every connection defaults to BLE; choosing USB never falls back to BLE if the
+cable, host enumeration or input release fails. It starts no Wi-Fi or network
+interface and occupies no VPN channel. C3 continues using the version 1 command
+protocol and has no USB HID support.
+
+USB uses the S3 native full-speed OTG peripheral on GPIO 19 / 20. Connect the
+board's **native data USB port**, rather than a UART bridge port, to the phone
+as a USB peripheral. The descriptor is a bus-powered 100 mA development device
+with three input interfaces: relative pointer, keyboard and absolute pointer,
+using the same report layouts as BLE. This firmware exposes no CDC, USB network,
+storage, charging negotiation or accessory authentication function. Its
+`303A:4004` identity is experimental, not a certified product identity.
+
+USB-C phones need a data/host-capable connection. Lightning phones (including
+iPhone 14 Pro) need a compatible USB host adapter; sufficient external power
+may also be required. S3 support alone does not establish Lightning adapter
+compatibility. The native USB PHY is shared with USB Serial/JTAG: once this
+firmware runs, that port no longer provides the previous debug serial device.
+Logs use UART; ROM download mode remains the recovery path. These assumptions
+require board-specific and phone-specific acceptance.
+
+USB input is not authorized until explicit SELECT_OUTPUT and host enumeration.
+A detach, or a suspend / bus reset **after the first mount**, revokes that selection;
+reconnecting a different host cannot reuse a phone screenshot/calibration. It
+requires a fresh explicit selection and App calibration. Losing the BLE command
+owner revokes USB input, releases available reports and electrically disconnects
+the owned HID interface. A failed release disconnects USB instead of leaving a
+button pressed. STOP, request deduplication and the 250 ms absolute-hold watchdog
+apply to both outputs.
+
+Each SELECT_OUTPUT starts a fresh mount epoch and performs a nonblocking 20 ms
+soft disconnect / reconnect; TinyUSB's old `cfg_num` is never used as proof of a
+new host. Before the first mount, a temporary suspend blocks input while resume
+can continue enumeration. Only a fresh ATTACHED callback authorizes the mount;
+resume alone cannot revive a stale configured flag. Once mounted, the existing
+host-change revocation rules remain in force, so this initialization fix cannot
+restore an old calibration or switch outputs automatically.
+Timer PHY connect and session revocation share a short critical section. A
+queued timer checks the current epoch's reconnect deadline; cancellation cannot
+let a late callback reconnect a revoked session or borrow a newer selection.
+Post-mount revocation also electrically disconnects the PHY in that critical
+section. A report submission interrupted by host reset cannot reach a newly
+connected host; only a fresh SELECT on the serialized BLE command queue can
+reconnect, followed by new USB enumeration. Report submission remains outside
+the critical section, and an acknowledgement is returned only after TinyUSB
+actually accepts the report and the output is still authorized.
+
+UART diagnostics contain numeric USB event IDs, reset / unplug / SETUP counts,
+selection / mount flags and HID descriptor query metadata only. IRQ hooks update
+atomic counters; task callbacks and readiness queries emit logs. No command
+payload, pointer coordinate, key value, authentication material or raw USB data
+is logged.
+
+### S3 authentication v2
+
+S3 rejects unsigned version 1 command writes, including STOP and INFO. The BLE
+link still requires encryption and bonding; each command additionally carries
+a session HMAC so a different App sharing the phone's system BLE connection
+cannot borrow Eiscue's authenticated state. No key, proof, nonce or command
+payload is written to logs.
+
+| Attribute | UUID suffix | Value |
+| --- | --- | --- |
+| Challenge, encrypted read | `3AB6` | 34 bytes: version `2`, flags (bit 0 key present, bit 1 enrollment open), board ID 16, board nonce 16 |
+| Authenticate, encrypted write / notify | `3AB7` | Request 50 bytes: version `2`, operation `1` enroll / `2` prove, client nonce 16, root key 32 (enroll) or proof 32 (prove). Reply 35 bytes: version `2`, operation, status `0`, server proof 32 |
+| Command | `3AB4` | 52 bytes: semantic command 16 (byte 0 `2`), sequence UInt32 LE, HMAC-SHA256 32 |
+| Response | `3AB5` | 44 bytes: semantic response 8 (byte 0 `2`), matching sequence UInt32 LE, HMAC-SHA256 32 |
+
+All labels below are exact UTF-8, concatenated without a terminator. Let
+`context = boardID16 || boardNonce16 || clientNonce16`. The client proof is
+`HMAC(rootKey, "EiscueBLE/v2/client" || context)`; the session key is
+`HMAC(rootKey, "EiscueBLE/v2/session" || context)`; server proof is
+`HMAC(rootKey, "EiscueBLE/v2/server" || context || reply[0..<3])`. Command and
+response MACs use the session key and respectively the labels
+`EiscueBLE/v2/cmd` over the first 20 bytes and `EiscueBLE/v2/reply` over the
+first 12 bytes. Sequences start above zero, strictly increase per connection,
+and cannot wrap; timers retain the original command sequence for their reply.
+Only one AUTH write is accepted per connection. Invalid MACs, repeated AUTH,
+unsigned commands or replayed sequences release input and disconnect.
+
+Board ID and root key are persisted in the default NVS namespace `eiscue_auth`,
+separate from private Wi-Fi configuration. Startup never erases or replaces
+existing identity. An unclaimed board permits first enrollment only during its
+first 60 seconds after boot; an existing key closes enrollment permanently.
+This is **trusted-nearby development enrollment**, not passkey/MITM-protected
+production onboarding. Power cycling an unclaimed board reopens that short
+window; an already claimed board requires its saved key, and this firmware
+provides no remote key-reset command. Negotiate ATT MTU at least 55 (preferred
+128) before commands. A connection, AUTH ACK or USB enumeration alone does not
+prove phone input.
+
+The App stores its board key in a device-only Keychain item. Losing that key,
+changing phones or a stale board/phone BLE bond has no automatic reset path:
+uninstalling the App or flashing its application image does not unclaim the
+board. Preserve the private board backup and coordinate an explicit, targeted
+identity/bond reset outside this prototype. Never erase the full Flash or
+unrelated NVS as an onboarding shortcut.
+
+## Fixed semantic command protocol
+
+Each semantic command is exactly **16 bytes** (C3 sends it directly; S3 wraps it
+in the authenticated v2 envelope above):
 
 | Bytes | Value |
 | --- | --- |
@@ -90,8 +203,10 @@ Each command is exactly **16 bytes**:
 | `03` ASCII | Byte 4: one US ASCII character. Letters, digits, US punctuation, space, CR/LF and Tab supported. Press/release after 25 ms. No Unicode or text injection. |
 | `04` KEY | Byte 4: `1` Enter / `2` **keyboard Home** / `3` Backspace / `4` Tab / `5` Escape / `6` Space. Press/release after 25 ms. |
 | `05` ABS_POINT | Bytes 4–5: X UInt16 LE; 6–7: Y UInt16 LE, both `0...32767`. Byte 8: `0` released or `1` left button held. Each held point refreshes the 250 ms automatic release deadline. |
-| `06` KEY_COMBO | Byte 4: modifier `0x08` (left GUI/Command). Byte 5: only `0x0B` (H) or `0x19` (V). Automatic release after 25 ms. All other combinations are rejected. |
-| `07` INFO | All zeros. No input report. Response byte 5 is the current capability bitmask: bit 0 (`1`) absolute report subscribed in report protocol; bit 1 (`2`) keyboard report subscribed in the current protocol. Suspended input returns zero. |
+| `06` KEY_COMBO | Byte 4: modifier `0x08` (left GUI/Command). Byte 5: only `0x0B` (H), `0x19` (V) or `0x2C` (Space). Automatic release after 25 ms. All other combinations are rejected. |
+| `07` INFO | All zeros. No input report. Response byte 5: bit 0 (`1`) absolute input ready for the selected output; bit 1 (`2`) keyboard input ready; bit 7 (`128`) SELECT_OUTPUT / QUERY_OUTPUT supported. A suspended or unauthorized output clears bits 0–1. |
+| `08` SELECT_OUTPUT | Byte 4 `0` BLE / `1` USB, remaining bytes zero. Rejects switching while a command or held input is active, releases the old output first. USB on C3 is rejected; USB without a mounted host is selectable but not ready. |
+| `09` QUERY_OUTPUT | All zeros. Response byte 5: bit 0 USB selected; bit 1 USB supported; bit 2 actual USB host mounted and awake; bit 3 S3; bit 4 restricted navigation shortcuts supported. Mounted does not imply calibrated input. |
 
 Keyboard Home is usage `0x4A`; **it is not an iPhone return-to-Home-screen
 command**. The new Command-H and Command-V reports request host shortcuts; their
@@ -101,7 +216,8 @@ the App must calibrate and validate the coordinate mapping for the current
 orientation. The earlier full-safe-area Debug click only verified transport
 delivery and cannot substitute for that calibration.
 
-The response is exactly **8 bytes**:
+The semantic response is exactly **8 bytes** (C3 direct; S3 authenticated 44-byte
+envelope):
 
 | Bytes | Value |
 | --- | --- |
@@ -109,16 +225,17 @@ The response is exactly **8 bytes**:
 | 1 | Request opcode |
 | 2–3 | Request ID LE |
 | 4 | Status |
-| 5 | HID reports queued to BLE, except INFO: current capability bitmask |
+| 5 | HID reports queued to selected output, except INFO / QUERY_OUTPUT: current capability / output metadata |
 | 6 | Current connection encrypted **and** bonded (`1` / `0`) |
 | 7 | Reserved `0` |
 
 Status: `0` reports queued / `1` invalid or duplicate request / `2` insecure /
 `3` busy / `4` corresponding HID notification not subscribed or suspended /
-`5` send/interruption failure. INFO status `0` means the query succeeded, even
+`5` send/interruption failure / `6` authentication required. S3 authentication failures
+terminate the connection; no unsigned command acknowledgement is accepted. INFO status `0` means the query succeeded, even
 when its capability mask is zero. **Status 0 proves neither radio delivery nor a
 visible UI effect.** STOP succeeds with zero reports when HID is not subscribed,
-which proves only the encrypted GATT handshake. Keyboard and mouse subscriptions
+which proves only the encrypted GATT handshake. BLE keyboard and mouse subscriptions
 are checked independently; subscribing to the custom Response does not count as
 an HID subscription.
 
@@ -190,10 +307,61 @@ upstream notices remain in the toolchain; `NIMBLE_NOTICE` is retained here for
 distribution attribution. Reference APIs:
 
 - [ESP-IDF v5.5.3 NimBLE peripheral example](https://github.com/espressif/esp-idf/tree/v5.5.3/examples/bluetooth/nimble/bleprph)
+- [ESP-IDF v5.5.3 USB HID example](https://github.com/espressif/esp-idf/tree/v5.5.3/examples/peripherals/usb/device/tusb_hid)
+- Pinned `espressif/esp_tinyusb` 2.2.0 (Apache-2.0) and `espressif/tinyusb` 0.21.0~2 (MIT); upstream license files remain in the managed component distribution.
 - ESP-IDF's vendored Apache NimBLE `host/ble_gatt.h`, `host/ble_gap.h`,
   `nimble_port.h` and `ble_npl_callout` APIs.
 
 No credentials, original board data, serial captures or binaries are included.
+
+## Version 0.3 software evidence (2026-10-13)
+
+- ESP-IDF 5.5.3 ESP32-S3 / 16 MB Flash build: **PASS**, application
+  **552736 bytes** (`0x86F20`), SHA-256
+  `931fcc33eabb15cd2108b44a95ecb93bb1a8b5fde871c80c9819bb69aca32c9a`.
+  The separate S3 table preserves the probed NVS / PHY ranges. This build
+  includes USB HID, authentication v2 and physical host-change quarantine;
+  74% of its 2 MB app partition is free. It has **not been flashed**.
+- ESP32-C3 compatibility build: **PASS**, **535696 bytes** (`0x82C90`), SHA-256
+  `6bd4f4aaf283008592d3a9b23370883e90c8711c90b9aba34cb4d36018d3255d`.
+  It keeps the original table and version 1 packet sizes; it does not link
+  TinyUSB or require S3 authentication.
+- Neither build reported a compiler warning or error. Build scripts passed
+  Bash syntax validation; no build command opens serial or writes Flash.
+- A focused UBSan host smoke compiled the actual USB and command parser source
+  with fake host APIs: first-mount authorization, three report interfaces,
+  bus-reset / unplug / suspend revocation, explicit reselection, busy / boot /
+  unsupported reports, route bounds and Cmd-Space whitelist: **PASS**. The
+  initialization fix additionally passed stale `cfg_num` selection, pre-mount
+  suspend / resume recovery, canceled / old callbacks and a deterministic
+  contended callback-versus-revocation PHY transition. Host reset immediately
+  before or during report submission also prevented delivery to a new host.
+- The actual authentication module passed its six host fixture scenario groups
+  using independent Python HMAC vectors: persistent identity, enrollment
+  expiration, first-key preservation, previous-session proofs, invalid MAC /
+  old sequence rejection, pending reply sequences and uncertain NVS writes
+  failing closed. Host APIs and test keys do not prove BLE or phone behavior.
+
+## Version 0.3 physical evidence (2026-10-13)
+
+The earlier S3 image with SHA-256
+`e0f7aebfdf0404bf08dfde3fc4269c9344e9c67e45ee4da56599948171605470`
+passed the App's four-point touch and Chinese text checks over BLE on iPhone
+14 Pro. This does not establish full cross-App Agent tasks, Bluetooth swipe or
+long background execution.
+
+The subsequent enumeration/state-fix image, SHA-256
+`26c7db94103d2fbe283653fe2ea0e5fbd737dd2c46fd86396fdbfb0adf96249d`,
+was installed after a full-Flash backup and passed Flash readback verification.
+No phone input acceptance was performed for that image. The latest physical
+quarantine image (`931fcc33…` above) has software evidence only and has not been
+installed; the board still has the `26c7db94…` image.
+
+The USB attempt used an ordinary Lightning-to-USB-C cable, rather than a USB
+host / Camera Adapter. The phone did not enumerate the board; no USB phone input
+acceptance was completed. A compatible host adapter is still required. The new
+software result does not validate USB HID on the phone, and the earlier BLE
+result applies only to its recorded image.
 
 ## Version 0.2 build evidence (2026-10-12)
 

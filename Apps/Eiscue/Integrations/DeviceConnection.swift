@@ -41,6 +41,21 @@ extension AppModel {
     var isBluetoothConnected: Bool { _ = bluetoothRevision; return bluetoothController.isConnected }
     var isBluetoothScreenShared: Bool { _ = bluetoothRevision; return bluetoothController.screenState?.isActive == true }
     var isBluetoothPointerVerified: Bool { _ = bluetoothRevision; return bluetoothController.isPointerVerified }
+    var bluetoothInputRoute: BluetoothBoardInputRoute { _ = bluetoothRevision; return bluetoothController.inputRoute }
+
+    func selectBluetoothInputRoute(_ route: BluetoothBoardInputRoute) async {
+        guard route != bluetoothInputRoute, deviceConnectionMethod == .bluetoothBoard, !isBusy else { return }
+        isChangingDeviceConnectionMethod = true
+        defer { isChangingDeviceConnectionMethod = false }
+        await disconnectDevice(stopChatRun: false, stopReason: String(localized: "bluetooth.outputChanged", table: "Bluetooth"))
+        do {
+            try bluetoothController.selectInputRoute(route)
+            preferences.set(route.rawValue, forKey: "bluetoothInputRoute")
+            deviceConnectionError = nil
+            connectionMessage = String(localized: route == .usb ? "bluetooth.usbPowerDetail" : "bluetooth.powerDetail", table: "Bluetooth")
+            await refreshDeviceStatus()
+        } catch { deviceConnectionError = error.localizedDescription }
+    }
 
     func startBluetoothMonitor() {
         guard bluetoothMonitor == nil else { return }
@@ -70,6 +85,11 @@ extension AppModel {
         let report: [String: Any] = [
             "connected": isBluetoothConnected, "sharing": isBluetoothScreenShared,
             "pointerVerified": isBluetoothPointerVerified, "ready": isDeviceReady,
+            "inputRoute": bluetoothController.inputRoute.rawValue,
+            "s3": bluetoothController.outputInfo?.isS3 ?? false,
+            "supportsUSB": bluetoothController.outputInfo?.supportsUSB ?? false,
+            "usbConnected": bluetoothController.outputInfo?.isUSBConnected ?? false,
+            "authenticated": bluetoothController.board.usesAuthenticatedCommands,
             "connecting": isConnecting, "stage": String(describing: bluetoothController.board.state),
             "screenPhase": state.map { String(describing: $0.phase) } ?? "unavailable",
             "screenWidth": state?.width ?? 0, "screenHeight": state?.height ?? 0,

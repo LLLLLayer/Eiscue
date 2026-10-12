@@ -4,7 +4,7 @@
 
 内部方案和完整验收记录不随仓库发布；本页保留使用步骤和已验证范围，固件、工具与第三方来源说明保留在各目录的 README 中。
 
-**默认使用蓝牙开发板：** 已配置 Eiscue 蓝牙固件的 ESP32-C3 开发板接充电器或电脑供电，**不用插到 iPhone，也不用切换手机 Wi-Fi**。正常 App 已接入蓝牙连接、Apple ReplayKit 屏幕共享，以及四点点击和文字输入检查；这条路径不需要配对文件、DDI 或本地 VPN。检查通过后，才能在对话里开启“允许 AI 操作设备”。升级安装会保留已有连接偏好，可在设备页改选“蓝牙开发板”。
+**默认使用蓝牙开发板：** 已配置 Eiscue 蓝牙固件的 ESP32-C3 或 ESP32-S3 开发板接充电器或电脑供电，**不用插到 iPhone，也不用切换手机 Wi-Fi**。正常 App 已接入蓝牙连接、Apple ReplayKit 屏幕共享，以及四点点击和文字输入检查；这条路径不需要配对文件、DDI 或本地 VPN。检查通过后，才能在对话里开启“允许 AI 操作设备”。升级安装会保留已有连接偏好，可在设备页改选“蓝牙开发板”。S3 也支持在同一页选择“USB 输入”：USB-C 手机用 C-to-C 数据线连接板的原生 USB／OTG 口；Lightning 手机需用带供电的 USB 相机／主机转接器，普通 Lightning 数据线不能替代。COM／UART 口用于电脑，不能提供手机键鼠输入。蓝牙发送指令，USB 提供键鼠输入；Agent 与 ReplayKit 仍在手机内运行。这与“USB 网卡中继”是两条不同路线，不使用 Eiscue VPN。
 
 **代码接入与真机结果：** 新版蓝牙固件已完成构建、烧录读回及加密连接能力查询；在指定 iPhone 14 Pro / iOS 26.5.2 上，普通 App 已通过 ReplayKit 屏幕共享、四点实际点击和中文文字检查，显示已就绪。当前仍需验证蓝牙滑动、完整跨 App 的 Agent 任务和长时间后台行为；本次未重复“禁用蜂窝访问的 Wi-Fi HTTPS”检查，该联网结论来自旧版蓝牙基线。Wi-Fi 开发板的独立控制路径已于 2026-10-11 在指定样机上通过。
 
@@ -15,7 +15,7 @@ iCTRL 已完成源码调研，尚未集成。
 - 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，自定义地址和模型 ID，API Key 使用系统 Keychain。
 - Agent：真实 PiDurableKit 运行时、流式回答、多轮对话、图片工具结果、串行工具调用、停止、超时与调用次数限制。
 - 会话与任务：发送后立即上屏并清空输入，流式回复、分开的真实工具记录、块级 Markdown、消息时间与选段复制；侧栏历史、长按置顶/排序/删除、恢复、脱敏报告导出，运行记录从对话菜单查看。
-- 设备代码：蓝牙 HID 输入与 ReplayKit 屏幕共享通过 `BluetoothDeviceController` 接入同一 DeviceKit / Agent 工具协议。设备页直接提供连接、共享和校验入口，四点触摸与实际文字检查通过前不开放 AI 操作。蓝牙当前公开截图、点击、滑动及经校验的文本输入；Home、应用列表和应用启动未向蓝牙 Agent 开放。
+- 设备代码：蓝牙 HID 输入与 ReplayKit 屏幕共享通过 `BluetoothDeviceController` 接入同一 DeviceKit / Agent 工具协议。设备页直接提供连接、共享和校验入口，四点触摸与实际文字检查通过前不开放 AI 操作。蓝牙当前公开截图、点击、滑动及经校验的文本输入；新版固件在完成检查后还可开放返回主屏幕和搜索／回车／退出快捷键；应用列表和按 bundle ID 启动未向蓝牙 Agent 开放。
 - 其他连接：保留本地 VPN、USB 开发板和 Wi-Fi 开发板的 RemotePairing / CoreDevice 路径。iOS 26 使用 App 内独立 XCTest 会话，已有 Wi-Fi 真机控制记录；这些路径才需要设备配对身份与开发者环境。ESP32-S3 的 [USB 固件](Firmware/NCM-Relay/README.md) 尚无实板 NCM 验证，ESP32-C3 不支持 USB NCM。同一 C3 样机的 [蓝牙固件](Firmware/Passport-BLE/README.md) 与 [Wi-Fi 固件](Firmware/Passport-Relay/README.md) 需要切换应用镜像，不能同时使用。
 - 执行边界：输入框加号中可开启“允许 AI 操作设备”，默认关闭；Kit 另保留只读观察范围。坐标操作绑定新截图，单次使用，过期或重连后失效；未知操作结果不自动重发。
 - 后台：iOS 26 的 BGContinuedProcessingTask 和系统实时活动，显示真实执行阶段；可选的完成／中断本地通知默认关闭，系统取消与过期统一停止。
@@ -23,6 +23,8 @@ iCTRL 已完成源码调研，尚未集成。
 - 原生界面：首次全屏入门引导，随浅色／深色模式切换的黑白灰控件与原生 Liquid Glass；对话主页面、左侧历史与设置、右上角设备状态，iPad 宽窗口支持常驻侧栏。使用用户提供的 Eiscue 图片作为图标。
 - 附件与语音：照片、拍摄、文本/代码文件和可提取文字的 PDF；Apple Speech 本机听写，切换语音模式后按住说话、松开结束、上滑取消，无需语音 API Key。普通聊天默认使用简短提示，不注入表情 Skill 或设备工具。
 - 多语言：Apple String Catalog 和 Swift Package 本地化资源，支持英文、简体中文，跟随系统／App 语言；新增语言无需修改业务逻辑。
+
+**S3 本轮开发：** BLE／USB HID 固件和 App 输出选择已接入，命令与回复逐条认证；首次连接会自动保存本机 Keychain 密钥。首次登记仅在未绑定板上电后一分钟内开放，需在可信的近距离环境完成；已有密钥不能自动覆盖，丢失 App Keychain 时不能重新认领。该开发版的首次登记不提供抗中间人保证。S3 在指定 iPhone 14 Pro 上已通过认证命令、ReplayKit、四点真实触摸和随机中文粘贴校验。USB 曾在 Mac 完成枚举，但该轮手机收到 0 次点击，未通过；改线后确认使用普通 Lightning 数据线，手机没有 USB 主机连接。USB 手机验收等待合适转接器，不能计为通过。最新 USB 状态修复与该 BLE 已验收镜像的区别见固件 README。
 
 **源码接入与真机验收是两件事。** 模拟器可验证 Agent 与 App 流程，但不能代替真机 BLE HID 输入与系统屏幕共享。指定手机的蓝牙四点和文字校验已通过，滑动、跨 App 与后台控制仍需验收；其他连接路径还涉及 DDI、回环 VPN 和配对身份。不同设备与系统版本不能直接沿用样机结果。
 
@@ -83,7 +85,7 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
   -only-testing:EiscueUITests/EiscueUITests test
 ```
 
-2026-10-13 的最终软件验证：App 单元测试 129 项通过，`EiscueUITests` 8 项通过、1 项跳过，Swift Kit 93 项通过。跳过的设备操作验证页用例需要真实设备控制就绪，模拟器无法满足。
+2026-10-13 本轮软件验证：App 单元测试 **131 项通过**，Swift Kit **101 项通过**；模拟器 `EiscueUITests` **8 项通过、1 项跳过**。跳过的设备操作验证页用例需要真实设备控制就绪，模拟器无法满足。另有两次指定手机的 XCTest Runner 在执行用例前断开（退出 74），未执行测试，不能算通过；上述 S3 BLE 输入结果来自 App 内实际 UIKit 校验。USB 与蓝牙握手、枚举或 ACK 都不能替代实际手机输入验证。
 
 设备后端已经附带 arm64 真机、模拟器和 macOS XCFramework，可直接构建；目前不含 Intel / x86_64 slice。重新构建 Rust 后端：
 

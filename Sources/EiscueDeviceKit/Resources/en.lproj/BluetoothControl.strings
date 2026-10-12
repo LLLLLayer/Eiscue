@@ -1,8 +1,11 @@
-"bluetooth.connect" = "Connect your Bluetooth board first.";
+"bluetooth.connect" = "Connect the board first.";
 "bluetooth.share" = "Start screen sharing in Eiscue, then return to the device page.";
 "bluetooth.calibrate" = "Run the device-control check to verify clicking positions.";
-"bluetooth.hidMissing" = "The board is connected but its input service is not ready. Turn on AssistiveTouch. If its firmware was updated, forget Eiscue BLE in Bluetooth settings and pair it again.";
+"bluetooth.hidMissing" = "The board is connected, but the phone is not ready for keyboard and mouse input. Enable AssistiveTouch, then disconnect and reconnect in Eiscue.";
 "bluetooth.clipboard" = "Could not prepare the text. Return to Eiscue and try again.";
 "bluetooth.interrupted" = "The input may have been partially delivered. Inspect the screen before starting a new task.";
 "bluetooth.appGroupUnavailable" = "Screen sharing storage is unavailable. Install the latest signed Eiscue build.";
 "bluetooth.fullScreenRequired" = "Open Eiscue full screen and keep its orientation steady, then run the check again.";
+"bluetooth.usbRequired" = "USB input requires an ESP32-S3 board with updated Eiscue HID firmware. Choose Bluetooth input for this board.";
+"bluetooth.usbMissing" = "USB input is not ready. Connect the board’s USB/OTG port to this phone. Lightning needs a powered USB camera/host adapter; an ordinary Lightning to USB-C cable cannot work. Then reconnect in Eiscue.";
+"bluetooth.outputMismatch" = "The board did not confirm the selected input connection. Disconnect and reconnect; the app will not switch to another route automatically.";

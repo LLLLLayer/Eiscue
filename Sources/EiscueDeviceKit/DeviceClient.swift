@@ -51,5 +51,6 @@ public struct DeviceClient: Sendable {
     public func typeText(_ text: String, frameID: UUID) async throws { try await controller.typeText(text, frameID: frameID) }
     public func launchApplication(bundleID: String) async throws { try await controller.launchApplication(bundleID: bundleID) }
     public func home() async throws { try await controller.home() }
+    public func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws { try await controller.pressKey(key, frameID: frameID) }
     public func listApplications() async throws -> [DeviceApplication] { try await controller.listApplications() }
 }

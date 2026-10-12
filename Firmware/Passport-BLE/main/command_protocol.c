@@ -37,10 +37,13 @@ bool eiscue_parse_action(const uint8_t command[EISCUE_COMMAND_SIZE], eiscue_acti
     switch (command[1]) {
     case EISCUE_STOP:
     case EISCUE_INFO:
+    case EISCUE_QUERY_OUTPUT:
         if (!zero_tail(command, 4)) return false;
         // The peripheral supplies releases from current state, so releasing
         // an absolute button preserves its last coordinates.
         return true;
+    case EISCUE_SELECT_OUTPUT:
+        return command[4]<=EISCUE_OUTPUT_USB && zero_tail(command,5);
     case EISCUE_MOVE: {
         int16_t x=signed_le(command+4), y=signed_le(command+6);
         if (x < -127 || x > 127 || y < -127 || y > 127 || !zero_tail(command, 9) || command[8] == 128) return false;
@@ -58,7 +61,7 @@ bool eiscue_parse_action(const uint8_t command[EISCUE_COMMAND_SIZE], eiscue_acti
     case EISCUE_KEY_COMBO: {
         uint8_t usage=0,modifier=0;
         if (command[1]==EISCUE_KEY_COMBO) {
-            if (command[4]!=0x08 || (command[5]!=0x0B && command[5]!=0x19) || !zero_tail(command,6)) return false;
+            if (command[4]!=0x08 || (command[5]!=0x0B && command[5]!=0x19 && command[5]!=0x2C) || !zero_tail(command,6)) return false;
             modifier=command[4];usage=command[5];
         } else if (!zero_tail(command,5)) {
             return false;

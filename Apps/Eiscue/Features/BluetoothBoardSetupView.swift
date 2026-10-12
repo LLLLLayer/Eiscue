@@ -5,24 +5,36 @@ import UIKit
 struct BluetoothBoardSetupView: View {
     @Environment(AppModel.self) private var model
     @State private var showsValidation = false
+    @State private var confirmsUSBPhone = false
 
     var body: some View {
         VStack(spacing: 18) {
             SurfaceCard {
                 VStack(alignment: .leading, spacing: 14) {
                     step("1", "bluetooth.connectTitle", complete: model.isBluetoothConnected)
+                    Picker(text("bluetooth.inputRoute"), selection: Binding(
+                        get: { model.bluetoothInputRoute },
+                        set: { route in Task { await model.selectBluetoothInputRoute(route) } }
+                    )) {
+                        Text(text("bluetooth.inputBluetooth")).tag(BluetoothBoardInputRoute.bluetooth)
+                        Text(text("bluetooth.inputUSB")).tag(BluetoothBoardInputRoute.usb)
+                    }
+                    .pickerStyle(.segmented).disabled(model.isBusy)
+                    .accessibilityIdentifier("bluetoothInputRoutePicker")
                     if !model.isBluetoothConnected {
-                        Text(text("bluetooth.powerDetail")).font(.subheadline).foregroundStyle(.secondary)
+                        Text(text(model.bluetoothInputRoute == .usb ? "bluetooth.usbPowerDetail" : "bluetooth.powerDetail"))
+                            .font(.subheadline).foregroundStyle(.secondary)
                         Text(text("bluetooth.assistiveTouch")).font(.caption).foregroundStyle(.secondary)
+                        Text(text("bluetooth.firstS3Connection")).font(.caption).foregroundStyle(.secondary)
                     }
                     if model.isBluetoothConnected {
                         Button(text("bluetooth.disconnect")) { Task { await model.disconnectDevice() } }
-                            .buttonStyle(.glass)
+                            .buttonStyle(.glass).accessibilityIdentifier("bluetoothDisconnectButton")
                     } else {
                         Button { Task { await model.enableDeviceControl() } } label: {
                             HStack {
                                 if model.isConnecting { ProgressView() }
-                                Text(text(model.isConnecting ? "bluetooth.connecting" : "bluetooth.connectButton"))
+                                Text(text(connectionLabel))
                             }
                         }
                         .buttonStyle(.glass).disabled(model.isBusy)
@@ -63,7 +75,10 @@ struct BluetoothBoardSetupView: View {
                     step("3", "bluetooth.verifyTitle", complete: model.isBluetoothPointerVerified)
                     Text(text(model.isBluetoothPointerVerified ? "bluetooth.readyDetail" : "bluetooth.verifyDetail"))
                         .font(.subheadline).foregroundStyle(.secondary)
-                    Button(text(model.isBluetoothPointerVerified ? "bluetooth.verifyAgain" : "bluetooth.verifyButton")) { showsValidation = true }
+                    Button(text(model.isBluetoothPointerVerified ? "bluetooth.verifyAgain" : "bluetooth.verifyButton")) {
+                        if model.bluetoothInputRoute == .usb { confirmsUSBPhone = true }
+                        else { showsValidation = true }
+                    }
                         .buttonStyle(.glass)
                         .disabled(!model.isBluetoothConnected || !model.isBluetoothScreenShared || model.isBusy)
                         .accessibilityIdentifier("bluetoothVerifyButton")
@@ -72,14 +87,30 @@ struct BluetoothBoardSetupView: View {
             if let error = model.deviceConnectionError {
                 Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(.primary)
                     .accessibilityIdentifier("bluetoothConnectionError")
+            } else if model.isBluetoothConnected, !model.bluetoothController.isInputReady,
+                      case .unavailable(let reason) = model.deviceStatus {
+                Text(reason).font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("bluetoothReadinessHint")
             }
         }
+        .alert(text("bluetooth.usbConfirmTitle"), isPresented: $confirmsUSBPhone) {
+            Button(text("bluetooth.usbConfirmButton")) { showsValidation = true }
+            Button(String(localized: "common.cancel"), role: .cancel) {}
+        } message: { Text(text("bluetooth.usbConfirmDetail")) }
         .fullScreenCover(isPresented: $showsValidation, onDismiss: {
             Task { await model.refreshDeviceStatus(); model.bluetoothRevision += 1 }
         }) {
             BluetoothPointerValidation(controller: model.bluetoothController) { showsValidation = false }
                 .ignoresSafeArea().interactiveDismissDisabled()
         }
+    }
+
+    private var connectionLabel: String {
+        guard model.isConnecting else { return "bluetooth.connectButton" }
+        if model.bluetoothInputRoute == .usb, model.bluetoothController.board.state == .ready {
+            return "bluetooth.waitingForUSB"
+        }
+        return "bluetooth.connecting"
     }
 
     private func step(_ number: String, _ key: String, complete: Bool) -> some View {
@@ -107,6 +138,7 @@ private final class BluetoothPointerValidationController: UIViewController {
     private let close = UIButton(type: .system)
     private let field = UITextField()
     private var task: Task<Void, Never>?
+    private enum ValidationFailure: Error { case touchMissing }
     private var touches: [DevicePoint] = []
     private var armed = false
     private var stableBounds = CGRect.zero
@@ -126,6 +158,8 @@ private final class BluetoothPointerValidationController: UIViewController {
         target.addTarget(self, action: #selector(observedTouch(_:event:)), for: .touchUpInside)
         target.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(target)
+        status.accessibilityIdentifier = "bluetoothValidationStatus"
+        close.accessibilityIdentifier = "bluetoothValidationCloseButton"
         status.text = text("bluetooth.verifying")
         status.numberOfLines = 0; status.textAlignment = .center
         status.font = .preferredFont(forTextStyle: .title2)
@@ -144,7 +178,9 @@ private final class BluetoothPointerValidationController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         target.frame = view.bounds
-        status.frame = CGRect(x: 28, y: view.safeAreaInsets.top + 32, width: view.bounds.width - 56, height: 145)
+        let statusY = view.safeAreaInsets.top + 32
+        let statusHeight = max(100, min(240, view.bounds.height * 0.44 - statusY - 20))
+        status.frame = CGRect(x: 28, y: statusY, width: view.bounds.width - 56, height: statusHeight)
         field.frame = CGRect(x: 36, y: view.bounds.height * 0.44, width: view.bounds.width - 72, height: 48)
         close.frame = CGRect(x: 36, y: view.bounds.height - view.safeAreaInsets.bottom - 62, width: view.bounds.width - 72, height: 48)
     }
@@ -203,7 +239,7 @@ private final class BluetoothPointerValidationController: UIViewController {
                     try await Task.sleep(for: .milliseconds(50)); try requireVisible()
                 }
                 armed = false
-                guard touches.count == count + 1 else { throw DeviceControlError.connection(text("bluetooth.validationFailed")) }
+                guard touches.count == count + 1 else { throw ValidationFailure.touchMissing }
                 try await Task.sleep(for: .milliseconds(150))
             }
             try controller.completeCalibration(observed: touches)
@@ -230,7 +266,10 @@ private final class BluetoothPointerValidationController: UIViewController {
         } catch {
             armed = false
             await controller.cancelCalibration()
-            status.text = text("bluetooth.validationFailed") + "\n" + error.localizedDescription
+            status.font = .preferredFont(forTextStyle: .body)
+            if error is ValidationFailure {
+                status.text = text(controller.inputRoute == .usb ? "bluetooth.usbTouchMissing" : "bluetooth.validationFailed")
+            } else { status.text = text("bluetooth.validationFailed") + "\n" + error.localizedDescription }
             close.setTitle(text("bluetooth.done"), for: .normal)
             saveReport(passed: false)
         }
@@ -238,7 +277,9 @@ private final class BluetoothPointerValidationController: UIViewController {
     private func saveReport(passed: Bool) {
         let report: [String: Any] = ["passed": passed, "timestamp": Date().timeIntervalSince1970,
             "pointCount": touches.count, "points": touches.map { ["x": $0.x, "y": $0.y] },
-            "width": view.bounds.width, "height": view.bounds.height, "keyboardVerified": passed]
+            "width": view.bounds.width, "height": view.bounds.height, "keyboardVerified": passed,
+            "inputRoute": controller.inputRoute.rawValue, "isS3": controller.outputInfo?.isS3 == true,
+            "authenticated": controller.board.usesAuthenticatedCommands]
         let directory = URL.applicationSupportDirectory.appendingPathComponent("EiscueBluetoothSetup")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,

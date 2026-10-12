@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import struct
 import tempfile
 import types
 import unittest
@@ -119,6 +120,32 @@ class BoardGuardTests(unittest.TestCase):
             board.check_package(path)
             image.write_bytes(b"tampered")
             with self.assertRaisesRegex(RuntimeError, "integrity check failed"):
+                board.check_package(path)
+
+    def test_s3_hid_rejects_truncated_original_nvs_before_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "backup.bin"
+            def layout(size):
+                row = struct.pack("<HBBII16sI", 0x50AA, 1, 2, 0x9000, size, b"nvs", 0)
+                path.write_bytes(b"\xff" * 0x8000 + row + b"\xff" * (0x1000 - len(row)))
+            layout(0x6000)
+            board.check_s3_nvs_layout(path)
+            layout(0x5000)
+            with self.assertRaisesRegex(RuntimeError, "Original NVS layout differs"):
+                board.check_s3_nvs_layout(path)
+
+    def test_s3_hid_package_cannot_write_nvs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            image = path / "nvs.bin"
+            image.write_bytes(b"private")
+            manifest = {"format": 1, "profile": "s3-hid", "chip": "esp32s3",
+                        "version": (board.PROFILES["s3-hid"]["project"] / "VERSION").read_text().strip(),
+                        "minimum_flash_bytes": 16 * 1024 * 1024, "flash_size": "16MB",
+                        "images": [{"file": image.name, "offset": 0x9000,
+                                    "size": image.stat().st_size, "sha256": board.sha256(image)}]}
+            (path / "manifest.json").write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(RuntimeError, "NVS is preserved"):
                 board.check_package(path)
 
     def test_ioreg_inventory_filters_identifiers_and_diagnostics(self):

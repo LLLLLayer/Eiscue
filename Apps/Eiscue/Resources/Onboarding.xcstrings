@@ -585,13 +585,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect a USB board"
+            "value": "Connect a USB network relay"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "接入 USB 开发板"
+            "value": "接入 USB 网卡中继"
           }
         }
       }

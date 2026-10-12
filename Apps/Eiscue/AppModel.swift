@@ -142,6 +142,9 @@ final class AppModel {
             guard let self else { return }
             bluetoothRevision += 1
         }
+        if let route = BluetoothBoardInputRoute(rawValue: defaults.string(forKey: "bluetoothInputRoute") ?? "") {
+            try? bluetoothController.selectInputRoute(route)
+        }
         do { try background.register() } catch { connectionMessage = error.localizedDescription }
         localTunnel.onDisconnect = { [weak self] in
             guard let self, self.activeDeviceConnectionMethod == .localVPN || self.isPairing else { return }
@@ -429,7 +432,8 @@ final class AppModel {
             guard let key = try credentials.read("model-key") else { throw SettingsError.missingKey }
             let config = try modelSettings.configuration(apiKey: key)
             let capabilities: Set<DeviceCapability>
-            if case .ready(let available) = await deviceClient.status() { capabilities = available } else { capabilities = [] }
+            if scope != .chat, case .ready(let available) = await deviceClient.status() { capabilities = available }
+            else { capabilities = [] }
             let tools = DeviceToolSession(capabilities: capabilities, client: deviceClient, scope: scope, timeoutSeconds: modelSettings.timeoutSeconds,
                                           log: { [weak self] kind, detail in try await self?.logEvent(kind, detail) },
                                           onUnknown: { [weak self] in await self?.stop(expectedRunID: runID, reason: String(localized: "run.unknown_delivery", table: "Runtime")) })

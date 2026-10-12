@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package and safely provision USB S3 or wireless C3 relay firmware.
+"""Package and safely provision relay or S3 HID firmware.
 
 No phone operations. `inspect` never opens a port; `flash` requires an explicit
 USB serial port and ROM chip validation before reading or writing flash.
@@ -28,6 +28,8 @@ PROJECT = ROOT / "Firmware/NCM-Relay"
 PROFILES = {
     "ncm": {"project": PROJECT, "chip": "esp32s3", "rom_chip": "ESP32-S3",
             "name": "eiscue-ncm-relay", "flash_bytes": 4 * 1024 * 1024},
+    "s3-hid": {"project": ROOT / "Firmware/Passport-BLE", "chip": "esp32s3", "rom_chip": "ESP32-S3",
+               "name": "eiscue-s3-hid", "flash_bytes": 16 * 1024 * 1024},
     "passport": {"project": ROOT / "Firmware/Passport-Relay", "chip": "esp32c3", "rom_chip": "ESP32-C3",
                  "name": "eiscue-passport-relay", "flash_bytes": 8 * 1024 * 1024},
 }
@@ -97,11 +99,13 @@ def check_package(package: Path):
     manifest = json.loads((package / "manifest.json").read_text())
     profile = PROFILES.get(manifest.get("profile", "ncm"))
     if profile is None or manifest.get("chip") != profile["chip"] or manifest.get("format") != 1:
-        raise RuntimeError("Unsupported firmware profile/chip. USB S3 and wireless C3 packages are distinct.")
+        raise RuntimeError("Unsupported firmware profile/chip. HID and network relay packages are distinct.")
     if manifest.get("minimum_flash_bytes") != profile["flash_bytes"]:
         raise RuntimeError("Unexpected firmware flash capacity.")
     if manifest.get("version") != (profile["project"] / "VERSION").read_text().strip():
         raise RuntimeError("Package version differs from this checkout. Rebuild firmware first.")
+    if manifest.get("profile") == "s3-hid" and manifest.get("flash_size") != "16MB":
+        raise RuntimeError("S3 HID build must match its declared 16 MB flash geometry.")
     if not manifest.get("images"):
         raise RuntimeError("Firmware package has no images.")
     last_end = 0
@@ -114,8 +118,14 @@ def check_package(package: Path):
             raise RuntimeError("Invalid/overlapping flash regions.")
         if path.stat().st_size != image["size"] or sha256(path) != image["sha256"]:
             raise RuntimeError(f"Firmware integrity check failed: {name}")
-        if manifest.get("profile") == "passport" and offset < PASSPORT_CONFIG_OFFSET + PASSPORT_CONFIG_SIZE and offset + image["size"] > PASSPORT_CONFIG_OFFSET:
-            raise RuntimeError("Firmware image overlaps the private per-board Wi-Fi configuration.")
+        if manifest.get("profile") == "s3-hid":
+            allowed = {0: ("bootloader.bin", 0x8000), 0x8000: ("partition-table.bin", 0x1000),
+                       0x20000: ("eiscue_passport_ble.bin", 0x200000)}
+            expected = allowed.get(offset)
+            if expected is None or name != expected[0] or image["size"] > expected[1]:
+                raise RuntimeError("S3 HID images may only replace the bootloader, partition table and application; NVS is preserved.")
+        if manifest.get("profile") in {"passport", "s3-hid"} and offset < PASSPORT_CONFIG_OFFSET + PASSPORT_CONFIG_SIZE and offset + image["size"] > PASSPORT_CONFIG_OFFSET:
+            raise RuntimeError("Firmware image overlaps the private per-board configuration.")
         last_end = offset + image["size"]
     if last_end > manifest["minimum_flash_bytes"]:
         raise RuntimeError("Firmware exceeds its declared flash size.")
@@ -144,8 +154,8 @@ def package_firmware(build_dir: Path, target="ncm"):
                 "esp_idf": "5.5.3", "minimum_flash_bytes": profile["flash_bytes"],
                 "flash_mode": flash["flash_mode"], "flash_freq": flash["flash_freq"],
                 "flash_size": flash["flash_size"], "images": images,
-                "upstream_commit": "032864e2339da19ee13025c471f4cf1dfdf4c5cd",
-                "protocols": ["ND1", "NR1", "NL1"],
+                "upstream_commit": None if target == "s3-hid" else "032864e2339da19ee13025c471f4cf1dfdf4c5cd",
+                "protocols": ["EiscueBLE/v2", "BLE-HID", "USB-HID"] if target == "s3-hid" else ["ND1", "NR1", "NL1"],
                 "hardware_validation": "not-proven-by-build"}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     check_package(output)
@@ -220,18 +230,29 @@ def flash_package(port: str, package: Path):
     backups.chmod(0o700)
     backup = backups / timestamp
     identity = probe_rom(port, manifest["minimum_flash_bytes"], backup, target=target)
+    if target == "s3-hid":
+        check_s3_nvs_layout(backup / "original-flash.bin")
     configuration = provision_passport(backup) if target == "passport" else None
     after = selected_port(port)
     if (before.vid, before.pid, before.serial_number, before.location) != \
        (after.vid, after.pid, after.serial_number, after.location):
         raise RuntimeError("USB identity changed after backup; refusing to write another board.")
+    if check_package(package) != manifest:
+        raise RuntimeError("Firmware package changed during backup. No firmware was written.")
+    snapshot = backup / "firmware"
+    private_directory(snapshot)
+    for image in manifest["images"]:
+        data = (package / image["file"]).read_bytes()
+        if len(data) != image["size"] or hashlib.sha256(data).hexdigest() != image["sha256"]:
+            raise RuntimeError("Firmware changed while preparing the immutable write snapshot. No firmware was written.")
+        private_file(snapshot / image["file"], data)
     print(f'Verified {identity["chip"]}, {identity["flash_bytes"]} bytes. Backup: {backup}')
     common = [sys.executable, "-m", "esptool", "--chip", manifest["chip"], "--port", port, "--baud", "460800"]
     settings = ["--flash_mode", manifest["flash_mode"], "--flash_freq", manifest["flash_freq"],
                 "--flash_size", manifest["flash_size"]]
     images = []
     for image in manifest["images"]:
-        images += [hex(image["offset"]), str(package / image["file"])]
+        images += [hex(image["offset"]), str(snapshot / image["file"])]
     if configuration is not None:
         images += [hex(PASSPORT_CONFIG_OFFSET), str(configuration)]
     for action in ["write_flash", "verify_flash"]:
@@ -242,6 +263,23 @@ def flash_package(port: str, package: Path):
     print("Flash and readback verification passed. This does not prove network or iPhone control.")
     if configuration is not None:
         print(f'Private Wi-Fi setup: {backup / "wifi-setup.txt"}')
+
+
+def check_s3_nvs_layout(backup: Path):
+    """Never shrink or relocate the attached board's original NVS partition."""
+    import struct
+    with backup.open("rb") as source:
+        source.seek(0x8000)
+        table = source.read(0x1000)
+    for index in range(0, len(table), 32):
+        magic, kind, subtype, offset, size, label, flags = struct.unpack("<HBBII16sI", table[index:index + 32])
+        if magic != 0x50AA:
+            break
+        if kind == 1 and subtype == 2 and label.split(b"\0")[0] == b"nvs":
+            if (offset, size) != (0x9000, 0x6000):
+                raise RuntimeError("Original NVS layout differs from the S3 HID profile. No firmware was written.")
+            return
+    raise RuntimeError("Original NVS partition could not be verified. No firmware was written.")
 
 
 def provision_passport(directory: Path) -> Path:
@@ -285,6 +323,8 @@ def provision_passport(directory: Path) -> Path:
 def check_link(interface: str, target="ncm"):
     if sys.platform != "darwin":
         raise RuntimeError("This link check currently supports macOS interface binding only.")
+    if target == "s3-hid":
+        raise RuntimeError("S3 HID is an input device, not an ND1 network relay.")
     index = socket.if_nametoindex(interface)
     config = subprocess.run(["ifconfig", interface], capture_output=True, text=True, check=True).stdout
     hardware = subprocess.run(["networksetup", "-listallhardwareports"],
@@ -340,7 +380,7 @@ def main():
     link = commands.add_parser("check-link", help="Read-only, interface-bound ND1 STATUS round trip on Mac.")
     link.add_argument("--interface", required=True)
     link.add_argument("--target", choices=PROFILES, default="ncm")
-    package = commands.add_parser("package", help="Package an existing relay build with SHA-256 manifest.")
+    package = commands.add_parser("package", help="Package an existing firmware build with SHA-256 manifest.")
     package.add_argument("--build-dir", required=True, type=Path)
     package.add_argument("--target", choices=PROFILES, default="ncm")
     verify = commands.add_parser("verify-package")

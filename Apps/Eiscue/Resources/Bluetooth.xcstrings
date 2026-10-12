@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bluetooth board"
+            "value": "Board keyboard and mouse"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "蓝牙开发板"
+            "value": "开发板键鼠"
           }
         }
       }
@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep your usual Wi-Fi. Power the board and connect over Bluetooth."
+            "value": "Keep your usual Wi-Fi. Connect board commands over Bluetooth; choose Bluetooth or USB input."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "继续使用平常的 Wi-Fi，给开发板供电后通过蓝牙连接。"
+            "value": "继续使用平常的 Wi-Fi，通过蓝牙连接开发板，可选择蓝牙或 USB 输入。"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use an ESP32-C3 board configured with Eiscue Bluetooth firmware. Connect its USB cable to a charger or computer for power. No cable to your iPhone is needed."
+            "value": "Use an ESP32-C3 or ESP32-S3 board configured with Eiscue HID firmware. Connect it to a charger or computer for power. No cable to your iPhone is needed for Bluetooth input."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用已配置 Eiscue 蓝牙固件的 ESP32-C3 开发板。USB 线接充电器或电脑供电即可，不用插到 iPhone。"
+            "value": "使用已配置 Eiscue 键鼠固件的 ESP32-C3 或 ESP32-S3 开发板。接充电器或电脑供电即可；选择蓝牙输入时，不用插到 iPhone。"
           }
         }
       }
@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect Bluetooth board"
+            "value": "Connect board"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接蓝牙开发板"
+            "value": "连接开发板"
           }
         }
       }
@@ -415,13 +415,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Text input was not received. Check that the Bluetooth keyboard is paired."
+            "value": "Text input was not received. Check the selected keyboard connection."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "未收到文字输入，请确认蓝牙键盘已配对。"
+            "value": "未收到文字输入，请检查所选的键鼠连接方式。"
           }
         }
       }
@@ -439,6 +439,193 @@
           "stringUnit": {
             "state": "translated",
             "value": "设备连接或屏幕共享已结束，任务已停止。"
+          }
+        }
+      }
+    },
+    "bluetooth.inputRoute": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input connection"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入方式"
+          }
+        }
+      }
+    },
+    "bluetooth.inputBluetooth": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "蓝牙输入"
+          }
+        }
+      }
+    },
+    "bluetooth.inputUSB": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB 输入"
+          }
+        }
+      }
+    },
+    "bluetooth.usbPowerDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect the S3 USB/OTG port to this phone; COM/UART is for a computer. Lightning requires a USB camera/host adapter with power. An ordinary Lightning to USB-C cable cannot provide USB input. Commands still use Bluetooth."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S3 的 USB／OTG 口接这台手机；COM／UART 口用于电脑。Lightning 手机需要带 USB 插口的相机／主机转接器，并给转接器供电。普通 Lightning 转 USB-C 线无法提供 USB 输入。指令仍通过蓝牙传输。"
+          }
+        }
+      }
+    },
+    "bluetooth.outputChanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input connection changed. Reconnect the board and run the check again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入方式已切换，请重新连接开发板并完成操作检查。"
+          }
+        }
+      }
+    },
+    "bluetooth.firstS3Connection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For the first connection to an S3 board, restart its power and connect within one minute. Eiscue saves the board connection securely; no configuration file is needed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "S3 首次连接时，请给开发板重新通电，并在一分钟内连接。Eiscue 会安全保存连接信息，无需导入配置文件。"
+          }
+        }
+      }
+    },
+    "bluetooth.usbTouchMissing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check incomplete: this phone received no click. Connect the board’s native USB/OTG port to this phone, not a computer. UART/COM is for the computer. Power the adapter and keep AssistiveTouch enabled, then reconnect and check again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查未完成：本机没有收到点击。请把开发板的原生 USB／OTG 口接到这台 iPhone，别接电脑；UART／COM 口用于电脑。给转接器接电源并保持辅助触控开启，再重新连接和检查。"
+          }
+        }
+      }
+    },
+    "bluetooth.waitingForUSB": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for the phone to recognize USB…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待手机识别 USB…"
+          }
+        }
+      }
+    },
+    "bluetooth.usbConfirmTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Is USB connected to this phone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB 接的是这台手机吗？"
+          }
+        }
+      }
+    },
+    "bluetooth.usbConfirmDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The check sends keyboard and mouse input. Connect the board’s USB/OTG port only to this iPhone or iPad. COM/UART may connect to a computer for power. USB recognition alone does not identify which device is connected."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查会发送键鼠输入。请确认开发板的 USB／OTG 口只接这台 iPhone 或 iPad，COM／UART 口可接电脑供电。检测到 USB 连接不能判断接的是哪台设备。"
+          }
+        }
+      }
+    },
+    "bluetooth.usbConfirmButton": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected to this phone; start check"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已接这台手机，开始检查"
           }
         }
       }
