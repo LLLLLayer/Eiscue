@@ -8,6 +8,8 @@
 
 当前路线与下一阶段设计见 [设备 Agent 方案 v0.4](docs/design-v0.4.md)，包括 VPN、蓝牙、USB NCM 与 iCTRL 的对比，以及首次配置和日常使用的区别。iCTRL 已完成源码调研，尚未集成。
 
+想对照无需 Mac 的运行方式，见 [不依赖 Mac 的设备 Agent 运行方案](docs/mac-independent-agent-options.md)：补充 S3 USB 键鼠候选，并区分手机独立运行、首次电脑准备和 Linux 电脑 Agent。
+
 ## 已实现
 
 - 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，自定义地址和模型 ID，API Key 使用系统 Keychain。

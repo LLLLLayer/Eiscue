@@ -2,6 +2,8 @@
 
 更新时间：2026-10-12。项目基线：`9d43bdb`；iCTRL 源码基线：`9fd0a7cc20819a1612f7d62ffbec5989d23f018e`。本文替代 v0.3 中的路线判断，记录当前实现与下一阶段设计；候选方案不表示已经集成。
 
+后续补充：[不依赖 Mac 的设备 Agent 运行方案](mac-independent-agent-options.md)新增 S3 USB HID 候选，区分 USB 键鼠与本文的 USB NCM 网卡，并细化首次准备、手机独立运行和 Linux 电脑运行的边界。
+
 ## 本版结论
 
 Eiscue 继续采用两个独立 Kit：AgentKit 管理可替换的 Agent 引擎，DeviceKit 提供可替换的设备控制。上层 App 管理对话、配置、授权、任务与系统生命周期。公开协议不绑定 Pi；当前引擎仍为 PiDurableKit。
