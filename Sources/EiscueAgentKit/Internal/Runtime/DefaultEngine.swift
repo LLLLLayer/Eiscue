@@ -162,6 +162,7 @@ actor DefaultEngine: AgentEngine {
             }
             let existingEntries = Set(view.entries.map(\.id))
             var settledInputs: [EntryID] = []
+            var settledAnswers: [EntryID] = []
             if configuration?.supportsImages == false,
                view.entries.contains(where: { ($0.userMessage?.content ?? []).contains { if case .image = $0 { true } else { false } } }) {
                 throw AgentError.invalidConfiguration(String(localized: "agent.attachment.images-unavailable", defaultValue: "Select a model that supports images to send this attachment.", bundle: .module))
@@ -217,7 +218,10 @@ actor DefaultEngine: AgentEngine {
                     let detailText = detail?.stringValue ?? detail?["message"]?.stringValue ?? ""
                     throw AgentError.runtime(String(localized: "agent.runtime.unfinished", defaultValue: "The task did not finish (\(String(describing: reason))). \(String(describing: detailText))", bundle: .module))
                 }
-                if case .done(let input, _) = settled.status { settledInputs.append(input) }
+                if case .done(let input, let answer) = settled.status {
+                    settledInputs.append(input)
+                    if let answer { settledAnswers.append(answer) }
+                }
             }
             try await opened.conversation.waitForIdle()
             try checkRunning(id)
@@ -229,6 +233,11 @@ actor DefaultEngine: AgentEngine {
                     ModelRequestFailure.classify(entries: finalView.entries, input: $0, existingEntries: existingEntries)
                 }).first { throw modelFailure }
                 throw AgentError.runtime(last.errorMessage ?? String(localized: "agent.runtime.model-failed", defaultValue: "The model request failed.", bundle: .module))
+            }
+            // A provider can incorrectly label tool calls as its final answer.
+            // Never report those unexecuted calls as a successful task or replay them here.
+            if finalView.entries.contains(where: { settledAnswers.contains($0.id) && !($0.assistantMessage?.toolCalls.isEmpty ?? true) }) {
+                throw AgentError.runtime(String(localized: "agent.runtime.unhandled-tools", defaultValue: "The model ended its reply before the requested actions could run.", bundle: .module))
             }
         } catch {
             failure = error
@@ -318,8 +327,12 @@ actor DefaultEngine: AgentEngine {
             model = ModelRef(provider: "eiscue", modelId: "unconfigured")
         }
         let runtimeTools = try tools.map { try RuntimeMapping.tool($0, budget: budget, secret: configuration?.apiKey ?? "") }
+        var extensions = [Extension("eiscue", tools: runtimeTools)]
+        if let configuration, GoogleCompletionCompatibility.applies(to: configuration) {
+            extensions.append(GoogleCompletionCompatibility.runtimeExtension)
+        }
         let harness = try await Harness.open(.sqlite(at: url), models: models,
-            extensions: [Extension("eiscue", tools: runtimeTools)],
+            extensions: extensions,
             settings: Settings(stream: .init(timeout: .seconds(120), maxRetries: 0), retry: .init(enabled: false),
                                progress: .init(partialInterval: .milliseconds(80)), toolExecution: .sequential),
             resume: false)
@@ -351,12 +364,7 @@ actor DefaultEngine: AgentEngine {
     }
 
     private static func completionCompatibility(for configuration: AgentConfiguration) -> PiDurableKit.JSONObject? {
-        let url = configuration.baseURL
-        guard configuration.api == .openAICompletions,
-              url.scheme?.lowercased() == "https",
-              url.host?.lowercased() == "generativelanguage.googleapis.com",
-              url.port == nil || url.port == 443,
-              url.path == "/v1beta/openai" || url.path == "/v1beta/openai/" else { return nil }
+        guard GoogleCompletionCompatibility.applies(to: configuration) else { return nil }
         // Google's OpenAI compatibility endpoint rejects even `store: false`.
         // Disable Pi's default field only for this endpoint and wire protocol.
         return ["supportsStore": .bool(false)]

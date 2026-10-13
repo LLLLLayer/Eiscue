@@ -39,12 +39,13 @@ struct ProviderIntegrationTests {
         var description: String { "\(api.rawValue): \(url)" }
     }
 
-    @Test func googleCompatibleProviderRoundTripsDeviceImageTool() async throws {
+    @Test(arguments: ["tool_calls", "stop"])
+    func googleCompatibleProviderRoundTripsDeviceImageTool(_ finishReason: String) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-google-device-tools-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = AgentConfiguration(api: .openAICompletions,
             baseURL: URL(string: "https://generativelanguage.googleapis.com/v1beta/openai/")!,
-            model: "gemini-3.8-flash", apiKey: "google-device-tools-fixture-\(UUID())", supportsImages: true)
+            model: "gemini-3.8-flash", apiKey: "google-device-tools-fixture-\(finishReason)-\(UUID())", supportsImages: true)
         let calls = OSAllocatedUnfairLock(initialState: 0)
         let screenshot = AgentTool(name: "device_screenshot", description: "Observe the current screen",
             parameters: ["type": "object", "properties": [:], "additionalProperties": false],
@@ -90,6 +91,171 @@ struct ProviderIntegrationTests {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
         let wireBody = try #require(String(data: encoder.encode(second.body), encoding: .utf8))
         #expect(wireBody.contains("data:image/png;base64,iVBORw=="))
+    }
+
+    @Test(arguments: [true, false])
+    func googleToolSignaturesStayWithTheirCallsAcrossRoundsAndReopening(_ officialEndpoint: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-google-signatures-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: .openAICompletions,
+            baseURL: URL(string: officialEndpoint ? "https://generativelanguage.googleapis.com/v1beta/openai/" : "https://signatures.fixture.invalid/v1")!,
+            model: "gemini-3.8-flash", apiKey: "google-signatures-fixture-\(UUID())")
+        let arguments = OSAllocatedUnfairLock(initialState: [AgentJSONValue]())
+        let probe = AgentTool(name: "fixture_probe", description: "Observe a fixture step",
+            parameters: ["type": "object", "properties": ["step": ["type": "integer"]], "required": ["step"], "additionalProperties": false],
+            mayHaveSideEffects: false) { value in
+                arguments.withLock { $0.append(value) }
+                return .text("Observed fixture step")
+            }
+        func makeClient(_ configuration: AgentConfiguration) -> AgentClient {
+            let network = URLSessionConfiguration.ephemeral
+            network.protocolClasses = [ProviderFixtureProtocol.self]
+            let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+            return AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+                tools: [probe], modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        }
+        let id = UUID()
+        let client = makeClient(configuration)
+        var answers = 0
+        for try await event in try await client.run(request: .init(conversationID: id, prompt: "Observe two rounds")) {
+            if case .message(let message) = event, message.text == "Hello world" { answers += 1 }
+        }
+        #expect(answers == 1)
+        #expect(arguments.withLock { $0 } == [["step": 1], ["step": 2], ["step": 3]])
+
+        // New Models and JavaScript runtime ensure signatures come from SQLite,
+        // not a previous request's in-memory capture map. Completed calls stay done.
+        let reopened = makeClient(configuration)
+        #expect(try await !reopened.recover(conversationID: id).hasInterruptedRun)
+        for try await event in try await reopened.run(request: .init(conversationID: id, prompt: "A follow-up after reopening")) {
+            if case .message(let message) = event, message.text == "Hello world" { answers += 1 }
+            if case .toolStarted = event { Issue.record("Completed fixture tools must not replay on reopen.") }
+        }
+        #expect(answers == 2)
+        #expect(arguments.withLock { $0 } == [["step": 1], ["step": 2], ["step": 3]])
+
+        var changedConfiguration = configuration
+        changedConfiguration.model = "different-fixture-model"
+        let switched = makeClient(changedConfiguration)
+        for try await event in try await switched.run(request: .init(conversationID: id, prompt: "Continue with a different model")) {
+            if case .message(let message) = event, message.text == "Hello world" { answers += 1 }
+            if case .toolStarted = event { Issue.record("Changing model must not replay completed tools.") }
+        }
+        #expect(answers == 3)
+        #expect(arguments.withLock { $0 } == [["step": 1], ["step": 2], ["step": 3]])
+
+        let requests = ProviderFixtureProtocol.requests.withLock {
+            $0.filter { $0.authorization == "Bearer \(configuration.apiKey)" }
+        }
+        #expect(requests.count == 5)
+        #expect(requests.last?.body["model"] == "different-fixture-model")
+        let expectedIDs = ["signed-call-1", "unsigned-call-1", "signed-call-2"]
+        for (index, request) in requests.enumerated().dropFirst() {
+            let messages = try #require(request.body["messages"]?.arrayValue)
+            let calls = messages.flatMap { $0["tool_calls"]?.arrayValue ?? [] }
+            let count = index == 1 ? 2 : 3
+            #expect(calls.compactMap { $0["id"]?.stringValue } == Array(expectedIDs.prefix(count)))
+            #expect(messages.filter { $0["role"] == "tool" }.compactMap { $0["tool_call_id"]?.stringValue } == Array(expectedIDs.prefix(count)))
+            for (callIndex, call) in calls.enumerated() {
+                let sameModel = request.body["model"] == .string(configuration.model)
+                let expectedSignature: AgentJSONValue? = !officialEndpoint || !sameModel || callIndex == 1 ? nil
+                    : .string(callIndex == 0 ? ProviderFixtureProtocol.firstSignature : ProviderFixtureProtocol.secondSignature)
+                #expect(call["extra_content"]?["google"]?["thought_signature"] == expectedSignature)
+                if expectedSignature == nil { #expect(call["extra_content"] == nil) }
+                let rawArguments = try #require(call["function"]?["arguments"]?.stringValue)
+                let decoded = try JSONDecoder().decode(AgentJSONValue.self, from: Data(rawArguments.utf8))
+                #expect(decoded == ["step": .number(Double(callIndex + 1))])
+            }
+        }
+    }
+
+    @Test(arguments: ["length", "content_filter", "other-endpoint", "malformed-stop"])
+    func abnormalToolRepliesDoNotAuthorizeExecution(_ scenario: String) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-unhandled-tools-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: .openAICompletions,
+            baseURL: URL(string: scenario == "other-endpoint" ? "https://unhandled.fixture.invalid/v1" : "https://generativelanguage.googleapis.com/v1beta/openai/")!,
+            model: "gemini-3.8-flash", apiKey: "google-device-tools-fixture-\(scenario)-\(UUID())")
+        let calls = OSAllocatedUnfairLock(initialState: 0)
+        let screenshot = AgentTool(name: "device_screenshot", description: "Observe",
+            parameters: ["type": "object", "properties": [:], "additionalProperties": false], mayHaveSideEffects: false) { _ in
+            calls.withLock { $0 += 1 }
+            return .text("Unexpected execution")
+        }
+        let network = URLSessionConfiguration.ephemeral
+        network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            tools: [screenshot], modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        var completed = false
+        do {
+            for try await event in try await client.run(request: .init(conversationID: UUID(), prompt: "Observe")) {
+                if event == .finished(.completed) { completed = true }
+            }
+            Issue.record("A rejected or unhandled tool response must not complete silently.")
+        } catch let error as AgentError {
+            if scenario == "content_filter" {
+                guard case .modelRequestFailed(let message) = error else { throw error }
+                #expect(message.contains("content_filter"))
+            } else {
+                let expected = NSLocalizedString("agent.runtime.unhandled-tools", bundle: .module,
+                                                 value: "MISSING RESOURCE", comment: "")
+                #expect(error == .runtime(expected))
+            }
+        } catch { Issue.record("Unexpected error: \(error)") }
+        #expect(!completed)
+        #expect(calls.withLock { $0 } == 0)
+        #expect(ProviderFixtureProtocol.requests.withLock {
+            $0.filter { $0.authorization == "Bearer \(configuration.apiKey)" }.count
+        } == 1)
+    }
+
+    @Test func completedHistoryWithAnUnexecutedToolCallIsNotReplayed() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-old-unhandled-tool-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let id = UUID()
+        let models = Models(credentials: .inMemory, builtinProviders: false)
+        let faux = FauxProvider()
+        try await models.register(faux)
+        try await faux.append([FauxResponse(.toolCall("device_screenshot", [:], id: "old-call"), stopReason: .stop)])
+        let harness = try await Harness.open(.sqlite(at: directory.appendingPathComponent(id.uuidString.lowercased() + ".sqlite")),
+                                             models: models, resume: false)
+        let conversation = try await harness.root(agent: AgentChange(model: faux.model))
+        let submission = try await conversation.submit("Old request", requestId: "old-request")
+        try await harness.resume()
+        let settled = try await submission.wait()
+        guard case .done = settled.status else { Issue.record("The old runtime must mark this anomaly done."); return }
+        let oldView = try await conversation.view()
+        #expect(oldView.entries.last?.assistantMessage?.stopReason == .stop)
+        #expect(oldView.entries.last?.assistantMessage?.toolCalls.first?.id == "old-call")
+        try await harness.close()
+
+        let configuration = AgentConfiguration(api: .openAICompletions,
+            baseURL: URL(string: "https://generativelanguage.googleapis.com/v1beta/openai/")!,
+            model: "gemini-3.8-flash", apiKey: "old-tool-history-fixture-\(UUID())")
+        let calls = OSAllocatedUnfairLock(initialState: 0)
+        let screenshot = AgentTool(name: "device_screenshot", description: "Observe",
+            parameters: ["type": "object", "properties": [:], "additionalProperties": false], mayHaveSideEffects: false) { _ in
+            calls.withLock { $0 += 1 }
+            return .text("Old calls must remain unexecuted")
+        }
+        let network = URLSessionConfiguration.ephemeral
+        network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            tools: [screenshot], modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        #expect(try await !client.recover(conversationID: id).hasInterruptedRun)
+        var receivedAnswer = false
+        for try await event in try await client.run(request: .init(conversationID: id, prompt: "A new question")) {
+            if case .message(let message) = event, message.text == "Hello world" { receivedAnswer = true }
+            if case .toolStarted = event { Issue.record("An old completed tool call must not restart.") }
+        }
+        #expect(receivedAnswer)
+        #expect(calls.withLock { $0 } == 0)
+        #expect(ProviderFixtureProtocol.requests.withLock {
+            $0.filter { $0.authorization == "Bearer \(configuration.apiKey)" }.count
+        } == 1)
     }
 
     @Test(arguments: [
@@ -251,9 +417,21 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
                                        headerFields: ["Content-Type": "text/event-stream"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         let chunks: [String]
-        if recorded.authorization?.hasPrefix("Bearer google-device-tools-fixture-") == true,
+        if recorded.authorization?.hasPrefix("Bearer google-signatures-fixture-") == true {
+            let resultCount = recorded.body["messages"]?.arrayValue?.filter { $0["role"] == "tool" }.count ?? 0
+            if resultCount == 0 { chunks = Self.signedToolCalls(round: 1) }
+            else if resultCount == 2 { chunks = Self.signedToolCalls(round: 2) }
+            else { chunks = Self.completions }
+        }
+        else if recorded.authorization?.hasPrefix("Bearer google-device-tools-fixture-") == true,
            !(recorded.body["messages"]?.arrayValue?.contains { $0["role"] == "tool" } ?? false) {
-            chunks = Self.deviceToolCall
+            let finishReason: String
+            if recorded.authorization?.contains("-length-") == true { finishReason = "length" }
+            else if recorded.authorization?.contains("-content_filter-") == true { finishReason = "content_filter" }
+            else if recorded.authorization?.contains("-stop-") == true || recorded.authorization?.contains("-other-endpoint-") == true { finishReason = "stop" }
+            else { finishReason = "tool_calls" }
+            let arguments = recorded.authorization?.contains("-malformed-stop-") == true ? "{" : "{}"
+            chunks = Self.deviceToolCall(finishReason: finishReason, arguments: arguments)
         }
         else if url.path.hasSuffix("chat/completions") { chunks = Self.completions }
         else if url.path.hasSuffix("responses") { chunks = Self.responses }
@@ -282,11 +460,43 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
         "data: [DONE]\n\n",
     ]
 
-    static let deviceToolCall = [
-        sse(#"{"id":"c-tool","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"screen-1","type":"function","function":{"name":"device_screenshot","arguments":"{}"}}]},"finish_reason":null}]}"#),
-        sse(#"{"id":"c-tool","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#),
-        "data: [DONE]\n\n",
-    ]
+    static func deviceToolCall(finishReason: String, arguments: String = "{}") -> [String] {
+        [
+            // The provider may add the numeric index after identifying the call.
+            sse(#"{"id":"c-tool","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"tool_calls":[{"id":"screen-1","type":"function","function":{"name":"device_screenshot","arguments":"{"}}]},"finish_reason":null}]}"#),
+            sse(#"{"id":"c-tool","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"screen-1","function":{"arguments":"\#(arguments.dropFirst())"}}]},"finish_reason":null}]}"#),
+            sse(#"{"id":"c-tool","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"\#(finishReason)"}]}"#),
+            "data: [DONE]\n\n",
+        ]
+    }
+
+    static let firstSignature = "fixture/opaque+round-1=="
+    static let secondSignature = "fixture/opaque+round-2=="
+
+    static func signedToolCalls(round: Int) -> [String] {
+        let first: String
+        let continuation: String
+        let signature: String
+        if round == 1 {
+            first = #"{"index":0,"id":"signed-call-1","type":"function","function":{"name":"fixture_probe","arguments":"{"}}"#
+            continuation = #"{"index":0,"function":{"arguments":"\"step\":1}"}},{"index":1,"id":"unsigned-call-1","type":"function","function":{"name":"fixture_probe","arguments":"{\"step\":2}"}}"#
+            signature = firstSignature
+        } else {
+            first = #"{"index":0,"id":"signed-call-2","type":"function","function":{"name":"fixture_probe","arguments":"{"}}"#
+            continuation = #"{"index":0,"function":{"arguments":"\"step\":3}"}}"#
+            signature = secondSignature
+        }
+        func chunk(_ calls: String) -> String {
+            sse(#"{"id":"signature-round-\#(round)","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{"tool_calls":[\#(calls)]},"finish_reason":null}]}"#)
+        }
+        return [
+            chunk(first), chunk(continuation),
+            // Google can supply this separately, without id/name/arguments.
+            chunk(#"{"index":0,"extra_content":{"google":{"thought_signature":"\#(signature)"}}}"#),
+            sse(#"{"id":"signature-round-\#(round)","object":"chat.completion.chunk","created":1,"model":"fixture-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#),
+            "data: [DONE]\n\n",
+        ]
+    }
 
     static let anthropic = [
         sse(#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"fixture-model","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}"#, event: "message_start"),

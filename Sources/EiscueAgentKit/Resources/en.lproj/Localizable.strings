@@ -14,6 +14,7 @@
 "agent.error.tool-limit" = "This task has reached its tool call limit.";
 "agent.error.unconfigured" = "The agent engine has not been configured.";
 "agent.runtime.model-failed" = "The model request failed.";
+"agent.runtime.unhandled-tools" = "The model ended its reply before the requested actions could run.";
 "agent.runtime.unfinished" = "The task did not finish (%@). %@";
 "agent.storage.duplicate-conversation" = "The conversation file contains duplicate records. The original file has been preserved.";
 "agent.storage.unsupported-version" = "Conversation file version %@ is not supported. The original file has been preserved.";

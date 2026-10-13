@@ -14,6 +14,7 @@
 "agent.error.tool-limit" = "已达到本次任务的工具调用上限。";
 "agent.error.unconfigured" = "Agent 引擎尚未接入。";
 "agent.runtime.model-failed" = "模型请求失败。";
+"agent.runtime.unhandled-tools" = "模型结束了回复，但请求的操作尚未执行。";
 "agent.runtime.unfinished" = "任务未完成（%@）。%@";
 "agent.storage.duplicate-conversation" = "会话文件包含重复记录。原文件已保留。";
 "agent.storage.unsupported-version" = "暂不支持会话文件版本 %@。原文件已保留。";
