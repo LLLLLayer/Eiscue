@@ -34,6 +34,15 @@ struct CredentialStore {
         guard status == errSecSuccess || status == errSecItemNotFound else { throw CredentialError(status) }
     }
 
+    #if DEBUG
+    /// Used only to reset this store's isolated UI-test service.
+    func deleteAll() throws {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw CredentialError(status) }
+    }
+    #endif
+
     private func baseQuery(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service, kSecAttrAccount as String: account]

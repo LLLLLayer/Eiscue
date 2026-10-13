@@ -19,6 +19,8 @@ final class EiscueUITests: XCTestCase {
     private func openModelSettings(in app: XCUIApplication) {
         openSettings(in: app)
         app.buttons["modelSettingsButton"].tap()
+        let edit = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "editModelProfile_")).firstMatch
+        if edit.waitForExistence(timeout: 2) { edit.tap() }
         XCTAssertTrue(app.textFields["modelBaseURL"].waitForExistence(timeout: 5))
     }
 
@@ -26,7 +28,10 @@ final class EiscueUITests: XCTestCase {
     private func replace(_ field: XCUIElement, with text: String, in app: XCUIApplication) {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        if let value = field.value as? String, !value.isEmpty, value != field.placeholderValue {
+        let clearIdentifiers = ["modelBaseURL": "clearModelBaseURLButton", "modelIdentifier": "clearModelIdentifierButton"]
+        if let identifier = clearIdentifiers[field.identifier], app.buttons[identifier].isHittable {
+            app.buttons[identifier].tap()
+        } else if let value = field.value as? String, !value.isEmpty, value != field.placeholderValue {
             // A simulated Command-A can leave only part of a URL selected.
             // Use the visible edit menu and verify the replacement itself.
             field.press(forDuration: 1)
@@ -53,9 +58,10 @@ final class EiscueUITests: XCTestCase {
 
     @MainActor
     private func expandDeviceOptions(in app: XCUIApplication) {
-        let options = app.descendants(matching: .any).matching(identifier: "deviceAdvancedOptions").firstMatch
-        reveal(options, in: app)
+        let options = app.buttons["deviceConnectionOptionsMenu"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
         options.tap()
+        app.buttons["deviceConnectionHelpButton"].tap()
     }
 
     /// New installs default to the Bluetooth board, whose page has no tunnel,
@@ -68,7 +74,7 @@ final class EiscueUITests: XCTestCase {
         let option = app.buttons["App 内连接"]
         XCTAssertTrue(option.waitForExistence(timeout: 5))
         option.tap()
-        let options = app.descendants(matching: .any).matching(identifier: "deviceAdvancedOptions").firstMatch
+        let options = app.buttons["deviceConnectionOptionsMenu"]
         XCTAssertTrue(options.waitForExistence(timeout: 5))
     }
 
@@ -151,6 +157,8 @@ final class EiscueUITests: XCTestCase {
 
         replace(app.textFields["modelBaseURL"], with: "https://example.invalid/v1", in: app)
         app.buttons["saveModelSettingsButton"].tap()
+        XCTAssertTrue(app.buttons["addModelProfileButton"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons["完成"].tap()
         XCTAssertTrue(app.buttons["modelSettingsButton"].waitForExistence(timeout: 5))
         app.terminate()
 
@@ -160,17 +168,19 @@ final class EiscueUITests: XCTestCase {
         XCTAssertEqual(app.textFields["modelIdentifier"].value as? String, "ui-test-model")
         XCTAssertTrue(app.staticTexts["已保存 API Key"].exists)
         let savedKeyField = app.secureTextFields["modelAPIKey"]
-        reveal(savedKeyField, in: app)
-        XCTAssertEqual(savedKeyField.value as? String, "留空以保留当前密钥")
+        XCTAssertFalse(savedKeyField.exists, "Saved credentials must not appear in an editable field.")
         XCTAssertFalse(app.staticTexts[key].exists)
-
+        reveal(app.buttons["replaceAPIKeyButton"], in: app)
+        app.buttons["replaceAPIKeyButton"].tap()
+        reveal(savedKeyField, in: app)
+        XCTAssertTrue((savedKeyField.value as? String ?? "").isEmpty || savedKeyField.value as? String == savedKeyField.placeholderValue)
+        XCTAssertFalse(app.buttons["saveModelSettingsButton"].isEnabled)
         app.buttons["removeAPIKeyButton"].tap()
         app.buttons["删除密钥"].tap()
-        XCTAssertTrue(app.buttons["modelSettingsButton"].waitForExistence(timeout: 5))
-        app.buttons["modelSettingsButton"].tap()
-        XCTAssertFalse(app.staticTexts["已保存 API Key"].exists)
+        XCTAssertTrue(app.staticTexts["已保存 API Key"].waitForNonExistence(timeout: 5))
         XCTAssertFalse(app.buttons["saveModelSettingsButton"].isEnabled)
         app.navigationBars.buttons["取消"].tap()
+        app.navigationBars.buttons["完成"].tap()
     }
 
     @MainActor
@@ -268,8 +278,7 @@ final class EiscueUITests: XCTestCase {
         let app = launch()
         openDevice(in: app)
         selectInAppConnection(in: app)
-        expandDeviceOptions(in: app)
-        XCTAssertTrue(app.staticTexts["连接准备"].waitForExistence(timeout: 5))
+        app.buttons["deviceConnectionOptionsMenu"].tap()
         let openProbe = app.buttons["检查点击和输入"]
         guard openProbe.waitForExistence(timeout: 2) else {
             throw XCTSkip("The probe entry is shown only when device control is ready, which a simulator cannot reach.")

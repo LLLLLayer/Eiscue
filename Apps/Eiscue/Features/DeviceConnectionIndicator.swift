@@ -15,8 +15,12 @@ enum ConnectionIndicatorState: Equatable {
     }
     var color: Color {
         switch self {
-        case .ready: .green
-        case .unpaired, .paired, .failed: .red
+        case .ready: Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .systemGreen : UIColor(red: 0.05, green: 0.48, blue: 0.20, alpha: 1)
+        })
+        case .unpaired, .paired, .failed: Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .systemRed : UIColor(red: 0.80, green: 0.08, blue: 0.12, alpha: 1)
+        })
         case .connecting: .secondary
         }
     }
@@ -56,10 +60,10 @@ struct DeviceConnectionIndicator: View {
                 }
             }
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(state.color.opacity(0.9))
+                .foregroundStyle(state.color)
                 .frame(width: 14, height: 14)
-                .background(state.color.opacity(0.14), in: Circle())
-                .overlay { Circle().strokeBorder(state.color.opacity(0.22), lineWidth: 0.5) }
+                .background(state.color.opacity(0.22), in: Circle())
+                .overlay { Circle().strokeBorder(state.color.opacity(0.42), lineWidth: 0.5) }
                 .offset(x: 5, y: 2)
         }.accessibilityHidden(true)
     }

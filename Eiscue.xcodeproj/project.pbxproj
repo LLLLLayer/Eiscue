@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0062A75981B53F62F1B4EAF8 /* ConversationManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 276C043103059304D01FC75E /* ConversationManagementTests.swift */; };
 		065A891D309C03F309BCD935 /* StickerCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A26820B8BF5790906848635 /* StickerCatalogTests.swift */; };
+		0702943818C997F32F0DBF06 /* ModelProfilesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 053481485B1F98B4726F9F9B /* ModelProfilesUITests.swift */; };
 		08863259B315D6AD944F73C9 /* ModelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17BB1912D4603DC0C1F335F1 /* ModelSettingsView.swift */; };
 		0D1A3149B9F201C6E8A50BB5 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 47288B06A089F452C97A9F25 /* Localizable.xcstrings */; };
 		0D515E2A61BDDB4D0BA2FA4D /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = E40D4B32B2034D719CE50D2A /* Markdown */; };
@@ -74,9 +75,11 @@
 		6A0F9A3B7DA51DFC071F0FDD /* DeviceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E243958F91356B3A30120CD /* DeviceView.swift */; };
 		6C73EA58A8ADA9A5C3300BCE /* LocalTunnel in Resources */ = {isa = PBXBuildFile; fileRef = 31887D770371FDEA757C11FB /* LocalTunnel */; };
 		724168F55DB29001D093E104 /* DeviceTaskRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D7780F0C690A36215914D9D /* DeviceTaskRunnerTests.swift */; };
+		726571C4DF2BEECAE0C8BF52 /* DevicePageUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A18DD33C59AE9FA9FC2D79FE /* DevicePageUITests.swift */; };
 		7356EB83AAE2B1A3D1B0122D /* DeviceConnectionMethodTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADB99E05C4F646B5E96F4300 /* DeviceConnectionMethodTests.swift */; };
 		783B33974E9366867F40518A /* Activities.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 9263BE83DACB2675B747531D /* Activities.xcstrings */; };
 		790A4FCE3A7A7BB86CE3AD77 /* ConversationFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6033C5D9F847A7C78BF6C0E9 /* ConversationFeed.swift */; };
+		797B69192D27231BF608AE0B /* ModelProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05189DAE62C25C8A06A8FB4F /* ModelProfile.swift */; };
 		7992F1B068D73D2CDEFAA95D /* ScreenBroadcastStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63A830AD299FAA59591007E2 /* ScreenBroadcastStore.swift */; };
 		79A167F799F891F24237B3BE /* ToolImagePreviewStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 227251613A166AD4DA0092AE /* ToolImagePreviewStoreTests.swift */; };
 		7A810F0B7BA13B3B8B42E444 /* TaskStatusPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E816BCA11DD953460AE2CE8C /* TaskStatusPresentation.swift */; };
@@ -102,6 +105,7 @@
 		A988E817500C9D7E12208F23 /* BackgroundExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5DA2E68A4377D4B76AD9CC /* BackgroundExecution.swift */; };
 		A9FB19EA670CB2D1206BCAE2 /* DebugMessageSharingFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D6C3BABD980923EA1EB9715 /* DebugMessageSharingFixture.swift */; };
 		AB55AD91BA1E71FA4D76AF26 /* BluetoothBoardSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F814144DCA802C789BD7D03 /* BluetoothBoardSetupView.swift */; };
+		AB8D1F754AED2F003755EBCD /* AppModel+ModelProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC9A86498CDE62FBE1BAFB0B /* AppModel+ModelProfiles.swift */; };
 		AD617D9A3750F036CBC6AFF3 /* MessageInteractionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FF3D7D11AFD3AB5BEE4815 /* MessageInteractionViews.swift */; };
 		AFE01C39F200061750F93B6E /* AppLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCA2E1255BE860C03B2D7D2 /* AppLocalizationTests.swift */; };
 		AFF5BAFF1AA096C424054BBE /* MessageAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5349182DB47DC593791EC351 /* MessageAttachments.swift */; };
@@ -112,6 +116,7 @@
 		B64A0FF7B8E06DB51C0ED42F /* failure-recovery.md in Resources */ = {isa = PBXBuildFile; fileRef = AE8FF5FBC3248D3E092A0B6F /* failure-recovery.md */; };
 		B7153829F4DBC08B326C27C5 /* LocalTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */; };
 		B77C61A22CAC4EF6F9D4FC30 /* EiscueAgentKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3D0877E9D7EC4BD3D62A56BD /* EiscueAgentKit */; };
+		BB96C1B3B31BB3422FF5E956 /* DebugDevicePageFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3DD55C554151EA440ABC69 /* DebugDevicePageFixture.swift */; };
 		BD60DC2EDC6935D987BC4244 /* PacketReflectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E34C4F754435B4D37E796F42 /* PacketReflectorTests.swift */; };
 		BE87BF05F4BEAB134A08E089 /* EiscueDeviceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1B6A73E40564BA09F4256C9F /* EiscueDeviceKit */; };
 		BEF1B27E5D4F4D469EDAD9D5 /* LocalTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */; };
@@ -130,6 +135,7 @@
 		D47EF70F5A4CC0F7E2EB4330 /* RunHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9F4E5E2462318E6163D11E3 /* RunHistoryView.swift */; };
 		D8706DE0D197BFD40683A760 /* SpeechInputSessionGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C136779D1B7E995E563D863 /* SpeechInputSessionGateTests.swift */; };
 		D8B05B1632C7825E7D315823 /* MessageSharingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF54DE29A738F0AC9B25C64C /* MessageSharingTests.swift */; };
+		DE916F420A87ACD08C58F0C1 /* Models.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 95D24C3738607A7C89BDADB4 /* Models.xcstrings */; };
 		DEA9AB532E90A67882892A49 /* MessageAttachmentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C3263DD13486C0532D98C2A /* MessageAttachmentsTests.swift */; };
 		DFD8D9D7337613DC090B2526 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B4113D63EF63119973E5290E /* InfoPlist.xcstrings */; };
 		E0C476F04D5A838540F40F76 /* PacketReflector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0BAF02C3A4596BB81900937 /* PacketReflector.swift */; };
@@ -143,6 +149,7 @@
 		F15B12FFF429A45A62330336 /* TestNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6492B951A834E9F2C0B45B9F /* TestNavigation.swift */; };
 		F1E59EADEE1082FD007FDDA3 /* BoardCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B3A4CBF8E29F8287B0FA7C /* BoardCompanion.swift */; };
 		F3B9AD7FD904BA9AAA8DA432 /* LocalizationResourcesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2715D754945BFFCB698F91 /* LocalizationResourcesTests.swift */; };
+		F9A91871C1F72EAFEDB3593E /* ModelProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4420A6FEEB30E1C6D961A4 /* ModelProfileTests.swift */; };
 		FA471D0DAF642BD7D07D6190 /* LocalTunnelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5987C49F03E1A6006180D2D /* LocalTunnelManagerTests.swift */; };
 		FCD81924ED952E3E6041F99E /* Connections.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 24E7147A3B261B1E481387A7 /* Connections.xcstrings */; };
 /* End PBXBuildFile section */
@@ -197,7 +204,9 @@
 		01B9BDDFD7C06B9D7C358D71 /* BackgroundTaskStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTaskStatusTests.swift; sourceTree = "<group>"; };
 		02F279EADF83B018334CB6E5 /* ConversationOrderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationOrderingTests.swift; sourceTree = "<group>"; };
 		04849AC312425FBC83FAFA71 /* Speech.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Speech.xcstrings; sourceTree = "<group>"; };
+		05189DAE62C25C8A06A8FB4F /* ModelProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProfile.swift; sourceTree = "<group>"; };
 		05200116E330E7BE947E261B /* OwnedDeviceCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnedDeviceCheck.swift; sourceTree = "<group>"; };
+		053481485B1F98B4726F9F9B /* ModelProfilesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProfilesUITests.swift; sourceTree = "<group>"; };
 		06E807A4B8721B8A2C6FEEC3 /* EiscueUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EiscueUITests.swift; sourceTree = "<group>"; };
 		0716EB751D8674ACEA219337 /* BoardCompanionPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCompanionPresentation.swift; sourceTree = "<group>"; };
 		0969597E05406EA5E1A35749 /* Bluetooth.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Bluetooth.xcstrings; sourceTree = "<group>"; };
@@ -245,6 +254,7 @@
 		4980A377457D284AE7D070C1 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		4B8DD306C184BA93655C1F25 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		4C8DBBE9AC89717181349C81 /* LocalizationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationUITests.swift; sourceTree = "<group>"; };
+		4E4420A6FEEB30E1C6D961A4 /* ModelProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProfileTests.swift; sourceTree = "<group>"; };
 		5143994A569E8CAC8519162C /* EiscueAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = EiscueAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		520105FEB6AA411D3BF07584 /* RunRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunRecord.swift; sourceTree = "<group>"; };
 		52BD4DE32F6EAD3627D0B45F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -273,6 +283,7 @@
 		7C136779D1B7E995E563D863 /* SpeechInputSessionGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechInputSessionGateTests.swift; sourceTree = "<group>"; };
 		7CE0594104194CA053D240AA /* DeviceObservationImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceObservationImageTests.swift; sourceTree = "<group>"; };
 		7E243958F91356B3A30120CD /* DeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceView.swift; sourceTree = "<group>"; };
+		7E3DD55C554151EA440ABC69 /* DebugDevicePageFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugDevicePageFixture.swift; sourceTree = "<group>"; };
 		7F5F3D1DE33A5A6E01F11E8C /* SpeechInputCallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechInputCallbackTests.swift; sourceTree = "<group>"; };
 		83419005CFB2850C52F954E6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		84086D78174C50584327C56B /* swift-markdown.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "swift-markdown.txt"; sourceTree = "<group>"; };
@@ -286,10 +297,12 @@
 		948A45ED7381643983116E60 /* ToolImagePreviewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolImagePreviewStore.swift; sourceTree = "<group>"; };
 		94E7E43339CDCF0035570911 /* ModelFailurePresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelFailurePresentationTests.swift; sourceTree = "<group>"; };
 		95168E1FA41910A807A7533B /* AttachmentPickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentPickers.swift; sourceTree = "<group>"; };
+		95D24C3738607A7C89BDADB4 /* Models.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Models.xcstrings; sourceTree = "<group>"; };
 		99BE7FEB9D6CE3C2A17C25A1 /* Attachments.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Attachments.xcstrings; sourceTree = "<group>"; };
 		9DE9E6334DAC0A5193DFE765 /* DeviceConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceConnection.swift; sourceTree = "<group>"; };
 		9F0C8133FEDA1A568AFA3120 /* Onboarding.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Onboarding.xcstrings; sourceTree = "<group>"; };
 		9FAD893CDB16B653EC4B80CB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A18DD33C59AE9FA9FC2D79FE /* DevicePageUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePageUITests.swift; sourceTree = "<group>"; };
 		A25EB546307A4B26A3061521 /* BoardAcceptanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardAcceptanceUITests.swift; sourceTree = "<group>"; };
 		A29CD517B5484C760F05DBC2 /* ToolImagePreviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolImagePreviewUITests.swift; sourceTree = "<group>"; };
 		A29F08DF64FB95B30868D1C0 /* Eiscue.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Eiscue.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -325,6 +338,7 @@
 		E816BCA11DD953460AE2CE8C /* TaskStatusPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStatusPresentation.swift; sourceTree = "<group>"; };
 		E81CC9CC6C37A50BB6439E54 /* Composer.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Composer.xcstrings; sourceTree = "<group>"; };
 		E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTunnelConfiguration.swift; sourceTree = "<group>"; };
+		EC9A86498CDE62FBE1BAFB0B /* AppModel+ModelProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+ModelProfiles.swift"; sourceTree = "<group>"; };
 		EE860B63A4D199A0D88D8504 /* SkillLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillLibrary.swift; sourceTree = "<group>"; };
 		EF54DE29A738F0AC9B25C64C /* MessageSharingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageSharingTests.swift; sourceTree = "<group>"; };
 		EF8A247943F81F0A579E3F9E /* ChatMarkdownParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownParserTests.swift; sourceTree = "<group>"; };
@@ -438,6 +452,7 @@
 				E4340173F725948EB4EBCB29 /* InfoPlist.xcstrings */,
 				F4B4FCB3E0E12F0D5A95D892 /* Localizable.xcstrings */,
 				7338105B6EC033F9E970BC32 /* MessageSharing.xcstrings */,
+				95D24C3738607A7C89BDADB4 /* Models.xcstrings */,
 				C0DA02494C1F7FC473F2E98A /* Navigation.xcstrings */,
 				9F0C8133FEDA1A568AFA3120 /* Onboarding.xcstrings */,
 				78A63C30EF964BF5B9C42A22 /* Runtime.xcstrings */,
@@ -517,6 +532,7 @@
 				0716EB751D8674ACEA219337 /* BoardCompanionPresentation.swift */,
 				6033C5D9F847A7C78BF6C0E9 /* ConversationFeed.swift */,
 				5ED72BC6CE25EC6E9266305D /* ModelFailurePresentation.swift */,
+				05189DAE62C25C8A06A8FB4F /* ModelProfile.swift */,
 				C2BB43D26F8950FA2A5185FA /* ModelSettings.swift */,
 				520105FEB6AA411D3BF07584 /* RunRecord.swift */,
 				E816BCA11DD953460AE2CE8C /* TaskStatusPresentation.swift */,
@@ -564,9 +580,11 @@
 				A25EB546307A4B26A3061521 /* BoardAcceptanceUITests.swift */,
 				A3E981BFCD5F4A671CFD7946 /* ChatPresentationUITests.swift */,
 				91128A966C56B75A3AA5D7E7 /* ConversationManagementUITests.swift */,
+				A18DD33C59AE9FA9FC2D79FE /* DevicePageUITests.swift */,
 				06E807A4B8721B8A2C6FEEC3 /* EiscueUITests.swift */,
 				4C8DBBE9AC89717181349C81 /* LocalizationUITests.swift */,
 				3F2A114454C7F7646FCAE261 /* MessageSharingUITests.swift */,
+				053481485B1F98B4726F9F9B /* ModelProfilesUITests.swift */,
 				D01D4FB3D16D345F97887C60 /* OnboardingUITests.swift */,
 				BF2CFBFE6E65D5C7D1A39152 /* RichComposerUITests.swift */,
 				1A83C1EA60E158118AB4148D /* SidebarUITests.swift */,
@@ -606,6 +624,7 @@
 			children = (
 				6825B2E1C563FEEE8C4308D9 /* AppModel.swift */,
 				CCC10611FD53034B59BC1279 /* AppModel+ConversationOrdering.swift */,
+				EC9A86498CDE62FBE1BAFB0B /* AppModel+ModelProfiles.swift */,
 				4893D49FE11574B85AF2C19C /* DesignSystem.swift */,
 				368D71E0423BB477CF0EEC8F /* Eiscue.entitlements */,
 				61CCF7D1613FCC89E14553DD /* EiscueApp.swift */,
@@ -644,6 +663,7 @@
 				5F5756FE9D03C2FBFB3D6C15 /* BLEBoardCheckClient.swift */,
 				24A306F8F720473F37E62E16 /* BLEDeviceCheck.swift */,
 				17B3A4CBF8E29F8287B0FA7C /* BoardCompanion.swift */,
+				7E3DD55C554151EA440ABC69 /* DebugDevicePageFixture.swift */,
 				1CB21C2665301FA81BFDCAD9 /* DebugDeviceSetup.swift */,
 				1D6C3BABD980923EA1EB9715 /* DebugMessageSharingFixture.swift */,
 				2AAB2DFA9E5E2331A793E397 /* DebugTimelineFixture.swift */,
@@ -684,6 +704,7 @@
 				EF54DE29A738F0AC9B25C64C /* MessageSharingTests.swift */,
 				6FFB68E8EB235D2604F1E70B /* MessageSubmissionTests.swift */,
 				94E7E43339CDCF0035570911 /* ModelFailurePresentationTests.swift */,
+				4E4420A6FEEB30E1C6D961A4 /* ModelProfileTests.swift */,
 				E34C4F754435B4D37E796F42 /* PacketReflectorTests.swift */,
 				2BE71B266875AC09F5F63AFF /* PairingTransferTests.swift */,
 				39E897A6E02A539806C37BC2 /* SpeechHoldInteractionTests.swift */,
@@ -895,6 +916,7 @@
 				6C73EA58A8ADA9A5C3300BCE /* LocalTunnel in Resources */,
 				646CDA42A4E74DC7A44C4042 /* Localizable.xcstrings in Resources */,
 				938002817B2BFE9218AF6752 /* MessageSharing.xcstrings in Resources */,
+				DE916F420A87ACD08C58F0C1 /* Models.xcstrings in Resources */,
 				4AD729248C4B291E766254DE /* Navigation.xcstrings in Resources */,
 				D09AFA7C912B4BE9DA9B8B81 /* Onboarding.xcstrings in Resources */,
 				B633C15C203F04B8FFC8CD87 /* Runtime.xcstrings in Resources */,
@@ -920,9 +942,11 @@
 				3E13B0C32EBE7F784EA486EA /* BoardAcceptanceUITests.swift in Sources */,
 				E98FC19D177E32AF6554B6D7 /* ChatPresentationUITests.swift in Sources */,
 				4E01AAE26AE0AA1B707F8F8F /* ConversationManagementUITests.swift in Sources */,
+				726571C4DF2BEECAE0C8BF52 /* DevicePageUITests.swift in Sources */,
 				6879DE205F8DDD037A932E55 /* EiscueUITests.swift in Sources */,
 				EC26DA4792A228C1E9DCC1B5 /* LocalizationUITests.swift in Sources */,
 				17BE3AA38BF1B6E419C6D52D /* MessageSharingUITests.swift in Sources */,
+				0702943818C997F32F0DBF06 /* ModelProfilesUITests.swift in Sources */,
 				66602933AF40443324295BF4 /* OnboardingUITests.swift in Sources */,
 				3AB76DE4D6C87DFF37C3FA0F /* RichComposerUITests.swift in Sources */,
 				385A1EF09A8C544C9BAE7274 /* SidebarUITests.swift in Sources */,
@@ -947,6 +971,7 @@
 			files = (
 				6554E152323F84C2D6B7F475 /* AppModel+Attachments.swift in Sources */,
 				E92D12EACECC2560B183899F /* AppModel+ConversationOrdering.swift in Sources */,
+				AB8D1F754AED2F003755EBCD /* AppModel+ModelProfiles.swift in Sources */,
 				143F8C10629C01BAFCD84EA8 /* AppModel.swift in Sources */,
 				6152EF03E4375C154B4464CC /* AssistantView.swift in Sources */,
 				805A02F8C0D581450254E802 /* AttachmentPickers.swift in Sources */,
@@ -961,6 +986,7 @@
 				790A4FCE3A7A7BB86CE3AD77 /* ConversationFeed.swift in Sources */,
 				51117E4C5962ACEF1DF6D6F5 /* ConversationSidebarView.swift in Sources */,
 				31A24A24911B0A0B4CEC158B /* CredentialStore.swift in Sources */,
+				BB96C1B3B31BB3422FF5E956 /* DebugDevicePageFixture.swift in Sources */,
 				CB31C17BA3E34080230F4054 /* DebugDeviceSetup.swift in Sources */,
 				A9FB19EA670CB2D1206BCAE2 /* DebugMessageSharingFixture.swift in Sources */,
 				63FB385493955B134718DFE8 /* DebugTimelineFixture.swift in Sources */,
@@ -979,6 +1005,7 @@
 				AD617D9A3750F036CBC6AFF3 /* MessageInteractionViews.swift in Sources */,
 				1F4D6479392293BB759215CC /* MessageSharing.swift in Sources */,
 				87FB1202C3C3043CD5295904 /* ModelFailurePresentation.swift in Sources */,
+				797B69192D27231BF608AE0B /* ModelProfile.swift in Sources */,
 				4C322E4662A3C60FCFDA0F61 /* ModelSettings.swift in Sources */,
 				08863259B315D6AD944F73C9 /* ModelSettingsView.swift in Sources */,
 				46C89E6B5ECD275A74A52A8E /* OnboardingView.swift in Sources */,
@@ -1029,6 +1056,7 @@
 				D8B05B1632C7825E7D315823 /* MessageSharingTests.swift in Sources */,
 				E53B034E97FD385A4BBE1233 /* MessageSubmissionTests.swift in Sources */,
 				93DEE072DFB33A703B9801D5 /* ModelFailurePresentationTests.swift in Sources */,
+				F9A91871C1F72EAFEDB3593E /* ModelProfileTests.swift in Sources */,
 				4720C1A0DE81BBB5B1E6288E /* PacketReflector.swift in Sources */,
 				BD60DC2EDC6935D987BC4244 /* PacketReflectorTests.swift in Sources */,
 				67147D139EACE15D5F50E6F4 /* PairingTransferTests.swift in Sources */,

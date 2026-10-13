@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var colorScheme
     let openSidebar: () -> Void
     let revealSidebar: () -> Void
     @FocusState private var isComposerFocused: Bool
@@ -42,11 +43,9 @@ struct AssistantView: View {
                 .padding(.horizontal, 24).padding(.top, 20)
                 .frame(maxWidth: .infinity)
             }
-            .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
-                guard !speech.isBusy,
-                      value.startLocation.x > 24,
-                      value.translation.width < -80,
-                      abs(value.translation.width) > abs(value.translation.height) * 2 else { return }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(SidebarRevealGesture(isEnabled: !speech.isBusy) {
                 isComposerFocused = false
                 speech.cancel()
                 revealSidebar()
@@ -76,11 +75,31 @@ struct AssistantView: View {
                 Menu {
                     Button("runs.conversationTitle", systemImage: "clock.arrow.circlepath") { showsRunHistory = true }
                         .accessibilityIdentifier("conversationRunHistoryButton")
+                    Divider()
+                    ForEach(model.modelProfiles) { profile in
+                        Button {
+                            do { try model.selectModelProfile(profile.id) }
+                            catch { model.errorMessage = model.safeError(error) }
+                        } label: {
+                            if model.selectedModelProfileID == profile.id {
+                                Label(profile.displayName, systemImage: "checkmark")
+                            } else { Text(profile.displayName) }
+                        }
+                        .disabled(!model.canManageModelProfiles)
+                        .accessibilityIdentifier("switchModelProfile_\(profile.id.uuidString)")
+                    }
+                    Button(String(localized: "models.manage", table: "Models"), systemImage: "slider.horizontal.3") {
+                        isComposerFocused = false
+                        model.showsModelSettings = true
+                    }
+                    .disabled(!model.canManageModelProfiles)
+                    .accessibilityIdentifier("manageModelProfilesButton")
                 } label: {
                     HStack(spacing: 5) {
                         Text("Eiscue").font(.headline)
-                        Image(systemName: "chevron.down").font(.caption2).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.down").font(.caption2).opacity(0.6)
                     }
+                    .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
                 }.accessibilityLabel(chatText("chat.conversationMenu"))
                     .accessibilityIdentifier("conversationMenuButton")
             }
@@ -318,15 +337,12 @@ struct AssistantView: View {
                         Task { await model.sendMessage() }
                     } label: {
                         Group {
-                            if model.isSaving || model.isSubmittingMessage { ProgressView().controlSize(.small).tint(EiscueStyle.onAccent) }
+                            if model.isSaving || model.isSubmittingMessage { ProgressView().controlSize(.small).tint(.white) }
                             else { Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)) }
                         }
                         .frame(width: 22, height: 22)
                     }
-                    .buttonStyle(.glassProminent).buttonBorderShape(.circle)
-                    .controlSize(.small)
-                    .frame(width: 44, height: 44).contentShape(Rectangle())
-                    .foregroundStyle(EiscueStyle.onAccent)
+                    .buttonStyle(ComposerSendButtonStyle())
                     .disabled(!model.canSend || speech.isBusy)
                     .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
                 }
@@ -344,4 +360,74 @@ struct AssistantView: View {
         model.draft += separator + transcript
     }
     private func text(_ key: String.LocalizationValue) -> String { String(localized: key, table: "Composer") }
+}
+
+private struct ComposerSendButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let fill = isEnabled ? Color.black : Color(white: 0.46)
+        configuration.label
+            .foregroundStyle(.white)
+            .frame(width: 32, height: 32)
+            // Keep the glyph white when disabled; the glass button style dims it.
+            .background(fill, in: Circle())
+            .glassEffect(.regular.tint(fill).interactive(isEnabled), in: .circle)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+}
+
+private struct SidebarRevealGesture: UIGestureRecognizerRepresentable {
+    let isEnabled: Bool
+    let reveal: () -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.maximumNumberOfTouches = 1
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        recognizer.isEnabled = isEnabled
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        guard recognizer.state == .ended else { return }
+        let translation = recognizer.translation(in: recognizer.view)
+        guard translation.x < -60, abs(translation.x) > abs(translation.y) * 2 else { return }
+        reveal()
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    @MainActor final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return velocity.x < 0 && abs(velocity.x) > abs(velocity.y) * 2
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard touch.location(in: gestureRecognizer.view).x > 24 else { return false }
+            var view = touch.view
+            while let current = view, current !== gestureRecognizer.view {
+                if current is UIControl || (current as? UITextView)?.isEditable == true { return false }
+                // Horizontal code/image scrollers keep their own navigation gesture.
+                if let scroll = current as? UIScrollView,
+                   scroll.contentSize.width > scroll.bounds.width + 1 { return false }
+                view = current.superview
+            }
+            return true
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            guard let scroll = other.view as? UIScrollView else { return false }
+            return other === scroll.panGestureRecognizer
+        }
+    }
 }

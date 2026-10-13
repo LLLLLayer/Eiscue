@@ -9,7 +9,9 @@ struct EiscueApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
+                if DebugDevicePageFixture.isEnabled {
+                    RootView(initialDestination: .device)
+                } else if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
                     RootView(initialDestination: .device)
                 } else if ProcessInfo.processInfo.arguments.contains("--ble-device-check") {
                     BLEDeviceCheckView()
@@ -29,6 +31,10 @@ struct EiscueApp: App {
                 .task {
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ble-device-check") { return }
+                    if DebugDevicePageFixture.isEnabled {
+                        model.installLocalDevicePageFixture()
+                        return
+                    }
                     #endif
                     await model.load()
                     #if DEBUG
@@ -56,6 +62,7 @@ struct EiscueApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ble-device-check") { return }
+                    if DebugDevicePageFixture.isEnabled { return }
                     #endif
                     model.sceneChanged(phase)
                 }

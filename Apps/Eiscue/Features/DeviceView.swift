@@ -7,7 +7,9 @@ struct DeviceView: View {
     @State private var importsIdentity = false
     @State private var confirmsForget = false
     @State private var showsProbe = false
-    @State private var showsAdvanced = false
+    @State private var showsConnectionHelp = false
+    @State private var previewImage: UIImage?
+    @State private var showsPreview = false
 
     var body: some View {
         Group {
@@ -21,8 +23,8 @@ struct DeviceView: View {
                     } else {
                         connectionCard
                     }
-                    if model.deviceConnectionMethod != .bluetoothBoard {
-                        advancedOptions
+                    if model.deviceConnectionMethod != .bluetoothBoard && model.isDeviceReady {
+                        screenPreview
                     }
                 }
                 .frame(maxWidth: 600)
@@ -34,6 +36,11 @@ struct DeviceView: View {
             .navigationTitle("common.device")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("devicePage")
+            .toolbar {
+                if model.deviceConnectionMethod != .bluetoothBoard {
+                    ToolbarItem(placement: .topBarTrailing) { connectionOptions }
+                }
+            }
             .onAppear { model.refreshPairingTransfer() }
             .fileImporter(isPresented: $importsIdentity, allowedContentTypes: [.json, .data]) { result in
                 if case .success(let url) = result { Task { await model.importPairingIdentity(url) } }
@@ -43,6 +50,10 @@ struct DeviceView: View {
                 Button("device.removeIdentity", role: .destructive) { Task { await model.forgetPairingIdentity() } }
             }
             .sheet(isPresented: $showsProbe) { ControlProbeView() }
+            .sheet(isPresented: $showsConnectionHelp) { connectionHelpSheet }
+            .sheet(isPresented: $showsPreview) {
+                if let previewImage { DeviceScreenPreview(image: previewImage) }
+            }
         }
     }
 
@@ -75,9 +86,11 @@ struct DeviceView: View {
                 Text(model.device.name).font(.headline)
                 Text("\(model.device.platform == .iPadOS ? "iPadOS" : "iOS") \(model.device.systemVersion)")
                     .font(.caption).foregroundStyle(.secondary)
-                Label(model.connectionIndicator.title, systemImage: connectionStatusSymbol)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(model.connectionIndicator.color)
+                if model.deviceConnectionMethod == .bluetoothBoard {
+                    Label(model.connectionIndicator.title, systemImage: connectionStatusSymbol)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(model.connectionIndicator.color)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -97,7 +110,22 @@ struct DeviceView: View {
     private var connectionCard: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
-                if model.isConnecting || model.isPairing || model.isManagingTunnel {
+                if model.isDeviceReady {
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("device.controlReady", systemImage: "checkmark.circle")
+                                .font(.subheadline.weight(.semibold))
+                                .accessibilityIdentifier("devicePairingComplete")
+                            if model.deviceConnectionMethod == .localVPN {
+                                Text(String(localized: "device.connection.vpnUsage", table: "Connections"))
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .accessibilityIdentifier("deviceVPNUsage")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        disconnectButton
+                    }
+                } else if model.isConnecting || model.isPairing || model.isManagingTunnel {
                     HStack(spacing: 10) {
                         ProgressView()
                         Text(model.isPairing ? String(localized: "device.pairing") : String(localized: "device.connecting"))
@@ -133,8 +161,9 @@ struct DeviceView: View {
                         .accessibilityIdentifier("pairingCode")
                 }
 
-                connectionActions
-                    .controlSize(.large)
+                if !model.isDeviceReady {
+                    connectionActions.controlSize(.large)
+                }
                 if !model.isDeviceReady { connectionHelp }
                 if showsConnectionMessage { connectionMessage }
             }
@@ -142,10 +171,8 @@ struct DeviceView: View {
     }
 
     @ViewBuilder private var connectionActions: some View {
-        if model.isDeviceReady || model.isPairing || model.isConnecting {
-            Button("device.disconnectAndStop", role: .destructive) { Task { await model.disconnectDevice() } }
-                .buttonStyle(.glass)
-                .foregroundStyle(.primary)
+        if model.isPairing || model.isConnecting || model.isManagingTunnel {
+            disconnectButton
         } else {
             if !model.hasPairingIdentity && model.hasTransferredPairingIdentity {
                 Button("device.importTransferredPairing") {
@@ -185,46 +212,78 @@ struct DeviceView: View {
         }
     }
 
-    private var advancedOptions: some View {
-        SurfaceCard {
-            DisclosureGroup(isExpanded: $showsAdvanced) {
-                VStack(alignment: .leading, spacing: 18) {
-                    if !showsConnectionMessage { connectionMessage }
-                    if model.isDeviceReady { connectionHelp }
-                    if model.deviceConnectionMethod == .localVPN {
-                        localConnection
-                        Divider()
-                    }
-                    if !model.hasPairingIdentity {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("device.preparation").font(.subheadline.weight(.semibold))
-                            Text("device.developerModeDetail")
-                            Text(model.supportsSystemPairing && model.deviceConnectionMethod == .localVPN ? String(localized: "device.pairingSetup") : String(localized: "device.usbPairingSetup"))
-                            Text("device.compatibilityDetail")
-                        }
-                        .font(.caption).foregroundStyle(.secondary)
+    private var disconnectButton: some View {
+        Button(String(localized: "device.connection.disconnect", table: "Connections")) {
+            Task {
+                if model.deviceConnectionMethod == .localVPN { await model.stopLocalTunnel() }
+                else { await model.disconnectDevice() }
+            }
+        }
+        .buttonStyle(.glass)
+        .controlSize(.small)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(minHeight: 44)
+        .disabled(model.isStoppingTunnel || model.isStopping)
+        .accessibilityIdentifier("disconnectDeviceButton")
+    }
 
-                        Button("device.importIdentity") { importsIdentity = true }
-                            .buttonStyle(.glass)
-                            .disabled(model.isBusy)
-                            .accessibilityIdentifier("importPairingIdentityFromFilesButton")
-                    }
-                    if model.isDeviceReady {
-                        verification
-                    }
-                    if model.hasPairingIdentity {
-                        Button("device.removePairing", role: .destructive) { confirmsForget = true }
-                            .buttonStyle(.glass)
-                            .foregroundStyle(.primary)
-                            .disabled(model.isBusy)
+    private var connectionOptions: some View {
+        Menu {
+            if model.isDeviceReady {
+                Button { showsProbe = true } label: { Label("device.openProbe", systemImage: "hand.tap") }
+                    .disabled(model.isBusy)
+                    .accessibilityIdentifier("deviceProbeButton")
+                Divider()
+            }
+            Button { showsConnectionHelp = true } label: {
+                Label(String(localized: "device.connection.help", table: "Connections"), systemImage: "questionmark.circle")
+            }
+            .accessibilityIdentifier("deviceConnectionHelpButton")
+            if model.deviceConnectionMethod == .localVPN && (model.localTunnel.isConnected || model.localTunnel.isTransitioning || model.isManagingTunnel) {
+                Button("device.stopLocalConnection") { Task { await model.stopLocalTunnel() } }
+                    .disabled(model.isStoppingTunnel)
+            }
+            if model.hasPairingIdentity {
+                Button("device.removePairing", role: .destructive) { confirmsForget = true }
+                    .disabled(model.isBusy)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .accessibilityLabel(String(localized: "device.connection.options", table: "Connections"))
+        .accessibilityIdentifier("deviceConnectionOptionsMenu")
+    }
+
+    private var connectionHelpSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if model.deviceConnectionMethod == .localVPN { SurfaceCard { localConnection } }
+                    SurfaceCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            connectionHelp
+                            if !model.hasPairingIdentity {
+                                Text("device.developerModeDetail")
+                                Text(model.supportsSystemPairing && model.deviceConnectionMethod == .localVPN ? String(localized: "device.pairingSetup") : String(localized: "device.usbPairingSetup"))
+                                Text("device.compatibilityDetail")
+                            }
+                        }
+                        .font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
-                .padding(.top, 16)
-            } label: {
-                Label("device.advanced", systemImage: "slider.horizontal.3")
-                    .font(.subheadline.weight(.medium))
-                    .accessibilityIdentifier("deviceAdvancedOptions")
+                .frame(maxWidth: 600).padding(20).frame(maxWidth: .infinity)
             }
+            .background(EiscueStyle.background)
+            .navigationTitle(String(localized: "device.connection.help", table: "Connections"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("common.done") { showsConnectionHelp = false }
+                }
+            }
+            .alert("common.unableToComplete", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
+                Button("common.understood") { model.errorMessage = nil }
+            } message: { Text(model.errorMessage ?? "") }
         }
     }
 
@@ -301,21 +360,51 @@ struct DeviceView: View {
         }
     }
 
-    private var verification: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("device.verifyControl").font(.subheadline.weight(.semibold))
-            Button("device.captureScreenshot") { Task { await model.previewScreenshot() } }
-                .buttonStyle(.glass)
-                .disabled(!model.isDeviceReady || model.isBusy || model.isConnecting)
-            Button("device.openProbe") { showsProbe = true }
-                .buttonStyle(.glass)
-                .disabled(model.isBusy)
-            if let frame = model.screenshot, let image = UIImage(data: frame.data) {
-                Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 360)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                Text("\(frame.width) × \(frame.height) · \(frame.capturedAt.formatted(date: .omitted, time: .standard))")
-                    .font(.caption2).foregroundStyle(.secondary)
+    private var screenPreview: some View {
+        Button {
+            Task {
+                let previousFrameID = model.screenshot?.frameID
+                await model.previewScreenshot()
+                if let frame = model.screenshot, frame.frameID != previousFrameID, let image = UIImage(data: frame.data) {
+                    previewImage = image
+                    showsPreview = true
+                }
             }
+        } label: {
+            SurfaceCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "photo")
+                    Text("device.captureScreenshot").font(.subheadline.weight(.medium))
+                    Spacer()
+                    if model.isConnecting { ProgressView() }
+                    else { Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary) }
+                }
+                .frame(minHeight: 24)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isBusy)
+        .accessibilityIdentifier("deviceScreenPreviewButton")
+    }
+}
+
+private struct DeviceScreenPreview: View {
+    @Environment(\.dismiss) private var dismiss
+    let image: UIImage
+
+    var body: some View {
+        NavigationStack {
+            ZoomableToolImage(image: image)
+                .background(.black)
+                .accessibilityIdentifier("deviceScreenPreviewImage")
+                .accessibilityLabel(Text("device.captureScreenshot"))
+                .navigationTitle("device.captureScreenshot")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("common.done") { dismiss() }.accessibilityIdentifier("closeDeviceScreenPreviewButton")
+                    }
+                }
         }
     }
 }

@@ -35,6 +35,11 @@ final class AppModel {
     var agentAvailability: AgentAvailability = .unconfigured
     var deviceStatus: DeviceStatus = .unavailable(reason: String(localized: "device.not_connected", table: "Runtime"))
     var modelSettings: ModelSettings
+    var modelProfiles: [ModelProfile] = []
+    var selectedModelProfileID: UUID?
+    // Keychain changes must invalidate views without keeping secrets in UI state.
+    var modelCredentialRevision = 0
+    @ObservationIgnored var modelProfilesLoadError: (any Error)?
     var hasAPIKey = false
     var scope: TaskScope {
         didSet { preferences.set(scope != .chat, forKey: "allowsDeviceControl") }
@@ -112,7 +117,8 @@ final class AppModel {
     var runtimeDirectory: URL { storageDirectory.appendingPathComponent("Runtime", isDirectory: true) }
 
     init(storageDirectory suppliedDirectory: URL? = nil, preferences suppliedPreferences: UserDefaults? = nil,
-         repository suppliedRepository: (any ConversationRepository)? = nil) {
+         repository suppliedRepository: (any ConversationRepository)? = nil,
+         credentialStore suppliedCredentials: CredentialStore? = nil) {
         let files = FileManager.default
         var directory = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Eiscue", isDirectory: true)
         var defaults = UserDefaults.standard
@@ -125,7 +131,7 @@ final class AppModel {
             if ProcessInfo.processInfo.arguments.contains("--reset-state") {
                 try? files.removeItem(at: directory)
                 defaults.removePersistentDomain(forName: "org.eiscue.app.uitests")
-                try? CredentialStore(service: keychainService).delete("model-key")
+                try? CredentialStore(service: keychainService).deleteAll()
             }
         }
         #endif
@@ -141,10 +147,19 @@ final class AppModel {
            ProcessInfo.processInfo.arguments.contains("--skip-onboarding") { showsOnboarding = false }
         #endif
         taskNotifications = TaskNotificationManager(preferences: defaults)
-        credentials = CredentialStore(service: keychainService)
+        credentials = suppliedCredentials ?? CredentialStore(service: keychainService)
         appearance = AppAppearance(rawValue: defaults.string(forKey: "appearance") ?? "system") ?? .system
         hapticsEnabled = defaults.object(forKey: "hapticsEnabled") as? Bool ?? true
-        modelSettings = defaults.data(forKey: "modelSettings").flatMap { try? JSONDecoder().decode(ModelSettings.self, from: $0) } ?? ModelSettings()
+        do {
+            let state = try ModelProfileState.load(from: defaults)
+            let selectedID = state.selectedID ?? state.profiles.first?.id
+            modelProfiles = state.profiles
+            selectedModelProfileID = selectedID
+            modelSettings = state.profiles.first { $0.id == selectedID }?.settings ?? ModelSettings()
+        } catch {
+            modelSettings = ModelSettings()
+            modelProfilesLoadError = error
+        }
         repository = suppliedRepository ?? JSONConversationRepository(fileURL: directory.appendingPathComponent("conversations.json"))
         journal = RunJournal(directory: directory.appendingPathComponent("Runs", isDirectory: true))
         skillLibrary = SkillLibrary(directory: directory.appendingPathComponent("Skills", isDirectory: true))
@@ -189,7 +204,9 @@ final class AppModel {
            let fixture = ProcessInfo.processInfo.environment["EISCUE_TEST_MODEL_URL"],
            let url = URL(string: fixture), url.host == "127.0.0.1", url.scheme == "http" {
             modelSettings.baseURL = fixture; modelSettings.model = "fixture-model"
-            try? credentials.write("local-fixture-key", account: "model-key")
+            let profile = ModelProfile(id: ModelProfile.legacyID, name: "", settings: modelSettings)
+            modelProfiles = [profile]; selectedModelProfileID = profile.id; modelProfilesLoadError = nil
+            try? credentials.write("local-fixture-key", account: profile.credentialAccount)
         }
         #endif
     }
@@ -308,7 +325,7 @@ final class AppModel {
         if let saved = preferences.string(forKey: "selectedConversationID"),
            let id = UUID(uuidString: saved), conversations.contains(where: { $0.id == id }) { selectedConversationID = id }
         do {
-            hasAPIKey = try credentials.read("model-key") != nil
+            if let modelProfilesLoadError { throw modelProfilesLoadError }
             try refreshAgentConfiguration()
         } catch {
             agent = AgentClient(storageDirectory: runtimeDirectory); agentAvailability = .unconfigured
@@ -327,34 +344,6 @@ final class AppModel {
         if !failures.isEmpty {
             errorMessage = String(format: String(localized: "error.load_data", table: "Runtime"), sanitizedText(failures.joined(separator: "\n")))
         }
-    }
-
-    func saveModelSettings(_ settings: ModelSettings, newKey: String) throws {
-        guard !isBusy else { return }
-        let key = newKey.isEmpty ? (try credentials.read("model-key") ?? "") : newKey
-        _ = try settings.configuration(apiKey: key)
-        let data = try JSONEncoder().encode(settings)
-        try credentials.write(key, account: "model-key")
-        preferences.set(data, forKey: "modelSettings")
-        modelSettings = settings; hasAPIKey = true
-        try refreshAgentConfiguration()
-    }
-
-    func removeAPIKey() {
-        guard !isBusy else { return }
-        do { try credentials.delete("model-key"); hasAPIKey = false; agent = AgentClient(storageDirectory: runtimeDirectory); agentAvailability = .unconfigured }
-        catch { errorMessage = error.localizedDescription }
-    }
-
-    private func refreshAgentConfiguration() throws {
-        // Keychain may survive reinstall while model preferences do not. Keep
-        // that key, but let setup and device loading continue unconfigured.
-        guard let key = try credentials.read("model-key"), !key.isEmpty,
-              let configuration = try? modelSettings.configuration(apiKey: key) else {
-            agent = AgentClient(storageDirectory: runtimeDirectory); agentAvailability = .unconfigured; return
-        }
-        agent = AgentClient(configuration: configuration, storageDirectory: runtimeDirectory)
-        agentAvailability = .ready
     }
 
     func newConversation() {
@@ -562,7 +551,7 @@ final class AppModel {
             guard !preparationInterrupted else {
                 throw AgentError.runtime(String(localized: "run.preparation_interrupted", table: "Runtime"))
             }
-            guard let key = try credentials.read("model-key") else { throw SettingsError.missingKey }
+            guard let key = try selectedModelAPIKey() else { throw SettingsError.missingKey }
             let config = try modelSettings.configuration(apiKey: key)
             let capabilities: Set<DeviceCapability>
             if runScope == .chat { capabilities = [] }
@@ -947,7 +936,7 @@ final class AppModel {
 
     private func redacted(_ text: String, limit: Int) -> String {
         var value = text
-        if let key = try? credentials.read("model-key"), !key.isEmpty {
+        for key in modelKeysForRedaction {
             value = value.replacingOccurrences(of: key, with: String(localized: "privacy.redacted_key", table: "Runtime"))
         }
         return String(value.prefix(limit))

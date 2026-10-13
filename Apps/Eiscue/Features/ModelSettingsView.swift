@@ -4,180 +4,302 @@ import SwiftUI
 struct ModelSettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
-    @State private var settings = ModelSettings()
+    @State private var editor: ModelEditorDestination?
+    @State private var pendingDeletion: ModelProfile?
+    @State private var errorMessage: String?
+    @State private var didOpen = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if model.modelProfiles.isEmpty {
+                    ContentUnavailableView(modelsText("models.empty"), systemImage: "sparkles",
+                                           description: Text(modelsText("models.emptyDetail")))
+                        .listRowBackground(Color.clear)
+                } else {
+                    Section {
+                        ForEach(model.modelProfiles) { profile in
+                            HStack(spacing: 12) {
+                                Button { select(profile) } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: model.selectedModelProfileID == profile.id ? "checkmark.circle.fill" : "circle")
+                                            .font(.title3).foregroundStyle(model.selectedModelProfileID == profile.id ? .primary : .tertiary)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(profile.displayName).font(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
+                                            Text(profile.displayName == profile.settings.model
+                                                 ? (URL(string: profile.settings.baseURL)?.host ?? profile.settings.api.title)
+                                                 : profile.settings.model)
+                                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                            if !model.hasAPIKey(for: profile.id) {
+                                                Text(modelsText("models.keyMissing")).font(.caption).foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        Spacer(minLength: 4)
+                                    }.contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(profile.displayName)
+                                .accessibilityHint(profile.settings.model)
+                                .accessibilityIdentifier("selectModelProfile_\(profile.id.uuidString)")
+                                .accessibilityValue(model.selectedModelProfileID == profile.id ? modelsText("models.selected") : "")
+                                Button { editor = ModelEditorDestination(profile: profile) } label: {
+                                    Image(systemName: "slider.horizontal.3").frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.glass).buttonBorderShape(.circle)
+                                .accessibilityLabel(String(format: modelsText("models.editNamed"), profile.displayName))
+                                .accessibilityIdentifier("editModelProfile_\(profile.id.uuidString)")
+                            }
+                            .padding(.vertical, 5)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) { pendingDeletion = profile } label: {
+                                    Label(modelsText("models.delete"), systemImage: "trash")
+                                }
+                            }
+                            .contextMenu {
+                                Button(modelsText("models.edit"), systemImage: "pencil") { editor = ModelEditorDestination(profile: profile) }
+                                Button(modelsText("models.delete"), systemImage: "trash", role: .destructive) { pendingDeletion = profile }
+                            }
+                        }
+                    } footer: {
+                        Text(modelsText("models.switchHint"))
+                    }
+                    .listRowBackground(EiscueStyle.surface)
+                }
+                Section {
+                    Button { editor = ModelEditorDestination(profile: nil) } label: {
+                        Label(modelsText("models.add"), systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("addModelProfileButton")
+                }.listRowBackground(EiscueStyle.surface)
+            }
+            .disabled(!model.canManageModelProfiles)
+            .listStyle(.insetGrouped).listSectionSpacing(.compact)
+            .scrollContentBackground(.hidden).background(EiscueStyle.background)
+            .navigationTitle(modelsText("models.title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("common.done") { dismiss() } }
+            }
+            .navigationDestination(item: $editor) { destination in
+                ModelProfileEditor(profile: destination.profile,
+                                   cancel: { if model.modelProfiles.isEmpty { dismiss() } else { editor = nil } },
+                                   saved: { editor = nil })
+            }
+            .onAppear {
+                guard !didOpen else { return }
+                didOpen = true
+                if model.modelProfiles.isEmpty { editor = ModelEditorDestination(profile: nil) }
+            }
+            .confirmationDialog(modelsText("models.deleteTitle"), isPresented: Binding(
+                get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }
+            ), titleVisibility: .visible, presenting: pendingDeletion) { profile in
+                Button(modelsText("models.delete"), role: .destructive) {
+                    do { try model.deleteModelProfile(profile.id) }
+                    catch { errorMessage = model.safeError(error) }
+                    pendingDeletion = nil
+                }.accessibilityIdentifier("confirmDeleteModelProfileButton")
+                Button("common.cancel", role: .cancel) { pendingDeletion = nil }
+            } message: { _ in
+                Text(modelsText("models.deleteDetail"))
+            }
+            .alert("model.unableToSave", isPresented: Binding(
+                get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("common.ok", role: .cancel) { errorMessage = nil }
+            } message: { Text(errorMessage ?? "") }
+        }
+    }
+
+    private func select(_ profile: ModelProfile) {
+        do { try model.selectModelProfile(profile.id) }
+        catch { errorMessage = model.safeError(error) }
+    }
+}
+
+private struct ModelEditorDestination: Hashable {
+    let id = UUID()
+    let profile: ModelProfile?
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+private struct ModelProfileEditor: View {
+    @Environment(AppModel.self) private var model
+    let profile: ModelProfile?
+    let cancel: () -> Void
+    let saved: () -> Void
+    @State private var settings: ModelSettings
+    @State private var name: String
     @State private var newKey = ""
-    @State private var didLoad = false
+    @State private var replacesKey = false
     @State private var errorMessage: String?
     @State private var confirmsKeyRemoval = false
     @State private var showsAdvanced = false
 
+    init(profile: ModelProfile?, cancel: @escaping () -> Void, saved: @escaping () -> Void) {
+        self.profile = profile; self.cancel = cancel; self.saved = saved
+        _settings = State(initialValue: profile?.settings ?? ModelSettings())
+        _name = State(initialValue: profile?.name ?? "")
+    }
+
+    private var hasSavedKey: Bool { profile.map { model.hasAPIKey(for: $0.id) } ?? false }
+    private var needsKeyEntry: Bool { !hasSavedKey || replacesKey }
     private var canSave: Bool {
-        !model.isBusy
+        model.canManageModelProfiles
             && !settings.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !settings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && (model.hasAPIKey || !newKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            && (!needsKeyEntry || !newKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Picker("model.apiType", selection: $settings.api) {
-                        ForEach(AgentAPI.allCases, id: \.self) { api in
-                            Text(api.title).tag(api)
+        Form {
+            Section {
+                clearableField(title: modelsText("models.name"), placeholder: modelsText("models.namePlaceholder"),
+                               value: $name, identifier: "modelProfileName", clearIdentifier: "clearModelNameButton")
+            } footer: { Text(modelsText("models.nameHint")) }
+            .listRowBackground(EiscueStyle.surface)
+
+            Section {
+                Picker("model.apiType", selection: $settings.api) {
+                    ForEach(AgentAPI.allCases, id: \.self) { api in Text(api.title).tag(api) }
+                }.accessibilityIdentifier("modelAPIType")
+                clearableField(title: String(localized: "model.baseURL"), placeholder: String(localized: "model.baseURLPlaceholder"),
+                               value: $settings.baseURL, identifier: "modelBaseURL", clearIdentifier: "clearModelBaseURLButton", keyboard: .URL)
+                clearableField(title: String(localized: "model.identifier"), placeholder: String(localized: "model.identifierPlaceholder"),
+                               value: $settings.model, identifier: "modelIdentifier", clearIdentifier: "clearModelIdentifierButton")
+            } header: { Text("model.serviceSection") }
+            .listRowBackground(EiscueStyle.surface)
+
+            Section {
+                if hasSavedKey {
+                    HStack(spacing: 12) {
+                        Label("model.keySaved", systemImage: "checkmark.shield").foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button(modelsText(replacesKey ? "models.cancelKeyChange" : "models.replaceKey")) {
+                            newKey = ""; replacesKey.toggle()
                         }
+                        .buttonStyle(.glass).controlSize(.small)
+                        .accessibilityIdentifier("replaceAPIKeyButton")
                     }
-                    .accessibilityIdentifier("modelAPIType")
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("model.baseURL").font(.subheadline)
-                        TextField("model.baseURLPlaceholder", text: $settings.baseURL)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .accessibilityIdentifier("modelBaseURL")
-                    }
-                    .padding(.vertical, 4)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("model.identifier").font(.subheadline)
-                        TextField("model.identifierPlaceholder", text: $settings.model)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .accessibilityIdentifier("modelIdentifier")
-                    }
-                    .padding(.vertical, 4)
-
-                } header: {
-                    Text("model.serviceSection")
                 }
-
-                Section {
-                    if model.hasAPIKey {
-                        Label("model.keySaved", systemImage: "checkmark.shield")
-                            .foregroundStyle(.secondary)
+                if needsKeyEntry {
+                    HStack(spacing: 8) {
+                        SecureField("model.keyPlaceholder", text: $newKey)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .privacySensitive().accessibilityIdentifier("modelAPIKey")
+                        clearButton($newKey, identifier: "clearModelAPIKeyButton")
                     }
-                    SecureField(model.hasAPIKey ? String(localized: "model.retainKeyPlaceholder") : String(localized: "model.keyPlaceholder"), text: $newKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .privacySensitive()
-                        .accessibilityIdentifier("modelAPIKey")
-                    if model.hasAPIKey {
-                        Button("model.removeSavedKey", role: .destructive) {
-                            confirmsKeyRemoval = true
-                        }
-                        .buttonStyle(.glass)
-                        .foregroundStyle(.primary)
+                }
+                if hasSavedKey && replacesKey {
+                    Button("model.removeSavedKey", role: .destructive) { confirmsKeyRemoval = true }
                         .accessibilityIdentifier("removeAPIKeyButton")
-                    }
-                } header: {
-                    Text("model.credentialsSection")
-                } footer: {
-                    Text("model.credentialsDetail")
                 }
+            } header: { Text("model.credentialsSection") }
+              footer: { Text("model.credentialsDetail") }
+            .listRowBackground(EiscueStyle.surface)
 
-                Section {
-                    DisclosureGroup(isExpanded: $showsAdvanced) {
-                        Toggle("model.supportsImages", isOn: $settings.supportsImages)
-                            .tint(EiscueStyle.switchTint)
-                            .accessibilityIdentifier("modelSupportsImages")
-                        Stepper(value: $settings.maxOutputTokens, in: 256...32_768, step: 256) {
-                            LabeledContent("model.maxOutputTokens", value: settings.maxOutputTokens.formatted())
-                        }
-                        .accessibilityIdentifier("maxOutputTokensStepper")
-                        Stepper(value: $settings.maxToolCalls, in: 1...100) {
-                            LabeledContent("model.maxToolCalls", value: String(localized: "model.toolCallCount \(settings.maxToolCalls)"))
-                        }
-                        .accessibilityIdentifier("maxToolCallsStepper")
-                        Stepper(value: $settings.timeoutSeconds, in: 30...1_800, step: 30) {
-                            LabeledContent("model.taskTimeout", value: durationLabel)
-                        }
-                        .accessibilityIdentifier("taskTimeoutStepper")
-                        Text(endpointHint).font(.caption).foregroundStyle(.secondary)
-                        Text("model.serviceRequirements").font(.caption).foregroundStyle(.secondary)
-                        Text("model.limitsDetail").font(.caption).foregroundStyle(.secondary)
-                    } label: {
-                        Text("model.advanced")
-                            .accessibilityIdentifier("modelAdvancedOptions")
-                    }
+            Section {
+                DisclosureGroup(isExpanded: $showsAdvanced) {
+                    Toggle("model.supportsImages", isOn: $settings.supportsImages)
+                        .tint(EiscueStyle.switchTint).accessibilityIdentifier("modelSupportsImages")
+                    Stepper(value: $settings.maxOutputTokens, in: 256...32_768, step: 256) {
+                        LabeledContent("model.maxOutputTokens", value: settings.maxOutputTokens.formatted())
+                    }.accessibilityIdentifier("maxOutputTokensStepper")
+                    Stepper(value: $settings.maxToolCalls, in: 1...100) {
+                        LabeledContent("model.maxToolCalls", value: String(localized: "model.toolCallCount \(settings.maxToolCalls)"))
+                    }.accessibilityIdentifier("maxToolCallsStepper")
+                    Stepper(value: $settings.timeoutSeconds, in: 30...1_800, step: 30) {
+                        LabeledContent("model.taskTimeout", value: durationLabel)
+                    }.accessibilityIdentifier("taskTimeoutStepper")
+                    Text(endpointHint).font(.caption).foregroundStyle(.secondary)
+                    Text("model.serviceRequirements").font(.caption).foregroundStyle(.secondary)
+                    Text("model.limitsDetail").font(.caption).foregroundStyle(.secondary)
+                } label: {
+                    Text("model.advanced").accessibilityIdentifier("modelAdvancedOptions")
                 }
-            }
-            .disabled(model.isBusy)
-            .scrollContentBackground(.hidden)
-            .background(EiscueStyle.background)
-            .navigationTitle("model.settingsTitle")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("common.cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("common.done", action: save)
-                        .disabled(!canSave)
-                        .accessibilityIdentifier("saveModelSettingsButton")
-                }
-            }
-            .onAppear {
-                guard !didLoad else { return }
-                settings = model.modelSettings
-                didLoad = true
-            }
-            .onChange(of: settings.api) { _, api in
-                let defaults = ["https://api.openai.com/v1", "https://api.anthropic.com"]
-                guard defaults.contains(settings.baseURL) else { return }
-                settings.baseURL = api == .anthropicMessages
-                    ? "https://api.anthropic.com" : "https://api.openai.com/v1"
-            }
-            .alert("model.unableToSave", isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("common.ok", role: .cancel) { errorMessage = nil }
-            } message: {
-                Text(errorMessage ?? "")
-            }
-            .confirmationDialog("model.confirmRemoveKey", isPresented: $confirmsKeyRemoval, titleVisibility: .visible) {
-                Button("model.removeKey", role: .destructive) {
-                    guard !model.isBusy else { return }
-                    model.removeAPIKey()
-                    if !model.hasAPIKey {
-                        newKey = ""
-                        dismiss()
-                    }
-                }
-                Button("common.cancel", role: .cancel) { }
-            } message: {
-                Text("model.removeKeyDetail")
+            }.listRowBackground(EiscueStyle.surface)
+        }
+        .disabled(!model.canManageModelProfiles)
+        .scrollContentBackground(.hidden).background(EiscueStyle.background)
+        .navigationTitle(modelsText(profile == nil ? "models.add" : "models.edit"))
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden()
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("common.cancel", action: cancel) }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("common.done", action: save).disabled(!canSave).accessibilityIdentifier("saveModelSettingsButton")
             }
         }
+        .onChange(of: settings.api) { _, api in
+            let defaults = ["https://api.openai.com/v1", "https://api.anthropic.com"]
+            guard defaults.contains(settings.baseURL) else { return }
+            settings.baseURL = api == .anthropicMessages ? "https://api.anthropic.com" : "https://api.openai.com/v1"
+        }
+        .onDisappear { newKey = "" }
+        .alert("model.unableToSave", isPresented: Binding(
+            get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("common.ok", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+        .confirmationDialog("model.confirmRemoveKey", isPresented: $confirmsKeyRemoval, titleVisibility: .visible) {
+            Button("model.removeKey", role: .destructive) {
+                guard let profile else { return }
+                do { try model.removeAPIKey(for: profile.id); newKey = ""; replacesKey = false }
+                catch { errorMessage = model.safeError(error) }
+            }
+            Button("common.cancel", role: .cancel) { }
+        } message: { Text("model.removeKeyDetail") }
+    }
+
+    private func clearableField(title: String, placeholder: String, value: Binding<String>, identifier: String,
+                                clearIdentifier: String, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.subheadline).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                TextField(placeholder, text: value).keyboardType(keyboard)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier(identifier)
+                clearButton(value, identifier: clearIdentifier)
+            }
+        }.padding(.vertical, 4)
+    }
+
+    private func clearButton(_ value: Binding<String>, identifier: String) -> some View {
+        Button { value.wrappedValue = "" } label: {
+            Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(.tertiary)
+                .frame(width: 28, height: 28).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).disabled(value.wrappedValue.isEmpty)
+        .opacity(value.wrappedValue.isEmpty ? 0 : 1)
+        .accessibilityHidden(value.wrappedValue.isEmpty)
+        .accessibilityLabel(modelsText("models.clear")).accessibilityIdentifier(identifier)
     }
 
     private var durationLabel: String {
         Duration.seconds(settings.timeoutSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .wide))
     }
-
     private var endpointHint: String {
         switch settings.api {
-        case .anthropicMessages:
-            String(localized: "model.anthropicEndpointHint")
-        case .openAICompletions:
-            String(localized: "model.completionsEndpointHint")
-        case .openAIResponses:
-            String(localized: "model.responsesEndpointHint")
+        case .anthropicMessages: String(localized: "model.anthropicEndpointHint")
+        case .openAICompletions: String(localized: "model.completionsEndpointHint")
+        case .openAIResponses: String(localized: "model.responsesEndpointHint")
         }
     }
-
     private func save() {
-        guard !model.isBusy else { return }
+        guard canSave else { return }
         do {
             settings.baseURL = settings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             settings.model = settings.model.trimmingCharacters(in: .whitespacesAndNewlines)
-            try model.saveModelSettings(settings, newKey: newKey.trimmingCharacters(in: .whitespacesAndNewlines))
-            newKey = ""
-            dismiss()
+            _ = try model.saveModelProfile(id: profile?.id, name: name, settings: settings,
+                                          newKey: newKey.trimmingCharacters(in: .whitespacesAndNewlines))
+            newKey = ""; saved()
         } catch {
-            let message = model.safeError(error)
-            errorMessage = newKey.isEmpty ? message : message.replacingOccurrences(of: newKey, with: String(localized: "model.redactedKey"))
+            var message = model.safeError(error)
+            for key in [newKey, newKey.trimmingCharacters(in: .whitespacesAndNewlines)] where !key.isEmpty {
+                message = message.replacingOccurrences(of: key, with: String(localized: "model.redactedKey"))
+            }
+            errorMessage = message
         }
     }
 }
+
+private func modelsText(_ key: String.LocalizationValue) -> String { String(localized: key, table: "Models") }

@@ -52,4 +52,73 @@ final class SidebarUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         XCTAssertTrue(settings.isHittable)
     }
+
+    @MainActor
+    func testLeftSwipeAcrossBlankChatAreaOpensSidebar() {
+        let app = launch()
+        hideWideSidebar(in: app)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let y = app.buttons["sendMessageButton"].frame.minY - 60
+        let start = origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: y))
+        let end = origin.withOffset(CGVector(dx: app.frame.width * 0.32, dy: y))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        let settings = app.buttons["sidebarSettingsButton"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.isHittable)
+        XCTAssertTrue(app.buttons["newConversationButton"].isHittable)
+    }
+
+    @MainActor
+    func testLeftSwipeWithKeyboardPreservesDraftAndSendAppearance() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launch()
+        XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
+
+        for appearance in ["Light", "Dark"] {
+            openSettings(in: app)
+            app.buttons["appearancePicker"].tap()
+            app.buttons[appearance].tap()
+            returnToAssistant(in: app)
+            hideWideSidebar(in: app)
+            let send = app.buttons["sendMessageButton"]
+            XCTAssertGreaterThanOrEqual(send.frame.height, 44)
+            if appearance == "Light" {
+                XCTAssertFalse(send.isEnabled)
+                attach(app, name: "White send arrow — disabled, light")
+            }
+            let input = app.textFields["messageInput"].exists ? app.textFields["messageInput"] : app.textViews["messageInput"]
+            input.tap()
+            if appearance == "Light" { input.typeText("Keep this draft") }
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(send.isEnabled)
+            attach(app, name: "White send arrow — enabled, \(appearance)")
+
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let y = input.frame.minY - 35
+            let start = origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: y))
+            let end = origin.withOffset(CGVector(dx: app.frame.width * 0.32, dy: y))
+            start.press(forDuration: 0.05, thenDragTo: end)
+            let settings = app.buttons["sidebarSettingsButton"]
+            XCTAssertTrue(settings.waitForExistence(timeout: 5))
+            XCTAssertTrue(settings.isHittable)
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+            closeSidebar(in: app)
+            XCTAssertEqual(input.value as? String, "Keep this draft")
+        }
+    }
+
+    @MainActor private func hideWideSidebar(in app: XCUIApplication) {
+        let settings = app.buttons["sidebarSettingsButton"]
+        if settings.isHittable { app.buttons["historyButton"].tap() }
+        XCTAssertTrue(settings.waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor private func attach(_ app: XCUIApplication, name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
 }

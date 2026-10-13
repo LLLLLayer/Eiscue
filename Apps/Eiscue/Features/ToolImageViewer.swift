@@ -25,13 +25,13 @@ struct ToolImageViewer: View {
 }
 
 /// Native zooming keeps a tall screen readable without stretching its pixels.
-private struct ZoomableToolImage: UIViewRepresentable {
+struct ZoomableToolImage: UIViewRepresentable {
     let image: UIImage
     func makeUIView(context: Context) -> ToolImageScrollView { ToolImageScrollView() }
     func updateUIView(_ view: ToolImageScrollView, context: Context) { view.setImage(image) }
 }
 
-private final class ToolImageScrollView: UIScrollView, UIScrollViewDelegate {
+final class ToolImageScrollView: UIScrollView, UIScrollViewDelegate {
     private let imageView = UIImageView()
     private var fittedBounds = CGSize.zero
 

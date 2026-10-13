@@ -12,7 +12,7 @@ iCTRL 已完成源码调研，尚未集成。
 
 ## 已实现
 
-- 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，自定义地址和模型 ID，API Key 使用系统 Keychain。
+- 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，支持保存多组地址、模型 ID 与名称，在对话顶部切换；每组 API Key 独立保存在系统 Keychain。
 - Agent：真实 PiDurableKit 运行时、流式回答、多轮对话、图片工具结果、串行工具调用、停止、超时与调用次数限制。
 - 会话与任务：发送后立即上屏并清空输入，流式回复、分开的真实工具记录、块级 Markdown、消息时间与选段复制；侧栏历史、长按置顶/排序/删除、恢复、脱敏报告导出，运行记录从对话菜单查看。
 - 设备代码：蓝牙 HID 输入与 ReplayKit 屏幕共享通过 `BluetoothDeviceController` 接入同一 DeviceKit / Agent 工具协议。设备页直接提供连接、共享和校验入口，四点触摸与实际文字检查通过前不开放 AI 操作。蓝牙当前公开截图、点击、滑动及经校验的文本输入；新版固件在完成检查后还可开放返回主屏幕和搜索／回车／退出快捷键；应用列表和按 bundle ID 启动未向蓝牙 Agent 开放。

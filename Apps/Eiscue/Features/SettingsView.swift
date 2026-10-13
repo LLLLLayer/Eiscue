@@ -15,7 +15,7 @@ struct SettingsView: View {
                     HStack {
                         SettingsRowLabel(String(localized: "settings.model", table: "Runtime"), systemImage: "sparkle")
                         Spacer()
-                        Text(model.hasConfiguredModel ? model.modelSettings.model : String(localized: "settings.unconfigured", table: "Runtime"))
+                        Text(model.selectedModelProfile?.displayName ?? String(localized: "settings.unconfigured", table: "Runtime"))
                             .foregroundStyle(.secondary).lineLimit(1)
                         Image(systemName: "chevron.right")
                             .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
@@ -23,7 +23,7 @@ struct SettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(model.isBusy)
+                .disabled(!model.canManageModelProfiles)
                 .accessibilityIdentifier("modelSettingsButton")
                 NavigationLink {
                     SkillsView()
