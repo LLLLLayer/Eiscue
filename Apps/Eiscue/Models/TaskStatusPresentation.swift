@@ -14,7 +14,8 @@ struct TaskStatusPresentation: Equatable, Sendable {
         for run: RunRecord,
         currentTool: String? = nil,
         isReceivingResponse: Bool = false,
-        isFinishing: Bool = false
+        isFinishing: Bool = false,
+        devicePhase: DeviceTaskPhase? = nil
     ) -> Self {
         var seen = Set<UUID>()
         var startedCalls = 0
@@ -57,6 +58,16 @@ struct TaskStatusPresentation: Equatable, Sendable {
         case .running:
             if isFinishing {
                 phase = String(localized: "task.status.phase.finishing", defaultValue: "Saving results", table: "TaskStatus")
+            } else if devicePhase == .observing || devicePhase == .verifying {
+                phase = operationSummary("device_screenshot")
+            } else if devicePhase == .paused {
+                phase = String(localized: "task.status.phase.paused", defaultValue: "Open Eiscue to continue", table: "TaskStatus")
+            } else if devicePhase == .stopped {
+                phase = String(localized: "task.status.phase.interrupted", defaultValue: "Interrupted", table: "TaskStatus")
+            } else if devicePhase == .deciding {
+                phase = isReceivingResponse
+                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Preparing a response", table: "TaskStatus")
+                    : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for AI", table: "TaskStatus")
             } else if let currentTool, !currentTool.isEmpty {
                 phase = operationSummary(currentTool)
             } else {

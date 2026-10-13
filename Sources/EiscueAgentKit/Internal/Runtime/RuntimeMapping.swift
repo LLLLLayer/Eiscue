@@ -34,16 +34,19 @@ enum RuntimeMapping {
             replay: tool.mayHaveSideEffects ? .unsafe : .safe, executionMode: .sequential
         ) { (arguments: AgentJSONValue, _: ToolCallContext) -> PiDurableKit.ToolResult in
             do {
-                try await budget.enter(mayHaveSideEffects: tool.mayHaveSideEffects, isVerification: tool.isVerification)
+                try await budget.enter(mayHaveSideEffects: tool.mayHaveSideEffects, isVerification: tool.isVerification,
+                                       executionCost: tool.executionCost, verifiesSideEffects: tool.verifiesSideEffects)
                 let result = try await tool.execute(arguments)
                 try await budget.check()
-                await budget.complete(isVerification: tool.isVerification, isError: result.isError)
+                await budget.complete(isVerification: tool.isVerification, verifiesSideEffects: tool.verifiesSideEffects,
+                                      isError: result.isError)
                 var blocks = result.content.map(content)
                 if tool.mayHaveSideEffects, !result.isError, let reminder = await budget.verificationReminder() {
                     blocks.append(.text(reminder))
                 }
                 return PiDurableKit.ToolResult(content: blocks, isError: result.isError)
             } catch AgentError.toolLimitReached {
+                await budget.reachLimit()
                 return .error(AgentError.toolLimitReached.localizedDescription).terminating()
             } catch AgentError.toolExecutionPaused(let reason) {
                 let reason = redact(reason, secret: secret)

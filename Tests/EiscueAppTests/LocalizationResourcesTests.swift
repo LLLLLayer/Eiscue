@@ -20,6 +20,8 @@ final class LocalizationResourcesTests: XCTestCase {
                                  ("Runtime", "run.paused.noProgress"),
                                  ("Localizable", "toolError.noProgress"),
                                  ("Localizable", "toolError.repeatedStaleFrames"),
+                                 ("Localizable", "toolError.verificationUnavailable"),
+                                 ("Runtime", "run.paused.verification"),
                                  ("Connections", "notifications.task.paused"),
                                  ("InfoPlist", "NSLocalNetworkUsageDescription"),
                                  ("InfoPlist", "NSCameraUsageDescription"),

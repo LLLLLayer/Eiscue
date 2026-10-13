@@ -20,7 +20,7 @@ extension AppModel {
             // suspends. Only the owning run can clear this finalization gate.
             let finalizing = isFinishing || isStopping || companionFinalizingRunID == run.id
             status = BoardCompanionPresentation.task(run, currentTool: currentTool, stopping: stopRequested,
-                                                     finishing: finalizing, language: language)
+                                                     finishing: finalizing, language: language, devicePhase: deviceTools?.phase)
             // Retain a finalized outcome briefly; the next run always replaces it.
             if run.endedAt != nil, !finalizing {
                 companionTerminal = (status, .now.advanced(by: .seconds(10)))

@@ -26,3 +26,4 @@
 "agent.attachment.invalid" = "附件为空、格式不受支持或超过大小限制。";
 
 "agent.attachment.images-unavailable" = "请选择支持图片的模型再发送此附件。";
+"agent.configuration.invalid-tool-cost" = "工具执行额度必须大于零。包含结果检查的操作必须至少预留两个额度。";

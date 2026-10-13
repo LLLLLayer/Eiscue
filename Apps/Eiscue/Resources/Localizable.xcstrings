@@ -2234,13 +2234,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Execution stops when a limit is reached. Output length is also subject to the model service's limits."
+            "value": "Each device action and its automatic screen check use two units. Standalone observations use one. Reaching the budget pauses the task; the time limit stops execution. Output length also depends on the model service."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "达到限制后停止本次执行。输出长度还受到模型服务自身限制。"
+            "value": "每次操作和随后的画面核查共使用两次额度，单独观察使用一次。额度用完会暂停任务；达到时限会停止执行。输出长度还受模型服务限制。"
           }
         }
       }
@@ -2285,13 +2285,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tool Call Limit"
+            "value": "Execution Budget"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "工具调用上限"
+            "value": "本轮执行额度"
           }
         }
       }
@@ -2526,13 +2526,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld call"
+                  "value": "%lld unit"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld calls"
+                  "value": "%lld units"
                 }
               }
             }
@@ -4662,6 +4662,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "操作前画面多次发生变化，任务已暂停。请等待画面稳定后再继续。"
+          }
+        }
+      }
+    },
+    "toolError.verificationUnavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The action was sent, but its result could not be checked. Restore screen sharing, then continue; Eiscue will inspect the screen before taking another action."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作已发送，但暂时无法查看结果。请恢复屏幕共享后继续，Eiscue 会先查看屏幕，再决定下一步。"
           }
         }
       }

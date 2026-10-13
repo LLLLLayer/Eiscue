@@ -1542,6 +1542,23 @@
           }
         }
       }
+    },
+    "run.paused.verification": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The action was sent, but its result could not be observed. Restore screen sharing before continuing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作已发送，但未能查看结果。请恢复屏幕共享后再继续。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

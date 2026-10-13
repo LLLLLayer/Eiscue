@@ -99,7 +99,7 @@ struct AgentRuntimeTests {
             case 2: return FauxResponse(.toolCall("act", [:]))
             default:
                 #expect(count == 4)
-                #expect(messages.contains { $0.text.contains("Remaining tool calls: 1.") })
+                #expect(messages.contains { $0.text.contains("Remaining execution units: 1.") })
                 return .text("Verified the result.")
             }
         }
@@ -138,6 +138,207 @@ struct AgentRuntimeTests {
         #expect(!events.contains(.finished(.completed)))
         #expect(await evidence.values == ["capture"])
         #expect(try await !fixture.client.recover(conversationID: id).hasInterruptedRun)
+    }
+
+    @Test(arguments: [2, 3])
+    func actionReservesTheLeastRegisteredVerificationCost(limit: Int) async throws {
+        let evidence = RuntimeEvidence()
+        let capture = AgentTool(name: "capture", description: "Verify", parameters: emptySchema,
+                                mayHaveSideEffects: false, isVerification: true, executionCost: 2) { _ in
+            await evidence.record("capture")
+            return .text("Observed")
+        }
+        let expensive = AgentTool(name: "expensive", description: "Costlier verification", parameters: emptySchema,
+                                  mayHaveSideEffects: false, isVerification: true, executionCost: 3) { _ in
+            Issue.record("The model selected the cheaper verification tool")
+            return .text("Unexpected")
+        }
+        let action = AgentTool(name: "act", description: "Action", parameters: emptySchema) { _ in
+            await evidence.record("action")
+            return .text("Sent")
+        }
+        let fixture = try await RuntimeFixture(tools: [capture, expensive, action])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { _, count in
+            switch count {
+            case 1: return FauxResponse(.toolCall("act", [:]))
+            case 2: return FauxResponse(.toolCall("capture", [:]))
+            default: return .text("Verified")
+            }
+        }
+        let request = AgentRequest(conversationID: UUID(), prompt: "Work", maxToolCalls: limit)
+        if limit == 2 {
+            await #expect(throws: AgentError.toolLimitReached) { try await collect(fixture.client.run(request: request)) }
+            #expect(await evidence.values.isEmpty, "Do not dispatch an action whose observation cannot fit.")
+        } else {
+            let events = try await collect(fixture.client.run(request: request))
+            #expect(events.contains(.finished(.completed)))
+            #expect(await evidence.values == ["action", "capture"])
+        }
+    }
+
+    @Test func unrelatedReadOnlyWorkCannotConsumeCostlierVerificationReservation() async throws {
+        let evidence = RuntimeEvidence()
+        let capture = AgentTool(name: "capture", description: "Verify", parameters: emptySchema,
+                                mayHaveSideEffects: false, isVerification: true, executionCost: 2) { _ in .text("Observed") }
+        let action = AgentTool(name: "act", description: "Action", parameters: emptySchema) { _ in
+            await evidence.record("action")
+            return .text("Sent")
+        }
+        let list = AgentTool(name: "list", description: "Read metadata", parameters: emptySchema,
+                             mayHaveSideEffects: false) { _ in
+            await evidence.record("must-not-list")
+            return .text("Unexpected")
+        }
+        let fixture = try await RuntimeFixture(tools: [capture, action, list])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { _, count in
+            #expect(count <= 2)
+            return FauxResponse(.toolCall(count == 1 ? "act" : "list", [:]))
+        }
+        await #expect(throws: AgentError.toolLimitReached) {
+            try await collect(fixture.client.run(request: .init(conversationID: UUID(), prompt: "Work", maxToolCalls: 3)))
+        }
+        #expect(await evidence.values == ["action"])
+    }
+
+    @Test func compoundActionUsesTheFinalTwoUnitsAndReturnsItsObservation() async throws {
+        let evidence = RuntimeEvidence()
+        let capture = AgentTool(name: "capture", description: "Observe", parameters: emptySchema,
+                                mayHaveSideEffects: false, isVerification: true) { _ in
+            await evidence.record("capture")
+            return .text("Initial observation")
+        }
+        let action = AgentTool(name: "act", description: "Act and verify", parameters: emptySchema,
+                               executionCost: 2, verifiesSideEffects: true) { _ in
+            await evidence.record("action")
+            await evidence.record("verification")
+            return .image(Data([137, 80, 78, 71]), mimeType: "image/png", caption: "Verified observation")
+        }
+        let fixture = try await RuntimeFixture(tools: [capture, action])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { messages, count in
+            switch count {
+            case 1: return FauxResponse(.toolCall("capture", [:]))
+            case 2: return FauxResponse(.toolCall("act", [:]))
+            default:
+                #expect(count == 3)
+                #expect(messages.contains { $0.text.contains("Verified observation") })
+                #expect(!messages.contains { $0.text.contains("Use the verification tool now") })
+                return .text("Observed the result.")
+            }
+        }
+        let events = try await collect(fixture.client.run(request: .init(conversationID: UUID(), prompt: "Work", maxToolCalls: 3)))
+        #expect(events.contains(.finished(.completed)))
+        #expect(await evidence.values == ["capture", "action", "verification"])
+    }
+
+    @Test func compoundActionReservesBothUnitsBeforeAnySideEffect() async throws {
+        let evidence = RuntimeEvidence()
+        let action = AgentTool(name: "act", description: "Act and verify", parameters: emptySchema,
+                               executionCost: 2, verifiesSideEffects: true) { _ in
+            await evidence.record("must-not-act")
+            return .text("Verified")
+        }
+        let fixture = try await RuntimeFixture(tools: [action])
+        defer { fixture.remove() }
+        try await fixture.faux.append(.toolCall("act", [:]))
+        let id = UUID()
+        await #expect(throws: AgentError.toolLimitReached) {
+            try await collect(fixture.client.run(request: .init(conversationID: id, prompt: "Work", maxToolCalls: 1)))
+        }
+        #expect(await evidence.values.isEmpty)
+        #expect(try await !fixture.client.recover(conversationID: id).hasInterruptedRun)
+    }
+
+    @Test(arguments: [false, true])
+    func compoundVerificationDischargesReservationOnlyOnSuccess(fails: Bool) async throws {
+        let evidence = RuntimeEvidence()
+        let capture = AgentTool(name: "capture", description: "Observe", parameters: emptySchema,
+                                mayHaveSideEffects: false, isVerification: true) { _ in .text("Observed") }
+        let action = AgentTool(name: "act", description: "Act and verify", parameters: emptySchema,
+                               executionCost: 2, verifiesSideEffects: true) { _ in
+            await evidence.record("action")
+            return fails ? .error("Observation unavailable") : .text("Observed result")
+        }
+        let list = AgentTool(name: "list", description: "Read metadata", parameters: emptySchema,
+                             mayHaveSideEffects: false) { _ in
+            await evidence.record("list")
+            return .text("Metadata")
+        }
+        let fixture = try await RuntimeFixture(tools: [capture, action, list])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { _, count in
+            switch count {
+            case 1: return FauxResponse(.toolCall("act", [:]))
+            case 2: return FauxResponse(.toolCall("list", [:]))
+            default: return .text("Finished")
+            }
+        }
+        let request = AgentRequest(conversationID: UUID(), prompt: "Work", maxToolCalls: 3)
+        if fails {
+            await #expect(throws: AgentError.toolLimitReached) { try await collect(fixture.client.run(request: request)) }
+            #expect(await evidence.values == ["action"])
+        } else {
+            let events = try await collect(fixture.client.run(request: request))
+            #expect(events.contains(.finished(.completed)))
+            #expect(await evidence.values == ["action", "list"])
+        }
+    }
+
+    @Test(arguments: [0, -1, 1, 2])
+    func invalidCompoundBudgetMetadataIsRejectedBeforeExecution(variant: Int) async throws {
+        let tool = AgentTool(name: "invalid", description: "Invalid metadata", parameters: emptySchema,
+                             mayHaveSideEffects: variant != 2,
+                             executionCost: variant, verifiesSideEffects: variant > 0) { _ in
+            Issue.record("Invalid tool metadata must never execute")
+            return .text("Unexpected")
+        }
+        let fixture = try await RuntimeFixture(tools: [tool])
+        defer { fixture.remove() }
+        do {
+            _ = try await fixture.client.run(request: .init(conversationID: UUID(), prompt: "Work"))
+            Issue.record("Expected invalid configuration")
+        } catch {
+            guard case .invalidConfiguration = error as? AgentError else {
+                Issue.record("Expected invalid configuration, got \(error)")
+                return
+            }
+        }
+    }
+
+    @Test func hostToolLimitTerminatesAndCanContinueOnlyWithANewRequest() async throws {
+        let evidence = RuntimeEvidence()
+        let action = AgentTool(name: "act", description: "Host-controlled task", parameters: emptySchema) { _ in
+            await evidence.record("host-limit")
+            throw AgentError.toolLimitReached
+        }
+        let capture = AgentTool(name: "capture", description: "Observe", parameters: emptySchema,
+                                mayHaveSideEffects: false) { _ in
+            await evidence.record("fresh-observation")
+            return .text("Observed")
+        }
+        let fixture = try await RuntimeFixture(tools: [action, capture])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { _, count in
+            switch count {
+            case 1: return FauxResponse(.toolCall("act", [:]))
+            case 2: return FauxResponse(.toolCall("capture", [:]))
+            default: return .text("Continued")
+            }
+        }
+        let id = UUID()
+        await #expect(throws: AgentError.toolLimitReached) {
+            try await collect(fixture.client.run(request: .init(conversationID: id, prompt: "Work", maxToolCalls: 10)))
+        }
+        #expect(await evidence.values == ["host-limit"])
+        #expect(try await !fixture.client.recover(conversationID: id).hasInterruptedRun)
+        await #expect(throws: AgentError.nothingToResume) {
+            try await collect(fixture.client.run(request: .init(conversationID: id, prompt: "", mode: .resume)))
+        }
+        let events = try await collect(fixture.client.run(request: .init(conversationID: id, prompt: "Continue from a fresh observation")))
+        #expect(events.contains(.finished(.completed)))
+        #expect(await evidence.values == ["host-limit", "fresh-observation"])
     }
 
     @Test func unrelatedReadOnlyToolCannotConsumeAnActionsReservedVerification() async throws {

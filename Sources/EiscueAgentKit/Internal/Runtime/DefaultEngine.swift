@@ -56,7 +56,7 @@ actor DefaultEngine: AgentEngine {
             throw AgentError.invalidConfiguration(String(localized: "agent.configuration.empty-message", defaultValue: "The message must not be empty.", bundle: .module))
         }
         let id = UUID()
-        let budget = RunBudget(limit: request.maxToolCalls, reservesVerification: tools.contains(where: \.isVerification))
+        let budget = RunBudget(limit: request.maxToolCalls, verificationCost: tools.filter(\.isVerification).map(\.executionCost).min())
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         operation = id
         active = ActiveRun(id: id, conversationID: request.conversationID, budget: budget)
@@ -303,6 +303,10 @@ actor DefaultEngine: AgentEngine {
             }
             guard !tool.isVerification || !tool.mayHaveSideEffects else {
                 throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-verification", defaultValue: "Verification tools must be read-only.", bundle: .module))
+            }
+            guard tool.executionCost > 0,
+                  !tool.verifiesSideEffects || (tool.mayHaveSideEffects && tool.executionCost >= 2) else {
+                throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-tool-cost", defaultValue: "Tool execution costs must be positive. An action with built-in verification must reserve at least two units.", bundle: .module))
             }
         }
     }

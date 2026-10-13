@@ -33,11 +33,18 @@ final class DeviceToolSessionTests: XCTestCase {
         let session = controlSession(controller)
         let screenshot = try tool("device_screenshot", in: session)
         let tap = try tool("device_tap", in: session)
+        XCTAssertEqual(tap.executionCost, 2)
+        XCTAssertTrue(tap.verifiesSideEffects)
+        XCTAssertFalse(tap.isVerification)
 
         _ = try await screenshot.execute([:])
-        let firstFrame = try await frameID(from: controller)
+        let rejectedFrame = try await frameID(from: controller)
         await assertRejected(tap, arguments: tapArguments(frameID: UUID()))
-        _ = try await tap.execute(tapArguments(frameID: firstFrame))
+        await assertRejected(tap, arguments: tapArguments(frameID: rejectedFrame))
+        _ = try await screenshot.execute([:])
+        let firstFrame = try await frameID(from: controller)
+        let result = try await tap.execute(tapArguments(frameID: firstFrame))
+        XCTAssertTrue(result.content.contains { if case .image = $0 { true } else { false } })
         await assertRejected(tap, arguments: tapArguments(frameID: firstFrame))
         var counts = await controller.counts()
         XCTAssertEqual(counts.taps, 1, "A screenshot must authorize at most one touch.")
@@ -45,10 +52,33 @@ final class DeviceToolSessionTests: XCTestCase {
         _ = try await screenshot.execute([:])
         let secondFrame = try await frameID(from: controller)
         XCTAssertNotEqual(firstFrame, secondFrame)
-        await assertRejected(tap, arguments: tapArguments(frameID: firstFrame))
         _ = try await tap.execute(tapArguments(frameID: secondFrame))
         counts = await controller.counts()
         XCTAssertEqual(counts.taps, 2)
+    }
+
+    func testMalformedFrameIDsUseTheSamePauseGateAndReleaseTheHold() async throws {
+        let controller = RecordingDeviceController()
+        var held = false
+        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { _, _ in }, onUnknown: {}, onObservationWillCapture: { held = true },
+                                        onActionFinished: { held = false })
+        _ = try await tool("device_screenshot", in: session).execute([:])
+        let tap = try tool("device_tap", in: session)
+        for index in 1...3 {
+            do {
+                _ = try await tap.execute(["frameId": "invalid", "x": 10, "y": 20])
+                XCTFail("Malformed frame ID must be rejected.")
+            } catch {
+                if index == 3 {
+                    guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected frame rejection pause.") }
+                }
+            }
+        }
+        XCTAssertFalse(held)
+        XCTAssertEqual(session.pauseReason, .staleFrames)
+        let counts = await controller.counts()
+        XCTAssertEqual(counts.taps, 0)
     }
 
     func testAcknowledgmentPersistenceFailureStopsFurtherActionsAndNotifiesHost() async throws {
@@ -141,8 +171,21 @@ final class DeviceToolSessionTests: XCTestCase {
 
         _ = try await screenshot.execute([:])
         let beforeHome = try await frameID(from: controller)
-        _ = try await tool("device_home", in: session).execute([:])
+        _ = try await tool("device_home", in: session).execute(["frameId": .string(beforeHome.uuidString)])
         await assertRejected(press, arguments: ["frameId": .string(beforeHome.uuidString), "key": "enter"])
+    }
+
+    func testAllActionSchemasRequireAFrameAndScreenshotCapability() throws {
+        let controller = RecordingDeviceController()
+        let session = controlSession(controller)
+        for tool in session.tools where tool.mayHaveSideEffects {
+            XCTAssertTrue(tool.parameters["required"]?.arrayValue?.contains(.string("frameId")) == true)
+            XCTAssertEqual(tool.executionCost, 2)
+            XCTAssertTrue(tool.verifiesSideEffects)
+        }
+        let blind = DeviceToolSession(capabilities: [.tap, .home], client: DeviceClient(controller: controller),
+                                      scope: .control, timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+        XCTAssertTrue(blind.tools.isEmpty)
     }
 
     func testUnknownNavigationDeliveryStopsTheRunWithoutRetry() async throws {
@@ -176,8 +219,7 @@ final class DeviceToolSessionTests: XCTestCase {
         _ = try await screenshot.execute([:])
         for expectedCount in 1...2 {
             let frame = try await frameID(from: controller)
-            _ = try await tap.execute(tapArguments(frameID: frame))
-            let verification = try await screenshot.execute([:])
+            let verification = try await tap.execute(tapArguments(frameID: frame))
             XCTAssertTrue(verification.text.contains("Screen pixels are unchanged"))
             XCTAssertTrue(verification.text.contains("\(expectedCount) identical submissions"))
         }
@@ -253,8 +295,9 @@ final class DeviceToolSessionTests: XCTestCase {
         _ = try await screenshot.execute([:])
         XCTAssertTrue(held)
         let frame = try await frameID(from: controller)
-        _ = try await tap.execute(tapArguments(frameID: frame))
-        XCTAssertFalse(held)
+        let result = try await tap.execute(tapArguments(frameID: frame))
+        XCTAssertTrue(held, "The automatically captured frame must remain stable for the next decision.")
+        XCTAssertTrue(result.content.contains { if case .image = $0 { true } else { false } })
         _ = try await screenshot.execute([:])
         await assertRejected(tap, arguments: tapArguments(frameID: frame))
         XCTAssertFalse(held, "A known rejection must release transcript progress too.")

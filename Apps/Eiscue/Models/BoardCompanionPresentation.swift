@@ -11,7 +11,8 @@ enum BoardCompanionPresentation {
     }
 
     static func task(_ run: RunRecord, currentTool: String, stopping: Bool,
-                     finishing: Bool, language: BluetoothCompanionStatus.Language) -> BluetoothCompanionStatus {
+                     finishing: Bool, language: BluetoothCompanionStatus.Language,
+                     devicePhase: DeviceTaskPhase? = nil) -> BluetoothCompanionStatus {
         let completed = Set(run.events.filter { $0.kind == "tool.finished" }.map(\.id)).count
         let phase: BluetoothCompanionStatus.Phase
         if stopping || run.state == .interrupted { phase = .stopped }
@@ -19,6 +20,10 @@ enum BoardCompanionPresentation {
         else if run.state == .paused { phase = .waiting }
         else if run.state == .completed, run.endedAt != nil, !finishing { phase = .completed }
         else if finishing || run.state == .preparing || run.state == .completed { phase = .waiting }
+        else if devicePhase == .observing || devicePhase == .verifying { phase = .observing }
+        else if devicePhase == .deciding { phase = .thinking }
+        else if devicePhase == .paused { phase = .waiting }
+        else if devicePhase == .stopped { phase = .stopped }
         else {
             switch currentTool {
             case "device_screenshot", "device_list_apps": phase = .observing

@@ -2,39 +2,47 @@ import Foundation
 
 actor RunBudget {
     private let limit: Int
-    private let reservesVerification: Bool
+    private let verificationCost: Int?
     private var count = 0
     private var verificationDue = false
     private var stopped = false
     private(set) var failure: AgentError?
-    init(limit: Int, reservesVerification: Bool = false) {
+    init(limit: Int, verificationCost: Int? = nil) {
         self.limit = limit
-        self.reservesVerification = reservesVerification
+        self.verificationCost = verificationCost
     }
 
-    func enter(mayHaveSideEffects: Bool, isVerification: Bool) throws {
+    func enter(mayHaveSideEffects: Bool, isVerification: Bool, executionCost: Int, verifiesSideEffects: Bool) throws {
         try check()
-        // Never dispatch the last action without room to inspect its result.
-        let needsReservedCall = reservesVerification && limit - count == 1
-            && (mayHaveSideEffects || (verificationDue && !isVerification))
-        guard count < limit, !needsReservedCall else {
-            failure = .toolLimitReached
+        let remaining = limit - count
+        guard executionCost > 0, executionCost <= remaining else {
+            reachLimit()
             throw AgentError.toolLimitReached
         }
-        count += 1
+        // Never dispatch the last action without room to inspect its result.
+        // A compound action reserves its observation in its own execution cost.
+        let needsReservedCall = verificationCost.map { remaining - executionCost < $0 } == true
+            && !verifiesSideEffects
+            && (mayHaveSideEffects || (verificationDue && !isVerification))
+        guard !needsReservedCall else {
+            reachLimit()
+            throw AgentError.toolLimitReached
+        }
+        count += executionCost
         // A throwing side-effect tool may have sent input before failing; only
         // a successful verification can discharge its observation reservation.
         if mayHaveSideEffects { verificationDue = true }
     }
-    func complete(isVerification: Bool, isError: Bool) {
-        if isVerification, !isError { verificationDue = false }
+    func complete(isVerification: Bool, verifiesSideEffects: Bool, isError: Bool) {
+        if isVerification || verifiesSideEffects, !isError { verificationDue = false }
     }
     func pause(_ reason: String) { if failure == nil { failure = .toolExecutionPaused(reason) } }
+    func reachLimit() { if failure == nil { failure = .toolLimitReached } }
 
     func verificationReminder() -> String? {
         let remaining = limit - count
-        guard reservesVerification, remaining <= 3 else { return nil }
-        return "Remaining tool calls: \(remaining). Use the verification tool now to inspect the last action. The final call is reserved for observation; do not perform another action without room to verify it."
+        guard let verificationCost, verificationDue, remaining <= max(3, verificationCost) else { return nil }
+        return "Remaining execution units: \(remaining). Use the verification tool now to inspect the last action. At least \(verificationCost) units are reserved for observation; do not perform another action without room to verify it."
     }
 
     func check() throws {

@@ -51,7 +51,7 @@ App 当前仅接受 HTTPS 模型服务地址。OpenAI 兼容接口通常填写�
 | EiscueAgentKit | Eiscue 自有 Agent / 工具 / 事件协议、运行时适配、会话存储 | 注册自己的 Swift 工具，或注入 `AgentEngine` 替换引擎 |
 | EiscueDeviceKit | 配对、连接、观察、设备动作与状态 | 直接使用 `DeviceClient`，或注入自己的 `DeviceController` |
 
-App 在 `Integrations/DeviceTools.swift` 组合两者。没有单独的 Plugin 产品，公开 API 不暴露 Pi 类型。更换引擎使用 `AgentClient(engine:)`，更换设备后端使用 `DeviceClient(controller:)`。
+App 在 `Integrations/DeviceTools.swift` 组合两者，将模型工具调用转换为自有 `DeviceDecision`，交给 `DeviceTaskRunner` 检查权限、串行执行并自动截图核查。动作及核查共同计入预算，新截图随同一工具结果返回；未知送达停止，无法核查则暂停。没有单独的 Plugin 产品，公开 API 不暴露 Pi 类型。更换引擎使用 `AgentClient(engine:)`，更换设备后端使用 `DeviceClient(controller:)`。
 
 公开接口见 [AgentClient](Sources/EiscueAgentKit/AgentClient.swift) 和 [DeviceClient](Sources/EiscueDeviceKit/DeviceClient.swift)。
 

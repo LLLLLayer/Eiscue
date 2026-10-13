@@ -8,12 +8,20 @@ public struct AgentTool: Sendable {
     /// A read-only observation that can verify a preceding action. Its final
     /// budget slot is reserved when this tool is registered for the run.
     public let isVerification: Bool
+    /// Budget units reserved before execution, including any host-owned work
+    /// performed inside this tool, such as its post-action observation.
+    public let executionCost: Int
+    /// A side-effect tool that also observes its result before returning success.
+    /// It remains unsafe to replay and reserves at least two budget units.
+    public let verifiesSideEffects: Bool
     public let execute: @Sendable (AgentJSONValue) async throws -> AgentToolResult
 
     public init(
         name: String, description: String, parameters: AgentJSONValue,
         mayHaveSideEffects: Bool = true,
         isVerification: Bool = false,
+        executionCost: Int = 1,
+        verifiesSideEffects: Bool = false,
         execute: @escaping @Sendable (AgentJSONValue) async throws -> AgentToolResult
     ) {
         self.name = name
@@ -21,6 +29,8 @@ public struct AgentTool: Sendable {
         self.parameters = parameters
         self.mayHaveSideEffects = mayHaveSideEffects
         self.isVerification = isVerification
+        self.executionCost = executionCost
+        self.verifiesSideEffects = verifiesSideEffects
         self.execute = execute
     }
 }

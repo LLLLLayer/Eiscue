@@ -87,7 +87,7 @@ final class DeviceRunCleanupTests: XCTestCase {
     }
 
     func testAcceptedPauseReleasesInputBeforeRetainingConnection() async throws {
-        for reason in [RunPauseReason.toolLimit, .noProgress] {
+        for reason in [RunPauseReason.toolLimit, .noProgress, .verification] {
             let controller = CleanupDeviceController()
             var run = makeRun()
             run.state = .paused; run.pauseReason = reason

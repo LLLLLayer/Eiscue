@@ -10,6 +10,8 @@ public struct AgentRequest: Sendable {
     public let requestID: UUID
     public let prompt: String
     public let systemPrompt: String
+    /// Per-run execution budget: each invocation reserves its tool executionCost,
+    /// including any observation performed inside a compound tool.
     public let maxToolCalls: Int
     public let timeoutSeconds: Double
     public let mode: AgentRunMode

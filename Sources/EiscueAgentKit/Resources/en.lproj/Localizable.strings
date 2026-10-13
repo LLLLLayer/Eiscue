@@ -26,3 +26,4 @@
 "agent.attachment.invalid" = "The attachment is empty, unsupported, or exceeds the allowed size.";
 
 "agent.attachment.images-unavailable" = "Select a model that supports images to send this attachment.";
+"agent.configuration.invalid-tool-cost" = "Tool execution costs must be positive. An action with built-in verification must reserve at least two units.";

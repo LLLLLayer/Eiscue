@@ -35,6 +35,40 @@ final class TaskStatusPresentationTests: XCTestCase {
         }
     }
 
+    func testRunnerVerificationOverridesActionWithoutInventingToolCalls() {
+        let run = makeRun(.running, events: [event("run.started"), event("tool.started"), event("action.acknowledged")])
+        for phase in [DeviceTaskPhase.observing, .verifying] {
+            let snapshot = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: phase)
+            XCTAssertEqual(snapshot.subtitle, localized("task.status.operation.screenshot", "Viewing the screen"))
+            XCTAssertEqual(snapshot.completedToolCalls, 0)
+            XCTAssertEqual(snapshot.completedWorkUnits, 1)
+            XCTAssertEqual(snapshot.totalWorkUnits, 3, "Internal observations are not separate Pi tool calls.")
+        }
+        let deciding = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: .deciding)
+        XCTAssertEqual(deciding.subtitle, localized("task.status.phase.waiting", "Waiting for AI"))
+        let receiving = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", isReceivingResponse: true, devicePhase: .deciding)
+        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Preparing a response"))
+        let executing = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: .executing)
+        XCTAssertEqual(executing.subtitle, localized("task.status.operation.tap", "Tapping the screen"))
+    }
+
+    func testFinalizationAndTerminalStateOverrideStaleRunnerPhase() {
+        let finishing = TaskStatusPresentation.snapshot(for: makeRun(.running), currentTool: "device_tap",
+                                                        isFinishing: true, devicePhase: .verifying)
+        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results"))
+        let cases: [(RunState, StaticString, String.LocalizationValue)] = [
+            (.completed, "task.status.phase.completed", "This turn has ended"),
+            (.paused, "task.status.phase.paused", "Open Eiscue to continue"),
+            (.interrupted, "task.status.phase.interrupted", "Interrupted"),
+            (.failed, "task.status.phase.failed", "Not completed")
+        ]
+        for (state, key, fallback) in cases {
+            let snapshot = TaskStatusPresentation.snapshot(for: makeRun(state), currentTool: "device_tap",
+                                                           isFinishing: true, devicePhase: .verifying)
+            XCTAssertEqual(snapshot.subtitle, localized(key, fallback))
+        }
+    }
+
     func testPreparationModelResponseAndFinalizationAdvanceOnlyAtRealBoundaries() {
         var run = makeRun(.preparing)
         var snapshot = TaskStatusPresentation.snapshot(for: run)
