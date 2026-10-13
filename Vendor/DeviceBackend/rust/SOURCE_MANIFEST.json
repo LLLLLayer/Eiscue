@@ -4,7 +4,7 @@
   "note": "Device Hub patched snapshot, not clean upstream; tests contain public synthetic fixtures, never local pairing records. Cargo manifest trimmed to native backend dependency closure; RSD control lifetime adaptation.",
   "files": {
     "vendor/idevice/Cargo.toml": {
-      "sha256": "b9d5dd1b9866215ec6aee8158d9bca68a1c87ca73aef3de244dbb2ed37ff08aa",
+      "sha256": "d303e1c2c9f3bf1f60758cc61ce10f260c9f9451c78d472fd03a1b5352c45c98",
       "device_hub_snapshot_sha256": "598c00feedb93c3d65863ace4707661baa8e42fb074a4ec6af2abecb46a1d7ba",
       "modified": true
     },
@@ -24,9 +24,10 @@
       "modified": false
     },
     "vendor/idevice/src/cursor.rs": {
-      "sha256": "bd6ec1d82f528826bcd480da2417c8500aee5ec627d510e840f59a64a4f53062",
+      "sha256": "992b54329b29b6faf9c7ae1a62508c9e9310dc2dc954baff5aa95a32113dd64e",
       "device_hub_snapshot_sha256": "bd6ec1d82f528826bcd480da2417c8500aee5ec627d510e840f59a64a4f53062",
-      "modified": false
+      "modified": true,
+      "change": "Remove raw protocol buffer diagnostics; retain structural metadata through tracing (compiled out by the backend)."
     },
     "vendor/idevice/src/http.rs": {
       "sha256": "408dd2fe5a742756d4eadaffe282adc95c95c85a36bd78984d0d2dae9bf09a32",
@@ -34,9 +35,9 @@
       "modified": false
     },
     "vendor/idevice/src/lib.rs": {
-      "sha256": "5897ae00bae956a5b9660c10fb6e00baa323cea62de9781fdccc13a9375c0762",
+      "sha256": "254647854b070a63a1f264899881a57e0af112229cf767fd085b9f3bde380714",
       "device_hub_snapshot_sha256": "5897ae00bae956a5b9660c10fb6e00baa323cea62de9781fdccc13a9375c0762",
-      "modified": false
+      "modified": true
     },
     "vendor/idevice/src/mdns.rs": {
       "sha256": "6b283338343aa195fe6a12e5d25965dc6995fcd33837a80e52eea5f2a0b16535",
@@ -53,6 +54,12 @@
       "device_hub_snapshot_sha256": "1957251c4da9c99bed7b232440c2efd3f00218166069fc0bf095228dea3eaa25",
       "modified": false
     },
+    "vendor/idevice/src/pinned_usb.rs": {
+      "sha256": "cc2356021e37480e4cd1c3df9e525ccbd17d9e3a0f78626dd06af0730b2d5c0b",
+      "device_hub_snapshot_sha256": null,
+      "modified": true,
+      "change": "Eiscue addition: desktop-only selected-device TLS certificate pinning and handshake-signature verification; not present at this path in the upstream snapshot."
+    },
     "vendor/idevice/src/provider.rs": {
       "sha256": "e9463e43c2bc19d3b1df3cefdfbaa8a5f4ac9917986909ba76b0b13ad3ea84fc",
       "device_hub_snapshot_sha256": "e9463e43c2bc19d3b1df3cefdfbaa8a5f4ac9917986909ba76b0b13ad3ea84fc",
@@ -64,9 +71,9 @@
       "modified": false
     },
     "vendor/idevice/src/remote_pairing/mod.rs": {
-      "sha256": "555b6c616ae61ac6a4581d431e01ca5ce306cf9ea94c89e6e1d23bb1277814a9",
+      "sha256": "6b57e90af1a801dd543b0f2ca2061dc8bf1a3030b53f4bc29aeb372caf36a291",
       "device_hub_snapshot_sha256": "555b6c616ae61ac6a4581d431e01ca5ce306cf9ea94c89e6e1d23bb1277814a9",
-      "modified": false
+      "modified": true
     },
     "vendor/idevice/src/remote_pairing/opack.rs": {
       "sha256": "57c3184f43fede906a8eed417f0622d79dcfd476556445cf93642b3707dbabad",
@@ -107,6 +114,12 @@
       "sha256": "0f8b9f1cbbbe6dbc78ec1a30ae112b4fa646650816b70b5e6aa707b9d6b0ba42",
       "device_hub_snapshot_sha256": "0f8b9f1cbbbe6dbc78ec1a30ae112b4fa646650816b70b5e6aa707b9d6b0ba42",
       "modified": false
+    },
+    "vendor/idevice/src/remote_pairing/usb_bootstrap.rs": {
+      "sha256": "25219afb388601c8b94cc54ae7675639d74419f5d0bb43c02c172c0458dc3c3b",
+      "device_hub_snapshot_sha256": null,
+      "modified": true,
+      "change": "Eiscue addition: explicit first-pairing negotiation over authenticated USB trust; not present at this path in the upstream snapshot."
     },
     "vendor/idevice/src/services/afc/errors.rs": {
       "sha256": "787d3cabab8024dc9432ec5b24fc0336ba256dabeb0a0272808b439fd2294c04",
@@ -176,10 +189,10 @@
       "change": "Scoped StopRequest with unsigned stream identifiers and explicit action; caller uses a fresh service connection and never stopAll."
     },
     "vendor/idevice/src/services/core_device/display_stream/hevc.rs": {
-      "sha256": "285f0f453b1547fb545f5c23652072312c3e942db2d2834897b95756c8df21c0",
+      "sha256": "87effb98fc11ce2096217f3a12c6c29c74317b61a255057e1978c6fca9495dcb",
       "device_hub_snapshot_sha256": "e01f2cebe72ec5969859a40828a8ef2b817e811c3207e37f9b3cae96cdd3e7ee",
       "modified": true,
-      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained. Complete synchronized access-unit boundary query for sender-confirmed idle snapshots; opt-in sequence-gap diagnostics."
+      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained. Complete synchronized access-unit boundary query for sender-confirmed idle snapshots; remove environment-controlled sequence-gap diagnostics."
     },
     "vendor/idevice/src/services/core_device/display_stream/media_negotiation.proto": {
       "sha256": "ee3d03178e506f5e86eb360ca8067e80c7f9d612fb6114734f8b799d763ae5ea",
@@ -310,14 +323,14 @@
       "modified": false
     },
     "vendor/idevice/src/services/dvt/message.rs": {
-      "sha256": "847dde434556d066f3faa48ca76394aa608751aba949a5aa9981a9a1cd52ebed",
+      "sha256": "d9462ba566463bac2a3e3568c97ae35e45fe66d1e842eff289a404b52cdccf4d",
       "device_hub_snapshot_sha256": "8a229378dbc1d1af0473af8adaa0606ef7b09e2043a9d8446a0791d88a195fbf",
       "modified": true
     },
     "vendor/idevice/src/services/dvt/mod.rs": {
-      "sha256": "547c5435f5a3d149a0493c7a0fbbef0c39abbfc712aeacd5209a5ede5b0521c7",
+      "sha256": "04ac8dd3508b49e43bd9c959abeb452e9a35084739b1e3f74f6d24e8e2d66bbb",
       "device_hub_snapshot_sha256": "547c5435f5a3d149a0493c7a0fbbef0c39abbfc712aeacd5209a5ede5b0521c7",
-      "modified": false
+      "modified": true
     },
     "vendor/idevice/src/services/dvt/network_monitor.rs": {
       "sha256": "0af9d85e03a687a2e1f8a4df5423cd22b9ecf7215a3c8da003b9c857bf307d64",
@@ -335,14 +348,14 @@
       "modified": false
     },
     "vendor/idevice/src/services/dvt/remote_server.rs": {
-      "sha256": "520b07c2e487ae2e2e289229bfdf3feff1181988ba182db782cae43695bdd7eb",
+      "sha256": "2804666828d864832f02222fdf12ba2dde68f12b82e11dcea07c3f3edce158db",
       "device_hub_snapshot_sha256": "f00cd7f5bc7f2d0548807a0ccd09e9d866ccbbbb9d1015846420fc929b2d3130",
       "modified": true
     },
     "vendor/idevice/src/services/dvt/screenshot.rs": {
-      "sha256": "e7cb9bbcddbc0d40a57824915f24b257cff012c974532640fddae96b43f10c19",
+      "sha256": "eb5997ab282a0f05c4228d0358f67d4c2982c1e2dbbaab57fbb177a858fc3d55",
       "device_hub_snapshot_sha256": "e7cb9bbcddbc0d40a57824915f24b257cff012c974532640fddae96b43f10c19",
-      "modified": false
+      "modified": true
     },
     "vendor/idevice/src/services/dvt/sysmontap.rs": {
       "sha256": "35edda04757327982068eee51c62f5764184d33c5f102ae6f99318e0488531ca",
@@ -365,9 +378,15 @@
       "modified": false
     },
     "vendor/idevice/src/services/dvt/xctest/types.rs": {
-      "sha256": "77de320c48b0fcc229ca6050a4c568995437c3c3d8b0496087fb7cabd1d0e05f",
+      "sha256": "6cac2888f01b6c29fc8b15937a06b618834d37147b691ed595081584d4746556",
       "device_hub_snapshot_sha256": "77de320c48b0fcc229ca6050a4c568995437c3c3d8b0496087fb7cabd1d0e05f",
-      "modified": false
+      "modified": true
+    },
+    "vendor/idevice/src/services/dvt/xctest_protocol.rs": {
+      "sha256": "f046df64104ebd2eae326bb5214477623d39b05900fc0635b2fa55ce3b3ce819",
+      "device_hub_snapshot_sha256": null,
+      "modified": true,
+      "change": "Local extraction of MIT-licensed protocol archive helpers from vendor/idevice/src/services/dvt/xctest/types.rs (original snapshot SHA-256 77de320c48b0fcc229ca6050a4c568995437c3c3d8b0496087fb7cabd1d0e05f); no file at this path in the upstream snapshot."
     },
     "vendor/idevice/src/services/heartbeat.rs": {
       "sha256": "57ace0b39620ca2c1d366ea2d630a06d804eb3e0d32b71ee6b001dd2e9483274",

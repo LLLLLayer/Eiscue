@@ -13,4 +13,5 @@
 "bluetooth.storage-unavailable" = "暂时无法保存蓝牙连接状态，请解锁设备后重试。";
 "bluetooth.authentication-failed" = "开发板无法验证这次连接，请断开后重新连接。输入操作不会自动重试。";
 "bluetooth.authentication-key-unavailable" = "开发板已绑定到其他 App 安装，本机没有对应的授权密钥。";
+"bluetooth.enrollment-conflict" = "本机已保存开发板授权，但开发板却报告尚未设置。为保护授权，密钥不会再次发送。请连接原来的开发板；如果清除了固件数据，需要明确重置授权后才能重新设置。";
 "bluetooth.enrollment-closed" = "首次设置请重新给开发板通电，并在一分钟内连接。已有的开发板授权不会被自动替换。";

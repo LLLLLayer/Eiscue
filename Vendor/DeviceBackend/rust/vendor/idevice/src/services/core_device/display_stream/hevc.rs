@@ -1079,9 +1079,6 @@ impl HevcAccessUnitAssembler {
         if self.reorder.len() > self.limits.max_reorder_packets
             || self.reorder_bytes > self.limits.max_reorder_bytes
         {
-            if std::env::var_os("NCM_VIDEO_GEOMETRY_PROBE").is_some() {
-                eprintln!("NCM reorder gap expected={:?} received={} buffered={} bytes={}", self.next_sequence_number, packet.sequence_number, self.reorder.len(), self.reorder_bytes);
-            }
             events.push(HevcDepacketizerEvent::Discontinuity(
                 HevcDiscontinuity::SequenceGap,
             ));

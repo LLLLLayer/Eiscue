@@ -61,8 +61,6 @@ impl<'a> Cursor<'a> {
         #[cfg(debug_assertions)]
         for b in bytes.iter() {
             if *b > 0 {
-                eprintln!("Zero read contained non-zero values!");
-                eprintln!("{bytes:02X?}");
                 return None;
             }
         }
@@ -100,59 +98,8 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn reveal(&self, surrounding: usize) {
-        let len = self.inner.len();
-
-        if self.pos > len {
-            println!("Cursor is past end of buffer");
-            return;
-        }
-
-        let start = self.pos.saturating_sub(surrounding);
-        let end = (self.pos + surrounding + 1).min(len);
-
-        // HEADER
-        println!("Reveal around pos {} ({} bytes):", self.pos, surrounding);
-
-        // --- HEX LINE ---
-        print!("Hex:    ");
-        for i in start..end {
-            if i == self.pos {
-                print!("[{:02X}] ", self.inner[i]);
-            } else {
-                print!("{:02X} ", self.inner[i]);
-            }
-        }
-        println!();
-
-        // --- ASCII LINE ---
-        print!("Ascii:  ");
-        for i in start..end {
-            let b = self.inner[i];
-            let c = if b.is_ascii_graphic() || b == b' ' {
-                b as char
-            } else {
-                '.'
-            };
-
-            if i == self.pos {
-                print!("[{}]  ", c);
-            } else {
-                print!("{}   ", c);
-            }
-        }
-        println!();
-
-        // --- OFFSET LINE ---
-        print!("Offset: ");
-        for i in start..end {
-            let off = i as isize - self.pos as isize;
-            if i == self.pos {
-                print!("[{}] ", off);
-            } else {
-                print!("{:<3} ", off);
-            }
-        }
-        println!();
+        // Protocol buffers can contain identity keys or screen data. Keep diagnostics structural.
+        tracing::trace!(position = self.pos, length = self.inner.len(), surrounding, "Cursor position");
     }
 
     pub fn remaining(&mut self) -> &'a [u8] {

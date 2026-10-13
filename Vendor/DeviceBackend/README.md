@@ -14,6 +14,8 @@ No upstream App, model agent, ESP32 firmware, credentials or captured device dat
 
 ## Local changes
 
+- Raw media/protocol probes have been removed from `rust/src/media.rs` and the vendored HEVC parser. Environment variables cannot enable screen or negotiation dumps in shipped builds. Cursor diagnostics retain structural metadata only; the backend compiles all `tracing` levels out. Numeric video counters remain available through the existing backend status API.
+
 - `rust/src/pairing.rs`: the newly advertised controller / host display name is `Eiscue` instead of the upstream App name. Protocol behavior is unchanged.
 - `rust/src/bin/pair_usb.rs` and the opt-in `desktop-bootstrap` feature provide an explicit USB initialization tool for iOS 26. The vendored idevice `pinned-usb` feature authenticates the selected device using the system USB trust certificate and validates TLS signatures; `remote_pairing/usb_bootstrap.rs` implements explicit first-pairing negotiation. These features are absent from shipped iOS archives. See [USB setup](../../Scripts/pair-device-usb.md).
 - `Sources/PhoneAgentNCM/NativeDeveloperServices.swift`: adds a shutdown helper that stops local decode, waits for an in-flight operation to drain, and requests explicit owned-media release before the caller closes transport. The host supplies a bounded deadline; incomplete media startup is not reported as confirmed release. Geometry-tagged snapshots / current geometry checks are also exposed so the Kit can invalidate coordinates after display changes.

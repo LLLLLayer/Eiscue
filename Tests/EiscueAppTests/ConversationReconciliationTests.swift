@@ -69,4 +69,16 @@ final class ConversationReconciliationTests: XCTestCase {
                                         runtime: [canonical, reply], unsubmittedIDs: [abandoned.id])
         XCTAssertEqual(result, [abandoned, canonical, reply])
     }
+
+    func testRuntimeAcceptanceOverridesStalePendingAndRepairsExistingDuplicates() {
+        let request = AgentMessage(role: .user, text: "Hello")
+        let reply = AgentMessage(role: .assistant, text: "Hi")
+        let pending = AgentMessage(role: .user, text: "Hello")
+        let runtime = [request, reply]
+        var local = [request, reply, request, request, pending]
+        for _ in 0..<3 {
+            local = AppModel.reconciled(local: local, runtime: runtime, unsubmittedIDs: [request.id, pending.id])
+            XCTAssertEqual(local, [request, reply, pending])
+        }
+    }
 }

@@ -442,9 +442,8 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
             guard error == nil, let data = characteristic.value, let proofCharacteristic else { failConnection(.authenticationFailed); return }
             do {
                 let challenge = try BluetoothBoardChallenge(data)
-                let key = try BluetoothBoardKeyStore(boardID: challenge.boardID).key(for: challenge)
                 let nonce = try BluetoothBoardKeyStore.random(count: 16)
-                let proof = try BluetoothBoardHandshake(challenge: challenge, key: key, clientNonce: nonce)
+                let proof = try BluetoothBoardKeyStore(boardID: challenge.boardID).handshake(for: challenge, clientNonce: nonce)
                 handshake = proof
                 peripheral.writeValue(proof.request, for: proofCharacteristic, type: .withResponse)
             } catch let failure as BluetoothBoardError { failConnection(failure) }
@@ -458,7 +457,8 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
                 authenticatedSession = try handshake.accept(data)
                 self.handshake = nil
                 finishConnection()
-            } catch { failConnection(.authenticationFailed) }
+            } catch let failure as BluetoothBoardError { failConnection(failure) }
+            catch { failConnection(.authenticationFailed) }
             return
         }
         guard characteristic === responseCharacteristic else { return }

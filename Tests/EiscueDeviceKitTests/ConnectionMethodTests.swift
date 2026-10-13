@@ -227,7 +227,8 @@ import Testing
         for error in [NCMError.interfaceUnavailable, .interfaceAmbiguous, .interfaceInvalid, .staleDiscovery,
                       .pairingServiceUnavailable, .malformedReply, .network] {
             let message = NCMDeviceErrorPresentation.message(error, bundle: bundle)
-            #expect(!message.contains(error.rawValue))
+            // Ordinary words such as "network" are valid prose, not leaked error codes.
+            #expect(message != error.rawValue && !message.contains("device.board."))
             #expect(!message.contains("ND1") && !message.contains("NR1"))
             #expect(language == "en" ? message.contains("board") : message.contains("开发板"))
         }

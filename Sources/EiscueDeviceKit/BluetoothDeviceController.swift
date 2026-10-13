@@ -34,7 +34,7 @@ public final class BluetoothDeviceController: DeviceController {
     private weak var calibrationWindow: UIWindow?
     private weak var calibrationView: UIView?
     private var calibrationViewport: Viewport?
-    private var busy = false
+    private let operations = BluetoothOperationGate()
     private var releaseToken: UUID?
     private var epoch = UUID()
     private var keyboardAvailable = false
@@ -66,9 +66,8 @@ public final class BluetoothDeviceController: DeviceController {
 
     public func status() async -> DeviceStatus {
         guard isConnected else { return .unavailable(reason: message("bluetooth.connect")) }
-        if !busy, releaseToken == nil {
-            busy = true
-            defer { busy = false }
+        if releaseToken == nil, !isCalibrating, operations.beginStatus() {
+            defer { operations.endStatus() }
             let token = epoch
             do {
                 let receipt = try await board.command(opcode: 7)
@@ -107,15 +106,15 @@ public final class BluetoothDeviceController: DeviceController {
     /// Change only after release/disconnect. Reconnecting requires a fresh
     /// pointer/text check even if the next route uses the same physical board.
     public func selectInputRoute(_ route: BluetoothBoardInputRoute) throws {
-        guard !busy, releaseToken == nil, !isConnected, board.state != .ready else { throw DeviceControlError.busy }
+        guard !operations.isBusy, releaseToken == nil, !isConnected, board.state != .ready else { throw DeviceControlError.busy }
         epoch = UUID(); clearCalibration()
         inputRoute = route; outputInfo = nil; navigationAvailable = false
         onChange?()
     }
 
     public func connectBluetoothBoard() async throws {
-        guard !busy, releaseToken == nil else { throw DeviceControlError.busy }
-        busy = true; defer { busy = false }
+        guard !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
+        try operations.beginExclusive(); defer { operations.endAction() }
         epoch = UUID(); clearCalibration()
         let token = epoch
         do {
@@ -185,9 +184,7 @@ public final class BluetoothDeviceController: DeviceController {
     }
 
     public func captureScreenshot() async throws -> DeviceScreenshot {
-        guard isConnected else { throw DeviceControlError.notConnected }
-        guard !busy, releaseToken == nil else { throw DeviceControlError.busy }
-        busy = true; defer { busy = false }
+        try await beginAction(allowCalibration: true); defer { operations.endAction() }
         let observation = try await freshFrame(after: lastDispatchedUptime, token: epoch)
         latest = observation
         return observation.screenshot
@@ -196,7 +193,7 @@ public final class BluetoothDeviceController: DeviceController {
     /// End a successful user-started task without discarding the checked
     /// connection. Only confirmed release permits preserving its calibration.
     public func finishTask() async throws {
-        try beginAction(); defer { busy = false }
+        try await beginAction(); defer { operations.endAction() }
         let token = epoch
         latest = nil
         do {
@@ -211,7 +208,7 @@ public final class BluetoothDeviceController: DeviceController {
     }
 
     public func tap(at point: DevicePoint, frameID: UUID) async throws {
-        try beginAction(); defer { busy = false }
+        try await beginAction(); defer { operations.endAction() }
         let (frame, mapping) = try consume(frameID)
         let position = try mapping.hidPoint(point, in: frame.screenshot)
         let token = epoch
@@ -224,7 +221,7 @@ public final class BluetoothDeviceController: DeviceController {
     public func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frameID: UUID) async throws {
         let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
         guard seconds.isFinite, (0.1...2).contains(seconds) else { throw DeviceControlError.invalidDuration }
-        try beginAction(); defer { busy = false }
+        try await beginAction(); defer { operations.endAction() }
         let (frame, mapping) = try consume(frameID)
         let start = try mapping.hidPoint(from, in: frame.screenshot), end = try mapping.hidPoint(to, in: frame.screenshot)
         let token = epoch
@@ -260,7 +257,7 @@ public final class BluetoothDeviceController: DeviceController {
 
     private func paste(_ text: String, frameID: UUID, validation: Bool) async throws {
         guard !text.isEmpty, text.utf8.count <= 8192 else { throw DeviceControlError.invalidText }
-        try beginAction(allowCalibration: validation); defer { busy = false }
+        try await beginAction(allowCalibration: validation); defer { operations.endAction() }
         let (_, mapping) = try consume(frameID)
         guard keyboardAvailable, validation ? isCalibrating : keyboardVerified else { throw DeviceControlError.unsupported }
         if validation { try checkCalibrationGeometry() }
@@ -277,14 +274,14 @@ public final class BluetoothDeviceController: DeviceController {
     }
 
     public func home() async throws {
-        try beginAction(); defer { busy = false }
+        try await beginAction(); defer { operations.endAction() }
         guard isPointerVerified, keyboardAvailable, keyboardVerified, navigationAvailable else { throw DeviceControlError.unsupported }
         _ = try observe(); latest = nil
         try await sendKey(opcode: 6, payload: [0x08, 0x0B], token: epoch)
     }
 
     public func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {
-        try beginAction(); defer { busy = false }
+        try await beginAction(); defer { operations.endAction() }
         let (_, mapping) = try consume(frameID)
         guard keyboardAvailable, keyboardVerified, navigationAvailable else { throw DeviceControlError.unsupported }
         let token = epoch
@@ -321,9 +318,8 @@ public final class BluetoothDeviceController: DeviceController {
     /// Called only while the host's full-screen, non-destructive calibration
     /// target is visible. Raw points are normalized HID coordinates, not pixels.
     public func beginCalibration(window: UIWindow, viewport: UIView) async throws {
-        guard isConnected, absoluteAvailable else { throw DeviceControlError.notConnected }
-        guard !busy, releaseToken == nil else { throw DeviceControlError.busy }
-        busy = true; defer { busy = false }
+        try await beginAction(); defer { operations.endAction() }
+        guard absoluteAvailable else { throw DeviceControlError.notConnected }
         clearCalibration()
         let token = epoch, binding = try Viewport(window: window, view: viewport)
         let frame = try await freshFrame(after: ProcessInfo.processInfo.systemUptime, token: token)
@@ -335,8 +331,8 @@ public final class BluetoothDeviceController: DeviceController {
     }
 
     public func calibrationClick(x: Double, y: Double) async throws {
-        guard isCalibrating, !busy, releaseToken == nil, (0.1...0.9).contains(x), (0.1...0.9).contains(y) else { throw DeviceControlError.invalidCoordinates }
-        busy = true; defer { busy = false }
+        guard isCalibrating, !operations.isBusy, releaseToken == nil, (0.1...0.9).contains(x), (0.1...0.9).contains(y) else { throw DeviceControlError.invalidCoordinates }
+        try operations.beginExclusive(); defer { operations.endAction() }
         let token = epoch, p = DevicePoint(x: x, y: y)
         try checkCalibrationGeometry()
         try await absolute(p, pressed: false)
@@ -350,7 +346,7 @@ public final class BluetoothDeviceController: DeviceController {
     /// Three corner samples fit an affine mapping, the fourth independently
     /// verifies it. Samples are normalized points observed by UIKit, not ACKs.
     public func completeCalibration(observed: [DevicePoint]) throws {
-        guard isCalibrating, !busy, releaseToken == nil, observed.count == 4 else { throw DeviceControlError.invalidCoordinates }
+        guard isCalibrating, !operations.isBusy, releaseToken == nil, observed.count == 4 else { throw DeviceControlError.invalidCoordinates }
         try checkCalibrationGeometry()
         guard let original = calibrationFrame else { throw DeviceControlError.staleFrame }
         calibration = try Calibration(observed: observed, frame: original)
@@ -358,7 +354,7 @@ public final class BluetoothDeviceController: DeviceController {
     }
 
     public func markKeyboardVerified() throws {
-        guard isCalibrating, calibration != nil, !busy, releaseToken == nil else { throw DeviceControlError.busy }
+        guard isCalibrating, calibration != nil, !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
         try checkCalibrationGeometry()
         keyboardVerified = true; isCalibrating = false
         calibrationFrame = nil; calibrationWindow = nil; calibrationView = nil; calibrationViewport = nil
@@ -411,11 +407,14 @@ public final class BluetoothDeviceController: DeviceController {
         }
     }
     private static let unchangedScreenSettle: TimeInterval = 0.75
-    private func beginAction(allowCalibration: Bool = false) throws {
-        try Task.checkCancellation()
-        guard isConnected else { throw DeviceControlError.notConnected }
-        guard !busy, releaseToken == nil, !isCalibrating || allowCalibration else { throw DeviceControlError.busy }
-        busy = true
+    private func beginAction(allowCalibration: Bool = false) async throws {
+        let token = epoch
+        try await operations.beginAction()
+        do {
+            try requireEpoch(token)
+            guard isConnected else { throw DeviceControlError.notConnected }
+            guard releaseToken == nil, !isCalibrating || allowCalibration else { throw DeviceControlError.busy }
+        } catch { operations.endAction(); throw error }
     }
     private func consume(_ id: UUID) throws -> (ObservedFrame, Calibration) {
         let frame = latest; latest = nil

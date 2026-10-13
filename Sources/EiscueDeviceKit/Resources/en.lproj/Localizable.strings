@@ -53,7 +53,7 @@
 "device.board.connection-changed" = "The USB network relay connection changed. Reconnect the board and try again.";
 "device.board.pairing-service-unavailable" = "The board is connected, but this device's pairing service was not found. Keep the device unlocked with Developer Mode on, then try again.";
 "device.board.firmware-unavailable" = "The board did not provide the required connection service. Install the Eiscue board firmware and try again.";
-"device.board.interrupted" = "The USB network relay connection was interrupted. Check its cable and power, then try again.";
+"device.board.interrupted" = "The USB network relay connection was interrupted. Check the board's cable and power, then try again.";
 "device.backend.automation-consent" = "Device control could not get system permission. Keep this device unlocked and allow automation if the system asks, then try again.";
 "device.backend.automation-geometry" = "The current screen could not be confirmed. Keep the device unlocked and steady, then try connecting again.";
 "device.backend.automation-delivery-unknown" = "The device did not confirm this action. It will not be repeated. Check the screen before reconnecting.";

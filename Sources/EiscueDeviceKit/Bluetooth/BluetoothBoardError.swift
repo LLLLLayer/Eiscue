@@ -7,7 +7,7 @@ public enum BluetoothBoardError: String, Error, LocalizedError, Sendable, Equata
     case disconnected, busy, commandTimeout, gattWriteRejected, malformedReply
     case invalidCommand, notEncrypted, boardBusy, hidNotSubscribed, hidSendFailed
     case counterStorageUnavailable, deliveryUnknown
-    case authenticationFailed, authenticationKeyUnavailable, enrollmentClosed
+    case authenticationFailed, authenticationKeyUnavailable, enrollmentClosed, enrollmentConflict
 
     public var errorDescription: String? {
         let key: String
@@ -28,6 +28,7 @@ public enum BluetoothBoardError: String, Error, LocalizedError, Sendable, Equata
         case .authenticationFailed: key = "bluetooth.authentication-failed"
         case .authenticationKeyUnavailable: key = "bluetooth.authentication-key-unavailable"
         case .enrollmentClosed: key = "bluetooth.enrollment-closed"
+        case .enrollmentConflict: key = "bluetooth.enrollment-conflict"
         }
         return NSLocalizedString(key, tableName: "BluetoothBoard", bundle: .module, comment: "Bluetooth board connection error")
     }

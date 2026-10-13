@@ -148,7 +148,6 @@ impl Media {
             DisplayServiceClient::connect_rsd(adapter, handshake),
         )
         .await?;
-        let geometry_probe = std::env::var_os("NCM_VIDEO_GEOMETRY_PROBE").is_some();
         const DISPLAY_ID: i64 = 1;
         let mut display_info = bounded(
             Stage::VideoService,
@@ -176,13 +175,6 @@ impl Media {
             )),
         )
         .await?;
-        if geometry_probe {
-            eprintln!("NCM geometry answer {answer:?}");
-            eprintln!(
-                "NCM geometry status {:?}",
-                video.get_media_stream_server_status().await
-            );
-        }
         let negotiated = parse_screen_video_answer(extract_answer(&answer)?).map_err(|_| fail())?;
         let config = match feedback_endpoint(&answer) {
             Some(config) => config,
@@ -193,7 +185,6 @@ impl Media {
         };
         if config.1 != negotiated.ssrc { return Err(fail()); }
         let (feedback_port, _, receiver_ssrc) = config;
-        eprintln!("NCM video feedback negotiated port={feedback_port} receiver={receiver_ssrc} sender={}", negotiated.ssrc);
         // Refresh outside the receiver: service latency must not block RTP/ACKs.
         // Each frame carries a snapshot, validated against that frame's SPS.
         mailbox.begin_stream();
@@ -214,12 +205,6 @@ impl Media {
         drains.0.push(tokio::spawn(async move {
             let mut assembler = HevcAccessUnitAssembler::new(negotiated.payload_type, negotiated.ssrc);
             let mut needs_sync = true;
-            let mut probe_extensions = 0;
-            let mut probe_rtcp = 0;
-            let mut received_payload_octets = 0u64;
-            let mut discontinuity_logs = 0;
-            let probe_began = std::time::Instant::now();
-            let mut probe_packets = 0u64;
             let mut reports = VideoFeedback::new(receiver_ssrc, negotiated.ssrc, call_id);
             let mut control_tick = tokio::time::interval(Duration::from_millis(50));
             control_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -239,29 +224,11 @@ impl Media {
                                         mailbox.sender_report(sr.packet_count == reports.unique_packets && assembler.is_complete());
                                     }
                                 }
-                                if geometry_probe && p.data.len() >= 28 && p.data[1] == 200 {
-                                    let sent_packets = u32::from_be_bytes(p.data[20..24].try_into().unwrap());
-                                    let sent_octets = u32::from_be_bytes(p.data[24..28].try_into().unwrap());
-                                    eprintln!("NCM video sender report sentPackets={sent_packets} receivedPackets={} sentOctets={sent_octets} receivedOctets={received_payload_octets}", reports.packets);
-                                }
-                                if geometry_probe && probe_rtcp < 4 {
-                                    eprintln!("NCM geometry RTCP {:02x?}", &p.data[..p.data.len().min(512)]);
-                                    probe_rtcp += 1;
-                                }
                                 continue;
                             }
                             let Some(packet) = parse_video_packet(&p.data, negotiated) else { mailbox.count(2); continue; };
-                            if geometry_probe && probe_extensions < 12 && packet.marker {
-                                eprintln!("NCM geometry RTP marker padding={} profile={} ext={:02x?} rawtail={:02x?}", packet.padding, packet.ext_profile, packet.ext_data, &p.data[p.data.len().saturating_sub(96)..]);
-                                probe_extensions += 1;
-                            }
-                            if geometry_probe && probe_packets < 30000 {
-                                eprintln!("NCM packet us={} seq={} ts={} marker={} size={}", probe_began.elapsed().as_micros(), packet.sequence_number, packet.timestamp, packet.marker, packet.payload.len());
-                                probe_packets += 1;
-                            }
                             mailbox.packet_pending();
                             mailbox.count(1);
-                            received_payload_octets += packet.payload.len() as u64;
                             if let Some(ack) = reports.observe_packet(&packet) {
                                 if video_udp.send_to(feedback_port, ack).await.is_err() { video_health.store(false, Ordering::SeqCst); return; }
                             }
@@ -274,11 +241,7 @@ impl Media {
                                             else { assembler.mark_stream_discontinuity(); needs_sync = true; }
                                         }
                                     },
-                                    HevcDepacketizerEvent::Discontinuity(reason) => {
-                                        if discontinuity_logs < 8 {
-                                            eprintln!("NCM video discontinuity {reason:?} seq={} ts={} marker={}", packet.sequence_number, packet.timestamp, packet.marker);
-                                            discontinuity_logs += 1;
-                                        }
+                                    HevcDepacketizerEvent::Discontinuity(_) => {
                                         mailbox.count(4); mailbox.reset(); needs_sync = true;
                                     },
                                     HevcDepacketizerEvent::PacketRejected(_) => { mailbox.count(2); },
@@ -300,7 +263,6 @@ impl Media {
                         if needs_sync || refresh {
                             mailbox.count(6);
                             let request = reports.keyframe_request();
-                            if geometry_probe { eprintln!("NCM refresh us={} port={feedback_port} sync={needs_sync} requested={refresh} bytes={request:02x?}",probe_began.elapsed().as_micros()); }
                             report.extend_from_slice(&request);
                         }
                         if video_udp.send_to(feedback_port,report).await.is_err() { break; }

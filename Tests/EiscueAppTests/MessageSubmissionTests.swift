@@ -19,6 +19,10 @@ import XCTest
         XCTAssertTrue(model.isSubmittingMessage)
         XCTAssertEqual(model.selectedConversation?.messages.last?.text, "Hello")
         XCTAssertEqual(model.selectedConversation?.messages.last?.attachments, [attachment])
+        XCTAssertEqual(model.selectedConversation?.pendingRequestID, model.selectedConversation?.messages.last?.id)
+        let saving = await store.savingConversation()
+        let saved = try XCTUnwrap(saving)
+        XCTAssertEqual(saved.pendingRequestID, saved.messages.last?.id, "The pending ID and message must share the same atomic save.")
         await store.rejectSave()
         await sending.value
         XCTAssertEqual(model.draft, "  Hello  ", "An unsaved message should return the exact draft.")
@@ -26,6 +30,7 @@ import XCTest
         XCTAssertNil(model.selectedConversationID)
         XCTAssertTrue(model.conversations.isEmpty)
         XCTAssertFalse(model.isSubmittingMessage)
+        XCTAssertTrue(model.unsubmittedMessageIDs.isEmpty)
     }
 
     func testLocalSaveFailureDoesNotOverwriteNewTypingOrOldConversation() async {
@@ -47,6 +52,83 @@ import XCTest
         XCTAssertFalse(model.isBusy)
     }
 
+    func testSavedMessageWithoutJournalRequiresExplicitRetryWithSameID() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "Saved just before the process exited")
+        let conversation = Conversation(title: "Pending", messages: [message], pendingRequestID: message.id)
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation)
+        await model.recoverSelectedConversation()
+        XCTAssertTrue(model.needsRecovery)
+        XCTAssertTrue(model.unsubmittedMessageIDs.contains(message.id))
+        XCTAssertTrue(model.runs.isEmpty)
+        model.draft = "A different request"
+        await model.sendMessage()
+        XCTAssertEqual(model.selectedConversation?.messages, [message], "New messages must not silently seed a pending request as history.")
+        model.currentScenePhase = .background // Stop at preparation; this test never calls a provider.
+        await model.continueInterruptedRun()
+        XCTAssertEqual(model.runs.first?.requestID, message.id)
+        XCTAssertEqual(model.runs.first?.submission, .pending)
+        XCTAssertEqual(model.runs.first?.state, .interrupted)
+        XCTAssertEqual(model.selectedConversation?.messages, [message])
+    }
+
+    func testLegacyOrphanIsRecoveredAndAbandonmentSurvivesReload() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "Old version saved no pending marker")
+        let conversation = Conversation(title: "Legacy", messages: [message])
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation)
+        await model.recoverSelectedConversation()
+        XCTAssertEqual(model.selectedConversation?.pendingRequestID, message.id)
+        XCTAssertTrue(model.needsRecovery)
+        await model.abandonInterruptedRun()
+        XCTAssertFalse(model.needsRecovery)
+        XCTAssertNil(model.selectedConversation?.pendingRequestID)
+        XCTAssertTrue(model.unsubmittedMessageIDs.contains(message.id))
+        let conversations = try await fixture.store.load()
+        let stored = try XCTUnwrap(conversations.first)
+        let reopened = fixture.model(stored)
+        reopened.runs = try await reopened.journal.load().records
+        await reopened.recoverSelectedConversation()
+        XCTAssertFalse(reopened.needsRecovery)
+        XCTAssertTrue(reopened.unsubmittedMessageIDs.contains(message.id))
+        XCTAssertEqual(reopened.runs.first?.submission, .abandoned)
+    }
+
+    func testRecoveryPersistsAdmissionBeforeRetriedRecoveryCanDuplicateMessage() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "Accepted before its event reached the host")
+        let reply = AgentMessage(role: .assistant, text: "Done")
+        let conversation = Conversation(title: "Stale journal", messages: [message, message], pendingRequestID: message.id)
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation, runtime: [message, reply])
+        var record = RunRecord(id: UUID(), conversationID: conversation.id, requestID: message.id, startedAt: Date(),
+                               scope: .chat, model: "fixture", skill: nil, state: .interrupted, detail: "", events: [])
+        record.submission = .pending
+        try await model.journal.save(record); model.runs = [record]
+        for _ in 0..<3 { await model.recoverSelectedConversation() }
+        XCTAssertEqual(model.selectedConversation?.messages, [message, reply])
+        XCTAssertNil(model.selectedConversation?.pendingRequestID)
+        XCTAssertFalse(model.unsubmittedMessageIDs.contains(message.id))
+        let records = try await model.journal.load().records
+        XCTAssertEqual(records.first?.submission, .accepted)
+        let stored = try await fixture.store.load()
+        XCTAssertNil(stored.first?.pendingRequestID)
+        XCTAssertEqual(stored.first?.messages, [message, reply])
+    }
+
+    func testConversationWithoutPendingFieldStillDecodes() throws {
+        let conversation = Conversation(title: "Earlier schema")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(conversation)) as? [String: Any])
+        object.removeValue(forKey: "pendingRequestID")
+        let decoded = try JSONDecoder().decode(Conversation.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(decoded, conversation)
+    }
+
     private func makeModel(_ store: SuspendedConversationStore) -> AppModel {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let defaults = UserDefaults(suiteName: "eiscue.submission-tests.\(UUID().uuidString)")!
@@ -60,15 +142,18 @@ private actor SuspendedConversationStore: ConversationRepository {
     private var saveEntered = false
     private var admission: CheckedContinuation<Void, Never>?
     private var pendingSave: CheckedContinuation<Void, Error>?
+    private var conversation: Conversation?
     func load() async throws -> [Conversation] { [] }
     func delete(id: UUID) async throws {}
     func save(_ conversation: Conversation) async throws {
+        self.conversation = conversation
         try await withCheckedThrowingContinuation { continuation in
             pendingSave = continuation
             saveEntered = true
             admission?.resume(); admission = nil
         }
     }
+    func savingConversation() -> Conversation? { conversation }
     func waitForSave() async {
         if saveEntered { return }
         await withCheckedContinuation { admission = $0 }
@@ -76,4 +161,37 @@ private actor SuspendedConversationStore: ConversationRepository {
     func rejectSave() {
         pendingSave?.resume(throwing: CocoaError(.fileWriteNoPermission)); pendingSave = nil
     }
+}
+
+@MainActor private struct RecoveryFixture {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let suite = "eiscue.recovery-tests.\(UUID().uuidString)"
+    let preferences: UserDefaults
+    let store: JSONConversationRepository
+
+    init() throws {
+        preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        store = JSONConversationRepository(fileURL: directory.appendingPathComponent("conversations.json"))
+    }
+    func model(_ conversation: Conversation, runtime: [AgentMessage] = []) -> AppModel {
+        let model = AppModel(storageDirectory: directory, preferences: preferences, repository: store)
+        model.isLoading = false; model.agentAvailability = .ready; model.hapticsEnabled = false
+        model.conversations = [conversation]; model.selectedConversationID = conversation.id
+        model.agent = AgentClient(engine: RecoveryEngine(messages: runtime))
+        return model
+    }
+    func cleanUp() {
+        preferences.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+private struct RecoveryEngine: AgentEngine {
+    let messages: [AgentMessage]
+    var availability: AgentAvailability { get async { .ready } }
+    func recover(conversationID: UUID) async throws -> AgentRecovery { AgentRecovery(messages: messages, hasInterruptedRun: false) }
+    func run(request: AgentRequest) async throws -> AsyncThrowingStream<AgentEvent, Error> { throw AgentError.unconfigured }
+    func cancel() async throws {}
+    func cancel(conversationID: UUID) async throws {}
+    func removeConversation(id: UUID) async throws {}
 }

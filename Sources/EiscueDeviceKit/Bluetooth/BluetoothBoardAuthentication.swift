@@ -23,11 +23,12 @@ struct BluetoothBoardHandshake: Sendable {
     private let operation: UInt8
     private let key: Data
     private let context: Data
+    private let keyStore: BluetoothBoardKeyStore
 
-    init(challenge: BluetoothBoardChallenge, key: Data, clientNonce: Data) throws {
+    fileprivate init(challenge: BluetoothBoardChallenge, key: Data, clientNonce: Data, keyStore: BluetoothBoardKeyStore) throws {
         guard key.count == 32, clientNonce.count == 16 else { throw BluetoothBoardError.authenticationFailed }
         guard challenge.hasKey || challenge.allowsEnrollment else { throw BluetoothBoardError.enrollmentClosed }
-        self.key = key; context = challenge.boardID + challenge.nonce + clientNonce
+        self.key = key; self.keyStore = keyStore; context = challenge.boardID + challenge.nonce + clientNonce
         operation = challenge.hasKey ? 2 : 1
         let payload = challenge.hasKey ? Self.mac(key, "EiscueBLE/v2/client", context) : key
         request = Data([2, operation]) + clientNonce + payload
@@ -38,6 +39,7 @@ struct BluetoothBoardHandshake: Sendable {
         guard bytes.count == 35, bytes[0] == 2, bytes[1] == operation,
               Self.validMAC(key, "EiscueBLE/v2/server", context + Data(bytes[0..<3]), Data(bytes[3..<35])),
               bytes[2] == 0 else { throw BluetoothBoardError.authenticationFailed }
+        try keyStore.confirm(key)
         return BluetoothBoardSession(key: Self.mac(key, "EiscueBLE/v2/session", context))
     }
 
@@ -76,28 +78,75 @@ struct BluetoothBoardSession: Sendable {
     }
 }
 
-struct BluetoothBoardKeyStore {
-    private let store: KeychainPairingIdentityStore
-    init(boardID: Data) {
-        store = KeychainPairingIdentityStore(service: "org.eiscue.device.board-auth",
-            account: boardID.map { String(format: "%02x", $0) }.joined())
+struct BluetoothBoardKeyStore: Sendable {
+    private enum State: String, Codable { case candidate, enrollmentAttempted, confirmed }
+    private struct Record: Codable {
+        let version: Int
+        var state: State
+        let key: Data
+        init(state: State, key: Data) { version = 1; self.state = state; self.key = key }
     }
-    func key(for challenge: BluetoothBoardChallenge) throws -> Data {
+    private let store: any PairingIdentityStore
+    private let randomBytes: @Sendable (Int) throws -> Data
+    init(boardID: Data) {
+        self.init(store: KeychainPairingIdentityStore(service: "org.eiscue.device.board-auth",
+            account: boardID.map { String(format: "%02x", $0) }.joined()))
+    }
+    init(store: any PairingIdentityStore, randomBytes: @escaping @Sendable (Int) throws -> Data = Self.random) {
+        self.store = store; self.randomBytes = randomBytes
+    }
+
+    func handshake(for challenge: BluetoothBoardChallenge, clientNonce: Data) throws -> BluetoothBoardHandshake {
+        guard clientNonce.count == 16 else { throw BluetoothBoardError.authenticationFailed }
         do {
-            if let key = try store.load() {
-                guard key.count == 32 else { throw BluetoothBoardError.authenticationKeyUnavailable }
-                return key
+            var record: Record
+            if let existing = try load() {
+                record = existing
+            } else {
+                guard !challenge.hasKey else { throw BluetoothBoardError.authenticationKeyUnavailable }
+                guard challenge.allowsEnrollment else { throw BluetoothBoardError.enrollmentClosed }
+                let key = try randomBytes(32)
+                guard key.count == 32 else { throw BluetoothBoardError.authenticationFailed }
+                record = Record(state: .candidate, key: key)
+                try save(record)
             }
-            guard !challenge.hasKey else { throw BluetoothBoardError.authenticationKeyUnavailable }
-            guard challenge.allowsEnrollment else { throw BluetoothBoardError.enrollmentClosed }
-            let key = try Self.random(count: 32)
-            // Save before the enrollment write. If its acknowledgement is lost,
-            // reconnect using this key instead of silently creating another one.
-            try store.save(key)
-            return key
+            if !challenge.hasKey {
+                // A lost proof can mean the board already saved the key. Its
+                // unauthenticated "unclaimed" flag must never disclose it again.
+                guard record.state == .candidate else { throw BluetoothBoardError.enrollmentConflict }
+                guard challenge.allowsEnrollment else { throw BluetoothBoardError.enrollmentClosed }
+                record.state = .enrollmentAttempted
+                try save(record)
+            }
+            return try BluetoothBoardHandshake(challenge: challenge, key: record.key, clientNonce: clientNonce, keyStore: self)
         } catch let error as BluetoothBoardError { throw error }
         catch { throw BluetoothBoardError.counterStorageUnavailable }
     }
+
+    fileprivate func confirm(_ key: Data) throws {
+        do {
+            guard var record = try load(), record.key == key else { throw BluetoothBoardError.authenticationKeyUnavailable }
+            if record.state != .confirmed { record.state = .confirmed; try save(record) }
+        } catch let error as BluetoothBoardError { throw error }
+        catch { throw BluetoothBoardError.counterStorageUnavailable }
+    }
+
+    private func load() throws -> Record? {
+        guard let data = try store.load() else { return nil }
+        if data.count == 32 {
+            // Legacy storage did not distinguish attempted and completed setup.
+            // Treat every old key as established, including lost-proof cases.
+            let record = Record(state: .confirmed, key: data)
+            try save(record)
+            return record
+        }
+        guard let record = try? JSONDecoder().decode(Record.self, from: data),
+              record.version == 1, record.key.count == 32 else { throw BluetoothBoardError.authenticationKeyUnavailable }
+        return record
+    }
+
+    private func save(_ record: Record) throws { try store.save(JSONEncoder().encode(record)) }
+
     static func random(count: Int) throws -> Data {
         var bytes = [UInt8](repeating: 0, count: count)
         let status = bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }

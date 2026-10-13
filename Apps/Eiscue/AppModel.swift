@@ -198,13 +198,29 @@ final class AppModel {
         return ConversationFeedItem.merge(messages: selectedConversation?.messages ?? [],
                                           activities: records.flatMap { $0.activities ?? [] })
     }
-    var needsRecovery: Bool { selectedConversationID.map { interruptedConversationIDs.contains($0) } ?? false }
-    var unsubmittedMessageIDs: Set<UUID> {
+    var needsRecovery: Bool {
+        guard let id = selectedConversationID else { return false }
+        return interruptedConversationIDs.contains(id) || pendingRequestID(in: selectedConversation) != nil
+    }
+    private var submissionStates: [UUID: RunSubmission] {
         var states: [UUID: RunSubmission] = [:]
         for run in ([activeRun].compactMap { $0 } + runs) where states[run.requestID] == nil {
             states[run.requestID] = run.submission ?? .accepted
         }
-        return Set(states.filter { $0.value != .accepted }.map(\.key))
+        return states
+    }
+    var unsubmittedMessageIDs: Set<UUID> {
+        let states = submissionStates
+        var result = Set(states.filter { $0.value != .accepted }.map(\.key))
+        for conversation in conversations {
+            if let id = conversation.pendingRequestID, states[id] != .accepted { result.insert(id) }
+        }
+        return result
+    }
+    private func pendingRequestID(in conversation: Conversation?) -> UUID? {
+        guard let id = conversation?.pendingRequestID else { return nil }
+        let state = submissionStates[id]
+        return state == .accepted || state == .abandoned ? nil : id
     }
 
     func load() async {
@@ -307,13 +323,35 @@ final class AppModel {
         do {
             let recovery = try await agent.recover(conversationID: id)
             guard selectedConversationID == id, !isRunning else { return }
-            if recovery.hasInterruptedRun { interruptedConversationIDs.insert(id) }
-            if !recovery.messages.isEmpty, var conversation = conversations.first(where: { $0.id == id }) {
-                conversation.messages = Self.reconciled(local: conversation.messages, runtime: recovery.messages, unsubmittedIDs: unsubmittedMessageIDs)
-                try await repository.save(conversation)
-                upsert(conversation)
-            }
+            try await applyRecovery(recovery, conversationID: id)
         } catch { errorMessage = String(format: String(localized: "error.recover_chat", table: "Runtime"), error.localizedDescription) }
+    }
+
+    private func applyRecovery(_ recovery: AgentRecovery, conversationID: UUID) async throws {
+        if recovery.hasInterruptedRun { interruptedConversationIDs.insert(conversationID) }
+        let acceptedIDs = Set(recovery.messages.filter { $0.role == .user }.map(\.id))
+        // Admission can reach SQLite before the host receives its event. Exact
+        // runtime identity overrides stale pending/abandoned journal metadata.
+        for index in runs.indices where runs[index].conversationID == conversationID &&
+            acceptedIDs.contains(runs[index].requestID) && runs[index].submission != .accepted {
+            var record = runs[index]
+            record.submission = .accepted
+            try await journal.save(record); runs[index] = record
+        }
+        guard var conversation = conversations.first(where: { $0.id == conversationID }) else { return }
+        conversation.messages = Self.reconciled(local: conversation.messages, runtime: recovery.messages, unsubmittedIDs: unsubmittedMessageIDs)
+        if let id = conversation.pendingRequestID,
+           acceptedIDs.contains(id) || submissionStates[id] == .accepted || submissionStates[id] == .abandoned {
+            conversation.pendingRequestID = nil
+        }
+        // Older versions saved the message before any pending record existed.
+        // Recover only the unmatched trailing user message, never seed it as
+        // accepted history or infer acceptance from a previous identical prompt.
+        if conversation.pendingRequestID == nil, let message = conversation.messages.last, message.role == .user,
+           !acceptedIDs.contains(message.id), !runs.contains(where: { $0.requestID == message.id }) {
+            conversation.pendingRequestID = message.id
+        }
+        try await repository.save(conversation); upsert(conversation)
     }
 
     func sendMessage() async {
@@ -334,6 +372,7 @@ final class AppModel {
         let history = conversation.messages.filter { !unsubmittedMessageIDs.contains($0.id) }
         let message = AgentMessage(role: .user, text: text, attachments: attachments)
         conversation.messages.append(message); conversation.updatedAt = Date()
+        conversation.pendingRequestID = message.id
         // Sending immediately moves the draft onto the transcript. Persistence
         // and provider admission still happen before any model/tool execution.
         composerSessionID = UUID()
@@ -370,15 +409,16 @@ final class AppModel {
         isSaving = true
         do {
             let recovery = try await agent.recover(conversationID: id)
+            try await applyRecovery(recovery, conversationID: id)
             if recovery.hasInterruptedRun {
                 let original = selectedConversation?.messages.first(where: { $0.id == selectedRuns.first?.requestID })
                     ?? recovery.messages.last(where: { $0.role == .user })
                 isSaving = false
                 let finished = await perform(conversationID: id, requestID: selectedRuns.first?.requestID ?? UUID(), prompt: "", history: [], resume: true)
                 if finished { clearDraftMatching(original) }
-            } else if let previous = selectedRuns.first, previous.submission == .pending,
-                      let conversation = selectedConversation,
-                      let original = conversation.messages.first(where: { $0.id == previous.requestID }) {
+            } else if let conversation = selectedConversation,
+                      let requestID = pendingRequestID(in: conversation) ?? selectedRuns.first.flatMap({ $0.submission == .pending ? $0.requestID : nil }),
+                      let original = conversation.messages.first(where: { $0.id == requestID }) {
                 let history = conversation.messages.prefix { $0.id != original.id }.filter { !unsubmittedMessageIDs.contains($0.id) }
                 isSaving = false
                 let finished = await perform(conversationID: id, requestID: original.id, prompt: original.text, history: history, resume: false, attachments: original.attachments)
@@ -388,6 +428,7 @@ final class AppModel {
                 let message = AgentMessage(role: .user, text: String(localized: "run.resume_prompt", table: "Runtime"))
                 let history = conversation.messages.filter { !unsubmittedMessageIDs.contains($0.id) }
                 conversation.messages.append(message); conversation.updatedAt = Date()
+                conversation.pendingRequestID = message.id
                 try await repository.save(conversation); upsert(conversation)
                 isSaving = false
                 let finished = await perform(conversationID: id, requestID: message.id, prompt: message.text, history: history, resume: false)
@@ -402,19 +443,37 @@ final class AppModel {
         defer { isSaving = false }
         do {
             try await agent.cancel(conversationID: id)
-            interruptedConversationIDs.remove(id)
-            for index in runs.indices where runs[index].conversationID == id && runs[index].state == .interrupted {
-                runs[index].state = .failed; runs[index].detail = String(localized: "run.ended_by_user", table: "Runtime"); try await journal.save(runs[index])
-                if runs[index].submission == .pending { runs[index].submission = .abandoned; try await journal.save(runs[index]) }
+            // A process can exit after the atomic message save but before the
+            // first run record. Preserve its exclusion from future model history.
+            if let requestID = pendingRequestID(in: selectedConversation),
+               !selectedRuns.contains(where: { $0.requestID == requestID }) {
+                var record = RunRecord(id: UUID(), conversationID: id, requestID: requestID, startedAt: Date(),
+                                       scope: scope, model: modelSettings.model, skill: nil, state: .failed,
+                                       endedAt: Date(), detail: String(localized: "run.ended_by_user", table: "Runtime"), events: [])
+                record.submission = .abandoned
+                try await journal.save(record)
+                runs.insert(record, at: 0)
             }
+            for index in runs.indices where runs[index].conversationID == id &&
+                (runs[index].state == .interrupted || runs[index].submission == .pending) {
+                var record = runs[index]
+                record.state = .failed; record.detail = String(localized: "run.ended_by_user", table: "Runtime")
+                if record.submission == .pending { record.submission = .abandoned }
+                try await journal.save(record); runs[index] = record
+            }
+            if var conversation = selectedConversation, conversation.pendingRequestID != nil {
+                conversation.pendingRequestID = nil
+                try await repository.save(conversation); upsert(conversation)
+            }
+            interruptedConversationIDs.remove(id)
         } catch { errorMessage = error.localizedDescription }
     }
 
     @discardableResult
     private func perform(conversationID: UUID, requestID: UUID, prompt: String, history: [AgentMessage], resume: Bool, attachments: [AgentAttachment] = []) async -> Bool {
         guard !isRunning else { return false }
-        // A saved user message must always get a durable submission record,
-        // including when backgrounding or disconnecting interrupted its save.
+        // The transcript's pending marker covers the earlier message-save
+        // boundary; this journal owns preparation and runtime admission.
         let preparationInterrupted = isBusy || currentScenePhase != .active || (scope != .chat && !isDeviceReady)
         stopRequested = false; streamingText = ""; currentTool = ""
         lastTaskPresentation = nil; isReceivingResponse = false
@@ -482,6 +541,11 @@ final class AppModel {
                 case .requestAccepted:
                     activeRun?.submission = .accepted
                     try await persistActiveRun()
+                    if var conversation = conversations.first(where: { $0.id == conversationID }),
+                       conversation.pendingRequestID == requestID {
+                        conversation.pendingRequestID = nil
+                        try await repository.save(conversation); upsert(conversation)
+                    }
                 case .assistantText(let text):
                     streamingText = text
                     isReceivingResponse = !text.isEmpty
@@ -701,13 +765,22 @@ final class AppModel {
     static func reconciled(local: [AgentMessage], runtime: [AgentMessage], unsubmittedIDs: Set<UUID> = []) -> [AgentMessage] {
         guard !runtime.isEmpty else { return local }
         var cursor = 0
+        var seenLocalIDs = Set<UUID>()
         var pendingUsers: [AgentMessage] = []
         var insertions: [Int: [AgentMessage]] = [:]
         for message in local where message.role == .user {
+            guard seenLocalIDs.insert(message.id).inserted else { continue }
+            if let match = runtime.firstIndex(where: { $0.id == message.id }) {
+                if match >= cursor {
+                    insertions[match, default: []] += pendingUsers
+                    pendingUsers = []
+                    cursor = match + 1
+                }
+                continue
+            }
             if unsubmittedIDs.contains(message.id) { pendingUsers.append(message); continue }
             if let match = runtime.indices.dropFirst(cursor).first(where: {
-                runtime[$0].id == message.id ||
-                    (runtime[$0].role == message.role && runtime[$0].text == message.text && runtime[$0].attachments == message.attachments)
+                runtime[$0].role == message.role && runtime[$0].text == message.text && runtime[$0].attachments == message.attachments
             }) {
                 insertions[match, default: []] += pendingUsers
                 pendingUsers = []
