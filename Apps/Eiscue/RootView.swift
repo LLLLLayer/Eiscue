@@ -35,11 +35,15 @@ struct RootView: View {
                                 setSidebarVisible(true)
                             }
                         })
+                        .safeAreaInset(edge: .top, spacing: 0) { boardStopNotice }
                         .navigationDestination(for: AppDestination.self) { destination in
-                            switch destination {
-                            case .settings: SettingsView()
-                            case .device: DeviceView()
+                            Group {
+                                switch destination {
+                                case .settings: SettingsView()
+                                case .device: DeviceView()
+                                }
                             }
+                            .safeAreaInset(edge: .top, spacing: 0) { boardStopNotice }
                         }
                     }
                     .accessibilityHidden(showsSidebar && !usesWideLayout)
@@ -85,6 +89,17 @@ struct RootView: View {
             Button("common.understood", role: .cancel) { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder private var boardStopNotice: some View {
+        if model.boardHardwareStopPending, model.deviceConnectionMethod == .bluetoothBoard,
+           !model.showsOnboarding {
+            BoardHardwareStopNotice()
+                .frame(maxWidth: 600)
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(EiscueStyle.background)
         }
     }
 

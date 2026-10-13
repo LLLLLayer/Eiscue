@@ -39,6 +39,9 @@ extension AppModel {
     func handleBoardHardwareStop() {
         guard deviceConnectionMethod == .bluetoothBoard else { return }
         let reason = String(localized: "bluetooth.hardwareStopped", table: "Bluetooth")
+        // Stopping a run disconnects BLE. Keep the explanation visible until a
+        // new connection confirms that the physical stop has been released.
+        boardHardwareStopPending = true
         screenshot = nil
         deviceStatus = .unavailable(reason: reason)
         deviceConnectionError = reason

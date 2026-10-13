@@ -119,6 +119,7 @@ extension AppModel {
         catch { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
         if deviceConnectionMethod == .bluetoothBoard, !isConnecting {
             activeDeviceConnectionMethod = isBluetoothConnected ? .bluetoothBoard : nil
+            if isBluetoothConnected, !isBoardHardwareStopped { boardHardwareStopPending = false }
             if isDeviceReady {
                 deviceConnectionError = nil
                 connectionMessage = String(localized: "connection.ready")

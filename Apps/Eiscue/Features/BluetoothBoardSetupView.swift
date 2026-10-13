@@ -9,6 +9,9 @@ struct BluetoothBoardSetupView: View {
 
     var body: some View {
         VStack(spacing: 18) {
+            if model.showsOnboarding, model.boardHardwareStopPending {
+                BoardHardwareStopNotice()
+            }
             SurfaceCard {
                 VStack(alignment: .leading, spacing: 14) {
                     step("1", "bluetooth.connectTitle", complete: model.isBluetoothConnected)
@@ -89,10 +92,11 @@ struct BluetoothBoardSetupView: View {
                         .accessibilityIdentifier("bluetoothVerifyButton")
                 }
             }
-            if let error = model.deviceConnectionError {
+            if let error = model.deviceConnectionError,
+               !model.boardHardwareStopPending || error != text("bluetooth.hardwareStopped") {
                 Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(.primary)
                     .accessibilityIdentifier("bluetoothConnectionError")
-            } else if model.isBluetoothConnected, !model.bluetoothController.isInputReady,
+            } else if !model.boardHardwareStopPending, model.isBluetoothConnected, !model.bluetoothController.isInputReady,
                       case .unavailable(let reason) = model.deviceStatus {
                 Text(reason).font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("bluetoothReadinessHint")
@@ -123,6 +127,23 @@ struct BluetoothBoardSetupView: View {
             .font(.headline).foregroundStyle(.primary)
     }
     private func text(_ key: String) -> String { NSLocalizedString(key, tableName: "Bluetooth", comment: "") }
+}
+
+struct BoardHardwareStopNotice: View {
+    var body: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "stop.circle.fill").accessibilityHidden(true)
+                    Text(String(localized: "bluetooth.hardwareStoppedTitle", table: "Bluetooth"))
+                        .accessibilityIdentifier("boardHardwareStopTitle")
+                }.font(.headline)
+                Text(String(localized: "bluetooth.hardwareStopped", table: "Bluetooth"))
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 }
 
 private struct BluetoothPointerValidation: UIViewControllerRepresentable {

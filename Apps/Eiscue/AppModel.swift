@@ -48,6 +48,7 @@ final class AppModel {
     var showsOnboarding = false
     var connectionMessage = String(localized: "connection.disconnected", table: "Runtime")
     var deviceConnectionError: String?
+    var boardHardwareStopPending = false
     /// Change through selectDeviceConnectionMethod so old sessions are released first.
     var deviceConnectionMethod: DeviceConnectionMethod {
         didSet { preferences.set(deviceConnectionMethod.rawValue, forKey: "deviceConnectionMethod") }

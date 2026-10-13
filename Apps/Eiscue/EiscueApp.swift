@@ -32,6 +32,10 @@ struct EiscueApp: App {
                     #endif
                     await model.load()
                     #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+                       ProcessInfo.processInfo.arguments.contains("--board-stop-notice-fixture") {
+                        model.handleBoardHardwareStop()
+                    }
                     // Opens the real setup UI for the explicitly requested device
                     // validation; it never grants screen sharing or sends input.
                     if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {

@@ -73,6 +73,24 @@ final class EiscueUITests: XCTestCase {
     }
 
     @MainActor
+    func testBoardStopNoticeStaysVisibleAcrossNavigationAndScrolling() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--board-stop-notice-fixture",
+            "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let title = app.descendants(matching: .any).matching(identifier: "boardHardwareStopTitle").firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        XCTAssertTrue(title.isHittable)
+        openDevice(in: app)
+        XCTAssertTrue(title.isHittable)
+        app.scrollViews.firstMatch.swipeUp()
+        XCTAssertTrue(title.isHittable, "Stopping must remain visible even when the setup page is scrolled.")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "1.5")).firstMatch.exists)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Board stop notice"; image.lifetime = .keepAlways; add(image)
+    }
+
+    @MainActor
     func testAdvancedOptionsAreHiddenUntilRequested() throws {
         let app = launch()
         openModelSettings(in: app)
