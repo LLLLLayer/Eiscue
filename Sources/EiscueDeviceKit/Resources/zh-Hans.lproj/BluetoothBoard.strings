@@ -15,3 +15,4 @@
 "bluetooth.authentication-key-unavailable" = "开发板已绑定到其他 App 安装，本机没有对应的授权密钥。";
 "bluetooth.enrollment-conflict" = "本机已保存开发板授权，但开发板却报告尚未设置。为保护授权，密钥不会再次发送。请连接原来的开发板；如果清除了固件数据，需要明确重置授权后才能重新设置。";
 "bluetooth.enrollment-closed" = "首次设置请重新给开发板通电，并在一分钟内连接。已有的开发板授权不会被自动替换。";
+"bluetooth.hardware-stopped" = "已通过开发板的 OK 键停止。长按 OK 解除停止后，重新连接开发板并检查操作。";

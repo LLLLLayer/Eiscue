@@ -31,18 +31,33 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     public var connectedBoardID: UUID? { peripheral?.identifier }
     public var connectedBoardName: String? { peripheral?.name }
     public var usesAuthenticatedCommands: Bool { authenticatedSession != nil }
+    public var supportsCompanionDisplay: Bool { companionCharacteristic != nil && hardwareStopCharacteristic != nil }
+    public var isHardwareStopLatched: Bool { supportsCompanionDisplay && companionStop.isLatched }
+    public var onHardwareStop: (@MainActor (BluetoothHardwareStopEvent) -> Void)?
 
     private static let serviceID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB3")
     private static let commandID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB4")
     private static let responseID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB5")
     private static let challengeID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB6")
     private static let proofID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB7")
+    private static let companionID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB8")
+    private static let hardwareStopID = CBUUID(string: "74074E9A-41E8-4E84-951D-70E623643AB9")
     private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var commandCharacteristic: CBCharacteristic?
     private var responseCharacteristic: CBCharacteristic?
     private var challengeCharacteristic: CBCharacteristic?
     private var proofCharacteristic: CBCharacteristic?
+    private var companionCharacteristic: CBCharacteristic?
+    private var hardwareStopCharacteristic: CBCharacteristic?
+    private var companionStop = BluetoothCompanionStopState()
+    private var companionStopPolling = BluetoothCompanionStopPolling()
+    private var companionReadDeadline: Task<Void, Never>?
+    private var companionUpdates = BluetoothCompanionUpdateQueue()
+    private var companionTask: Task<Void, Never>?
+    private var companionWriteDeadline: Task<Void, Never>?
+    private var companionWriteToken: UUID?
+    private var companionWritesDisabled = false
     private var requiresAuthentication = false
     private var challengeRequested = false
     private var handshake: BluetoothBoardHandshake?
@@ -71,6 +86,13 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     private var inputMayBeHeld = false
 
     public override init() { super.init() }
+
+    /// Optional display updates are coalesced and never queued as HID commands.
+    /// Legacy C3 and authenticated S3 connections silently ignore this API.
+    public func updateCompanionStatus(_ status: BluetoothCompanionStatus) {
+        guard supportsCompanionDisplay, state == .ready, !companionWritesDisabled else { return }
+        companionUpdates.update(status)
+    }
 
     /// Discover one board and connect its custom GATT channel. A STOP command
     /// or INFO command with `pairingHandshake: true` can request encrypted pairing.
@@ -117,6 +139,10 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         guard state == .ready, let peripheral, peripheral.state == .connected,
               let characteristic = commandCharacteristic,
               responseCharacteristic?.isNotifying == true else { throw BluetoothBoardError.disconnected }
+        if (1...6).contains(opcode) || opcode == 8 {
+            guard !supportsCompanionDisplay || companionStop.isKnown else { throw BluetoothBoardError.boardBusy }
+            guard !isHardwareStopLatched else { throw BluetoothBoardError.hardwareStopped }
+        }
         let requestID = try reserveRequestID(for: peripheral.identifier)
         let token = UUID()
         let encoded = try encodeCommand(opcode: opcode, requestID: requestID, payload: payload)
@@ -271,6 +297,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     private func closeSession(connectError: any Error, commandError: (any Error)? = nil, finalState: State) {
+        stopCompanionUpdates()
         if closingState != nil {
             if central?.state != .poweredOn || peripheral?.state != .connected {
                 tearDownSession(finalState: finalState)
@@ -309,6 +336,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     private func tearDownSession(finalState: State) {
+        stopCompanionUpdates()
         releaseDeadline?.cancel(); releaseDeadline = nil
         releaseID = nil; releaseToken = nil; closingState = nil
         releaseSequence = nil; pendingSequence = nil
@@ -319,6 +347,8 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         central?.delegate = nil
         central = nil; peripheral = nil
         commandCharacteristic = nil; responseCharacteristic = nil; challengeCharacteristic = nil; proofCharacteristic = nil
+        companionCharacteristic = nil; hardwareStopCharacteristic = nil; companionStop.beginConnection()
+        companionWritesDisabled = false
         requiresAuthentication = false; challengeRequested = false; handshake = nil; authenticatedSession = nil
         authenticatedCommands.removeAll()
         candidates.removeAll(); writeTokens.removeAll()
@@ -370,7 +400,8 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == Self.serviceID }) else {
             failConnection(.missingService); return
         }
-        peripheral.discoverCharacteristics([Self.commandID, Self.responseID, Self.challengeID, Self.proofID], for: service)
+        peripheral.discoverCharacteristics([Self.commandID, Self.responseID, Self.challengeID, Self.proofID,
+            Self.companionID, Self.hardwareStopID], for: service)
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: (any Error)?) {
@@ -389,12 +420,32 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
                   peripheral.maximumWriteValueLength(for: .withResponse) >= 52 else { failConnection(.authenticationFailed); return }
             requiresAuthentication = true; challengeCharacteristic = challenge; proofCharacteristic = proof
             peripheral.setNotifyValue(true, for: proof)
+        } else {
+            // This optional encrypted channel belongs to C3 only. Never add an
+            // unauthenticated side channel to the S3 HMAC command connection.
+            let companion = service.characteristics?.first { $0.uuid == Self.companionID }
+            let stop = service.characteristics?.first { $0.uuid == Self.hardwareStopID }
+            if companion != nil || stop != nil {
+                guard let companion, let stop, companion.properties.contains(.write),
+                      stop.properties.contains(.read), stop.properties.contains(.notify) else {
+                    failConnection(.missingCharacteristic); return
+                }
+                companionCharacteristic = companion; hardwareStopCharacteristic = stop
+                companionStop.beginConnection()
+                peripheral.setNotifyValue(true, for: stop)
+            }
         }
         peripheral.setNotifyValue(true, for: response)
         updateState(.subscribing)
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: (any Error)?) {
+        if peripheral === self.peripheral, characteristic === hardwareStopCharacteristic {
+            guard closingState == nil else { return }
+            guard error == nil, characteristic.isNotifying else { failConnection(.notificationFailed); return }
+            readCompanionStopIfDue()
+            return
+        }
         guard peripheral === self.peripheral,
               characteristic === responseCharacteristic || characteristic === proofCharacteristic else { return }
         guard closingState == nil else { return }
@@ -412,16 +463,26 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     private func finishConnection() {
+        guard connectWaiter != nil, responseCharacteristic?.isNotifying == true else { return }
+        guard !supportsCompanionDisplay || companionStop.isKnown && hardwareStopCharacteristic?.isNotifying == true else { return }
         connectionDeadline?.cancel(); connectionDeadline = nil
         selectionTask?.cancel(); selectionTask = nil
         let waiter = connectWaiter
         connectWaiter = nil; connectToken = nil
         updateState(.ready)
+        if state == .ready, supportsCompanionDisplay { startCompanionUpdates() }
         if state == .ready { waiter?.resume() }
         else { waiter?.resume(throwing: BluetoothBoardError.disconnected) }
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: (any Error)?) {
+        if peripheral === self.peripheral, characteristic === companionCharacteristic {
+            guard companionWriteToken != nil else { return }
+            companionWriteDeadline?.cancel(); companionWriteDeadline = nil; companionWriteToken = nil
+            companionUpdates.acknowledge()
+            if error != nil { companionWritesDisabled = true }
+            return
+        }
         if peripheral === self.peripheral, characteristic === proofCharacteristic {
             if error != nil, connectWaiter != nil { failConnection(.authenticationFailed) }
             return
@@ -437,6 +498,21 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: (any Error)?) {
         guard peripheral === self.peripheral else { return }
+        if characteristic === hardwareStopCharacteristic {
+            guard closingState == nil else { return }
+            guard error == nil, let data = characteristic.value else { failConnection(.malformedReply); return }
+            do {
+                let event = try companionStop.receive(data, boardID: peripheral.identifier)
+                companionStopPolling.received()
+                companionReadDeadline?.cancel(); companionReadDeadline = nil
+                if companionStop.isLatched, commandWaiter != nil, !isReadOnly(pendingOpcode), pendingOpcode != 0 {
+                    finishCommand(.failure(unknownDelivery(.hardwareStopped)))
+                }
+                if let event { onHardwareStop?(event) }
+                finishConnection()
+            } catch { failConnection(.malformedReply) }
+            return
+        }
         if characteristic === challengeCharacteristic {
             guard connectWaiter != nil, handshake == nil else { return }
             guard error == nil, let data = characteristic.value, let proofCharacteristic else { failConnection(.authenticationFailed); return }
@@ -500,6 +576,60 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         }
         if pendingOpcode == 0 { inputMayBeHeld = false }
         finishCommand(.success(Receipt(opcode: bytes[1], requestID: id, emittedReports: bytes[5], encrypted: true)))
+    }
+
+    private func startCompanionUpdates() {
+        companionTask?.cancel()
+        companionTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+                guard !Task.isCancelled else { return }
+                if let self {
+                    readCompanionStopIfDue()
+                    sendCompanionUpdateIfReady()
+                } else { return }
+            }
+        }
+    }
+
+    private func sendCompanionUpdateIfReady() {
+        guard state == .ready, closingState == nil, !companionWritesDisabled,
+              let peripheral, peripheral.state == .connected, let companionCharacteristic,
+              let packet = companionUpdates.takePacket(now: ProcessInfo.processInfo.systemUptime,
+                  inputBusy: commandWaiter != nil || releaseToken != nil || connectWaiter != nil || companionStopPolling.pending != nil) else { return }
+        let token = UUID(); companionWriteToken = token
+        companionWriteDeadline = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            guard let self, companionWriteToken == token else { return }
+            // A late callback cannot be matched to a later write: no more
+            // display writes are submitted until this connection is replaced.
+            companionWriteToken = nil; companionWritesDisabled = true
+        }
+        peripheral.writeValue(packet, for: companionCharacteristic, type: .withResponse)
+    }
+
+    private func readCompanionStopIfDue() {
+        guard closingState == nil, state == .ready || connectWaiter != nil,
+              let peripheral, peripheral.state == .connected, let hardwareStopCharacteristic,
+              hardwareStopCharacteristic.isNotifying,
+              let read = companionStopPolling.begin(now: ProcessInfo.processInfo.systemUptime,
+                  inputBusy: commandWaiter != nil || releaseToken != nil) else { return }
+        companionReadDeadline?.cancel()
+        companionReadDeadline = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            guard let self, companionStopPolling.isExpired(read, now: ProcessInfo.processInfo.systemUptime) else { return }
+            // Without fresh stop state the connection cannot remain usable.
+            // closeSession marks any written input unknown and releases it.
+            failConnection(.connectionFailed)
+        }
+        peripheral.readValue(for: hardwareStopCharacteristic)
+    }
+
+    private func stopCompanionUpdates() {
+        companionTask?.cancel(); companionTask = nil
+        companionReadDeadline?.cancel(); companionReadDeadline = nil; companionStopPolling.reset()
+        companionWriteDeadline?.cancel(); companionWriteDeadline = nil; companionWriteToken = nil
+        companionUpdates.reset()
     }
 
     /// Shared with the Debug fixture: iOS can retain the board's physical HID

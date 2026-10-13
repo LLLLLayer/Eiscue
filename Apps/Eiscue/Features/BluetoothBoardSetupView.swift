@@ -28,6 +28,11 @@ struct BluetoothBoardSetupView: View {
                         Text(text("bluetooth.firstS3Connection")).font(.caption).foregroundStyle(.secondary)
                     }
                     if model.isBluetoothConnected {
+                        if model.hasBoardCompanionDisplay {
+                            Label(text("bluetooth.companionHint"), systemImage: "display")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("boardCompanionHint")
+                        }
                         Button(text("bluetooth.disconnect")) { Task { await model.disconnectDevice() } }
                             .buttonStyle(.glass).accessibilityIdentifier("bluetoothDisconnectButton")
                     } else {
@@ -80,7 +85,7 @@ struct BluetoothBoardSetupView: View {
                         else { showsValidation = true }
                     }
                         .buttonStyle(.glass)
-                        .disabled(!model.isBluetoothConnected || !model.isBluetoothScreenShared || model.isBusy)
+                        .disabled(!model.isBluetoothConnected || !model.isBluetoothScreenShared || model.isBoardHardwareStopped || model.isBusy)
                         .accessibilityIdentifier("bluetoothVerifyButton")
                 }
             }

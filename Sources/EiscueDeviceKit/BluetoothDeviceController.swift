@@ -23,6 +23,9 @@ import UIKit
 public final class BluetoothDeviceController: DeviceController {
     public let board: BluetoothBoardClient
     public var onChange: (@MainActor () -> Void)?
+    public var onHardwareStop: (@MainActor (BluetoothHardwareStopEvent) -> Void)?
+    public var supportsCompanionDisplay: Bool { board.supportsCompanionDisplay }
+    public var isHardwareStopLatched: Bool { board.isHardwareStopLatched }
     public private(set) var isConnected = false
     public private(set) var isCalibrating = false
     public private(set) var inputRoute: BluetoothBoardInputRoute = .bluetooth
@@ -54,17 +57,27 @@ public final class BluetoothDeviceController: DeviceController {
             }
             onChange?()
         }
+        board.onHardwareStop = { [weak self] event in
+            guard let self else { return }
+            // Invalidate every observation before notifying the host. A stop
+            // cannot leave an old coordinate or calibration authorized.
+            epoch = UUID(); clearCalibration()
+            onChange?(); onHardwareStop?(event)
+        }
     }
 
+    public func updateCompanionStatus(_ status: BluetoothCompanionStatus) { board.updateCompanionStatus(status) }
+
     public var screenState: ScreenBroadcastState? { try? screenStore().state() }
-    public var isInputReady: Bool { isConnected && absoluteAvailable && keyboardAvailable }
+    public var isInputReady: Bool { isConnected && !isHardwareStopLatched && absoluteAvailable && keyboardAvailable }
     public var isPointerVerified: Bool {
-        guard !isCalibrating, let calibration, let state = screenState else { return false }
+        guard !isHardwareStopLatched, !isCalibrating, let calibration, let state = screenState else { return false }
         return state.isActive && state.sessionID == calibration.sessionID && state.orientation == calibration.orientation
             && state.width == calibration.width && state.height == calibration.height
     }
 
     public func status() async -> DeviceStatus {
+        guard !isHardwareStopLatched else { return .unavailable(reason: BluetoothBoardError.hardwareStopped.localizedDescription) }
         guard isConnected else { return .unavailable(reason: message("bluetooth.connect")) }
         if releaseToken == nil, !isCalibrating, operations.beginStatus() {
             defer { operations.endStatus() }
@@ -436,6 +449,7 @@ public final class BluetoothDeviceController: DeviceController {
     }
     private func requireConnectionEpoch(_ token: UUID) throws {
         try Task.checkCancellation()
+        guard !isHardwareStopLatched else { throw BluetoothBoardError.hardwareStopped }
         guard token == epoch, board.state == .ready, releaseToken == nil else { throw DeviceControlError.notConnected }
     }
     private func requireEpoch(_ token: UUID) throws {

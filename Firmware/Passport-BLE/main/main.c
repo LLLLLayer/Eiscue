@@ -2,6 +2,9 @@
 #include "hid_peripheral.h"
 #include "usb_hid.h"
 #include "board_auth.h"
+#if CONFIG_IDF_TARGET_ESP32C3
+#include "companion.h"
+#endif
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
@@ -97,6 +100,9 @@ void app_main(void) {
     assert(ble_svc_gap_device_name_set("Eiscue BLE")==0);
     assert(ble_svc_gap_device_appearance_set(0x03C2)==0);
     assert(eiscue_ble_services_init()==0);
+#if CONFIG_IDF_TARGET_ESP32C3
+    companion_init();
+#endif
     ble_store_config_init();
     ESP_LOGI(TAG,"Eiscue HID board v0.3.0; target=%s; no Wi-Fi startup; free heap=%lu",CONFIG_IDF_TARGET,(unsigned long)esp_get_free_heap_size());
     nimble_port_freertos_init(host_task);

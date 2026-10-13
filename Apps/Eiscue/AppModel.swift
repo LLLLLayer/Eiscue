@@ -78,6 +78,10 @@ final class AppModel {
     @ObservationIgnored let bluetoothController = BluetoothDeviceController()
     var bluetoothRevision = 0
     @ObservationIgnored var bluetoothMonitor: Task<Void, Never>?
+    @ObservationIgnored var isUpdatingBoardCompanion = false
+    @ObservationIgnored var companionTerminal: (status: BluetoothCompanionStatus, until: ContinuousClock.Instant)?
+    @ObservationIgnored var companionLastStatus: BluetoothCompanionStatus?
+    @ObservationIgnored var companionFinalizingRunID: UUID?
     let localTunnel = LocalTunnelManager()
     let taskNotifications: TaskNotificationManager
     @ObservationIgnored var deviceTools: DeviceToolSession?
@@ -141,7 +145,9 @@ final class AppModel {
         bluetoothController.onChange = { [weak self] in
             guard let self else { return }
             bluetoothRevision += 1
+            syncBoardCompanion()
         }
+        bluetoothController.onHardwareStop = { [weak self] _ in self?.handleBoardHardwareStop() }
         if let route = BluetoothBoardInputRoute(rawValue: defaults.string(forKey: "bluetoothInputRoute") ?? "") {
             try? bluetoothController.selectInputRoute(route)
         }
@@ -483,6 +489,7 @@ final class AppModel {
                               scope: scope, model: modelSettings.model, skill: selectedSkill.map { "\($0.id)@\($0.digest)" },
                               state: .preparing, detail: String(localized: "run.preparing", table: "Runtime"), events: [])
         activeRun?.submission = .pending
+        syncBoardCompanion()
         do {
             try await persistActiveRun()
             guard !preparationInterrupted else {
@@ -610,6 +617,7 @@ final class AppModel {
             activeRun?.state = interrupted ? .interrupted : .failed
             if !stopRequested { activeRun?.detail = safeError(error) }
         }
+        companionFinalizingRunID = runID
         deviceTools?.stop()
         activeRun?.interruptOpenActivities()
         updateTaskStatus(isFinishing: true)
@@ -633,6 +641,7 @@ final class AppModel {
             activeRun?.detail = message
             errorMessage = message
         }
+        companionFinalizingRunID = nil
         updateTaskStatus()
         if let completed = activeRun, currentScenePhase == .background {
             await taskNotifications.notify(runID: completed.id, state: completed.state)
@@ -710,6 +719,7 @@ final class AppModel {
     }
 
     private func updateTaskStatus(isFinishing: Bool = false) {
+        syncBoardCompanion(isFinishing: isFinishing)
         guard var run = activeRun, run.scope != .chat else { return }
         // A successful model turn still has device cleanup and durable writes
         // ahead of it. Do not report the final work unit until those finish.

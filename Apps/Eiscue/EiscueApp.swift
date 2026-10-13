@@ -36,6 +36,9 @@ struct EiscueApp: App {
                     // validation; it never grants screen sharing or sends input.
                     if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
                         await model.selectDeviceConnectionMethod(.bluetoothBoard)
+                        if ProcessInfo.processInfo.arguments.contains("--bluetooth-input-bluetooth") {
+                            await model.selectBluetoothInputRoute(.bluetooth)
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--bluetooth-connect-once") {
                             await model.enableDeviceControl()
                         }

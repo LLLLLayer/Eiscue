@@ -15,3 +15,4 @@
 "bluetooth.authentication-key-unavailable" = "This board is already linked to another app installation. Its authorization key is unavailable on this device.";
 "bluetooth.enrollment-closed" = "For first setup, restart the board and connect within one minute. Existing board authorization is never replaced automatically.";
 "bluetooth.enrollment-conflict" = "This app has saved authorization for the board, but the board reports no setup. Its key will not be sent again. Reconnect the original board; if its firmware was reset, authorization must be reset explicitly.";
+"bluetooth.hardware-stopped" = "Stopped using the board's OK button. Hold OK to unlock, then reconnect the board and check input again.";

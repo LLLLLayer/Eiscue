@@ -6,6 +6,9 @@
 #include "hid_descriptors.h"
 #include "usb_hid.h"
 #include "board_auth.h"
+#if CONFIG_IDF_TARGET_ESP32C3
+#include "companion.h"
+#endif
 #include "host/ble_hs.h"
 #include "host/ble_hs_mbuf.h"
 #include "host/ble_uuid.h"
@@ -30,6 +33,15 @@ static const ble_uuid128_t auth_uuid=BLE_UUID128_INIT(
 static uint16_t auth_handle;
 static bool auth_subscribed;
 #endif
+#if CONFIG_IDF_TARGET_ESP32C3
+static const ble_uuid128_t companion_uuid=BLE_UUID128_INIT(
+    0xB8,0x3A,0x64,0x23,0xE6,0x70,0x1D,0x95,0x84,0x4E,0xE8,0x41,0x9A,0x4E,0x07,0x74);
+static const ble_uuid128_t companion_stop_uuid=BLE_UUID128_INIT(
+    0xB9,0x3A,0x64,0x23,0xE6,0x70,0x1D,0x95,0x84,0x4E,0xE8,0x41,0x9A,0x4E,0x07,0x74);
+static uint16_t companion_stop_handle;
+static bool companion_stop_subscribed,unlock_after_disconnect;
+static struct ble_npl_event companion_stop_event,companion_unlock_event;
+#endif
 
 // Report ID 1: buttons + relative X/Y/wheel (4 bytes).
 // Report ID 2: boot-compatible 6-key keyboard (8 bytes).
@@ -44,7 +56,7 @@ static const uint8_t report_map[]={
 enum attribute_kind { HID_INFO=1,HID_MAP,HID_CONTROL,HID_PROTOCOL,
     HID_MOUSE,HID_KEYBOARD,HID_MOUSE_REF,HID_KEYBOARD_REF,CUSTOM_COMMAND,CUSTOM_RESPONSE,
     BOOT_MOUSE,BOOT_KEYBOARD,BOOT_KEYBOARD_OUTPUT,MANUFACTURER,PNP_ID,BATTERY_LEVEL,
-    HID_ABSOLUTE,HID_ABSOLUTE_REF,AUTH_CHALLENGE,AUTH_PROOF };
+    HID_ABSOLUTE,HID_ABSOLUTE_REF,AUTH_CHALLENGE,AUTH_PROOF,COMPANION_STATUS,COMPANION_STOP_STATE };
 static uint16_t connection=BLE_HS_CONN_HANDLE_NONE;
 static uint16_t subscription_connection=BLE_HS_CONN_HANDLE_NONE;
 static uint16_t mouse_handle,keyboard_handle,absolute_handle,response_handle,boot_mouse_handle,boot_keyboard_handle;
@@ -115,6 +127,9 @@ static uint8_t notify_report(const eiscue_report *report,uint16_t handle,uint8_t
 }
 static uint8_t emit(const eiscue_report *report) {
     if (!secure_connection()) return EISCUE_INSECURE;
+#if CONFIG_IDF_TARGET_ESP32C3
+    if(companion_input_stopped())return EISCUE_SEND_FAILED;
+#endif
 #if BOARD_AUTH_REQUIRED
     if(!board_auth_is_authenticated())return EISCUE_AUTH_REQUIRED;
 #endif
@@ -188,6 +203,29 @@ static void interrupt_and_release(void) {
     if (release_all(NULL)!=EISCUE_SENT && connection!=BLE_HS_CONN_HANDLE_NONE)
         revoke_connection();
 }
+#if CONFIG_IDF_TARGET_ESP32C3
+static void notify_companion_stop(void) {
+    if(!companion_stop_subscribed || !secure_connection())return;
+    uint8_t bytes[COMPANION_STOP_SIZE];companion_read_stop(bytes);
+    struct os_mbuf *mbuf=ble_hs_mbuf_from_flat(bytes,sizeof bytes);
+    if(mbuf)(void)ble_gatts_notify_custom(connection,companion_stop_handle,mbuf);
+}
+static void companion_key_event(struct ble_npl_event *event) {
+    interrupt_and_release();
+    if(event==&companion_unlock_event) {
+        // Keep input blocked until the physical link ends. A failed terminate
+        // cannot reopen input with the phone's previous calibration intact.
+        if(connection==BLE_HS_CONN_HANDLE_NONE)companion_host_unlock();
+        else {
+            unlock_after_disconnect=true;
+            if(ble_gap_terminate(connection,BLE_ERR_REM_USER_CONN_TERM)!=0)unlock_after_disconnect=false;
+        }
+    } else notify_companion_stop();
+}
+void eiscue_ble_companion_stop(int unlock) {
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(),unlock?&companion_unlock_event:&companion_stop_event);
+}
+#endif
 static void expire_hold(struct ble_npl_event *event) {
     (void)event;
     if(!absolute_state[0])return;
@@ -235,6 +273,9 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
     seen_request=true;last_request=request;
     eiscue_action action;
     if (!eiscue_parse_action(command,&action)) {respond(command,EISCUE_ARGUMENT,0);return 0;}
+#if CONFIG_IDF_TARGET_ESP32C3
+    if(!companion_accepts_command(command[1])){respond(command,EISCUE_SEND_FAILED,0);return 0;}
+#endif
     if (command[1]==EISCUE_STOP) {
         ble_npl_callout_stop(&release_timer);
         if (active) {active=false;respond_at_sequence(pending.command,EISCUE_SEND_FAILED,pending.emitted,pending.sequence);}
@@ -248,6 +289,9 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
     }
     if(command[1]==EISCUE_INFO) {
         uint8_t capabilities=EISCUE_CAP_OUTPUT_SELECTION;
+#if CONFIG_IDF_TARGET_ESP32C3
+        if(companion_input_stopped()){respond(command,EISCUE_SENT,capabilities);return 0;}
+#endif
         if((output==EISCUE_OUTPUT_USB || !suspended) && report_subscribed(EISCUE_ABSOLUTE_REPORT))capabilities|=1;
         if((output==EISCUE_OUTPUT_USB || !suspended) && report_subscribed(EISCUE_KEYBOARD_REPORT))capabilities|=2;
         respond(command,EISCUE_SENT,capabilities);return 0;
@@ -308,6 +352,15 @@ static int access(uint16_t conn,uint16_t attribute,struct ble_gatt_access_ctxt *
     const void *bytes=NULL;unsigned length=0;
     if (ctx->op==BLE_GATT_ACCESS_OP_WRITE_CHR) {
         if (kind==CUSTOM_COMMAND) return control_write(conn,ctx->om);
+#if CONFIG_IDF_TARGET_ESP32C3
+        if(kind==COMPANION_STATUS) {
+            if(conn!=connection || !secure_connection())return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+            uint8_t value[COMPANION_STATUS_SIZE];
+            if(OS_MBUF_PKTLEN(ctx->om)!=sizeof value || os_mbuf_copydata(ctx->om,0,sizeof value,value))
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            return companion_update_status(value,sizeof value)?0:BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+        }
+#endif
 #if BOARD_AUTH_REQUIRED
         if(kind==AUTH_PROOF) {
             uint8_t request[BOARD_AUTH_REQUEST_SIZE],reply[BOARD_AUTH_RESPONSE_SIZE];
@@ -342,6 +395,13 @@ static int access(uint16_t conn,uint16_t attribute,struct ble_gatt_access_ctxt *
         return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
     }
     switch(kind) {
+#if CONFIG_IDF_TARGET_ESP32C3
+    case COMPANION_STOP_STATE: {
+        if(conn!=connection || !secure_connection())return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+        uint8_t value[COMPANION_STOP_SIZE];companion_read_stop(value);
+        return os_mbuf_append(ctx->om,value,sizeof value)==0?0:BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+#endif
     case HID_INFO:bytes=hid_info;length=sizeof hid_info;break;
     case HID_MAP:bytes=report_map;length=sizeof report_map;break;
     case HID_PROTOCOL:bytes=&protocol_mode;length=1;break;
@@ -399,6 +459,10 @@ static const struct ble_gatt_svc_def services[]={
         {.uuid=&challenge_uuid.u,.access_cb=access,.arg=(void *)AUTH_CHALLENGE,.flags=SECURE_READ},
         {.uuid=&auth_uuid.u,.access_cb=access,.arg=(void *)AUTH_PROOF,.flags=BLE_GATT_CHR_F_WRITE|BLE_GATT_CHR_F_WRITE_ENC|BLE_GATT_CHR_F_NOTIFY|BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,.val_handle=&auth_handle},
 #endif
+#if CONFIG_IDF_TARGET_ESP32C3
+        {.uuid=&companion_uuid.u,.access_cb=access,.arg=(void *)COMPANION_STATUS,.flags=BLE_GATT_CHR_F_WRITE|BLE_GATT_CHR_F_WRITE_ENC},
+        {.uuid=&companion_stop_uuid.u,.access_cb=access,.arg=(void *)COMPANION_STOP_STATE,.flags=INPUT_FLAGS,.val_handle=&companion_stop_handle},
+#endif
         {0}}},
     {.type=BLE_GATT_SVC_TYPE_PRIMARY,.uuid=BLE_UUID16_DECLARE(0x180A),.characteristics=(struct ble_gatt_chr_def[]){
         {.uuid=BLE_UUID16_DECLARE(0x2A29),.access_cb=access,.arg=(void *)MANUFACTURER,.flags=BLE_GATT_CHR_F_READ},
@@ -410,6 +474,10 @@ static const struct ble_gatt_svc_def services[]={
 int eiscue_ble_services_init(void) {
     ble_npl_callout_init(&release_timer,nimble_port_get_dflt_eventq(),finish_later,NULL);
     ble_npl_callout_init(&held_timer,nimble_port_get_dflt_eventq(),expire_hold,NULL);
+#if CONFIG_IDF_TARGET_ESP32C3
+    ble_npl_event_init(&companion_stop_event,companion_key_event,NULL);
+    ble_npl_event_init(&companion_unlock_event,companion_key_event,NULL);
+#endif
     int rc=ble_gatts_count_cfg(services);return rc?rc:ble_gatts_add_svcs(services);
 }
 static void reset_subscriptions(uint16_t conn) {
@@ -417,6 +485,9 @@ static void reset_subscriptions(uint16_t conn) {
     subscription_connection=conn;
 #if BOARD_AUTH_REQUIRED
     auth_subscribed=false;
+#endif
+#if CONFIG_IDF_TARGET_ESP32C3
+    companion_stop_subscribed=false;
 #endif
 }
 void eiscue_ble_on_connect(uint16_t conn) {
@@ -434,6 +505,9 @@ void eiscue_ble_on_connect(uint16_t conn) {
 #else
     const uint8_t stop[EISCUE_COMMAND_SIZE]={1,EISCUE_STOP};respond(stop,EISCUE_INSECURE,0);
 #endif
+#if CONFIG_IDF_TARGET_ESP32C3
+    companion_connection_changed(true,secure_connection());
+#endif
 }
 void eiscue_ble_on_disconnect(void) {
     ble_npl_callout_stop(&release_timer);ble_npl_callout_stop(&held_timer);active=false;
@@ -442,6 +516,10 @@ void eiscue_ble_on_disconnect(void) {
     memset(absolute_state,0,sizeof absolute_state);
     connection=BLE_HS_CONN_HANDLE_NONE;seen_request=false;output=EISCUE_OUTPUT_BLE;
     reset_subscriptions(BLE_HS_CONN_HANDLE_NONE);
+#if CONFIG_IDF_TARGET_ESP32C3
+    companion_connection_changed(false,false);
+    if(unlock_after_disconnect){unlock_after_disconnect=false;companion_host_unlock();}
+#endif
 #if BOARD_AUTH_REQUIRED
     board_auth_end_connection();
 #endif
@@ -469,6 +547,9 @@ void eiscue_ble_on_subscribe(uint16_t conn,uint16_t attribute,int enabled) {
 #if BOARD_AUTH_REQUIRED
     else if(attribute==auth_handle)auth_subscribed=enabled;
 #endif
+#if CONFIG_IDF_TARGET_ESP32C3
+    else if(attribute==companion_stop_handle)companion_stop_subscribed=enabled;
+#endif
     ESP_LOGI(TAG,"subscription kind=%s enabled=%d",attribute==mouse_handle?"mouse":attribute==keyboard_handle?"keyboard":attribute==absolute_handle?"absolute":attribute==response_handle?"response":"boot",enabled);
     if(!enabled && affected && connection!=BLE_HS_CONN_HANDLE_NONE) {
         // Once CCCD is disabled a release cannot be delivered on that channel.
@@ -488,6 +569,9 @@ void eiscue_ble_on_subscribe(uint16_t conn,uint16_t attribute,int enabled) {
 }
 void eiscue_ble_on_security_change(void) {
     ESP_LOGI(TAG,"encryption+bond=%d",secure_connection());
+#if CONFIG_IDF_TARGET_ESP32C3
+    companion_connection_changed(connection!=BLE_HS_CONN_HANDLE_NONE,secure_connection());
+#endif
     if(!secure_connection()){
         bool held=active || mouse_state[0]!=0 || absolute_state[0]!=0;
         for(unsigned i=0;i<sizeof keyboard_state;i++) if(keyboard_state[i])held=true;

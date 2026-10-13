@@ -26,6 +26,22 @@ final class BoardAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
+    func testConnectBluetoothCompanion() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--skip-onboarding", "--bluetooth-setup-check",
+            "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let route = app.segmentedControls["bluetoothInputRoutePicker"]
+        XCTAssertTrue(route.waitForExistence(timeout: 15))
+        route.buttons["蓝牙输入"].tap()
+        let connect = app.buttons["bluetoothConnectButton"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 10))
+        connect.tap()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "boardCompanionHint").firstMatch.waitForExistence(timeout: 45),
+            "The C3 screen firmware must expose its optional status channel.")
+    }
+
+    @MainActor
     func testVerifyObservedInput() {
         let app = XCUIApplication()
         // Preserve the user's already-confirmed screen broadcast and connection.

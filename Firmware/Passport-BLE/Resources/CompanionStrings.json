@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "languages": [
+    { "id": 0, "code": "en", "font": "HelveticaNeue-Medium" },
+    { "id": 1, "code": "zh-Hans", "font": "PingFangSC-Medium" }
+  ],
+  "entries": [
+    { "id": 0, "key": "connection.waiting", "layout": "title", "translations": { "en": "Waiting for connection", "zh-Hans": "等待手机连接" } },
+    { "id": 1, "key": "setup.screen", "layout": "title", "translations": { "en": "Start screen sharing", "zh-Hans": "请开启屏幕共享" } },
+    { "id": 2, "key": "setup.calibration", "layout": "title", "translations": { "en": "Check touch and typing", "zh-Hans": "请在手机完成检查" } },
+    { "id": 3, "key": "setup.ready", "layout": "title", "translations": { "en": "Ready", "zh-Hans": "准备好了" } },
+    { "id": 4, "key": "run.thinking", "layout": "title", "translations": { "en": "Thinking", "zh-Hans": "正在思考" } },
+    { "id": 5, "key": "run.observing", "layout": "title", "translations": { "en": "Viewing screen", "zh-Hans": "正在查看屏幕" } },
+    { "id": 6, "key": "run.acting", "layout": "title", "translations": { "en": "Operating device", "zh-Hans": "正在操作" } },
+    { "id": 7, "key": "run.waiting", "layout": "title", "translations": { "en": "Waiting", "zh-Hans": "等待确认" } },
+    { "id": 8, "key": "run.finished", "layout": "title", "translations": { "en": "Turn finished", "zh-Hans": "本轮结束" } },
+    { "id": 9, "key": "run.attention", "layout": "title", "translations": { "en": "Needs attention", "zh-Hans": "需要处理" } },
+    { "id": 10, "key": "run.stopped", "layout": "title", "translations": { "en": "Stopped", "zh-Hans": "已停止" } },
+    { "id": 11, "key": "connection.connecting", "layout": "title", "translations": { "en": "Connecting securely", "zh-Hans": "正在连接" } },
+    { "id": 12, "key": "connection.stale", "layout": "title", "translations": { "en": "Status unavailable", "zh-Hans": "状态未更新" } },
+    { "id": 13, "key": "button.stop", "layout": "hint", "translations": { "en": "Press OK to stop", "zh-Hans": "按 OK 停止" } },
+    { "id": 14, "key": "button.unlock", "layout": "hint", "translations": { "en": "Hold OK to unlock", "zh-Hans": "长按 OK 恢复" } },
+    { "id": 15, "key": "run.completed_steps", "layout": "caption", "translations": { "en": "Completed steps", "zh-Hans": "已执行步骤" } }
+  ]
+}

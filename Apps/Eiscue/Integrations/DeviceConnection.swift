@@ -42,6 +42,8 @@ extension AppModel {
     var isBluetoothScreenShared: Bool { _ = bluetoothRevision; return bluetoothController.screenState?.isActive == true }
     var isBluetoothPointerVerified: Bool { _ = bluetoothRevision; return bluetoothController.isPointerVerified }
     var bluetoothInputRoute: BluetoothBoardInputRoute { _ = bluetoothRevision; return bluetoothController.inputRoute }
+    var hasBoardCompanionDisplay: Bool { _ = bluetoothRevision; return bluetoothController.supportsCompanionDisplay }
+    var isBoardHardwareStopped: Bool { _ = bluetoothRevision; return bluetoothController.isHardwareStopLatched }
 
     func selectBluetoothInputRoute(_ route: BluetoothBoardInputRoute) async {
         guard route != bluetoothInputRoute, deviceConnectionMethod == .bluetoothBoard, !isBusy else { return }
@@ -90,6 +92,10 @@ extension AppModel {
             "supportsUSB": bluetoothController.outputInfo?.supportsUSB ?? false,
             "usbConnected": bluetoothController.outputInfo?.isUSBConnected ?? false,
             "authenticated": bluetoothController.board.usesAuthenticatedCommands,
+            "companionDisplay": bluetoothController.supportsCompanionDisplay,
+            "hardwareStopped": bluetoothController.isHardwareStopLatched,
+            "companionPhase": companionLastStatus?.phase.rawValue ?? 0,
+            "companionSteps": companionLastStatus?.completedActions ?? 0,
             "connecting": isConnecting, "stage": String(describing: bluetoothController.board.state),
             "screenPhase": state.map { String(describing: $0.phase) } ?? "unavailable",
             "screenWidth": state?.width ?? 0, "screenHeight": state?.height ?? 0,
@@ -107,6 +113,7 @@ extension AppModel {
     #endif
 
     func refreshDeviceStatus() async {
+        defer { syncBoardCompanion() }
         deviceStatus = await deviceClient.status()
         do { hasPairingIdentity = try await deviceClient.hasPairingIdentity() }
         catch { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }

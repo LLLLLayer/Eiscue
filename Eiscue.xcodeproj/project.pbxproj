@@ -20,6 +20,7 @@
 		17BE3AA38BF1B6E419C6D52D /* MessageSharingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F2A114454C7F7646FCAE261 /* MessageSharingUITests.swift */; };
 		1BCFB013159E81A4813AAE28 /* BLEDeviceCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A306F8F720473F37E62E16 /* BLEDeviceCheck.swift */; };
 		1C1D4CC676D0758763A53063 /* search-smoke-test.md in Resources */ = {isa = PBXBuildFile; fileRef = 0C6151CD048ACF400CBF0CBB /* search-smoke-test.md */; };
+		1CE5D9D3ABFBB9FBD682F586 /* BoardCompanionPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0716EB751D8674ACEA219337 /* BoardCompanionPresentation.swift */; };
 		1F4D6479392293BB759215CC /* MessageSharing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3FB553685957C0A8B3B443 /* MessageSharing.swift */; };
 		25BD052E7A9D995C08814641 /* ConversationFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9E8086023CA557ED7EA1C9 /* ConversationFeedTests.swift */; };
 		27649B9FDD677802567AE14A /* DeviceToolSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E80F87EDB2D18383BBE7DBF5 /* DeviceToolSessionTests.swift */; };
@@ -50,6 +51,7 @@
 		484379B1B62916B001406AC1 /* ChatMarkdownParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF8A247943F81F0A579E3F9E /* ChatMarkdownParserTests.swift */; };
 		4AD729248C4B291E766254DE /* Navigation.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C0DA02494C1F7FC473F2E98A /* Navigation.xcstrings */; };
 		4C322E4662A3C60FCFDA0F61 /* ModelSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2BB43D26F8950FA2A5185FA /* ModelSettings.swift */; };
+		4EDDD128E6CEEB9DD69F32F8 /* BoardCompanionPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEEE0EF6854D6CE4E91FF1DD /* BoardCompanionPresentationTests.swift */; };
 		4FC5E87EB3D9D92623F91D38 /* DeviceConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE9E6334DAC0A5193DFE765 /* DeviceConnection.swift */; };
 		50AFD68759F7819B87838F50 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16932B04B3C656D0F674951 /* PacketTunnelProvider.swift */; };
 		51117E4C5962ACEF1DF6D6F5 /* ConversationSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64C475638AAA22A532A6A8A1 /* ConversationSidebarView.swift */; };
@@ -125,6 +127,7 @@
 		EC26DA4792A228C1E9DCC1B5 /* LocalizationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C8DBBE9AC89717181349C81 /* LocalizationUITests.swift */; };
 		ED443FC145D794F43DC8ADC8 /* DevicePairingAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66E4175D979EB76F8D4EC5CB /* DevicePairingAvailabilityTests.swift */; };
 		F15B12FFF429A45A62330336 /* TestNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6492B951A834E9F2C0B45B9F /* TestNavigation.swift */; };
+		F1E59EADEE1082FD007FDDA3 /* BoardCompanion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B3A4CBF8E29F8287B0FA7C /* BoardCompanion.swift */; };
 		F3B9AD7FD904BA9AAA8DA432 /* LocalizationResourcesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2715D754945BFFCB698F91 /* LocalizationResourcesTests.swift */; };
 		FA471D0DAF642BD7D07D6190 /* LocalTunnelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5987C49F03E1A6006180D2D /* LocalTunnelManagerTests.swift */; };
 		FCD81924ED952E3E6041F99E /* Connections.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 24E7147A3B261B1E481387A7 /* Connections.xcstrings */; };
@@ -182,12 +185,14 @@
 		04849AC312425FBC83FAFA71 /* Speech.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Speech.xcstrings; sourceTree = "<group>"; };
 		05200116E330E7BE947E261B /* OwnedDeviceCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnedDeviceCheck.swift; sourceTree = "<group>"; };
 		06E807A4B8721B8A2C6FEEC3 /* EiscueUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EiscueUITests.swift; sourceTree = "<group>"; };
+		0716EB751D8674ACEA219337 /* BoardCompanionPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCompanionPresentation.swift; sourceTree = "<group>"; };
 		0969597E05406EA5E1A35749 /* Bluetooth.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Bluetooth.xcstrings; sourceTree = "<group>"; };
 		0A26820B8BF5790906848635 /* StickerCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerCatalogTests.swift; sourceTree = "<group>"; };
 		0A9E8086023CA557ED7EA1C9 /* ConversationFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationFeedTests.swift; sourceTree = "<group>"; };
 		0BDFA756CFEC6E5D97A17B5C /* DeviceConnectionIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceConnectionIndicator.swift; sourceTree = "<group>"; };
 		0C6151CD048ACF400CBF0CBB /* search-smoke-test.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "search-smoke-test.md"; sourceTree = "<group>"; };
 		0DCEF3E726C25700C9265A12 /* EiscueUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = EiscueUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		17B3A4CBF8E29F8287B0FA7C /* BoardCompanion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCompanion.swift; sourceTree = "<group>"; };
 		17BB1912D4603DC0C1F335F1 /* ModelSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelSettingsView.swift; sourceTree = "<group>"; };
 		17DAECA4B9B978DF3B90D031 /* DeviceTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceTools.swift; sourceTree = "<group>"; };
 		1A83C1EA60E158118AB4148D /* SidebarUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUITests.swift; sourceTree = "<group>"; };
@@ -300,6 +305,7 @@
 		F3F3E6236EEE44C09DE94043 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		F4B4FCB3E0E12F0D5A95D892 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		F5987C49F03E1A6006180D2D /* LocalTunnelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTunnelManagerTests.swift; sourceTree = "<group>"; };
+		FEEE0EF6854D6CE4E91FF1DD /* BoardCompanionPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCompanionPresentationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -479,6 +485,7 @@
 		854E051966E6438A5CAC8BBA /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				0716EB751D8674ACEA219337 /* BoardCompanionPresentation.swift */,
 				6033C5D9F847A7C78BF6C0E9 /* ConversationFeed.swift */,
 				C2BB43D26F8950FA2A5185FA /* ModelSettings.swift */,
 				520105FEB6AA411D3BF07584 /* RunRecord.swift */,
@@ -603,6 +610,7 @@
 			children = (
 				5F5756FE9D03C2FBFB3D6C15 /* BLEBoardCheckClient.swift */,
 				24A306F8F720473F37E62E16 /* BLEDeviceCheck.swift */,
+				17B3A4CBF8E29F8287B0FA7C /* BoardCompanion.swift */,
 				1CB21C2665301FA81BFDCAD9 /* DebugDeviceSetup.swift */,
 				1D6C3BABD980923EA1EB9715 /* DebugMessageSharingFixture.swift */,
 				2AAB2DFA9E5E2331A793E397 /* DebugTimelineFixture.swift */,
@@ -621,6 +629,7 @@
 				8CCA2E1255BE860C03B2D7D2 /* AppLocalizationTests.swift */,
 				E7918D00D6DDDDBDA049D803 /* AppStartupLoadTests.swift */,
 				01B9BDDFD7C06B9D7C358D71 /* BackgroundTaskStatusTests.swift */,
+				FEEE0EF6854D6CE4E91FF1DD /* BoardCompanionPresentationTests.swift */,
 				EF8A247943F81F0A579E3F9E /* ChatMarkdownParserTests.swift */,
 				DB0B5A7C6AD30EB9D52EC75A /* ConnectionIndicatorTests.swift */,
 				0A9E8086023CA557ED7EA1C9 /* ConversationFeedTests.swift */,
@@ -901,6 +910,8 @@
 				1BCFB013159E81A4813AAE28 /* BLEDeviceCheck.swift in Sources */,
 				A988E817500C9D7E12208F23 /* BackgroundExecution.swift in Sources */,
 				AB55AD91BA1E71FA4D76AF26 /* BluetoothBoardSetupView.swift in Sources */,
+				F1E59EADEE1082FD007FDDA3 /* BoardCompanion.swift in Sources */,
+				1CE5D9D3ABFBB9FBD682F586 /* BoardCompanionPresentation.swift in Sources */,
 				38CB403F0E1D721E1CF7C144 /* ChatMarkdownParser.swift in Sources */,
 				CFF78BCF546CC562A0B49EF6 /* ChatMarkdownView.swift in Sources */,
 				790A4FCE3A7A7BB86CE3AD77 /* ConversationFeed.swift in Sources */,
@@ -948,6 +959,7 @@
 				AFE01C39F200061750F93B6E /* AppLocalizationTests.swift in Sources */,
 				3C2A6A8F0F7253FFFB464343 /* AppStartupLoadTests.swift in Sources */,
 				C21D2869B88F7F2A784C65F9 /* BackgroundTaskStatusTests.swift in Sources */,
+				4EDDD128E6CEEB9DD69F32F8 /* BoardCompanionPresentationTests.swift in Sources */,
 				484379B1B62916B001406AC1 /* ChatMarkdownParserTests.swift in Sources */,
 				3DB97B03AFFF2135C25DA86D /* ConnectionIndicatorTests.swift in Sources */,
 				25BD052E7A9D995C08814641 /* ConversationFeedTests.swift in Sources */,

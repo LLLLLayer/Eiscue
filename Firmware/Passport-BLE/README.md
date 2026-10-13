@@ -44,7 +44,8 @@ written over S3's longer NVS range. Build success does not authorize Flash write
 
 The original full-Flash backup and the existing Wi-Fi firmware must be retained.
 BLE bonds are stored in NimBLE's NVS namespace; startup does not erase NVS on an
-error. No Wi-Fi, display, microphone or other product BSP feature is started.
+error. C3 initializes the board-specific display and OK key described below.
+S3 has no display or key driver. Neither target starts Wi-Fi or the microphone.
 No physical-device validation is implied by the build.
 
 ## BLE services
@@ -58,6 +59,8 @@ connection, shared by HID and the command service.
 | Service | `74074E9A-41E8-4E84-951D-70E623643AB3` |
 | Command (write with response) | `74074E9A-41E8-4E84-951D-70E623643AB4` |
 | Response (read/notify) | `74074E9A-41E8-4E84-951D-70E623643AB5` |
+| C3 companion status (encrypted write) | `74074E9A-41E8-4E84-951D-70E623643AB8` |
+| C3 physical stop (encrypted read/notify) | `74074E9A-41E8-4E84-951D-70E623643AB9` |
 
 HID service `1812` contains HID Information, Report Map, Control Point, Protocol
 Mode, three Input Report characteristics and their Report Reference descriptors,
@@ -176,12 +179,86 @@ provides no remote key-reset command. Negotiate ATT MTU at least 55 (preferred
 128) before commands. A connection, AUTH ACK or USB enumeration alone does not
 prove phone input.
 
-The App stores its board key in a device-only Keychain item. Losing that key,
-changing phones or a stale board/phone BLE bond has no automatic reset path:
+For S3, the App stores its board key in a device-only Keychain item. Losing that
+key, changing phones or a stale board/phone BLE bond has no automatic reset path:
 uninstalling the App or flashing its application image does not unclaim the
 board. Preserve the private board backup and coordinate an explicit, targeted
 identity/bond reset outside this prototype. Never erase the full Flash or
 unrelated NVS as an onboarding shortcut.
+
+## C3 screen companion and physical stop
+
+The C3 profile targets the existing development board's ST7789 240 × 320 display
+and GPIO 0 resistor-ladder keys. Its original driver uses ESP-IDF `esp_lcd` with
+SPI MOSI 9, SCLK 8, CS 1, DC 20, backlight 21, no reset pin, SPI mode 0 and color
+inversion. SPI runs at 20 MHz. These board-specific electrical parameters are
+documented by the [hardware maintainer](https://github.com/FoloToy/ai-passport/blob/main/components/bsp/include/bsp_pins.h);
+the upstream BSP implementation is not copied. Do not use this profile for an
+arbitrary C3 board without checking its wiring.
+
+Five existing Eiscue expressions and fixed English / Simplified Chinese labels
+are stored as per-row RGB565 PackBits assets in Flash. A low-priority display
+task decodes into one 3,840-byte DMA strip; it has no framebuffer, LVGL heap or
+Wi-Fi dependency. A failed or timed-out display transfer stops rendering without
+reusing its possibly in-flight DMA buffer. Display failure cannot prevent the
+independent key task from stopping input. Generated assets, source hashes and
+regeneration instructions are recorded in [Resources](Resources/README.md).
+
+AB8 accepts exactly 12 bytes from the currently encrypted and bonded connection:
+
+| Bytes | Meaning |
+| --- | --- |
+| 0 | Version `1` |
+| 1 | Phase: `0` idle, `1` needs screen sharing, `2` needs calibration, `3` ready, `4` thinking, `5` observing, `6` acting, `7` waiting, `8` turn finished, `9` needs attention, `10` stopped |
+| 2 | Language: `0` English, `1` Simplified Chinese |
+| 3 | Reserved zero |
+| 4–5 | Completed device steps, UInt16 little endian |
+| 6–11 | Reserved zero |
+
+It is a separate optional status characteristic, never a HID command or tool.
+There are no task titles, chat contents, coordinates, credentials or percentages
+in this channel. Completed-step counts come from the App; neither HID ACKs nor
+the board infer task success. Phase 8 is displayed as **Turn finished**. The App
+sends a five-second heartbeat for every state. After 15 seconds without a valid
+update the display says status is unavailable; it cannot keep claiming the
+Agent is acting. A disconnected or unencrypted local link takes precedence over
+App status, and the physical stop latch takes precedence over everything.
+
+The **OK key** (ADC voltage 447–1900 mV) stops on a debounced press, without
+waiting for release or a phone response. The other two keys are unused. An
+independent task samples the calibrated ADC every 20 ms with 40 ms debounce.
+It atomically latches input off, then posts onto the NimBLE host queue to cancel
+pending reports, release all subscribed keyboard/mouse channels, and notify the
+App. Failed releases terminate the BLE transport. An unreadable key ADC also
+latches input off. LCD rendering never runs on this queue.
+
+AB9 is four bytes: `[1, stopLatched, stopGenerationLo, stopGenerationHi]`.
+The App reads it during connection, subscribes for immediate stop events, and
+polls every second to recover missed notifications. Polls use an independent GATT
+read, allow one outstanding read, and yield while a HID command is awaiting its
+reply. A failed read or a five-second read timeout closes the connection. These
+reads continue even if display writes have failed. Generation increments once
+per newly latched stop, modulo 65,536. The latch survives BLE reconnects during
+the same power session. While latched, only STOP, INFO and QUERY_OUTPUT are
+accepted; INFO clears input-ready bits and all other commands fail before any
+HID report. The report emission path independently checks the latch to cover a
+press between parsing a command and queuing its report.
+
+To unlock, first release OK, then hold it again for **1.5 seconds**. The press
+which stops input can never also unlock it. Unlock releases inputs and forces a
+BLE disconnect; the latch clears only when that disconnect completes (or when
+already disconnected). A failed disconnect leaves input blocked. The App must
+connect and calibrate again, and must never automatically continue the stopped
+run. This is an input safety stop, not an undo for actions already delivered.
+It does not persist across board power loss or replace the phone's stop button.
+
+Software checks use `bash Scripts/test-board-companion.sh`: five UBSan scenario
+groups cover packet validation, the stop gate, heartbeat expiry/local precedence,
+debounce/unlock sequencing, and all 47 decoded bitmap assets. These checks and
+the C3/S3 builds do not establish physical display orientation, button thresholds,
+BLE notification timing or iPhone input behavior. The initial C3 build exposed
+a compile-time RGB565 narrowing error; the corrected build passes with warnings
+treated as errors. No serial or Flash access is performed by these checks.
 
 ## Fixed semantic command protocol
 

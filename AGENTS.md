@@ -15,6 +15,7 @@ Main pieces:
 - **Vendor/DeviceBackend**: GPL-3.0 control backend copied from actell at a pinned commit (Swift `PhoneAgentNCM`, C `CNCMBackend`, ObjC `CEiscueAutomation`, Rust crate + vendored `idevice`), shipped as the prebuilt `NCMNativeBackend.xcframework` (arm64 iOS, arm64 simulator, arm64 macOS only; no x86_64).
 - **Vendor/LocalTunnel**: LocalDevVPN / StosVPN–derived reflector source and license, bundled as app resources.
 - **Firmware** (ESP-IDF v5.5.3): `Passport-BLE` (ESP32-C3 BLE HID, default route), `Passport-Relay` (ESP32-C3 Wi-Fi AP relay), `NCM-Relay` (ESP32-S3 USB NCM relay, no real-board validation yet). `Passport-BLE` also builds explicitly for S3: BLE commands with selected BLE or USB HID output, independent ReplayKit observation, no VPN. Its 16 MB profile preserves the attached board's 24 KB NVS layout; do not reuse the C3 partition table. The C3 BLE and Wi-Fi images share a partition layout and cannot run at the same time.
+- **C3 companion display**: the existing board profile drives ST7789 with packed Eiscue expressions, localized fixed phases and observed tool-step counts. Optional encrypted AB8/AB9 GATT channels carry only status and the physical OK-stop latch; they are separate from HID commands. A released-then-held OK key unlocks only after disconnect, requiring fresh calibration. S3 has no display channel. Asset sources and generation instructions are in `Firmware/Passport-BLE/Resources/README.md`.
 
 ### Architecture rules
 
@@ -87,6 +88,7 @@ Firmware (requires `IDF_PATH` pointing to an ESP-IDF **v5.5.3** checkout. `Scrip
 bash Scripts/build-passport-ble.sh esp32c3 # C3 BLE -> .build/passport-ble-firmware/
 bash Scripts/build-passport-ble.sh esp32s3 # S3 BLE / USB HID -> .build/s3-hid-firmware/
 bash Scripts/test-board-auth.sh           # real HMAC host fixture (OpenSSL), no hardware
+bash Scripts/test-board-companion.sh      # C3 status/stop/button/bitmap UBSan fixture, no hardware
 bash Scripts/build-passport-firmware.sh   # C3 Wi-Fi relay (builds + packages)
 bash Scripts/build-board-firmware.sh      # S3 USB NCM relay (builds + packages)
 bash Scripts/test-board-firmware.sh       # NCM-Relay host tests (UBSan, localhost) + Python tool tests

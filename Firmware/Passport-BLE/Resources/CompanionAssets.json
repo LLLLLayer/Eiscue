@@ -1,0 +1,436 @@
+{
+  "artwork_origin" : "Existing Eiscue app sticker resources supplied by the project owner; source artwork is unchanged.",
+  "background_rgb" : "16181C",
+  "bitmaps" : [
+    {
+      "compressed_bytes" : 16553,
+      "decoded_rgb565_sha256" : "2a750819bfa80e14ee0f235d3fc769b3daaa353164b6b3338c120a1705a4a50f",
+      "height" : 160,
+      "name" : "companion_emotion_0",
+      "row_offset_bytes" : 644,
+      "width" : 160
+    },
+    {
+      "compressed_bytes" : 13296,
+      "decoded_rgb565_sha256" : "9e179df0eed477f3fc27bd79fd2a1d9ac12a42aaf0427300385504ad37a2ef72",
+      "height" : 160,
+      "name" : "companion_emotion_1",
+      "row_offset_bytes" : 644,
+      "width" : 160
+    },
+    {
+      "compressed_bytes" : 10834,
+      "decoded_rgb565_sha256" : "27a43d2622d6ffb45f9e541fca4e05a10927114bf3282d362ed34077f2c46daf",
+      "height" : 160,
+      "name" : "companion_emotion_2",
+      "row_offset_bytes" : 644,
+      "width" : 160
+    },
+    {
+      "compressed_bytes" : 11677,
+      "decoded_rgb565_sha256" : "11ea0c38cdbe7764d0bc56eb1bd599aff4d3c8c8b59487f910f8a2a8a08d006f",
+      "height" : 160,
+      "name" : "companion_emotion_3",
+      "row_offset_bytes" : 644,
+      "width" : 160
+    },
+    {
+      "compressed_bytes" : 10427,
+      "decoded_rgb565_sha256" : "ff49708eb4e0bd3ef272cefa85267602bf295d0a94fbfaf3b4da76a89b3b6109",
+      "height" : 160,
+      "name" : "companion_emotion_4",
+      "row_offset_bytes" : 644,
+      "width" : 160
+    },
+    {
+      "compressed_bytes" : 4500,
+      "decoded_rgb565_sha256" : "a2500d5573466575349cbe7c5ce1a666cb0814a470f667b38afd779367937128",
+      "height" : 44,
+      "name" : "companion_text_0_0",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3968,
+      "decoded_rgb565_sha256" : "9da3740b0d106e3b37aaa43433f65a963e0839f54d624f5cffd6996b3943d40a",
+      "height" : 44,
+      "name" : "companion_text_0_1",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 4661,
+      "decoded_rgb565_sha256" : "7e3536d3f4be558f271f5cd784081e2894bbfb35f38d3b2d5767207dd6991ad2",
+      "height" : 44,
+      "name" : "companion_text_0_2",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1495,
+      "decoded_rgb565_sha256" : "b1e7de738001de78f2bf7120d4e8497c1b47cae0b69540a50c1c3c18f065588e",
+      "height" : 44,
+      "name" : "companion_text_0_3",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1962,
+      "decoded_rgb565_sha256" : "3705efdb7557d86fda041f94725ef861eff6d0f4d996e60f6143a74f09b75670",
+      "height" : 44,
+      "name" : "companion_text_0_4",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3030,
+      "decoded_rgb565_sha256" : "cfbbf5a7c43da3363940b4acdd3975527b529b67f96a6401ac68ea6668e18ff1",
+      "height" : 44,
+      "name" : "companion_text_0_5",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3529,
+      "decoded_rgb565_sha256" : "e1bb16233f551756e0f53a6177bb3d9898b25260f3915d40eac844f5d6660d5e",
+      "height" : 44,
+      "name" : "companion_text_0_6",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1950,
+      "decoded_rgb565_sha256" : "875c063bcedb11b384a3fa1249f8eb96bb4879648ea7fd066bcf2795986fe3c4",
+      "height" : 44,
+      "name" : "companion_text_0_7",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2612,
+      "decoded_rgb565_sha256" : "24759cb89d8eeb5dfd20b2a9b50720344c0c9e3911212de6d12db99ec0c925e9",
+      "height" : 44,
+      "name" : "companion_text_0_8",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3289,
+      "decoded_rgb565_sha256" : "9d53efa763564d87ec8d9ec81a7081ffe118ccd1f0ddd0d4bf36b3b829fead13",
+      "height" : 44,
+      "name" : "companion_text_0_9",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1995,
+      "decoded_rgb565_sha256" : "cfd2fcb4bba0b37c70b28cae0cbfd8e63f2418fbb673fbbc59b3715ac0875e3e",
+      "height" : 44,
+      "name" : "companion_text_0_10",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 4033,
+      "decoded_rgb565_sha256" : "f6730b6514815ceb9115c03e91e8fe54f5600d803fa8758ad18df086661625cd",
+      "height" : 44,
+      "name" : "companion_text_0_11",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3873,
+      "decoded_rgb565_sha256" : "cf711c443ab1d5c7ac01ff70c9c382d79bfac9e0fd212d46c9028c02efb9c2f8",
+      "height" : 44,
+      "name" : "companion_text_0_12",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2086,
+      "decoded_rgb565_sha256" : "44d2d25ec387ca0423db10d530f35d0ddb727c94ae292cef980b0f9624756f17",
+      "height" : 28,
+      "name" : "companion_text_0_13",
+      "row_offset_bytes" : 116,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2260,
+      "decoded_rgb565_sha256" : "f07eb42f912254d09fb76b87ad488dca1287b7f0cdf7e73e0f0fede7c51152f7",
+      "height" : 28,
+      "name" : "companion_text_0_14",
+      "row_offset_bytes" : 116,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2039,
+      "decoded_rgb565_sha256" : "da9043cb0a80c1b4e84651c5c648b254a45376f228a370db42fceb24c751c175",
+      "height" : 24,
+      "name" : "companion_text_0_15",
+      "row_offset_bytes" : 100,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3116,
+      "decoded_rgb565_sha256" : "878ffaae0571ae2dc74ebfd8bdf402ebe84492bd50d830bfb62d05dd74ddafb7",
+      "height" : 44,
+      "name" : "companion_text_1_0",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3181,
+      "decoded_rgb565_sha256" : "8dc1e80033e5b1d261007c728cbb98c2aaaa61188ce32f0d2e77ec5ed4bdc096",
+      "height" : 44,
+      "name" : "companion_text_1_1",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 3851,
+      "decoded_rgb565_sha256" : "8b7aa856de4c92165b5ab9a60dec7051fc985401653fe0c108f79024f267066c",
+      "height" : 44,
+      "name" : "companion_text_1_2",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1948,
+      "decoded_rgb565_sha256" : "9d168d49ff91b0e1aa48713bafd4d6eaddc8831de5d5327e439a495279a1e746",
+      "height" : 44,
+      "name" : "companion_text_1_3",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1757,
+      "decoded_rgb565_sha256" : "10fcab720a18ead5eb628c509b0a0ad4c2c9238ffaee2b1facf59f1a88f6ce56",
+      "height" : 44,
+      "name" : "companion_text_1_4",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2647,
+      "decoded_rgb565_sha256" : "c37efc5ce04e8021329c46a70be6a6fc657cce5b42fa5a6cc2db6519fdbdd065",
+      "height" : 44,
+      "name" : "companion_text_1_5",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1948,
+      "decoded_rgb565_sha256" : "71839a93a6682ba2ef7180a328a3eb5d5db86ad0f9e59dde81b5b0ac4ed0c715",
+      "height" : 44,
+      "name" : "companion_text_1_6",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2255,
+      "decoded_rgb565_sha256" : "8367e088d9e998f3b490726f73c34a45d1c0de872631a3fb3c5ea4651d3af74f",
+      "height" : 44,
+      "name" : "companion_text_1_7",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2090,
+      "decoded_rgb565_sha256" : "44b2da2cf18881ed238e34de8ba9f9ac689ca2ac39cfb2220203386d73464315",
+      "height" : 44,
+      "name" : "companion_text_1_8",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2247,
+      "decoded_rgb565_sha256" : "5b3a4695ec85bc300c793fedb19f00b10632249d28a4f0e52bbc75bba2266431",
+      "height" : 44,
+      "name" : "companion_text_1_9",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1285,
+      "decoded_rgb565_sha256" : "0eb66e65978410841cca98140a924641202b9be393c03a0e6893c2ca4bc32405",
+      "height" : 44,
+      "name" : "companion_text_1_10",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1962,
+      "decoded_rgb565_sha256" : "1e0cfa05534dd27aa67bc26341d55973980c89573dead2df895e635eae30df80",
+      "height" : 44,
+      "name" : "companion_text_1_11",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 2632,
+      "decoded_rgb565_sha256" : "be0390ed14a795d6c7d1b95ec1f22b593c9141939bb08a733827f96fcb7a8e7c",
+      "height" : 44,
+      "name" : "companion_text_1_12",
+      "row_offset_bytes" : 180,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1505,
+      "decoded_rgb565_sha256" : "2dd11fe05f706d1b381b5b3c56ef85ecfaffa3084b033967764fb730d34dd8ba",
+      "height" : 28,
+      "name" : "companion_text_1_13",
+      "row_offset_bytes" : 116,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1947,
+      "decoded_rgb565_sha256" : "d3f07c21458bb5770320e27325dec84343edf78c0f679eefff617a57a6f5262e",
+      "height" : 28,
+      "name" : "companion_text_1_14",
+      "row_offset_bytes" : 116,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 1543,
+      "decoded_rgb565_sha256" : "a6cb7564e664c1344089f74b4fb91ee5f4dbeb3d7470b6307d2d28e532a2a842",
+      "height" : 24,
+      "name" : "companion_text_1_15",
+      "row_offset_bytes" : 100,
+      "width" : 216
+    },
+    {
+      "compressed_bytes" : 348,
+      "decoded_rgb565_sha256" : "72d14c01c03bc8e8b4ef8bc9ebfe4e4e1f6ab77f3b8bb7f605f78e67c2c0cc1a",
+      "height" : 20,
+      "name" : "companion_digit_0",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 238,
+      "decoded_rgb565_sha256" : "959db9bd44aed05b5bfd2bb60c2d3437acc0b9c3cbbf2d1ffe4ade73640716f7",
+      "height" : 20,
+      "name" : "companion_digit_1",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 256,
+      "decoded_rgb565_sha256" : "dbefac52d1b35ecc635b697b0466f1daaa71d99249b6e8d0d2ec1d2dc556eba8",
+      "height" : 20,
+      "name" : "companion_digit_2",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 291,
+      "decoded_rgb565_sha256" : "6bf6b7dd1b25483f9aca6eaf6c8385c0c4b6fca0573c9c5bf166c313ac25314e",
+      "height" : 20,
+      "name" : "companion_digit_3",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 270,
+      "decoded_rgb565_sha256" : "558aed10b0c10dfe929698f4984f1533d86d378204cb8e437edf782af334e35a",
+      "height" : 20,
+      "name" : "companion_digit_4",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 272,
+      "decoded_rgb565_sha256" : "afaca98321b2f27f2c666c3222e592afa5f71bd51df3c377e4f0c6297798f181",
+      "height" : 20,
+      "name" : "companion_digit_5",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 334,
+      "decoded_rgb565_sha256" : "6b0e05a472f32e8cecb88d33b3ef7b6fa4d8f7d9e7ef5d0d92e7f8ccb5bc60e7",
+      "height" : 20,
+      "name" : "companion_digit_6",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 222,
+      "decoded_rgb565_sha256" : "0fcbde54b893a6a4f4de40dfe616ab857fe94f8a08e786f4c2837790a4eb512f",
+      "height" : 20,
+      "name" : "companion_digit_7",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 348,
+      "decoded_rgb565_sha256" : "1b9e23a9511a7ad2fe575a8e9920045ead1905377dee3fc19a0d89323ce9a8e4",
+      "height" : 20,
+      "name" : "companion_digit_8",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    },
+    {
+      "compressed_bytes" : 328,
+      "decoded_rgb565_sha256" : "293d07511c12d50a9e3392a80be23cd8459272707ba019df8a139548309ffba4",
+      "height" : 20,
+      "name" : "companion_digit_9",
+      "row_offset_bytes" : 84,
+      "width" : 14
+    }
+  ],
+  "compressed_bytes_including_row_offsets" : 158294,
+  "encoding" : "Per-row PackBits: high bit repeats one big-endian RGB565 pixel; low 7 bits plus one are the count.",
+  "font_rendering" : "macOS CoreText, grayscale antialiasing",
+  "fonts" : [
+    "HelveticaNeue-Medium",
+    "PingFangSC-Medium",
+    "Menlo-Bold"
+  ],
+  "generator" : "Scripts/generate-board-companion-assets.swift",
+  "source_images" : [
+    {
+      "emotion" : "Sit",
+      "emotion_id" : 0,
+      "height" : 1254,
+      "path" : "Apps/Eiscue/Resources/Assets.xcassets/StickerSit.imageset/StickerSit.png",
+      "sha256" : "e942255de2375ab80092e1b768ae9381b2109aaebd6a9b6e71f859b35fa7a49c",
+      "width" : 1254
+    },
+    {
+      "emotion" : "Wave",
+      "emotion_id" : 1,
+      "height" : 1254,
+      "path" : "Apps/Eiscue/Resources/Assets.xcassets/StickerWave.imageset/StickerWave.png",
+      "sha256" : "2de94711dcb904bd3e74be8246c9e81063744f138cd9c7f0dc0b87d958ccb725",
+      "width" : 1254
+    },
+    {
+      "emotion" : "Peek",
+      "emotion_id" : 2,
+      "height" : 1254,
+      "path" : "Apps/Eiscue/Resources/Assets.xcassets/StickerPeek.imageset/StickerPeek.png",
+      "sha256" : "5d3d7cc13318b45b967bfc2709d1e9273abb01b59231f2d65d1785fa835b7ea5",
+      "width" : 1254
+    },
+    {
+      "emotion" : "Roll",
+      "emotion_id" : 3,
+      "height" : 1254,
+      "path" : "Apps/Eiscue/Resources/Assets.xcassets/StickerRoll.imageset/StickerRoll.png",
+      "sha256" : "7d1dd4ea734c8e4d2957f1dbe6f45407c64fd11a27cb937ac16ff2badd8993c5",
+      "width" : 1254
+    },
+    {
+      "emotion" : "Rest",
+      "emotion_id" : 4,
+      "height" : 1254,
+      "path" : "Apps/Eiscue/Resources/Assets.xcassets/StickerRest.imageset/StickerRest.png",
+      "sha256" : "92185f3e60e7fa191d175335aafe05622160f1762c7b432eb300a78898caceac",
+      "width" : 1254
+    }
+  ],
+  "text_catalog" : "Firmware/Passport-BLE/Resources/CompanionStrings.json",
+  "text_catalog_sha256" : "0c47d8358ca1a8af41adc131159ec6d072f97d57c4ba71a95daaaa2f9dd79e47",
+  "version" : 1
+}

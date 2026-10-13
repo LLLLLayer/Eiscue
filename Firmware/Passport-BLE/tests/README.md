@@ -1,4 +1,14 @@
-# Host authentication fixture
+# Host firmware fixtures
+
+`bash Scripts/test-board-companion.sh` compiles the production companion state
+machine and row decoder with UBSan. Its five scenario groups cover malformed
+12-byte packets, stop generation and all input-opcode rejection, heartbeat/local
+status precedence, debounced stop and deliberate unlock, and every row of all
+47 expression/text/digit bitmaps (including output guards and malformed input).
+This does not validate ADC thresholds, the ST7789, DMA callbacks, NimBLE event
+ordering or physical input; those require separate board/phone acceptance.
+
+## Authentication
 
 This fixture compiles the production `board_auth.c` against in-memory ESP-IDF
 platform stubs. OpenSSL computes real HMAC-SHA256. It never opens a serial port,
