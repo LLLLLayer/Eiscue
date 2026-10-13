@@ -106,6 +106,7 @@ final class TaskStatusPresentationTests: XCTestCase {
 
     func testTerminalFailureAndInterruptionOverrideStaleToolAndDoNotFillProgress() {
         let cases: [(RunState, StaticString, String.LocalizationValue)] = [
+            (.paused, "task.status.phase.paused", "Open Eiscue to continue"),
             (.interrupted, "task.status.phase.interrupted", "Interrupted"),
             (.failed, "task.status.phase.failed", "Not completed")
         ]
@@ -121,6 +122,30 @@ final class TaskStatusPresentationTests: XCTestCase {
             XCTAssertEqual(snapshot.completedWorkUnits, 1)
             XCTAssertEqual(snapshot.totalWorkUnits, 3)
         }
+    }
+
+    func testPausedStatusKeepsObservedProgressWithoutClaimingCompletion() throws {
+        var run = makeRun(.paused, events: [event("run.started"), event("tool.started"), event("tool.finished")])
+        run.pauseReason = .toolLimit
+        let status = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", isFinishing: true)
+        XCTAssertEqual(status.title, localized("task.status.title.paused", "Task paused"))
+        XCTAssertEqual(status.subtitle, localized("task.status.phase.paused", "Open Eiscue to continue"))
+        XCTAssertEqual(status.completedToolCalls, 1)
+        XCTAssertEqual(status.completedWorkUnits, 2)
+        XCTAssertEqual(status.totalWorkUnits, 3)
+
+        for reason in [RunPauseReason.toolLimit, .noProgress] {
+            run.pauseReason = reason
+            let restored = try JSONDecoder().decode(RunRecord.self, from: JSONEncoder().encode(run))
+            XCTAssertEqual(restored.state, .paused)
+            XCTAssertEqual(restored.pauseReason, reason)
+        }
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(run)) as? [String: Any])
+        legacy.removeValue(forKey: "pauseReason")
+        legacy["state"] = "interrupted"
+        let restoredLegacy = try JSONDecoder().decode(RunRecord.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertEqual(restoredLegacy.state, .interrupted)
+        XCTAssertNil(restoredLegacy.pauseReason, "Existing journals remain readable without the new optional field.")
     }
 
     func testModelTokensPrivateMetadataAndElapsedTimeCannotFabricateProgress() {

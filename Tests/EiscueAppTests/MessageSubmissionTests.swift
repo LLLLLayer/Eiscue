@@ -1,4 +1,5 @@
 import EiscueAgentKit
+import EiscueDeviceKit
 import Foundation
 import XCTest
 @testable import Eiscue
@@ -119,6 +120,79 @@ import XCTest
         let stored = try await fixture.store.load()
         XCTAssertNil(stored.first?.pendingRequestID)
         XCTAssertEqual(stored.first?.messages, [message, reply])
+    }
+
+    func testContinuingPausedRunCreatesNewRequestAndPreservesOriginalScope() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "Open display settings")
+        let conversation = Conversation(title: "Paused", messages: [message])
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation, runtime: [message])
+        var paused = RunRecord(id: UUID(), conversationID: conversation.id, requestID: message.id, startedAt: Date(),
+                               scope: .control, model: "fixture", skill: nil, state: .paused, detail: "Paused", events: [])
+        paused.submission = .accepted; paused.pauseReason = .toolLimit
+        try await model.journal.save(paused); model.runs = [paused]
+        await model.recoverSelectedConversation()
+        XCTAssertEqual(model.pausedRun?.id, paused.id)
+        XCTAssertFalse(model.needsRecovery, "A safely settled pause has no pending runtime work to replay.")
+        XCTAssertEqual(model.selectedConversation?.messages, [message], "Recovery must not continue automatically.")
+        model.scope = .chat
+        model.deviceStatus = .ready(capabilities: [.screenshot, .tap])
+        model.modelSettings.supportsImages = true
+        model.currentScenePhase = .background // Stop before credentials/provider access.
+        await model.continueInterruptedRun()
+        let next = try XCTUnwrap(model.runs.first)
+        XCTAssertNotEqual(next.requestID, message.id)
+        XCTAssertEqual(next.scope, .control)
+        XCTAssertEqual(next.submission, .pending)
+        XCTAssertEqual(next.state, .interrupted)
+        XCTAssertEqual(model.selectedConversation?.messages.count, 2)
+        XCTAssertEqual(model.selectedConversation?.messages.last?.id, next.requestID)
+        XCTAssertEqual(model.selectedConversation?.messages.last?.text, String(localized: "run.paused.resume_prompt", table: "Runtime"))
+        XCTAssertNil(model.pausedRun)
+    }
+
+    func testOrphanedChatRetryDoesNotInheritEarlierControlTaskScope() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let old = AgentMessage(role: .user, text: "Earlier device task")
+        let pending = AgentMessage(role: .user, text: "A plain chat message")
+        let conversation = Conversation(title: "Pending", messages: [old, pending], pendingRequestID: pending.id)
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation, runtime: [old])
+        var priorRun = RunRecord(id: UUID(), conversationID: conversation.id, requestID: old.id, startedAt: Date(),
+                                scope: .control, model: "fixture", skill: nil, state: .completed, detail: "", events: [])
+        priorRun.submission = .accepted
+        try await model.journal.save(priorRun); model.runs = [priorRun]
+        model.scope = .chat
+        model.currentScenePhase = .background // No provider or credentials involved.
+        await model.continueInterruptedRun()
+        XCTAssertEqual(model.runs.first?.requestID, pending.id)
+        XCTAssertEqual(model.runs.first?.scope, .chat)
+        XCTAssertEqual(model.runs.first?.submission, .pending)
+        XCTAssertEqual(model.selectedConversation?.messages, [old, pending])
+    }
+
+    func testEndingPausedTaskClearsContinuationAndPersistsHistory() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "A device task")
+        let conversation = Conversation(title: "Paused", messages: [message])
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation, runtime: [message])
+        var paused = RunRecord(id: UUID(), conversationID: conversation.id, requestID: message.id, startedAt: Date(),
+                               scope: .control, model: "fixture", skill: nil, state: .paused, detail: "Paused", events: [])
+        paused.submission = .accepted; paused.pauseReason = .noProgress
+        try await model.journal.save(paused); model.runs = [paused]
+        await model.abandonInterruptedRun()
+        XCTAssertNil(model.pausedRun)
+        XCTAssertFalse(model.needsRecovery)
+        XCTAssertEqual(model.selectedConversation?.messages, [message])
+        let stored = try await model.journal.load().records
+        XCTAssertEqual(stored.first?.state, .failed)
+        XCTAssertNil(stored.first?.pauseReason)
+        XCTAssertEqual(stored.first?.submission, .accepted)
     }
 
     func testConversationWithoutPendingFieldStillDecodes() throws {

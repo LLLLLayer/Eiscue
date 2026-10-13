@@ -44,6 +44,8 @@ struct TaskStatusPresentation: Equatable, Sendable {
         switch run.state {
         case .completed:
             phase = String(localized: "task.status.phase.completed", defaultValue: "This turn has ended", table: "TaskStatus")
+        case .paused:
+            phase = String(localized: "task.status.phase.paused", defaultValue: "Open Eiscue to continue", table: "TaskStatus")
         case .interrupted:
             phase = String(localized: "task.status.phase.interrupted", defaultValue: "Interrupted", table: "TaskStatus")
         case .failed:
@@ -65,7 +67,9 @@ struct TaskStatusPresentation: Equatable, Sendable {
         }
 
         return Self(
-            title: String(localized: "task.status.title", defaultValue: "Eiscue is working", table: "TaskStatus"),
+            title: run.state == .paused
+                ? String(localized: "task.status.title.paused", defaultValue: "Task paused", table: "TaskStatus")
+                : String(localized: "task.status.title", defaultValue: "Eiscue is working", table: "TaskStatus"),
             subtitle: phase,
             completedToolCalls: endedCalls,
             completedWorkUnits: preparationUnits + Int64(endedCalls) + finishingUnits,

@@ -67,7 +67,7 @@ class Handler(BaseHTTPRequestHandler):
             answer = markdown
         if content == "streaming ui fixture":
             answer = "Streaming response arrived incrementally and is now complete."
-        timeline = content in ("timeline fixture", "timeline no prose fixture")
+        timeline = content in ("timeline fixture", "timeline no prose fixture", "tool pause fixture")
         tool_results = [m for m in body.get("messages", []) if m.get("role") == "tool"]
         if timeline and tool_results:
             if not any(message_text(m) == "Fixture document content" for m in tool_results):
@@ -119,7 +119,8 @@ class Handler(BaseHTTPRequestHandler):
                     event({"content": "I will inspect the file first."})
                 event({"tool_calls": [{"index": 0, "id": "fixture-call", "type": "function",
                       "function": {"name": "fixture_read_file", "arguments": ""}}]})
-                event({"tool_calls": [{"index": 0, "function": {"arguments": '{"path":"fixture.txt"}'}}]})
+                path = "pause.txt" if content == "tool pause fixture" else "fixture.txt"
+                event({"tool_calls": [{"index": 0, "function": {"arguments": json.dumps({"path": path})}}]})
                 event({}, "tool_calls")
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()

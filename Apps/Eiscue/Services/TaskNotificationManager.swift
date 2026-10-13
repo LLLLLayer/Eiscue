@@ -165,6 +165,7 @@ final class TaskNotificationManager {
     private static func body(for state: RunState) -> String? {
         switch state {
         case .completed: String(localized: "notifications.task.completed", table: "Connections")
+        case .paused: String(localized: "notifications.task.paused", table: "Connections")
         case .interrupted: String(localized: "notifications.task.interrupted", table: "Connections")
         case .failed: String(localized: "notifications.task.failed", table: "Connections")
         case .preparing, .running: nil

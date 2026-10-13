@@ -133,6 +133,39 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["已完成"].exists)
     }
 
+    @MainActor func testToolPauseRequiresExplicitContinuationAcrossRelaunch() {
+        var app = launch(timeline: true)
+        send("tool pause fixture", in: app)
+        XCTAssertTrue(app.buttons["continuePausedRunButton"].waitForExistence(timeout: 15))
+        waitUntilIdle(in: app)
+        XCTAssertTrue(app.buttons["endPausedRunButton"].exists)
+        XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+        XCTAssertTrue(app.staticTexts["重复操作后画面没有变化，任务已暂停。请检查当前画面后再继续。"].exists)
+
+        app.terminate()
+        app = launch(reset: false, timeline: true)
+        let continueButton = app.buttons["continuePausedRunButton"]
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
+        let automaticStart = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"),
+                                                       object: app.buttons["stopRunButton"])
+        automaticStart.isInverted = true
+        XCTAssertEqual(XCTWaiter.wait(for: [automaticStart], timeout: 2), .completed,
+                       "Reopening the conversation must not restart the paused task.")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 1)
+        XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+
+        continueButton.tap()
+        let continuation = "从当前画面继续我刚才的任务。先重新查看屏幕，确认哪些步骤已经完成；如果之前的操作没有进展，请换一种方式。"
+        XCTAssertTrue(app.staticTexts["Fixture response: " + continuation].waitForExistence(timeout: 20))
+        waitUntilIdle(in: app)
+        XCTAssertTrue(app.staticTexts[continuation].exists)
+        XCTAssertFalse(app.buttons["continuePausedRunButton"].exists)
+        XCTAssertFalse(app.buttons["endPausedRunButton"].exists)
+        XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 1,
+                       "An explicit continuation must not replay the settled tool call.")
+    }
+
     @MainActor func testToolWithoutPrefaceKeepsUserAnchorAcrossRelaunch() {
         var app = launch(timeline: true)
         send("timeline no prose fixture", in: app)

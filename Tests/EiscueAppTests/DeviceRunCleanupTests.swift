@@ -86,8 +86,52 @@ final class DeviceRunCleanupTests: XCTestCase {
         XCTAssertEqual(events, ["release", "disconnect"])
     }
 
+    func testAcceptedPauseReleasesInputBeforeRetainingConnection() async throws {
+        for reason in [RunPauseReason.toolLimit, .noProgress] {
+            let controller = CleanupDeviceController()
+            var run = makeRun()
+            run.state = .paused; run.pauseReason = reason
+            try await finish(run, modelRequestFailed: false, session: makeSession(controller), controller: controller)
+            let events = await controller.events
+            XCTAssertEqual(events, ["release"])
+        }
+    }
+
+    func testPauseCannotRetainAnUnconfirmedReleaseOrUserStop() async throws {
+        let failingController = CleanupDeviceController(failRelease: true)
+        var run = makeRun()
+        run.state = .paused; run.pauseReason = .toolLimit
+        do {
+            try await finish(run, modelRequestFailed: false, session: makeSession(failingController), controller: failingController)
+            XCTFail("Paused tasks still require a confirmed input release.")
+        } catch {
+            XCTAssertEqual(error as? DeviceControlError, .deliveryUnknown("Fixture release failed"))
+        }
+        let failureEvents = await failingController.events
+        XCTAssertEqual(failureEvents, ["release", "disconnect"])
+
+        let stoppedController = CleanupDeviceController()
+        try await finish(run, modelRequestFailed: false, session: makeSession(stoppedController),
+                         stopRequested: true, controller: stoppedController)
+        let stopEvents = await stoppedController.events
+        XCTAssertEqual(stopEvents, ["disconnect"])
+    }
+
+    func testIncompletePauseRecordDoesNotRetainConnection() async throws {
+        for missingReason in [true, false] {
+            let controller = CleanupDeviceController()
+            var run = makeRun()
+            run.state = .paused
+            run.pauseReason = missingReason ? nil : .toolLimit
+            run.submission = missingReason ? .accepted : .pending
+            try await finish(run, modelRequestFailed: false, session: makeSession(controller), controller: controller)
+            let events = await controller.events
+            XCTAssertEqual(events, ["disconnect"])
+        }
+    }
+
     func testChatCleanupNeverTouchesDeviceConnection() async throws {
-        for state in [RunState.failed, .completed, .interrupted] {
+        for state in [RunState.failed, .completed, .paused, .interrupted] {
             let controller = CleanupDeviceController()
             var run = makeRun(scope: .chat)
             run.state = state

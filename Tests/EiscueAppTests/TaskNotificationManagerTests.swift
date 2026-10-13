@@ -32,6 +32,7 @@ final class TaskNotificationManagerTests: XCTestCase {
         XCTAssertEqual(client.authorizationRequests, 1)
         XCTAssertFalse(manager.isEnabled)
         await manager.notify(runID: UUID(), state: .failed)
+        await manager.notify(runID: UUID(), state: .paused)
         XCTAssertTrue(client.added.isEmpty)
     }
 
@@ -51,20 +52,22 @@ final class TaskNotificationManagerTests: XCTestCase {
         await manager.notify(runID: completedID, state: .completed)
         await manager.notify(runID: interruptedID, state: .interrupted)
         await manager.notify(runID: UUID(), state: .failed)
+        await manager.notify(runID: UUID(), state: .paused)
         await manager.notify(runID: completedID, state: .completed)
         await manager.notify(runID: interruptedID, state: .failed)
 
-        XCTAssertEqual(client.added.count, 3)
-        XCTAssertEqual(client.added.map(\.title), Array(repeating: localized("notifications.task.title"), count: 3))
+        XCTAssertEqual(client.added.count, 4)
+        XCTAssertEqual(client.added.map(\.title), Array(repeating: localized("notifications.task.title"), count: 4))
         XCTAssertEqual(client.added.map(\.body), [
             localized("notifications.task.completed"),
             localized("notifications.task.interrupted"),
             localized("notifications.task.failed"),
+            localized("notifications.task.paused"),
         ])
         XCTAssertEqual(client.added.first?.identifier, "eiscue.task-status." + completedID.uuidString.lowercased())
         let relaunched = makeManager(client: client, preferences: preferences)
         await relaunched.notify(runID: completedID, state: .completed)
-        XCTAssertEqual(client.added.count, 3)
+        XCTAssertEqual(client.added.count, 4)
     }
 
     func testRevokedSystemPermissionDisablesDeliveryAndPersistsOptOut() async {

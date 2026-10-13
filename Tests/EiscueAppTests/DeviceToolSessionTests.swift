@@ -18,6 +18,8 @@ final class DeviceToolSessionTests: XCTestCase {
         XCTAssertTrue(observation.tools.allSatisfy { !$0.mayHaveSideEffects })
         XCTAssertNil(observation.tools.first { $0.name == "device_tap" })
         let screenshot = try tool("device_screenshot", in: observation)
+        XCTAssertTrue(screenshot.isVerification)
+        XCTAssertFalse(try tool("device_list_apps", in: observation).isVerification)
         let result = try await screenshot.execute([:])
 
         XCTAssertTrue(result.content.contains { if case .image = $0 { true } else { false } })
@@ -70,6 +72,7 @@ final class DeviceToolSessionTests: XCTestCase {
             XCTAssertEqual(error as? TestLogError, .unavailable)
         }
         await fulfillment(of: [stopped], timeout: 1)
+        XCTAssertTrue(session.hasUnknownOutcome)
         await assertRejected(screenshot, arguments: [:])
         await assertRejected(tap, arguments: tapArguments(frameID: frameID))
 
@@ -103,6 +106,7 @@ final class DeviceToolSessionTests: XCTestCase {
             XCTAssertEqual(error as? DeviceControlError, unknown)
         }
         await fulfillment(of: [stopped], timeout: 1)
+        XCTAssertTrue(session.hasUnknownOutcome)
         await assertRejected(tap, arguments: tapArguments(frameID: frameID))
         await assertRejected(screenshot, arguments: [:])
 
@@ -164,6 +168,111 @@ final class DeviceToolSessionTests: XCTestCase {
         XCTAssertEqual(counts.screenshots, 1)
     }
 
+    func testUnchangedScreenWarnsAndPausesBeforeThirdIdenticalAction() async throws {
+        let controller = RecordingDeviceController()
+        let session = controlSession(controller)
+        let screenshot = try tool("device_screenshot", in: session)
+        let tap = try tool("device_tap", in: session)
+        _ = try await screenshot.execute([:])
+        for expectedCount in 1...2 {
+            let frame = try await frameID(from: controller)
+            _ = try await tap.execute(tapArguments(frameID: frame))
+            let verification = try await screenshot.execute([:])
+            XCTAssertTrue(verification.text.contains("Screen pixels are unchanged"))
+            XCTAssertTrue(verification.text.contains("\(expectedCount) identical submissions"))
+        }
+        let frame = try await frameID(from: controller)
+        do {
+            _ = try await tap.execute(tapArguments(frameID: frame))
+            XCTFail("A third identical tap must pause before dispatch.")
+        } catch {
+            guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected a resumable pause, got \(error)") }
+        }
+        XCTAssertFalse(session.hasUnknownOutcome)
+        await assertRejected(screenshot, arguments: [:])
+        let counts = await controller.counts()
+        XCTAssertEqual(counts.taps, 2)
+        XCTAssertEqual(counts.screenshots, 3)
+    }
+
+    func testProgressGuardAllowsChangedActionAndResetsWhenScreenChanges() async throws {
+        let controller = RecordingDeviceController()
+        let session = controlSession(controller)
+        let screenshot = try tool("device_screenshot", in: session)
+        let tap = try tool("device_tap", in: session)
+        _ = try await screenshot.execute([:])
+        for _ in 0..<2 {
+            let frame = try await frameID(from: controller)
+            _ = try await tap.execute(tapArguments(frameID: frame))
+            _ = try await screenshot.execute([:])
+        }
+        let differentActionFrame = try await frameID(from: controller)
+        _ = try await tap.execute(["frameId": .string(differentActionFrame.uuidString), "x": 100, "y": 200])
+        await controller.changeScreen(to: Data([1, 2, 3]))
+        let verification = try await screenshot.execute([:])
+        XCTAssertFalse(verification.text.contains("Screen pixels are unchanged"))
+        let newScreenFrame = try await frameID(from: controller)
+        _ = try await tap.execute(tapArguments(frameID: newScreenFrame))
+        let counts = await controller.counts()
+        XCTAssertEqual(counts.taps, 4)
+    }
+
+    func testRepeatedStaleScreensPauseWithoutMarkingUnknownDelivery() async throws {
+        let controller = RecordingDeviceController(tapFailure: .staleFrame)
+        let session = controlSession(controller)
+        let screenshot = try tool("device_screenshot", in: session)
+        let tap = try tool("device_tap", in: session)
+        for attempt in 1...3 {
+            _ = try await screenshot.execute([:])
+            let frame = try await frameID(from: controller)
+            do {
+                _ = try await tap.execute(tapArguments(frameID: frame))
+                XCTFail("The fake controller rejects stale frames.")
+            } catch {
+                if attempt < 3 { XCTAssertEqual(error as? DeviceControlError, .staleFrame) }
+                else {
+                    guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected a pause after repeated stale frames, got \(error)") }
+                }
+            }
+        }
+        XCTAssertFalse(session.hasUnknownOutcome)
+        await assertRejected(screenshot, arguments: [:])
+    }
+
+    func testPresentationHooksHoldBetweenCaptureAndKnownActionOutcome() async throws {
+        let controller = RecordingDeviceController()
+        var held = false
+        var releases = 0
+        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { kind, _ in
+                                            if kind == "observation.captured" || kind == "action.acknowledged" { XCTAssertTrue(held) }
+                                        }, onUnknown: {}, onObservationWillCapture: { held = true },
+                                        onActionFinished: { held = false; releases += 1 })
+        let screenshot = try tool("device_screenshot", in: session)
+        let tap = try tool("device_tap", in: session)
+        _ = try await screenshot.execute([:])
+        XCTAssertTrue(held)
+        let frame = try await frameID(from: controller)
+        _ = try await tap.execute(tapArguments(frameID: frame))
+        XCTAssertFalse(held)
+        _ = try await screenshot.execute([:])
+        await assertRejected(tap, arguments: tapArguments(frameID: frame))
+        XCTAssertFalse(held, "A known rejection must release transcript progress too.")
+        XCTAssertEqual(releases, 2)
+    }
+
+    func testFailedScreenshotReleasesPresentationHold() async throws {
+        let controller = RecordingDeviceController(screenshotFailure: .notConnected)
+        var held = false
+        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { _, _ in }, onUnknown: {}, onObservationWillCapture: { held = true },
+                                        onActionFinished: { held = false })
+        let screenshot = try tool("device_screenshot", in: session)
+        await assertRejected(screenshot, arguments: [:])
+        XCTAssertFalse(held)
+        XCTAssertFalse(session.hasUnknownOutcome)
+    }
+
     private func controlSession(_ controller: RecordingDeviceController) -> DeviceToolSession {
         DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
                           log: { _, _ in }, onUnknown: {})
@@ -198,20 +307,24 @@ private enum TestLogError: Error, Equatable { case unavailable }
 private actor RecordingDeviceController: DeviceController {
     private let tapFailure: DeviceControlError?
     private let keyFailure: DeviceControlError?
+    private let screenshotFailure: DeviceControlError?
     private var screenshotCount = 0
     private var tapCount = 0
     private var keyCount = 0
     private var frameID: UUID?
+    private var screenshotData = Data([0x89, 0x50, 0x4E, 0x47])
 
-    init(tapFailure: DeviceControlError? = nil, keyFailure: DeviceControlError? = nil) {
+    init(tapFailure: DeviceControlError? = nil, keyFailure: DeviceControlError? = nil, screenshotFailure: DeviceControlError? = nil) {
         self.tapFailure = tapFailure; self.keyFailure = keyFailure
+        self.screenshotFailure = screenshotFailure
     }
 
     func status() async -> DeviceStatus { .ready(capabilities: [.screenshot, .tap]) }
 
     func captureScreenshot() async throws -> DeviceScreenshot {
         screenshotCount += 1
-        let frame = DeviceScreenshot(width: 390, height: 844, mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
+        if let screenshotFailure { throw screenshotFailure }
+        let frame = DeviceScreenshot(width: 390, height: 844, mimeType: "image/png", data: screenshotData)
         frameID = frame.frameID
         return frame
     }
@@ -222,6 +335,7 @@ private actor RecordingDeviceController: DeviceController {
     }
 
     func latestFrameID() -> UUID? { frameID }
+    func changeScreen(to data: Data) { screenshotData = data }
     func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {
         keyCount += 1
         if let keyFailure { throw keyFailure }

@@ -1,3 +1,4 @@
+import CryptoKit
 import EiscueAgentKit
 import EiscueDeviceKit
 import Foundation
@@ -11,18 +12,28 @@ final class DeviceToolSession {
     private let deadline: ContinuousClock.Instant
     private let log: @MainActor (String, String) async throws -> Void
     private let onUnknown: @MainActor () async -> Void
+    private let onObservationWillCapture: @MainActor () async -> Void
+    private let onActionFinished: @MainActor () async -> Void
     private var isActive = true
     private var latestFrame: UUID?
+    private var latestScreenDigest: Data?
+    private var actionCounts: [Data: Int] = [:]
+    private var unverifiedAction: (screen: Data, action: Data)?
+    private var consecutiveFrameRejections = 0
     private var isExecuting = false
     private(set) var hasStartedExecution = false
+    private(set) var hasUnknownOutcome = false
 
     init(capabilities: Set<DeviceCapability> = Set(DeviceCapability.allCases), client: DeviceClient, scope: TaskScope, timeoutSeconds: Int,
          log: @escaping @MainActor (String, String) async throws -> Void,
-         onUnknown: @escaping @MainActor () async -> Void) {
+         onUnknown: @escaping @MainActor () async -> Void,
+         onObservationWillCapture: @escaping @MainActor () async -> Void = {},
+         onActionFinished: @escaping @MainActor () async -> Void = {}) {
         self.capabilities = capabilities
         self.client = client; self.scope = scope
         deadline = .now.advanced(by: .seconds(timeoutSeconds))
         self.log = log; self.onUnknown = onUnknown
+        self.onObservationWillCapture = onObservationWillCapture; self.onActionFinished = onActionFinished
     }
 
     func stop() { isActive = false; latestFrame = nil }
@@ -68,7 +79,7 @@ final class DeviceToolSession {
         AgentTool(name: name, description: description, parameters: [
             "type": "object", "properties": .object(properties),
             "required": .array(required.map { .string($0) }), "additionalProperties": false
-        ], mayHaveSideEffects: sideEffect) { [weak self] arguments in
+        ], mayHaveSideEffects: sideEffect, isVerification: name == "device_screenshot") { [weak self] arguments in
             guard let self else { throw ToolGateError.stopped }
             return try await self.execute(name, arguments: arguments, sideEffect: sideEffect)
         }
@@ -80,25 +91,30 @@ final class DeviceToolSession {
         isExecuting = true
         hasStartedExecution = true
         defer { isExecuting = false }
-        // Persist a redacted intent before crossing the device-send boundary.
-        try await log(sideEffect ? "action.prepared" : "observation.prepared", name)
-        try check(sideEffect: sideEffect)
         var actionReturned = false
         do {
+            // Persist a redacted intent before crossing the device-send boundary.
+            try await log(sideEffect ? "action.prepared" : "observation.prepared", name)
+            try check(sideEffect: sideEffect)
+            let action = sideEffect ? try actionDigest(name, arguments: arguments) : nil
             switch name {
             case "device_screenshot":
+                await onObservationWillCapture()
+                try check(sideEffect: false)
                 let image = try await client.captureScreenshot()
                 try check(sideEffect: false)
                 latestFrame = image.frameID
+                let warning = observe(image)
                 try await log("observation.captured", "width=\(image.width);height=\(image.height);frame=\(image.frameID.uuidString)")
                 return .image(image.data, mimeType: image.mimeType,
-                              caption: "frameId=\(image.frameID.uuidString); width=\(image.width); height=\(image.height); capturedAt=\(image.capturedAt.ISO8601Format()). Coordinates are image pixels. A frame may be used for one action.")
+                              caption: "frameId=\(image.frameID.uuidString); width=\(image.width); height=\(image.height); capturedAt=\(image.capturedAt.ISO8601Format()). Coordinates are image pixels. A frame may be used for one action.\(warning)")
             case "device_list_apps":
                 let apps = try await client.listApplications()
                 return .text(apps.map { "\($0.name): \($0.bundleID)" }.joined(separator: "\n"))
             case "device_tap":
                 let id = try consumeFrame(arguments)
                 let point = DevicePoint(x: try number("x", arguments), y: try number("y", arguments))
+                try checkProgress(action)
                 try await log("action.dispatched", name)
                 try check(sideEffect: true)
                 try await client.tap(at: point, frameID: id)
@@ -108,22 +124,26 @@ final class DeviceToolSession {
                 guard (0.1...2).contains(duration) else { throw ToolGateError.arguments }
                 let from = DevicePoint(x: try number("fromX", arguments), y: try number("fromY", arguments))
                 let to = DevicePoint(x: try number("toX", arguments), y: try number("toY", arguments))
+                try checkProgress(action)
                 try await log("action.dispatched", name)
                 try check(sideEffect: true)
                 try await client.swipe(from: from, to: to, duration: .seconds(duration), frameID: id)
             case "device_type_text":
                 let id = try consumeFrame(arguments)
                 guard let text = arguments["text"]?.stringValue, !text.isEmpty, text.count <= 4096 else { throw ToolGateError.arguments }
+                try checkProgress(action)
                 try await log("action.dispatched", name)
                 try check(sideEffect: true)
                 try await client.typeText(text, frameID: id)
             case "device_launch_app":
                 guard let bundle = arguments["bundleId"]?.stringValue, !bundle.isEmpty, bundle.count <= 255 else { throw ToolGateError.arguments }
+                try checkProgress(action)
                 latestFrame = nil
                 try await log("action.dispatched", name)
                 try check(sideEffect: true)
                 try await client.launchApplication(bundleID: bundle)
             case "device_home":
+                try checkProgress(action)
                 latestFrame = nil
                 try await log("action.dispatched", name)
                 try check(sideEffect: true)
@@ -131,6 +151,7 @@ final class DeviceToolSession {
             case "device_press_key":
                 let id = try consumeFrame(arguments)
                 guard let raw = arguments["key"]?.stringValue, let key = DeviceKeyboardAction(rawValue: raw) else { throw ToolGateError.arguments }
+                try checkProgress(action)
                 try await log("action.dispatched", name)
                 try check(sideEffect: true)
                 try await client.pressKey(key, frameID: id)
@@ -138,20 +159,70 @@ final class DeviceToolSession {
             }
             actionReturned = true
             try await log("action.acknowledged", name)
+            consecutiveFrameRejections = 0
+            if let action, let screen = latestScreenDigest {
+                unverifiedAction = (screen, action)
+            }
+            await onActionFinished()
             return .text("Action submitted. This is not proof of business success. Take a fresh screenshot to verify.")
         } catch let error as DeviceControlError where error.isDeliveryUnknown {
             isActive = false; latestFrame = nil
+            hasUnknownOutcome = true
             // Schedule stop even when persisting the uncertainty itself fails.
             Task { await onUnknown() }
             try? await log("action.unknown", name)
+            await onActionFinished()
             throw error
         } catch {
             if actionReturned {
                 isActive = false; latestFrame = nil
+                hasUnknownOutcome = true
                 Task { await onUnknown() }
+            }
+            if sideEffect || name == "device_screenshot" { await onActionFinished() }
+            if !actionReturned, sideEffect, isFrameRejection(error) {
+                consecutiveFrameRejections += 1
+                if consecutiveFrameRejections >= 3 {
+                    stop()
+                    throw AgentError.toolExecutionPaused(String(localized: "toolError.repeatedStaleFrames"))
+                }
             }
             throw error
         }
+    }
+
+    private func observe(_ image: DeviceScreenshot) -> String {
+        // Keep only digests; a receipt alone never increments the no-progress count.
+        var hash = SHA256()
+        hash.update(data: Data("\(image.width):\(image.height):\(image.mimeType):".utf8))
+        hash.update(data: image.data)
+        let digest = Data(hash.finalize())
+        if digest != latestScreenDigest { actionCounts.removeAll() }
+        latestScreenDigest = digest
+        defer { unverifiedAction = nil }
+        guard let previous = unverifiedAction, previous.screen == digest else { return "" }
+        actionCounts[previous.action, default: 0] += 1
+        let repeats = actionCounts[previous.action, default: 0]
+        return " Screen pixels are unchanged after the last submitted action (\(repeats) identical submissions on this screen). This is not evidence of success. Reassess the visible controls and choose another route; a third identical action on an unchanged screen will pause the task."
+    }
+
+    private func actionDigest(_ name: String, arguments: AgentJSONValue) throws -> Data {
+        var values = arguments.objectValue ?? [:]
+        values.removeValue(forKey: "frameId")
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let data = try encoder.encode(AgentJSONValue.object(["name": .string(name), "arguments": .object(values)]))
+        return Data(SHA256.hash(data: data))
+    }
+
+    private func checkProgress(_ action: Data?) throws {
+        guard let action, actionCounts[action, default: 0] >= 2 else { return }
+        stop()
+        throw AgentError.toolExecutionPaused(String(localized: "toolError.noProgress"))
+    }
+
+    private func isFrameRejection(_ error: Error) -> Bool {
+        if case ToolGateError.frame = error { return true }
+        return (error as? DeviceControlError) == .staleFrame
     }
 
     private func consumeFrame(_ arguments: AgentJSONValue) throws -> UUID {

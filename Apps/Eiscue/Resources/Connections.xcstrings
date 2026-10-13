@@ -716,6 +716,23 @@
         }
       },
       "comment": "%@ is the localized error message provided by the operating system."
+    },
+    "notifications.task.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your task is paused. Open Eiscue to review progress and continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务已暂停。打开 Eiscue 查看进展并继续。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

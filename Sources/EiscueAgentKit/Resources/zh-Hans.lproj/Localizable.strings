@@ -1,4 +1,5 @@
 // Official Foundation localization resources for this Swift package target.
+"agent.configuration.invalid-verification" = "用于确认操作结果的工具必须为只读工具。";
 "agent.configuration.empty-message" = "消息不能为空。";
 "agent.configuration.invalid-budget" = "任务的运行时间或工具调用上限无效。";
 "agent.configuration.invalid-context" = "模型上下文和输出长度配置无效。";

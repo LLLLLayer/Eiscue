@@ -1,14 +1,26 @@
 import Foundation
 
 enum RunState: String, Codable, Sendable {
-    case preparing, running, completed, interrupted, failed
+    case preparing, running, completed, paused, interrupted, failed
     var title: String {
         switch self {
         case .preparing: String(localized: "run.preparing")
         case .running: String(localized: "run.running")
         case .completed: String(localized: "run.completed")
+        case .paused: String(localized: "run.paused")
         case .interrupted: String(localized: "run.interrupted")
         case .failed: String(localized: "run.failed")
+        }
+    }
+}
+
+enum RunPauseReason: String, Codable, Sendable {
+    case toolLimit, noProgress
+
+    var detail: String {
+        switch self {
+        case .toolLimit: String(localized: "run.paused.toolLimit", table: "Runtime")
+        case .noProgress: String(localized: "run.paused.noProgress", table: "Runtime")
         }
     }
 }
@@ -29,6 +41,7 @@ struct RunRecord: Identifiable, Codable, Sendable {
     var events: [RunLogEntry]
     var submission: RunSubmission? = nil
     var activities: [ToolActivity]? = nil
+    var pauseReason: RunPauseReason? = nil
 
     mutating func interruptOpenActivities(at date: Date = Date()) {
         guard var activities else { return }

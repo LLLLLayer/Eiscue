@@ -197,8 +197,11 @@ public final class BluetoothDeviceController: DeviceController {
     }
 
     public func captureScreenshot() async throws -> DeviceScreenshot {
+        let requestedAt = ProcessInfo.processInfo.systemUptime
         try await beginAction(allowCalibration: true); defer { operations.endAction() }
-        let observation = try await freshFrame(after: lastDispatchedUptime, token: epoch)
+        // Host progress can change its own UI between actions. Observe after
+        // this request too, rather than returning a pre-update cached frame.
+        let observation = try await freshFrame(after: max(lastDispatchedUptime, requestedAt), token: epoch)
         latest = observation
         return observation.screenshot
     }

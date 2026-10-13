@@ -1457,6 +1457,91 @@
           }
         }
       }
+    },
+    "run.paused.toolLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This turn reached its step limit. Continue to check the current screen and pick up the task."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮操作已达到步骤上限。点击“继续任务”，AI 会先重新查看屏幕再接着处理。"
+          }
+        }
+      }
+    },
+    "run.paused.noProgress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task could not make progress. Check the device, then continue or give another instruction."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务暂时无法继续推进。请查看设备，再继续任务或补充说明。"
+          }
+        }
+      }
+    },
+    "run.paused.continue": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue task"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续任务"
+          }
+        }
+      }
+    },
+    "run.paused.end": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End task"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束任务"
+          }
+        }
+      }
+    },
+    "run.paused.resume_prompt": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue my previous task from the current screen. Observe it again before acting, check which steps have already succeeded, and change approach if the earlier actions made no progress."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从当前画面继续我刚才的任务。先重新查看屏幕，确认哪些步骤已经完成；如果之前的操作没有进展，请换一种方式。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

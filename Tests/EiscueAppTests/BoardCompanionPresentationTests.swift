@@ -39,6 +39,13 @@ final class BoardCompanionPresentationTests: XCTestCase {
                                                         stopped: false, language: .english).phase, .needsScreenSharing)
     }
 
+    func testPauseUsesWaitingPhaseInsteadOfShowingExecutionOrSuccess() {
+        var run = makeRun()
+        run.state = .paused; run.pauseReason = .toolLimit; run.endedAt = Date()
+        XCTAssertEqual(BoardCompanionPresentation.task(run, currentTool: "device_tap", stopping: false,
+                                                       finishing: false, language: .english).phase, .waiting)
+    }
+
     private func makeRun() -> RunRecord {
         RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(), scope: .chat,
                   model: "private-model", skill: "private-skill", state: .running, detail: "private-response", events: [])

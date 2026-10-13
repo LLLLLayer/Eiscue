@@ -272,6 +272,40 @@
           }
         }
       }
+    },
+    "task.status.title.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task paused"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务已暂停"
+          }
+        }
+      }
+    },
+    "task.status.phase.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Eiscue to continue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 Eiscue 继续任务"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

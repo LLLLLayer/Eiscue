@@ -4597,6 +4597,74 @@
           }
         }
       }
+    },
+    "run.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂停"
+          }
+        }
+      }
+    },
+    "run.pausedDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return to Assistant to review the current state and continue or end the task."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到对话查看当前状态，再继续或结束任务。"
+          }
+        }
+      }
+    },
+    "toolError.noProgress": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused because the same action did not visibly change the screen. Check the current screen before continuing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重复操作后画面没有变化，任务已暂停。请检查当前画面后再继续。"
+          }
+        }
+      }
+    },
+    "toolError.repeatedStaleFrames": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused because the screen kept changing before an action could be sent. Wait for it to settle, then continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作前画面多次发生变化，任务已暂停。请等待画面稳定后再继续。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -29,7 +29,7 @@ struct AssistantView: View {
                             .accessibilityElement(children: .contain)
                             .accessibilityIdentifier("streamingResponse")
                     }
-                    if model.isHoldingDeviceTranscript {
+                    if model.isShowingDeviceControlRun {
                         Label(chatText("chat.operatingDevice"), systemImage: "hand.tap")
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 8)
                             .accessibilityIdentifier("deviceControlRunStatus")
@@ -45,7 +45,8 @@ struct AssistantView: View {
             .defaultScrollAnchor(model.isHoldingDeviceTranscript ? nil : .bottom, for: .sizeChanges)
             .onChange(of: model.displayedConversationFeed.count) {
                 guard !model.isHoldingDeviceTranscript else { return }
-                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                if model.isShowingDeviceControlRun { proxy.scrollTo("bottom", anchor: .bottom) }
+                else { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
         }
         .background(EiscueStyle.background)
@@ -152,7 +153,7 @@ struct AssistantView: View {
             ForEach(model.displayedConversationFeed) { item in
                 switch item {
                 case .message(let message): ChatMessageRow(message: message)
-                case .activity(let activity): ToolActivityRow(activity: activity, showsProgress: !model.isHoldingDeviceTranscript)
+                case .activity(let activity): ToolActivityRow(activity: activity, showsProgress: !model.isShowingDeviceControlRun)
                 }
             }
         }
@@ -170,6 +171,17 @@ struct AssistantView: View {
                         .buttonStyle(.glass)
                 }
             }.padding(.vertical, 8)
+        } else if model.activeRun == nil, let run = model.pausedRun {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("run.paused", systemImage: "pause.circle").font(.subheadline.weight(.medium))
+                Text(run.detail).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button(String(localized: "run.paused.continue", table: "Runtime")) { Task { await model.continueInterruptedRun() } }
+                        .buttonStyle(.glassProminent).accessibilityIdentifier("continuePausedRunButton")
+                    Button(String(localized: "run.paused.end", table: "Runtime")) { Task { await model.abandonInterruptedRun() } }
+                        .buttonStyle(.glass).accessibilityIdentifier("endPausedRunButton")
+                }.disabled(model.isBusy)
+            }.padding(.vertical, 8).accessibilityElement(children: .contain).accessibilityIdentifier("pausedRunStatus")
         } else if model.activeRun == nil, let run = model.selectedRuns.first, run.state == .failed {
             Label(run.detail, systemImage: "exclamationmark.circle")
                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)

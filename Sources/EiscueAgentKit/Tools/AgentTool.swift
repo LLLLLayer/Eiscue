@@ -5,17 +5,22 @@ public struct AgentTool: Sendable {
     public let description: String
     public let parameters: AgentJSONValue
     public let mayHaveSideEffects: Bool
+    /// A read-only observation that can verify a preceding action. Its final
+    /// budget slot is reserved when this tool is registered for the run.
+    public let isVerification: Bool
     public let execute: @Sendable (AgentJSONValue) async throws -> AgentToolResult
 
     public init(
         name: String, description: String, parameters: AgentJSONValue,
         mayHaveSideEffects: Bool = true,
+        isVerification: Bool = false,
         execute: @escaping @Sendable (AgentJSONValue) async throws -> AgentToolResult
     ) {
         self.name = name
         self.description = description
         self.parameters = parameters
         self.mayHaveSideEffects = mayHaveSideEffects
+        self.isVerification = isVerification
         self.execute = execute
     }
 }

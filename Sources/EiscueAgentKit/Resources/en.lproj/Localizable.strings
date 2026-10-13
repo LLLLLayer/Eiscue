@@ -4,6 +4,7 @@
 "agent.configuration.invalid-context" = "The model context and output length settings are invalid.";
 "agent.configuration.invalid-storage" = "The agent storage directory must be a local file URL.";
 "agent.configuration.invalid-tools" = "Tool names must be unique, and parameters must be JSON Schema objects.";
+"agent.configuration.invalid-verification" = "Verification tools must be read-only.";
 "agent.configuration.invalid-url" = "Enter a valid HTTP or HTTPS model service URL.";
 "agent.configuration.missing-model" = "Enter a model name.";
 "agent.conversation.new-title" = "New conversation";

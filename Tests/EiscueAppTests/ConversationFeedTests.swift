@@ -110,65 +110,63 @@ final class ConversationFeedTests: XCTestCase {
         XCTAssertFalse(record.activities?.last?.output.isEmpty ?? true)
     }
 
-    @MainActor func testControlTranscriptHoldsDuringToolAndMessageUpdatesThenRevealsRecordedResults() throws {
+    @MainActor func testControlProgressPublishesAtStepBoundariesAndHoldsOnlyObservedInterval() throws {
         let fixture = try TranscriptFixture()
         defer { fixture.cleanUp() }
         let model = fixture.model
         let user = AgentMessage(role: .user, text: "Switch to dark mode")
         let conversation = Conversation(title: "Device task", messages: [user])
         model.conversations = [conversation]; model.selectedConversationID = conversation.id
-        model.activeRun = fixture.run(conversation: conversation, requestID: user.id)
-
-        XCTAssertTrue(model.isHoldingDeviceTranscript)
-        XCTAssertEqual(model.displayedConversationFeed, [.message(user)])
-        model.activeRun?.state = .running
-        model.activeRun?.submission = .accepted
+        let run = fixture.run(conversation: conversation, requestID: user.id)
+        model.activeRun = run
+        XCTAssertFalse(model.isHoldingDeviceTranscript, "Starting a run must not hide all its progress.")
+        model.streamingText = "Checking the screen"
+        model.holdDeviceTranscript(for: run.id)
         let tool = ToolActivity(id: "run:call", name: "device_screenshot", precedingMessageID: user.id)
         model.activeRun?.activities = [tool]
-        model.streamingText = "Checking the screen"
-        let reply = AgentMessage(role: .assistant, text: "Found the display settings")
+        model.streamingText = "Choosing a visible control"
+        let reply = AgentMessage(role: .assistant, text: "Next I will open Settings")
         model.conversations[0].messages.append(reply)
-
         XCTAssertEqual(model.displayedConversationFeed, [.message(user)])
-        XCTAssertEqual(model.displayedStreamingText, "")
-        XCTAssertEqual(model.streamingText, "Checking the screen")
-        XCTAssertEqual(model.conversationFeed, [.message(user), .activity(tool), .message(reply)])
+        XCTAssertEqual(model.displayedStreamingText, "Checking the screen", "Keep the exact visible text, without removing it on capture.")
 
+        model.releaseDeviceTranscript(for: run.id)
+        XCTAssertFalse(model.isHoldingDeviceTranscript)
+        XCTAssertEqual(model.displayedConversationFeed, model.conversationFeed)
+        XCTAssertEqual(model.displayedStreamingText, "Choosing a visible control")
+        XCTAssertNotNil(model.activeRun, "Progress becomes visible before the entire task finishes.")
         model.activeRun?.activities?[0].endedAt = Date()
         model.activeRun?.activities?[0].output = "Observed"
+        model.holdDeviceTranscript(for: run.id)
+        let secondStep = model.displayedConversationFeed
+        model.conversations[0].messages.append(AgentMessage(role: .assistant, text: "Another step"))
+        XCTAssertEqual(model.displayedConversationFeed, secondStep)
         model.activeRun?.state = .completed
         model.runs = [try XCTUnwrap(model.activeRun)]
         model.activeRun = nil
         XCTAssertFalse(model.isHoldingDeviceTranscript)
-        XCTAssertEqual(model.displayedConversationFeed, model.conversationFeed)
-        XCTAssertEqual(model.displayedConversationFeed.count, 3)
-        XCTAssertEqual(model.runs.first?.activities?.first?.output, "Observed")
+        XCTAssertEqual(model.displayedConversationFeed.count, 4)
     }
 
-    @MainActor func testResumedControlRunPreservesPriorProgressAndCapturesANewSnapshot() throws {
+    @MainActor func testOldStepCallbacksCannotFreezeOrReleaseAnotherRun() throws {
         let fixture = try TranscriptFixture()
         defer { fixture.cleanUp() }
         let model = fixture.model
         let user = AgentMessage(role: .user, text: "Change appearance")
-        let earlierReply = AgentMessage(role: .assistant, text: "Opened Settings")
-        let conversation = Conversation(title: "Resume", messages: [user, earlierReply])
-        let priorTool = ToolActivity(id: "old:call", name: "device_tap", endedAt: Date(), precedingMessageID: user.id)
-        var priorRun = fixture.run(conversation: conversation, requestID: user.id)
-        priorRun.state = .interrupted; priorRun.activities = [priorTool]
-        model.conversations = [conversation]; model.selectedConversationID = conversation.id; model.runs = [priorRun]
-        let expected: [ConversationFeedItem] = [.message(user), .activity(priorTool), .message(earlierReply)]
-        model.activeRun = fixture.run(conversation: conversation, requestID: user.id)
-        XCTAssertEqual(model.displayedConversationFeed, expected, "Resume keeps progress recorded after the original user message.")
-        let resumedTool = ToolActivity(id: "new:call", name: "device_screenshot", precedingMessageID: earlierReply.id)
-        model.activeRun?.activities = [resumedTool]
-        XCTAssertEqual(model.displayedConversationFeed, expected)
-        model.activeRun?.state = .interrupted
-        model.runs.insert(try XCTUnwrap(model.activeRun), at: 0)
+        let conversation = Conversation(title: "Continue", messages: [user])
+        model.conversations = [conversation]; model.selectedConversationID = conversation.id
+        let first = fixture.run(conversation: conversation, requestID: user.id)
+        model.activeRun = first; model.holdDeviceTranscript(for: first.id)
+        let next = fixture.run(conversation: conversation, requestID: user.id)
+        model.activeRun = next
+        XCTAssertFalse(model.isHoldingDeviceTranscript)
+        model.holdDeviceTranscript(for: first.id)
+        XCTAssertFalse(model.isHoldingDeviceTranscript)
+        model.holdDeviceTranscript(for: next.id)
+        model.releaseDeviceTranscript(for: first.id)
+        XCTAssertTrue(model.isHoldingDeviceTranscript)
         model.activeRun = nil
-        let afterResume = model.conversationFeed
-        model.activeRun = fixture.run(conversation: conversation, requestID: user.id)
-        XCTAssertEqual(model.displayedConversationFeed, afterResume, "A new run ID must capture its own snapshot even with the same request ID.")
-        XCTAssertEqual(model.displayedConversationFeed.count, 4)
+        XCTAssertFalse(model.isHoldingDeviceTranscript)
     }
 
     @MainActor func testChatAndObserveStayLiveAndPresentationUsesCapturedRunScope() throws {
@@ -179,8 +177,9 @@ final class ConversationFeedTests: XCTestCase {
             let user = AgentMessage(role: .user, text: "Hello")
             let conversation = Conversation(title: "Live", messages: [user])
             model.conversations = [conversation]; model.selectedConversationID = conversation.id
-            model.activeRun = fixture.run(conversation: conversation, requestID: user.id, scope: scope)
-            model.scope = .control
+            let run = fixture.run(conversation: conversation, requestID: user.id, scope: scope)
+            model.activeRun = run; model.scope = .control
+            model.holdDeviceTranscript(for: run.id)
             model.streamingText = "Live response"
             model.conversations[0].messages.append(AgentMessage(role: .assistant, text: "Finished"))
             XCTAssertFalse(model.isHoldingDeviceTranscript)
@@ -189,9 +188,10 @@ final class ConversationFeedTests: XCTestCase {
             model.activeRun = nil
         }
         let conversation = try XCTUnwrap(model.selectedConversation)
-        model.activeRun = fixture.run(conversation: conversation, requestID: UUID())
-        model.scope = .chat
-        XCTAssertTrue(model.isHoldingDeviceTranscript, "Changing composer scope must not change an active run's presentation.")
+        let run = fixture.run(conversation: conversation, requestID: UUID())
+        model.activeRun = run; model.scope = .chat
+        model.holdDeviceTranscript(for: run.id)
+        XCTAssertTrue(model.isHoldingDeviceTranscript, "Composer scope must not change an active run's presentation.")
         let other = Conversation(title: "Other", messages: [AgentMessage(role: .user, text: "History")])
         model.conversations.append(other); model.selectedConversationID = other.id
         XCTAssertFalse(model.isHoldingDeviceTranscript)

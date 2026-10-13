@@ -10,7 +10,10 @@ enum DeviceRunCleanup {
         // host gate must still be unused. Event delivery alone can lag execution.
         let unusedModelFailure = modelRequestFailed && run.state == .failed && run.submission == .accepted
             && deviceTools?.hasStartedExecution == false && (run.activities ?? []).isEmpty
-        guard method == .bluetoothBoard, !stopRequested, run.state == .completed || unusedModelFailure else {
+        // The host marks a pause only after the runtime has closed cleanly.
+        // A legacy or incomplete record cannot opt into connection retention.
+        let safePause = run.state == .paused && run.submission == .accepted && run.pauseReason != nil
+        guard method == .bluetoothBoard, !stopRequested, run.state == .completed || safePause || unusedModelFailure else {
             await disconnect()
             return
         }

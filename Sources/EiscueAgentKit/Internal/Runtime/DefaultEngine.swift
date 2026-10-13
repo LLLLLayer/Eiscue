@@ -56,7 +56,7 @@ actor DefaultEngine: AgentEngine {
             throw AgentError.invalidConfiguration(String(localized: "agent.configuration.empty-message", defaultValue: "The message must not be empty.", bundle: .module))
         }
         let id = UUID()
-        let budget = RunBudget(limit: request.maxToolCalls)
+        let budget = RunBudget(limit: request.maxToolCalls, reservesVerification: tools.contains(where: \.isVerification))
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         operation = id
         active = ActiveRun(id: id, conversationID: request.conversationID, budget: budget)
@@ -256,20 +256,20 @@ actor DefaultEngine: AgentEngine {
                     await budget.stop()
                     do { try await abortOperation(session.conversation) }
                     catch {
-                        if result is CancellationError || ModelRequestFailure.isModelFailure(result) {
+                        if result is CancellationError || Self.requiresSuccessfulCleanup(result) {
                             result = AgentError.runtime(error.localizedDescription)
                         }
                     }
                 }
                 do { await finalTranslator?.reconcile(try await session.conversation.view()) }
                 catch {
-                    if ModelRequestFailure.isModelFailure(result) { result = AgentError.runtime(error.localizedDescription) }
+                    if Self.requiresSuccessfulCleanup(result) { result = AgentError.runtime(error.localizedDescription) }
                 }
                 finalReader?.cancel()
                 await finalReader?.value
                 do { try await session.harness.close() }
                 catch {
-                    if result == nil || ModelRequestFailure.isModelFailure(result) {
+                    if result == nil || Self.requiresSuccessfulCleanup(result) {
                         result = AgentError.runtime(error.localizedDescription)
                     }
                 }
@@ -300,6 +300,9 @@ actor DefaultEngine: AgentEngine {
         for tool in tools {
             guard !tool.name.isEmpty, names.insert(tool.name).inserted, tool.parameters.objectValue != nil else {
                 throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-tools", defaultValue: "Tool names must be unique, and parameters must be JSON Schema objects.", bundle: .module))
+            }
+            guard !tool.isVerification || !tool.mayHaveSideEffects else {
+                throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-verification", defaultValue: "Verification tools must be read-only.", bundle: .module))
             }
         }
     }
@@ -423,9 +426,17 @@ actor DefaultEngine: AgentEngine {
         if let error = error as? AgentError {
             if case .runtime(let text) = error { return .runtime(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
             if case .modelRequestFailed(let text) = error { return .modelRequestFailed(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
+            if case .toolExecutionPaused(let text) = error { return .toolExecutionPaused(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
             return error
         }
         return .runtime(RuntimeMapping.redact(error.localizedDescription, secret: configuration?.apiKey ?? ""))
+    }
+
+    private static func requiresSuccessfulCleanup(_ error: Error?) -> Bool {
+        switch error as? AgentError {
+        case .modelRequestFailed, .toolLimitReached, .toolExecutionPaused: true
+        default: false
+        }
     }
 
     private struct Session: Sendable {

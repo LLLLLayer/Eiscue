@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI is operating your device. Details will appear when finished."
+            "value": "AI is operating your device. Progress updates after each action."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI 正在操作设备，结束后会显示过程和结果。"
+            "value": "AI 正在操作设备，每步操作后会更新进展。"
           }
         }
       }

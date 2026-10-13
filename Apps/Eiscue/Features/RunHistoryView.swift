@@ -71,7 +71,7 @@ private struct RunDetailView: View {
                 Label(record.state.title, systemImage: record.state.symbol)
                     .font(.headline)
                     .foregroundStyle(.primary)
-                Text(record.state.explanation)
+                Text(record.state == .paused ? (record.pauseReason?.detail ?? record.state.explanation) : record.state.explanation)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 LabeledContent("runs.scope", value: record.scope.title)
@@ -217,6 +217,7 @@ private enum RunReport {
             lines.append(String(localized: "report.ended \(end.ISO8601Format())"))
             lines.append(String(localized: "report.duration \(duration(from: run.startedAt, to: end))"))
         }
+        if run.state == .paused, let reason = run.pauseReason { lines.append(reason.detail) }
         lines += ["", String(localized: "runs.log")]
         lines += run.events.map { "\($0.date.ISO8601Format())  \(eventTitle($0)) · \(eventSummary($0))" }
         lines += ["", String(localized: "runs.reportPrivacy")]
@@ -230,6 +231,7 @@ private extension RunState {
         case .preparing: "hourglass"
         case .running: "circle.dotted.circle"
         case .completed: "checkmark.circle"
+        case .paused: "pause.circle"
         case .interrupted: "pause.circle"
         case .failed: "exclamationmark.circle"
         }
@@ -239,6 +241,7 @@ private extension RunState {
         case .preparing: String(localized: "run.preparingDetail")
         case .running: String(localized: "run.runningDetail")
         case .completed: String(localized: "run.completedDetail")
+        case .paused: String(localized: "run.pausedDetail")
         case .interrupted: String(localized: "run.interruptedDetail")
         case .failed: String(localized: "run.failedDetail")
         }

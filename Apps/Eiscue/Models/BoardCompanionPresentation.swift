@@ -16,6 +16,7 @@ enum BoardCompanionPresentation {
         let phase: BluetoothCompanionStatus.Phase
         if stopping || run.state == .interrupted { phase = .stopped }
         else if run.state == .failed { phase = .failed }
+        else if run.state == .paused { phase = .waiting }
         else if run.state == .completed, run.endedAt != nil, !finishing { phase = .completed }
         else if finishing || run.state == .preparing || run.state == .completed { phase = .waiting }
         else {
