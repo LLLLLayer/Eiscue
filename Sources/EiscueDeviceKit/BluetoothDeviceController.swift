@@ -109,7 +109,7 @@ public final class BluetoothDeviceController: DeviceController {
         var capabilities: Set<DeviceCapability> = [.screenshot, .tap, .swipe]
         if keyboardAvailable && keyboardVerified {
             capabilities.insert(.textInput)
-            if navigationAvailable { capabilities.formUnion([.home, .keyboardNavigation]) }
+            if navigationAvailable { capabilities.insert(.keyboardNavigation) }
         }
         return .ready(capabilities: capabilities)
     }
@@ -287,10 +287,9 @@ public final class BluetoothDeviceController: DeviceController {
     }
 
     public func home() async throws {
-        try await beginAction(); defer { operations.endAction() }
-        guard isPointerVerified, keyboardAvailable, keyboardVerified, navigationAvailable else { throw DeviceControlError.unsupported }
-        _ = try observe(); latest = nil
-        try await sendKey(opcode: 6, payload: [0x08, 0x0B], token: epoch)
+        // Command-H is not a verified system Home action. Full Keyboard Access
+        // uses a separate command; a board ACK cannot verify that system setup.
+        throw DeviceControlError.unsupported
     }
 
     public func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {

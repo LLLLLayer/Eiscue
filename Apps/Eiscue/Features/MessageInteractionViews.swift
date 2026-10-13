@@ -173,6 +173,7 @@ struct ChatAttachmentView: View {
 
 struct ToolActivityRow: View {
     let activity: ToolActivity
+    var showsProgress = true
     @State private var isExpanded = false
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
@@ -184,7 +185,7 @@ struct ToolActivityRow: View {
             }.padding(.vertical, 8)
         } label: {
             HStack(alignment: .top, spacing: 10) {
-                if activity.isRunning { ProgressView().controlSize(.small).frame(width: 20) }
+                if activity.isRunning && showsProgress { ProgressView().controlSize(.small).frame(width: 20) }
                 else { Image(systemName: activity.isError ? "exclamationmark.circle" : symbol).frame(width: 20) }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)

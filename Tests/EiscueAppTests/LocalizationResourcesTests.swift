@@ -16,6 +16,7 @@ final class LocalizationResourcesTests: XCTestCase {
                                  ("InfoPlist", "NSMicrophoneUsageDescription"),
                                  ("InfoPlist", "NSSpeechRecognitionUsageDescription"),
                                  ("Composer", "composer.controlDevice"),
+                                 ("Chat", "chat.operatingDevice"),
                                  ("Speech", "speech.start"),
                                  ("Attachments", "attachment.error.fileSize"),
                                  ("Navigation", "sidebar.settings")] {

@@ -110,8 +110,116 @@ final class ConversationFeedTests: XCTestCase {
         XCTAssertFalse(record.activities?.last?.output.isEmpty ?? true)
     }
 
+    @MainActor func testControlTranscriptHoldsDuringToolAndMessageUpdatesThenRevealsRecordedResults() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        let user = AgentMessage(role: .user, text: "Switch to dark mode")
+        let conversation = Conversation(title: "Device task", messages: [user])
+        model.conversations = [conversation]; model.selectedConversationID = conversation.id
+        model.activeRun = fixture.run(conversation: conversation, requestID: user.id)
+
+        XCTAssertTrue(model.isHoldingDeviceTranscript)
+        XCTAssertEqual(model.displayedConversationFeed, [.message(user)])
+        model.activeRun?.state = .running
+        model.activeRun?.submission = .accepted
+        let tool = ToolActivity(id: "run:call", name: "device_screenshot", precedingMessageID: user.id)
+        model.activeRun?.activities = [tool]
+        model.streamingText = "Checking the screen"
+        let reply = AgentMessage(role: .assistant, text: "Found the display settings")
+        model.conversations[0].messages.append(reply)
+
+        XCTAssertEqual(model.displayedConversationFeed, [.message(user)])
+        XCTAssertEqual(model.displayedStreamingText, "")
+        XCTAssertEqual(model.streamingText, "Checking the screen")
+        XCTAssertEqual(model.conversationFeed, [.message(user), .activity(tool), .message(reply)])
+
+        model.activeRun?.activities?[0].endedAt = Date()
+        model.activeRun?.activities?[0].output = "Observed"
+        model.activeRun?.state = .completed
+        model.runs = [try XCTUnwrap(model.activeRun)]
+        model.activeRun = nil
+        XCTAssertFalse(model.isHoldingDeviceTranscript)
+        XCTAssertEqual(model.displayedConversationFeed, model.conversationFeed)
+        XCTAssertEqual(model.displayedConversationFeed.count, 3)
+        XCTAssertEqual(model.runs.first?.activities?.first?.output, "Observed")
+    }
+
+    @MainActor func testResumedControlRunPreservesPriorProgressAndCapturesANewSnapshot() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        let user = AgentMessage(role: .user, text: "Change appearance")
+        let earlierReply = AgentMessage(role: .assistant, text: "Opened Settings")
+        let conversation = Conversation(title: "Resume", messages: [user, earlierReply])
+        let priorTool = ToolActivity(id: "old:call", name: "device_tap", endedAt: Date(), precedingMessageID: user.id)
+        var priorRun = fixture.run(conversation: conversation, requestID: user.id)
+        priorRun.state = .interrupted; priorRun.activities = [priorTool]
+        model.conversations = [conversation]; model.selectedConversationID = conversation.id; model.runs = [priorRun]
+        let expected: [ConversationFeedItem] = [.message(user), .activity(priorTool), .message(earlierReply)]
+        model.activeRun = fixture.run(conversation: conversation, requestID: user.id)
+        XCTAssertEqual(model.displayedConversationFeed, expected, "Resume keeps progress recorded after the original user message.")
+        let resumedTool = ToolActivity(id: "new:call", name: "device_screenshot", precedingMessageID: earlierReply.id)
+        model.activeRun?.activities = [resumedTool]
+        XCTAssertEqual(model.displayedConversationFeed, expected)
+        model.activeRun?.state = .interrupted
+        model.runs.insert(try XCTUnwrap(model.activeRun), at: 0)
+        model.activeRun = nil
+        let afterResume = model.conversationFeed
+        model.activeRun = fixture.run(conversation: conversation, requestID: user.id)
+        XCTAssertEqual(model.displayedConversationFeed, afterResume, "A new run ID must capture its own snapshot even with the same request ID.")
+        XCTAssertEqual(model.displayedConversationFeed.count, 4)
+    }
+
+    @MainActor func testChatAndObserveStayLiveAndPresentationUsesCapturedRunScope() throws {
+        let fixture = try TranscriptFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.model
+        for scope in [TaskScope.chat, .observe] {
+            let user = AgentMessage(role: .user, text: "Hello")
+            let conversation = Conversation(title: "Live", messages: [user])
+            model.conversations = [conversation]; model.selectedConversationID = conversation.id
+            model.activeRun = fixture.run(conversation: conversation, requestID: user.id, scope: scope)
+            model.scope = .control
+            model.streamingText = "Live response"
+            model.conversations[0].messages.append(AgentMessage(role: .assistant, text: "Finished"))
+            XCTAssertFalse(model.isHoldingDeviceTranscript)
+            XCTAssertEqual(model.displayedStreamingText, "Live response")
+            XCTAssertEqual(model.displayedConversationFeed, model.conversationFeed)
+            model.activeRun = nil
+        }
+        let conversation = try XCTUnwrap(model.selectedConversation)
+        model.activeRun = fixture.run(conversation: conversation, requestID: UUID())
+        model.scope = .chat
+        XCTAssertTrue(model.isHoldingDeviceTranscript, "Changing composer scope must not change an active run's presentation.")
+        let other = Conversation(title: "Other", messages: [AgentMessage(role: .user, text: "History")])
+        model.conversations.append(other); model.selectedConversationID = other.id
+        XCTAssertFalse(model.isHoldingDeviceTranscript)
+        XCTAssertEqual(model.displayedConversationFeed, [.message(other.messages[0])])
+    }
+
     private func record() -> RunRecord {
         RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(), scope: .chat,
                   model: "fixture", skill: nil, state: .running, detail: "", events: [])
+    }
+}
+
+@MainActor private struct TranscriptFixture {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let suite = "eiscue.transcript-tests.\(UUID().uuidString)"
+    let preferences: UserDefaults
+    let model: AppModel
+
+    init() throws {
+        preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        model = AppModel(storageDirectory: directory, preferences: preferences)
+    }
+    func run(conversation: Conversation, requestID: UUID, scope: TaskScope = .control) -> RunRecord {
+        RunRecord(id: UUID(), conversationID: conversation.id, requestID: requestID, startedAt: Date(), scope: scope,
+                  model: "fixture", skill: nil, state: .preparing, detail: "", events: [])
+    }
+    func cleanUp() {
+        preferences.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: directory)
     }
 }

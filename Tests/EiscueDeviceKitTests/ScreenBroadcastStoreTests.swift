@@ -5,6 +5,62 @@ import Testing
 @testable import EiscueDeviceKit
 
 @Suite struct ScreenBroadcastStoreTests {
+    @Test func anIdenticalPublicationKeepsADelayedObservationCurrent() async throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        try fixture.publish(session)
+        let observed = try fixture.store.readCurrentFrame()
+        try await Task.sleep(for: .seconds(ScreenBroadcastStore.maximumFrameAge + 0.15))
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
+
+        try fixture.publish(session)
+        let current = try fixture.store.readCurrentFrame()
+        #expect(current.frame.frameID == observed.frame.frameID)
+        #expect(current.frame.capturedAt > observed.frame.capturedAt)
+        #expect(current.frame.capturedUptime > observed.frame.capturedUptime + ScreenBroadcastStore.maximumFrameAge)
+        #expect(BluetoothFrameAuthority.permits(sourceFrameID: observed.frame.frameID,
+            capturedUptime: observed.frame.capturedUptime, currentSourceFrameID: current.frame.frameID,
+            currentConfirmedUptime: current.confirmedUptime, now: ProcessInfo.processInfo.systemUptime))
+        // Identity reuse alone cannot extend the broadcast's liveness window.
+        #expect(!BluetoothFrameAuthority.permits(sourceFrameID: observed.frame.frameID,
+            capturedUptime: observed.frame.capturedUptime, currentSourceFrameID: current.frame.frameID,
+            currentConfirmedUptime: current.confirmedUptime,
+            now: current.confirmedUptime + ScreenBroadcastStore.maximumFrameAge + 0.01))
+    }
+
+    @Test func returningToEarlierPixelsCannotReviveTheirIdentity() throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        let original = try fixture.publish(session)
+        let changed = try fixture.store.publish(jpegData: BroadcastStoreFixture.makeJPEG(gray: 0.8),
+            width: 8, height: 4, orientation: .right, sessionID: session)
+        let returned = try fixture.publish(session)
+        #expect(changed != original)
+        #expect(returned != original && returned != changed)
+        #expect(try fixture.publish(session) == returned)
+        #expect(!BluetoothFrameAuthority.permits(sourceFrameID: original, capturedUptime: 85,
+            currentSourceFrameID: returned, currentConfirmedUptime: 99.5, now: 100))
+    }
+
+    @Test func geometryAndSessionChangesRequireNewIdentities() throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        let original = try fixture.publish(session)
+        let rotated = try fixture.store.publish(jpegData: fixture.jpeg,
+            width: 8, height: 4, orientation: .left, sessionID: session)
+        let resized = try fixture.store.publish(jpegData: fixture.jpeg,
+            width: 4, height: 8, orientation: .left, sessionID: session)
+        let returned = try fixture.publish(session)
+        #expect(Set([original, rotated, resized, returned]).count == 4)
+        let replacement = try fixture.store.beginSession()
+        let reconnected = try fixture.publish(replacement)
+        #expect(reconnected != returned)
+        #expect(throws: ScreenBroadcastError.self) { try fixture.publish(session) }
+    }
+
     @Test func pauseResumeAndFinishRequireANewFrame() throws {
         let fixture = try BroadcastStoreFixture()
         defer { fixture.cleanUp() }
@@ -129,16 +185,20 @@ private struct BroadcastStoreFixture {
 
     init() throws {
         store = ScreenBroadcastStore(containerURL: directory)
+        jpeg = try Self.makeJPEG(gray: 0.5)
+    }
+
+    static func makeJPEG(gray: CGFloat) throws -> Data {
         let context = try #require(CGContext(data: nil, width: 8, height: 4, bitsPerComponent: 8,
             bytesPerRow: 32, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
-        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
+        context.setFillColor(CGColor(gray: gray, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 8, height: 4))
         let image = try #require(context.makeImage())
         let data = NSMutableData()
         let destination = try #require(CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil))
         CGImageDestinationAddImage(destination, image, nil)
         try #require(CGImageDestinationFinalize(destination))
-        jpeg = data as Data
+        return data as Data
     }
 
     @discardableResult

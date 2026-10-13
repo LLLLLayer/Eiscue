@@ -19,17 +19,21 @@ struct AssistantView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if let conversation = model.selectedConversation, !model.conversationFeed.isEmpty {
+                    if let conversation = model.selectedConversation, !model.displayedConversationFeed.isEmpty {
                         transcript(conversation)
                     } else { welcome }
-                    if !model.streamingText.isEmpty {
-                        AssistantMessageContent(text: model.streamingText)
+                    if !model.displayedStreamingText.isEmpty {
+                        AssistantMessageContent(text: model.displayedStreamingText)
                             .equatable()
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityElement(children: .contain)
                             .accessibilityIdentifier("streamingResponse")
                     }
-                    if model.activeRun != nil || model.isSubmittingMessage { AssistantReplyIndicator() }
+                    if model.isHoldingDeviceTranscript {
+                        Label(chatText("chat.operatingDevice"), systemImage: "hand.tap")
+                            .font(.caption).foregroundStyle(.secondary).padding(.vertical, 8)
+                            .accessibilityIdentifier("deviceControlRunStatus")
+                    } else if model.activeRun != nil || model.isSubmittingMessage { AssistantReplyIndicator() }
                     runStatus
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -38,8 +42,9 @@ struct AssistantView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom, for: .sizeChanges)
-            .onChange(of: model.selectedConversation?.messages.count) {
+            .defaultScrollAnchor(model.isHoldingDeviceTranscript ? nil : .bottom, for: .sizeChanges)
+            .onChange(of: model.displayedConversationFeed.count) {
+                guard !model.isHoldingDeviceTranscript else { return }
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
@@ -144,10 +149,10 @@ struct AssistantView: View {
         VStack(alignment: .leading, spacing: 22) {
             Text(conversation.createdAt, format: .dateTime.month().day())
                 .font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity)
-            ForEach(model.conversationFeed) { item in
+            ForEach(model.displayedConversationFeed) { item in
                 switch item {
                 case .message(let message): ChatMessageRow(message: message)
-                case .activity(let activity): ToolActivityRow(activity: activity)
+                case .activity(let activity): ToolActivityRow(activity: activity, showsProgress: !model.isHoldingDeviceTranscript)
                 }
             }
         }

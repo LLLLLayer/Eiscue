@@ -40,7 +40,19 @@ final class AppModel {
     var selectedSkillID: String?
     var skills: [AgentSkill] = []
     var runs: [RunRecord] = []
-    var activeRun: RunRecord?
+    var activeRun: RunRecord? {
+        didSet {
+            guard oldValue?.id != activeRun?.id else { return }
+            if let run = activeRun, run.scope == .control {
+                // Live transcript changes would change the screen being observed
+                // while the model is still deciding where to touch it.
+                let messages = conversations.first { $0.id == run.conversationID }?.messages ?? []
+                let activities = runs.filter { $0.conversationID == run.conversationID }.flatMap { $0.activities ?? [] }
+                controlTranscriptSnapshot = (run.id, run.conversationID, ConversationFeedItem.merge(messages: messages, activities: activities))
+            } else { controlTranscriptSnapshot = nil }
+        }
+    }
+    private var controlTranscriptSnapshot: (runID: UUID, conversationID: UUID, feed: [ConversationFeedItem])?
     var streamingText = ""
     var currentTool = ""
     var interruptedConversationIDs = Set<UUID>()
@@ -205,6 +217,15 @@ final class AppModel {
         return ConversationFeedItem.merge(messages: selectedConversation?.messages ?? [],
                                           activities: records.flatMap { $0.activities ?? [] })
     }
+    var isHoldingDeviceTranscript: Bool {
+        guard let snapshot = controlTranscriptSnapshot, let activeRun else { return false }
+        return activeRun.id == snapshot.runID && activeRun.scope == .control && selectedConversationID == snapshot.conversationID
+    }
+    var displayedConversationFeed: [ConversationFeedItem] {
+        if isHoldingDeviceTranscript, let snapshot = controlTranscriptSnapshot { return snapshot.feed }
+        return conversationFeed
+    }
+    var displayedStreamingText: String { isHoldingDeviceTranscript ? "" : streamingText }
     var needsRecovery: Bool {
         guard let id = selectedConversationID else { return false }
         return interruptedConversationIDs.contains(id) || pendingRequestID(in: selectedConversation) != nil

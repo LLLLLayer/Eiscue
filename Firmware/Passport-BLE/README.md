@@ -286,8 +286,12 @@ in the authenticated v2 envelope above):
 | `09` QUERY_OUTPUT | All zeros. Response byte 5: bit 0 USB selected; bit 1 USB supported; bit 2 actual USB host mounted and awake; bit 3 S3; bit 4 restricted navigation shortcuts supported. Mounted does not imply calibrated input. |
 
 Keyboard Home is usage `0x4A`; **it is not an iPhone return-to-Home-screen
-command**. The new Command-H and Command-V reports request host shortcuts; their
-actual effects depend on iOS focus and state. The firmware does not read or write
+command**. Command-H is not a verified system Home action, so the app does not
+advertise a Home capability on this transport. iPhone Full Keyboard Access is a
+separate system feature with its own Home command; enabling AssistiveTouch does
+not enable it.
+Command-Space and Command-V also request host shortcuts; a board acknowledgement
+does not confirm their visible effects. The firmware does not read or write
 the clipboard. Absolute HID coordinates are not automatically screen pixels:
 the App must calibrate and validate the coordinate mapping for the current
 orientation. The earlier full-safe-area Debug click only verified transport

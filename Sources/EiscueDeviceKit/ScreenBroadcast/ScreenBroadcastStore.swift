@@ -160,7 +160,12 @@ public struct ScreenBroadcastStore: Sendable {
         let current = try matchingRecord(sessionID)
         guard current.phase == .starting || current.phase == .active,
               !(try stopRequested(sessionID: sessionID)) else { throw ScreenBroadcastError.inactive }
-        let frame = ScreenBroadcastFrame(sessionID: sessionID, frameID: UUID(), capturedAt: Date(),
+        // Repeated buffers can contain identical screen pixels. Preserve only
+        // the immediately preceding identity; A -> B -> A must not revive A.
+        let previous = current.phase == .active ? current.frame : nil
+        let isUnchanged = previous?.sessionID == sessionID && previous?.width == width
+            && previous?.height == height && previous?.orientation == orientation && previous?.jpegData == jpegData
+        let frame = ScreenBroadcastFrame(sessionID: sessionID, frameID: isUnchanged ? previous!.frameID : UUID(), capturedAt: Date(),
             capturedUptime: ProcessInfo.processInfo.systemUptime, orientation: orientation,
             width: width, height: height, jpegData: jpegData)
         try validate(frame)

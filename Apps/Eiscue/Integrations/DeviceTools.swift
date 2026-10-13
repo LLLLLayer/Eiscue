@@ -50,7 +50,7 @@ final class DeviceToolSession {
                 ], required: ["bundleId"]),
                 tool("device_home", "Return to the device home screen. Observe again afterward.", properties: [:], required: [])
             ]
-            result.append(tool("device_press_key", "Send one supported keyboard action. search opens system search (Command-Space), enter confirms the visible focused item, escape dismisses the visible panel. For another app, use home, observe, search, observe, type its display name, observe, then tap the matching visible result. This cannot launch by bundle ID. Observe again after every action.", properties: [
+            result.append(tool("device_press_key", "Send one supported keyboard action. search requests system search (Command-Space), enter confirms the visible focused item, escape dismisses the visible panel. Observe again after every action: a receipt does not prove a shortcut took effect. Only type an app's display name after a fresh screenshot confirms the search field. If a shortcut had no visible effect, navigate using visible controls, such as the AssistiveTouch menu and its Home button, instead of repeating it. Only use tools actually provided. This cannot launch by bundle ID.", properties: [
                 "frameId": frame,
                 "key": ["type": "string", "enum": .array(DeviceKeyboardAction.allCases.map { .string($0.rawValue) })]
             ], required: ["frameId", "key"]))

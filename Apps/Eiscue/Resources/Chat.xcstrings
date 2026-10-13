@@ -1,6 +1,23 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "chat.operatingDevice": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI is operating your device. Details will appear when finished."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 正在操作设备，结束后会显示过程和结果。"
+          }
+        }
+      }
+    },
     "chat.copy": {
       "extractionState": "manual",
       "localizations": {
