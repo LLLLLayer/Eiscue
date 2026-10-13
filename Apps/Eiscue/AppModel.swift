@@ -486,6 +486,7 @@ final class AppModel {
         lastTaskPresentation = nil; isReceivingResponse = false
         let runID = UUID()
         var runningAgent: AgentClient?
+        var modelRequestFailed = false
         activeRun = RunRecord(id: runID, conversationID: conversationID, requestID: requestID, startedAt: Date(),
                               scope: scope, model: modelSettings.model, skill: selectedSkill.map { "\($0.id)@\($0.digest)" },
                               state: .preparing, detail: String(localized: "run.preparing", table: "Runtime"), events: [])
@@ -611,26 +612,31 @@ final class AppModel {
             // Losing durable host state stops the independent runtime before
             // releasing the UI lock or allowing another engine to open this DB.
             deviceTools?.stop()
-            try? await runningAgent?.cancel()
+            var reportedError = error
+            do {
+                try await runningAgent?.cancel()
+                if case AgentError.modelRequestFailed = error { modelRequestFailed = true }
+            } catch { reportedError = error }
             // Read the submission before the optional-chain write begins its
             // exclusive access to activeRun; reading it in the RHS traps.
             let interrupted = stopRequested || error is CancellationError || activeRun?.submission == .pending
             activeRun?.state = interrupted ? .interrupted : .failed
-            if !stopRequested { activeRun?.detail = safeError(error) }
+            if !stopRequested { activeRun?.detail = safeError(reportedError) }
         }
         companionFinalizingRunID = runID
         deviceTools?.stop()
         activeRun?.interruptOpenActivities()
         updateTaskStatus(isFinishing: true)
-        if activeRun?.scope != .chat {
-            if deviceConnectionMethod == .bluetoothBoard, activeRun?.state == .completed {
-                do { try await bluetoothController.finishTask() }
-                catch {
-                    activeRun?.state = .interrupted
-                    activeRun?.detail = safeError(error)
-                    await releaseDeviceConnection()
-                }
-            } else { await releaseDeviceConnection() }
+        if let run = activeRun {
+            do {
+                try await DeviceRunCleanup.finish(run: run, method: deviceConnectionMethod,
+                    modelRequestFailed: modelRequestFailed, deviceTools: deviceTools, stopRequested: stopRequested,
+                    finishBluetooth: { try await self.bluetoothController.finishTask() },
+                    disconnect: { await self.releaseDeviceConnection() })
+            } catch {
+                activeRun?.state = .interrupted
+                activeRun?.detail = safeError(error)
+            }
         }
         activeRun?.endedAt = Date()
         if activeRun?.state == .interrupted { interruptedConversationIDs.insert(conversationID) }
@@ -641,6 +647,7 @@ final class AppModel {
             activeRun?.state = .failed
             activeRun?.detail = message
             errorMessage = message
+            if activeRun?.scope != .chat { await releaseDeviceConnection() }
         }
         companionFinalizingRunID = nil
         updateTaskStatus()
@@ -809,7 +816,10 @@ final class AppModel {
         return merged
     }
 
-    func safeError(_ error: Error) -> String { sanitizedText(error.localizedDescription) }
+    func safeError(_ error: Error) -> String {
+        ModelFailurePresentation.message(for: error, api: modelSettings.api, baseURL: modelSettings.baseURL)
+            ?? sanitizedText(error.localizedDescription)
+    }
 
     private func sanitizedText(_ text: String) -> String { redacted(text, limit: 1000) }
     private func sanitizedActivityText(_ text: String) -> String { redacted(text, limit: 8_192) }

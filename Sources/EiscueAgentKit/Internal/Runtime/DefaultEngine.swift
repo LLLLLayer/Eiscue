@@ -160,6 +160,8 @@ actor DefaultEngine: AgentEngine {
                 try await importHistory(request.history, into: opened.conversation)
                 view = try await opened.conversation.view()
             }
+            let existingEntries = Set(view.entries.map(\.id))
+            var settledInputs: [EntryID] = []
             if configuration?.supportsImages == false,
                view.entries.contains(where: { ($0.userMessage?.content ?? []).contains { if case .image = $0 { true } else { false } } }) {
                 throw AgentError.invalidConfiguration(String(localized: "agent.attachment.images-unavailable", defaultValue: "Select a model that supports images to send this attachment.", bundle: .module))
@@ -207,12 +209,15 @@ actor DefaultEngine: AgentEngine {
                 let settled = try await submission.wait()
                 try checkRunning(id)
                 if let budgetError = await budget.failure { throw budgetError }
-                if case .unanswered(_, let reason, let detail) = settled.status {
-                    let failedView = try? await opened.conversation.view()
-                    let modelError = failedView?.entries.compactMap(\.assistantMessage).last?.errorMessage
+                if case .unanswered(let input, let reason, let detail) = settled.status {
+                    let failedView = try await opened.conversation.view()
+                    if let modelFailure = ModelRequestFailure.classify(entries: failedView.entries, input: input, existingEntries: existingEntries) {
+                        throw modelFailure
+                    }
                     let detailText = detail?.stringValue ?? detail?["message"]?.stringValue ?? ""
-                    throw AgentError.runtime(modelError ?? String(localized: "agent.runtime.unfinished", defaultValue: "The task did not finish (\(String(describing: reason))). \(String(describing: detailText))", bundle: .module))
+                    throw AgentError.runtime(String(localized: "agent.runtime.unfinished", defaultValue: "The task did not finish (\(String(describing: reason))). \(String(describing: detailText))", bundle: .module))
                 }
+                if case .done(let input, _) = settled.status { settledInputs.append(input) }
             }
             try await opened.conversation.waitForIdle()
             try checkRunning(id)
@@ -220,6 +225,9 @@ actor DefaultEngine: AgentEngine {
             let finalView = try await opened.conversation.view()
             await mapping.reconcile(finalView)
             if let last = finalView.entries.last?.assistantMessage, last.stopReason == .error {
+                if let modelFailure = settledInputs.reversed().compactMap({
+                    ModelRequestFailure.classify(entries: finalView.entries, input: $0, existingEntries: existingEntries)
+                }).first { throw modelFailure }
                 throw AgentError.runtime(last.errorMessage ?? String(localized: "agent.runtime.model-failed", defaultValue: "The model request failed.", bundle: .module))
             }
         } catch {
@@ -238,13 +246,24 @@ actor DefaultEngine: AgentEngine {
                 if shouldAbort {
                     await budget.stop()
                     do { try await abortOperation(session.conversation) }
-                    catch { if result is CancellationError { result = error } }
+                    catch {
+                        if result is CancellationError || ModelRequestFailure.isModelFailure(result) {
+                            result = AgentError.runtime(error.localizedDescription)
+                        }
+                    }
                 }
-                if let finalView = try? await session.conversation.view() { await finalTranslator?.reconcile(finalView) }
+                do { await finalTranslator?.reconcile(try await session.conversation.view()) }
+                catch {
+                    if ModelRequestFailure.isModelFailure(result) { result = AgentError.runtime(error.localizedDescription) }
+                }
                 finalReader?.cancel()
                 await finalReader?.value
                 do { try await session.harness.close() }
-                catch { if result == nil { result = error } }
+                catch {
+                    if result == nil || ModelRequestFailure.isModelFailure(result) {
+                        result = AgentError.runtime(error.localizedDescription)
+                    }
+                }
                 return result
             }.value
         }
@@ -395,6 +414,7 @@ actor DefaultEngine: AgentEngine {
     private func sanitized(_ error: Error) -> AgentError {
         if let error = error as? AgentError {
             if case .runtime(let text) = error { return .runtime(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
+            if case .modelRequestFailed(let text) = error { return .modelRequestFailed(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
             return error
         }
         return .runtime(RuntimeMapping.redact(error.localizedDescription, secret: configuration?.apiKey ?? ""))

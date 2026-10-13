@@ -14,6 +14,7 @@ final class DeviceToolSession {
     private var isActive = true
     private var latestFrame: UUID?
     private var isExecuting = false
+    private(set) var hasStartedExecution = false
 
     init(capabilities: Set<DeviceCapability> = Set(DeviceCapability.allCases), client: DeviceClient, scope: TaskScope, timeoutSeconds: Int,
          log: @escaping @MainActor (String, String) async throws -> Void,
@@ -77,6 +78,7 @@ final class DeviceToolSession {
         try check(sideEffect: sideEffect)
         guard !isExecuting else { throw ToolGateError.busy }
         isExecuting = true
+        hasStartedExecution = true
         defer { isExecuting = false }
         // Persist a redacted intent before crossing the device-send boundary.
         try await log(sideEffect ? "action.prepared" : "observation.prepared", name)

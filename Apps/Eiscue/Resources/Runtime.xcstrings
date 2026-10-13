@@ -1424,6 +1424,23 @@
         }
       }
     },
+    "error.model_region_unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini rejected this request because its API is unavailable in the region of the request. Check the model service’s supported regions, or choose a service available in your region."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini 因当前请求所在地区不受支持而拒绝了请求。请确认模型服务支持的地区，或改用当地可用的模型服务。"
+          }
+        }
+      }
+    },
     "settings.language_footer": {
       "extractionState": "manual",
       "localizations": {

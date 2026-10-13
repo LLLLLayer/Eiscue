@@ -13,6 +13,9 @@ public enum AgentError: Error, LocalizedError, Sendable, Equatable {
     case nothingToResume
     case toolLimitReached
     case timedOut
+    /// A new model response failed after this run's input. Runtime and durable
+    /// cleanup succeeded; this classification says nothing about prior tools.
+    case modelRequestFailed(String)
     case runtime(String)
 
     public var errorDescription: String? {
@@ -25,7 +28,7 @@ public enum AgentError: Error, LocalizedError, Sendable, Equatable {
         case .nothingToResume: String(localized: "agent.error.nothing-to-resume", defaultValue: "This conversation has no task to resume.", bundle: .module)
         case .toolLimitReached: String(localized: "agent.error.tool-limit", defaultValue: "This task has reached its tool call limit.", bundle: .module)
         case .timedOut: String(localized: "agent.error.timeout", defaultValue: "The task reached its time limit and stopped.", bundle: .module)
-        case .runtime(let message): message
+        case .modelRequestFailed(let message), .runtime(let message): message
         }
     }
 }

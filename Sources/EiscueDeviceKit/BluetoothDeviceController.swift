@@ -203,7 +203,7 @@ public final class BluetoothDeviceController: DeviceController {
         return observation.screenshot
     }
 
-    /// End a successful user-started task without discarding the checked
+    /// End a user-started task without discarding the checked
     /// connection. Only confirmed release permits preserving its calibration.
     public func finishTask() async throws {
         try await beginAction(); defer { operations.endAction() }
