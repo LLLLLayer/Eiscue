@@ -4689,13 +4689,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The action was sent, but its result could not be checked. Restore screen sharing, then continue; Eiscue will inspect the screen before taking another action."
+            "value": "The action was sent, but the screen could not be retrieved to check the result. Return to Eiscue, check the connection on the Device page, then continue. Eiscue will inspect the screen before taking another action."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作已发送，但暂时无法查看结果。请恢复屏幕共享后继续，Eiscue 会先查看屏幕，再决定下一步。"
+            "value": "操作已发送，但未能获取屏幕画面来确认结果。请返回 Eiscue，在设备页检查连接后继续。Eiscue 会先查看屏幕，再进行下一步操作。"
           }
         }
       }

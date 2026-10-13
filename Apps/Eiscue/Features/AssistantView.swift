@@ -176,7 +176,7 @@ struct AssistantView: View {
         } else if model.activeRun == nil, let run = model.pausedRun {
             VStack(alignment: .leading, spacing: 10) {
                 Label("run.paused", systemImage: "pause.circle").font(.subheadline.weight(.medium))
-                Text(run.detail).font(.caption).foregroundStyle(.secondary)
+                Text(run.pauseReason?.detail ?? run.detail).font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button(String(localized: "run.paused.continue", table: "Runtime")) { Task { await model.continueInterruptedRun() } }
                         .buttonStyle(.glassProminent).accessibilityIdentifier("continuePausedRunButton")

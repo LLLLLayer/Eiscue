@@ -34,6 +34,26 @@ static NSString *capturedText, *capturedName, *capturedKey;
 static id capturedPath, capturedEvent;
 static void (^lastCompletion)(BOOL, NSError *);
 static NSUInteger submissions, constructions;
+static NSString *capturedImageType;
+static double capturedImageQuality;
+static NSInteger capturedScreenID;
+static CGRect capturedCaptureRect;
+static id capturedEncoding, capturedScreenshotRequest;
+static void (^lastScreenshotReply)(id, NSError *);
+static NSUInteger screenshotSubmissions;
+static BOOL throwOnScreenshotSend;
+
+@interface EiscueFixtureImage : NSObject
+@property(strong) id bytes;
+@property BOOL throwsOnData;
+- (id)data;
+@end
+@implementation EiscueFixtureImage
+- (id)data {
+    if (self.throwsOnData) @throw [NSException exceptionWithName:@"FixtureImage" reason:nil userInfo:nil];
+    return self.bytes;
+}
+@end
 
 @implementation UIPasteboard
 + (UIPasteboard *)generalPasteboard {
@@ -110,6 +130,18 @@ static void performDevice(id receiver, SEL selector, id event, id completion) { 
 static id synthesize(id receiver, SEL selector, id event, id completion) { receiveEvent(receiver,event,completion); return nil; }
 static id fixtureConnection(id receiver, SEL selector) { return sessionConnection; }
 static BOOL fixtureLegacyCoordinates(id receiver, SEL selector) { return legacyCoordinates; }
+static id initImageEncoding(id receiver, SEL selector, NSString *type, double quality) {
+    capturedImageType=[type copy]; capturedImageQuality=quality; return receiver;
+}
+static id initScreenshotRequest(id receiver, SEL selector, NSInteger screen, CGRect rect, id encoding) {
+    capturedScreenID=screen; capturedCaptureRect=rect; capturedEncoding=encoding;
+    if (dirtyDuringConstruction) invalidateGeometry(current);
+    return receiver;
+}
+static void requestScreenshot(id receiver, SEL selector, id request, id reply) {
+    screenshotSubmissions++; capturedScreenshotRequest=request; lastScreenshotReply=[reply copy];
+    if (throwOnScreenshotSend) @throw [NSException exceptionWithName:@"FixtureScreenshot" reason:nil userInfo:nil];
+}
 static void method(Class cls, const char *selector, IMP implementation, const char *types) {
     CHECK(class_addMethod(cls,sel_registerName(selector),implementation,types));
 }
@@ -128,14 +160,20 @@ static void installFixtures(void) {
     Class record=fixtureClass("XCSynthesizedEventRecord");
     method(record,"initWithName:displayID:interfaceOrientation:",(IMP)initRecord,"@40@0:8@16Q24q32");
     method(record,"addPointerEventPath:",(IMP)addPath,"v24@0:8@16");
+    Class encoding=fixtureClass("XCTImageEncoding");
+    method(encoding,"initWithUniformTypeIdentifier:compressionQuality:",(IMP)initImageEncoding,"@32@0:8@16d24");
+    Class capture=fixtureClass("XCTScreenshotRequest");
+    method(capture,"initWithScreenID:rect:encoding:",(IMP)initScreenshotRequest,"@64@0:8q16{CGRect={CGPoint=dd}{CGSize=dd}}24@56");
     fakeSessionClass=fixtureClass("EiscueFixtureSession");
     method(fakeSessionClass,"performDeviceEvent:completion:",(IMP)performDevice,"v32@0:8@16@?24");
     method(fakeSessionClass,"synthesizeEvent:completion:",(IMP)synthesize,"@32@0:8@16@?24");
     method(fakeSessionClass,"connection",(IMP)fixtureConnection,"@16@0:8");
     method(fakeSessionClass,"useLegacyEventCoordinateTransformationPath",(IMP)fixtureLegacyCoordinates,"B16@0:8");
+    method(fakeSessionClass,"requestScreenshotWithRequest:withReply:",(IMP)requestScreenshot,"v32@0:8@16@?24");
     wrongSignatureSessionClass=fixtureClass("EiscueFixtureWrongSignatureSession");
     method(wrongSignatureSessionClass,"performDeviceEvent:completion:",(IMP)performDevice,"v24@0:8@16");
     method(wrongSignatureSessionClass,"synthesizeEvent:completion:",(IMP)synthesize,"v32@0:8@16@?24");
+    method(wrongSignatureSessionClass,"requestScreenshotWithRequest:withReply:",(IMP)requestScreenshot,"@32@0:8@16@?24");
 }
 static void resetOwner(void) {
     if (current) eiscue_automation_abort(current.lease);
@@ -146,6 +184,9 @@ static void resetOwner(void) {
     dirtyDuringConstruction=NO; throwOnSend=NO; throwOnClipboardWrite=NO;
     legacyCoordinates=NO;
     capturedText=nil; capturedName=nil; capturedKey=nil; capturedPath=nil; capturedEvent=nil; lastCompletion=nil;
+    capturedImageType=nil; capturedImageQuality=0; capturedScreenID=-1; capturedCaptureRect=CGRectZero;
+    capturedEncoding=nil; capturedScreenshotRequest=nil; lastScreenshotReply=nil;
+    screenshotSubmissions=0; throwOnScreenshotSend=NO;
     sessionConnection=nil;
 }
 static void receipt(BOOL success, NSError *error) {
@@ -273,9 +314,156 @@ static void environmentAndPendingFixtures(void) {
     // Keep subsequent fixtures independent of the local initialization settings.
     CHECK(unsetenv("XCTestManagerVariant")==0 && unsetenv("XCTestSessionIdentifier")==0);
 }
+static void drainReplies(void) {
+    [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+}
+static EiscueFixtureImage *fixtureImage(id bytes) {
+    EiscueFixtureImage *image=[EiscueFixtureImage new]; image.bytes=bytes; return image;
+}
+static void screenshotFixtures(void) {
+    // Only the PNG transport signature matters here; decoding is owned by Swift.
+    const uint8_t png[]={137,80,78,71,13,10,26,10,1,2};
+    NSData *data=[NSData dataWithBytes:png length:sizeof(png)];
+    uint8_t copied[sizeof(png)]; size_t length=123;
+    resetOwner();
+    CHECK(eiscue_automation_screenshot(18,1,7)==EISCUE_AUTOMATION_CLOSED);
+    CHECK(eiscue_automation_screenshot(19,1,6)==EISCUE_AUTOMATION_GEOMETRY);
+    CHECK(screenshotSubmissions==0 && current.status.request_id==0);
+    CHECK(eiscue_automation_copy_screenshot(19,1,NULL,0,NULL)==EISCUE_AUTOMATION_CONFIGURATION);
+    CHECK(eiscue_automation_screenshot(19,1,7)==0 && screenshotSubmissions==1);
+    CHECK([capturedImageType isEqualToString:@"public.png"] && capturedImageQuality==1);
+    CHECK(capturedScreenID==3 && CGRectIsNull(capturedCaptureRect));
+    CHECK(capturedEncoding && capturedScreenshotRequest && lastScreenshotReply);
+    CHECK(current.status.phase==EISCUE_AUTOMATION_CAPTURING && current.status.request_id==1);
+    CHECK(current.screenshotRequest==1 && !current.eventPending);
+    CHECK(eiscue_automation_screenshot(19,2,7)==EISCUE_AUTOMATION_BUSY);
+    CHECK(eiscue_automation_home(19,2,7)==EISCUE_AUTOMATION_BUSY);
+    CHECK(eiscue_automation_type_text(19,2,7,(const uint8_t *)"x",1)==EISCUE_AUTOMATION_BUSY);
+    CHECK(eiscue_automation_touch(19,2,7,1170,2532,0,0,0,0,0)==EISCUE_AUTOMATION_BUSY);
+    CHECK(screenshotSubmissions==1 && submissions==0 && clipboardWrites==0);
+    CHECK(eiscue_automation_copy_screenshot(19,1,NULL,0,&length)==EISCUE_AUTOMATION_BUSY && length==0);
+
+    // The framework callback may arrive off-main; it must not publish there.
+    NSMutableData *mutable=[data mutableCopy]; EiscueFixtureImage *image=fixtureImage(mutable);
+    void (^reply)(id,NSError *)=[lastScreenshotReply copy];
+    dispatch_semaphore_t finished=dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0), ^{
+        reply(image,nil); dispatch_semaphore_signal(finished);
+    });
+    CHECK(dispatch_semaphore_wait(finished,dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC))==0);
+    CHECK(current.status.phase==EISCUE_AUTOMATION_CAPTURING && !current.screenshotData);
+    drainReplies();
+    memset(mutable.mutableBytes,0,mutable.length);
+    CHECK(current.status.phase==EISCUE_AUTOMATION_READY && !current.closed);
+    CHECK(eiscue_automation_home(19,2,7)==EISCUE_AUTOMATION_BUSY);
+    CHECK(eiscue_automation_copy_screenshot(19,1,NULL,0,&length)==0 && length==sizeof(png));
+    CHECK(eiscue_automation_copy_screenshot(19,1,copied,sizeof(copied)-1,&length)==EISCUE_AUTOMATION_CONFIGURATION);
+    CHECK(current.screenshotRequest==1 && current.screenshotData);
+    CHECK(eiscue_automation_copy_screenshot(19,1,copied,sizeof(copied),&length)==0);
+    CHECK(length==sizeof(png) && memcmp(copied,png,sizeof(png))==0);
+    CHECK(!current.screenshotData && current.screenshotRequest==0);
+    CHECK(eiscue_automation_copy_screenshot(19,1,NULL,0,&length)==EISCUE_AUTOMATION_CLOSED && length==0);
+    CHECK(eiscue_automation_screenshot(19,1,7)==EISCUE_AUTOMATION_BUSY);
+    CHECK(eiscue_automation_home(19,2,7)==0);
+    CHECK(eiscue_automation_screenshot(19,3,7)==EISCUE_AUTOMATION_BUSY && screenshotSubmissions==1);
+    receipt(YES,nil);
+
+    // Cancel releases only this read. A late old reply must neither finish nor
+    // cancel a newer capture on the same owned runner.
+    resetOwner();
+    EiscueFixturePendingConnection *connection=newPendingConnection(); sessionConnection=connection;
+    id session=current.session;
+    CHECK(eiscue_automation_screenshot(19,1,7)==0);
+    void (^oldReply)(id,NSError *)=[lastScreenshotReply copy];
+    eiscue_automation_cancel_screenshot(19,1);
+    CHECK(current.status.phase==EISCUE_AUTOMATION_READY && current.screenshotRequest==0);
+    CHECK(current.session==session && !current.closed && connection.invalidations==0);
+    CHECK(eiscue_automation_screenshot(19,1,7)==EISCUE_AUTOMATION_BUSY);
+    CHECK(eiscue_automation_screenshot(19,2,7)==0);
+    eiscue_automation_cancel_screenshot(19,1);
+    eiscue_automation_cancel_screenshot(18,2);
+    oldReply(fixtureImage(data),nil); drainReplies();
+    CHECK(current.status.phase==EISCUE_AUTOMATION_CAPTURING && current.screenshotRequest==2);
+    CHECK(!current.screenshotData && current.screenshotError==0 && connection.invalidations==0);
+    lastScreenshotReply(fixtureImage(data),nil); drainReplies();
+    CHECK(eiscue_automation_copy_screenshot(19,2,copied,sizeof(copied),&length)==0);
+    CHECK(memcmp(copied,png,sizeof(png))==0 && current.session==session);
+
+    // Replacing an aborted owner can reuse request IDs without admitting its
+    // queued result into the replacement session.
+    CHECK(eiscue_automation_screenshot(19,3,7)==0);
+    oldReply=[lastScreenshotReply copy]; EiscueOwnedAutomation *oldOwner=current;
+    resetOwner(); CHECK(oldOwner.closed && connection.invalidations==1);
+    CHECK(eiscue_automation_screenshot(19,1,7)==0);
+    oldReply(fixtureImage(data),nil); drainReplies();
+    CHECK(current.status.phase==EISCUE_AUTOMATION_CAPTURING && current.screenshotRequest==1);
+    CHECK(!current.screenshotData && oldOwner.status.phase==EISCUE_AUTOMATION_STOPPED);
+    eiscue_automation_cancel_screenshot(19,1);
+
+    // Failures of an observation never invalidate the existing input session.
+    NSError *error=[NSError errorWithDomain:@"FixtureScreenshot" code:1 userInfo:nil];
+    EiscueFixtureImage *throwing=fixtureImage(data); throwing.throwsOnData=YES;
+    NSArray *images=@[fixtureImage(data),[NSObject new],fixtureImage(@"not bytes"),
+                      fixtureImage([NSData data]),fixtureImage([@"invalid PNG" dataUsingEncoding:NSUTF8StringEncoding]),throwing];
+    for (NSUInteger index=0;index<images.count;index++) {
+        resetOwner(); connection=newPendingConnection(); sessionConnection=connection; session=current.session;
+        CHECK(eiscue_automation_screenshot(19,1,7)==0);
+        lastScreenshotReply(images[index],index==0?error:nil); drainReplies();
+        CHECK(eiscue_automation_copy_screenshot(19,1,NULL,0,&length)==
+              (index==images.count-1?EISCUE_AUTOMATION_EXCEPTION:EISCUE_AUTOMATION_CONFIGURATION));
+        CHECK(length==0 && !current.closed && current.session==session && connection.invalidations==0);
+        CHECK(current.status.phase==EISCUE_AUTOMATION_READY && current.status.error==0);
+        eiscue_automation_cancel_screenshot(19,1);
+        CHECK(eiscue_automation_home(19,2,7)==0); receipt(YES,nil);
+    }
+
+    // Rotation before delivery or between the length and byte copies rejects
+    // stale pixels without disconnecting. A fresh geometry query is required.
+    for (NSUInteger stage=0;stage<2;stage++) {
+        resetOwner(); connection=newPendingConnection(); sessionConnection=connection; session=current.session;
+        CHECK(eiscue_automation_screenshot(19,1,7)==0);
+        if (stage==0) invalidateGeometry(current);
+        lastScreenshotReply(fixtureImage(data),nil); drainReplies();
+        if (stage==1) {
+            CHECK(eiscue_automation_copy_screenshot(19,1,NULL,0,&length)==0 && length==sizeof(png));
+            invalidateGeometry(current);
+        }
+        CHECK(eiscue_automation_copy_screenshot(19,1,copied,sizeof(copied),&length)==EISCUE_AUTOMATION_GEOMETRY);
+        CHECK(length==0 && current.geometryDirty && current.status.revision==8);
+        CHECK(!current.closed && current.session==session && connection.invalidations==0);
+        CHECK(current.status.phase==EISCUE_AUTOMATION_READY && current.status.error==0);
+        eiscue_automation_cancel_screenshot(19,1);
+        CHECK(eiscue_automation_home(19,2,8)==EISCUE_AUTOMATION_GEOMETRY && submissions==0);
+    }
+    resetOwner(); dirtyDuringConstruction=YES;
+    CHECK(eiscue_automation_screenshot(19,1,7)==EISCUE_AUTOMATION_GEOMETRY && screenshotSubmissions==0);
+    CHECK(current.status.request_id==0 && !current.closed && current.session);
+    resetOwner(); current.session=[wrongSignatureSessionClass new];
+    CHECK(eiscue_automation_screenshot(19,1,7)==EISCUE_AUTOMATION_SIGNATURE && screenshotSubmissions==0);
+    CHECK(current.status.phase==EISCUE_AUTOMATION_READY && current.screenshotRequest==0);
+    resetOwner(); throwOnScreenshotSend=YES; session=current.session;
+    CHECK(eiscue_automation_screenshot(19,1,7)==EISCUE_AUTOMATION_EXCEPTION && screenshotSubmissions==1);
+    CHECK(current.status.phase==EISCUE_AUTOMATION_READY && current.screenshotRequest==0);
+    CHECK(!current.closed && current.session==session);
+    lastScreenshotReply(fixtureImage(data),nil); drainReplies();
+    CHECK(!current.screenshotData && current.status.phase==EISCUE_AUTOMATION_READY);
+
+    resetOwner(); CHECK(eiscue_automation_screenshot(19,1,7)==0);
+    __block int32_t wrongThreadStart=0, wrongThreadCopy=0;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0), ^{
+        size_t copiedLength=0;
+        wrongThreadStart=eiscue_automation_screenshot(19,2,7);
+        wrongThreadCopy=eiscue_automation_copy_screenshot(19,1,NULL,0,&copiedLength);
+        eiscue_automation_cancel_screenshot(19,1); dispatch_semaphore_signal(finished);
+    });
+    CHECK(dispatch_semaphore_wait(finished,dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC))==0);
+    CHECK(wrongThreadStart==EISCUE_AUTOMATION_WRONG_THREAD && wrongThreadCopy==EISCUE_AUTOMATION_WRONG_THREAD);
+    CHECK(current.status.phase==EISCUE_AUTOMATION_CAPTURING && current.screenshotRequest==1 && screenshotSubmissions==1);
+    eiscue_automation_cancel_screenshot(19,1);
+}
 int main(void) { @autoreleasepool {
     alarm(15); // A missing async callback must terminate this host fixture.
-    CHECK(NSThread.isMainThread); installFixtures(); environmentAndPendingFixtures(); invalidFactoryFixture(); resetOwner();
+    CHECK(NSThread.isMainThread); installFixtures(); environmentAndPendingFixtures(); invalidFactoryFixture(); screenshotFixtures(); resetOwner();
     // Exact local SDK Home payload and receipt identity; no automatic retry.
     CHECK(eiscue_automation_home(18,1,7)==EISCUE_AUTOMATION_CLOSED);
     CHECK(eiscue_automation_home(19,1,6)==EISCUE_AUTOMATION_GEOMETRY && submissions==0);
@@ -412,5 +600,5 @@ int main(void) { @autoreleasepool {
     }
     eiscue_automation_abort(19);
     alarm(0);
-    printf("PASS: %lu owned home/text/touch checks (UTF-8, geometry, receipts, unknown delivery, abort)\n", (unsigned long)checks);
+    printf("PASS: %lu owned home/text/touch/screenshot checks (UTF-8, geometry, receipts, unknown delivery, abort)\n", (unsigned long)checks);
 } return 0; }

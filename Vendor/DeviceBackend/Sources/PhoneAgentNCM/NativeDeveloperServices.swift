@@ -620,25 +620,58 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         let token = handle, lease = automationLease
         automationLayout = nil; automationGeometry.reset()
         let before = try await refreshOwnedScreen(lease: lease, token: token)
-        let png = try await performOperation(UInt32(NCM_ACTION_LEGACY_SCREENSHOT), expectedKind: 4)
+        let encodedPNG = try await captureOwnedPNG(lease: lease, token: token, revision: before.revision)
         let after = try await refreshOwnedScreen(lease: lease, token: token)
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
             automationDiagnostic("NCM owned geometry beforeRevision=\(before.revision) afterRevision=\(after.revision) beforeOrientation=\(before.orientation) afterOrientation=\(after.orientation) scale=\(after.scale) boundsWidth=\(after.boundsWidth) boundsHeight=\(after.boundsHeight)")
-            if let source = CGImageSourceCreateWithData(png as CFData, nil),
+            if let source = CGImageSourceCreateWithData(encodedPNG as CFData, nil),
                let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
                let width = properties[kCGImagePropertyPixelWidth] as? Int,
                let height = properties[kCGImagePropertyPixelHeight] as? Int {
-                automationDiagnostic("NCM owned PNG width=\(width) height=\(height)")
+                automationDiagnostic("NCM owned PNG width=\(width) height=\(height) encodedOrientation=\(properties[kCGImagePropertyOrientation] as? Int ?? 1)")
             }
         }
         #endif
         guard before == after else { throw NativeBackendError.coordinateSpaceChanged }
+        let png = try NCMXCTestImage.uprightPNG(encodedPNG)
         let layout = try NCMXCTestLayout(png: png, screen: after)
         automationLayout = layout
         let geometry = automationGeometry.update(lease: lease, layout: layout)
         videoSnapshotDiagnostics = "screenshot.xctest received=true geometryValidated=true"
         return NativeVideoSnapshot(data: png, geometry: geometry, mimeType: "image/png")
+    }
+    private func captureOwnedPNG(lease: UInt64, token: UInt64, revision: UInt64) async throws -> Data {
+        automationRequest += 1
+        let request = automationRequest
+        let started = eiscue_automation_screenshot(lease, request, revision)
+        guard started == 0 else { throw ownedScreenshotError(started) }
+        defer { eiscue_automation_cancel_screenshot(lease, request) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        repeat {
+            try Task.checkCancellation()
+            guard ready, handle == token, automationLease == lease else { throw NativeBackendError.closed }
+            var length = 0
+            let code = eiscue_automation_copy_screenshot(lease, request, nil, 0, &length)
+            if code == 0 {
+                guard (8...64 * 1024 * 1024).contains(length) else { throw NativeBackendError.screenshotFailure(stage: 39, cause: 1) }
+                var data = Data(count: length)
+                let copied = data.withUnsafeMutableBytes {
+                    eiscue_automation_copy_screenshot(lease, request, $0.bindMemory(to: UInt8.self).baseAddress, $0.count, &length)
+                }
+                guard copied == 0 else { throw ownedScreenshotError(copied) }
+                guard length == data.count else { throw NativeBackendError.screenshotFailure(stage: 39, cause: 1) }
+                return data
+            }
+            guard code == EISCUE_AUTOMATION_BUSY else { throw ownedScreenshotError(code) }
+            try await Task.sleep(for: .milliseconds(20))
+        } while ContinuousClock.now < deadline
+        throw NativeBackendError.screenshotFailure(stage: 39, cause: 14)
+    }
+    private func ownedScreenshotError(_ code: Int32) -> NativeBackendError {
+        if code == EISCUE_AUTOMATION_GEOMETRY { return .coordinateSpaceChanged }
+        if code == EISCUE_AUTOMATION_CLOSED { return .closed }
+        return .screenshotFailure(stage: 39, cause: UInt32(max(code, 1)))
     }
     private func currentOwnedAutomationGeometry() async throws -> NativeVideoGeometry? {
         try Task.checkCancellation()
@@ -798,6 +831,42 @@ struct NCMXCTestScreenState: Equatable {
         }
         revision = state.revision; displayID = state.display_id; orientation = state.orientation
         scale = state.scale; boundsWidth = state.bounds_width; boundsHeight = state.bounds_height
+    }
+}
+
+enum NCMXCTestImage {
+    /// XCTest keeps native raster pixels and writes the display rotation into
+    /// PNG orientation metadata. Tools need upright pixels, not a viewer-only
+    /// rotation; normalize once before binding screenshot coordinates.
+    static func uprightPNG(_ data: Data) throws -> Data {
+        guard !data.isEmpty, data.count <= 64 * 1024 * 1024,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) == 1, CGImageSourceGetType(source) as String? == "public.png",
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              (2...16384).contains(width), (2...16384).contains(height),
+              width * height <= 32 * 1024 * 1024 else { throw NativeBackendError.malformedEvent }
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        guard [1, 3, 6, 8].contains(orientation) else { throw NativeBackendError.malformedEvent }
+        if orientation == 1 { return data }
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height),
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary),
+              image.width == (orientation == 3 ? width : height),
+              image.height == (orientation == 3 ? height : width) else { throw NativeBackendError.malformedEvent }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, "public.png" as CFString, 1, nil) else {
+            throw NativeBackendError.malformedEvent
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: 1] as CFDictionary)
+        guard CGImageDestinationFinalize(destination), output.length <= 64 * 1024 * 1024 else {
+            throw NativeBackendError.malformedEvent
+        }
+        return output as Data
     }
 }
 

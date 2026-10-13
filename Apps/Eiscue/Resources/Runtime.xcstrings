@@ -1549,13 +1549,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The action was sent, but its result could not be observed. Restore screen sharing before continuing."
+            "value": "The action was sent, but its result could not be observed. Return to Eiscue, check the connection on the Device page, then continue. Eiscue will inspect the screen first."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作已发送，但未能查看结果。请恢复屏幕共享后再继续。"
+            "value": "操作已发送，但未能查看结果。请返回 Eiscue，在设备页检查连接后继续；继续时会先重新查看屏幕。"
           }
         }
       }

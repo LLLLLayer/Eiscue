@@ -55,6 +55,9 @@ static BOOL validTextBytes(const uint8_t *utf8, size_t length) {
 @property uint64_t queryGeneration;
 @property NSUInteger queryRetries;
 @property BOOL geometryDirty;
+@property uint64_t screenshotRequest;
+@property uint32_t screenshotError;
+@property(strong) NSData *screenshotData;
 @end
 @implementation EiscueOwnedAutomation
 @end
@@ -364,7 +367,7 @@ int32_t eiscue_automation_refresh_geometry(uint64_t lease) {
     if (!NSThread.isMainThread) return EISCUE_AUTOMATION_WRONG_THREAD;
     EiscueOwnedAutomation *owner = current;
     if (!owner || owner.lease != lease) return EISCUE_AUTOMATION_CLOSED;
-    if (owner.status.phase != EISCUE_AUTOMATION_READY) return EISCUE_AUTOMATION_BUSY;
+    if (owner.screenshotRequest || owner.status.phase != EISCUE_AUTOMATION_READY) return EISCUE_AUTOMATION_BUSY;
     @synchronized(owner) { eiscue_automation_state state = owner.status; state.phase = EISCUE_AUTOMATION_QUERYING; owner.status = state; owner.queryRetries = 0; }
     @try { queryGeometry(owner); return 0; }
     @catch (NSException *exception) { fail(owner, EISCUE_AUTOMATION_EXCEPTION); return EISCUE_AUTOMATION_EXCEPTION; }
@@ -374,10 +377,102 @@ static int32_t eventSnapshot(EiscueOwnedAutomation *owner, uint64_t request,
     @synchronized(owner) {
         if (owner.closed) return EISCUE_AUTOMATION_CLOSED;
         *state = owner.status;
-        if (owner.eventPending || state->phase != EISCUE_AUTOMATION_READY || request <= state->request_id)
+        if (owner.eventPending || owner.screenshotRequest || state->phase != EISCUE_AUTOMATION_READY || request <= state->request_id)
             return EISCUE_AUTOMATION_BUSY;
         if (owner.geometryDirty || state->revision != revision) return EISCUE_AUTOMATION_GEOMETRY;
         return 0;
+    }
+}
+static void screenshotReceipt(EiscueOwnedAutomation *owner, uint64_t request, uint64_t revision,
+                              id image, NSError *error) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @synchronized(owner) {
+            if (!live(owner) || owner.screenshotRequest != request || owner.status.request_id != request ||
+                owner.status.phase != EISCUE_AUTOMATION_CAPTURING) return;
+            @try {
+                owner.screenshotError = EISCUE_AUTOMATION_CONFIGURATION;
+                if (owner.geometryDirty || owner.status.revision != revision) {
+                    owner.screenshotError = EISCUE_AUTOMATION_GEOMETRY;
+                } else if (!error && signature(image, @"data", "@16@0:8")) {
+                    id bytes = ((id (*)(id, SEL))objc_msgSend)(image, NSSelectorFromString(@"data"));
+                    static const uint8_t png[] = {137, 80, 78, 71, 13, 10, 26, 10};
+                    if ([bytes isKindOfClass:NSData.class] && [bytes length] >= sizeof(png) &&
+                        [bytes length] <= 64 * 1024 * 1024 && memcmp([bytes bytes], png, sizeof(png)) == 0) {
+                        owner.screenshotData = [bytes copy]; owner.screenshotError = 0;
+                    }
+                }
+            } @catch (NSException *exception) { owner.screenshotError = EISCUE_AUTOMATION_EXCEPTION; }
+            eiscue_automation_state state = owner.status;
+            state.phase = EISCUE_AUTOMATION_READY; owner.status = state;
+        }
+    });
+}
+int32_t eiscue_automation_screenshot(uint64_t lease, uint64_t request, uint64_t revision) {
+    if (!NSThread.isMainThread) return EISCUE_AUTOMATION_WRONG_THREAD;
+    EiscueOwnedAutomation *owner = current;
+    if (!owner || owner.lease != lease) return EISCUE_AUTOMATION_CLOSED;
+    eiscue_automation_state state;
+    int32_t rejection = eventSnapshot(owner, request, revision, &state);
+    if (rejection) return rejection;
+    @try {
+        id encoding = [NSClassFromString(@"XCTImageEncoding") alloc];
+        id capture = [NSClassFromString(@"XCTScreenshotRequest") alloc];
+        if (!signature(encoding, @"initWithUniformTypeIdentifier:compressionQuality:", "@32@0:8@16d24") ||
+            !signature(capture, @"initWithScreenID:rect:encoding:", "@64@0:8q16{CGRect={CGPoint=dd}{CGSize=dd}}24@56") ||
+            !signature(owner.session, @"requestScreenshotWithRequest:withReply:", "v32@0:8@16@?24"))
+            return EISCUE_AUTOMATION_SIGNATURE;
+        encoding = ((id (*)(id, SEL, id, double))objc_msgSend)(encoding,
+            NSSelectorFromString(@"initWithUniformTypeIdentifier:compressionQuality:"), @"public.png", 1.0);
+        capture = ((id (*)(id, SEL, NSInteger, CGRect, id))objc_msgSend)(capture,
+            NSSelectorFromString(@"initWithScreenID:rect:encoding:"), (NSInteger)state.display_id, CGRectNull, encoding);
+        if (!encoding || !capture) return EISCUE_AUTOMATION_CONFIGURATION;
+        @synchronized(owner) {
+            rejection = eventSnapshot(owner, request, revision, &state);
+            if (rejection) return rejection;
+            owner.screenshotRequest = request; owner.screenshotError = 0; owner.screenshotData = nil;
+            state.phase = EISCUE_AUTOMATION_CAPTURING; state.request_id = request; owner.status = state;
+            ((void (*)(id, SEL, id, id))objc_msgSend)(owner.session,
+                NSSelectorFromString(@"requestScreenshotWithRequest:withReply:"), capture, ^(id image, NSError *error) {
+                    screenshotReceipt(owner, request, revision, image, error);
+                });
+        }
+        return 0;
+    } @catch (NSException *exception) {
+        eiscue_automation_cancel_screenshot(lease, request);
+        return EISCUE_AUTOMATION_EXCEPTION;
+    }
+}
+int32_t eiscue_automation_copy_screenshot(uint64_t lease, uint64_t request,
+                                        uint8_t *bytes, size_t capacity, size_t *length) {
+    if (!NSThread.isMainThread) return EISCUE_AUTOMATION_WRONG_THREAD;
+    if (!length) return EISCUE_AUTOMATION_CONFIGURATION;
+    *length = 0;
+    EiscueOwnedAutomation *owner = current;
+    if (!owner || owner.lease != lease || !live(owner)) return EISCUE_AUTOMATION_CLOSED;
+    @synchronized(owner) {
+        if (!request || owner.screenshotRequest != request || owner.status.request_id != request) return EISCUE_AUTOMATION_CLOSED;
+        if (owner.status.phase == EISCUE_AUTOMATION_CAPTURING) return EISCUE_AUTOMATION_BUSY;
+        if (owner.geometryDirty) return EISCUE_AUTOMATION_GEOMETRY;
+        if (owner.screenshotError) return owner.screenshotError;
+        if (!owner.screenshotData) return EISCUE_AUTOMATION_CONFIGURATION;
+        *length = owner.screenshotData.length;
+        if (!bytes) return 0;
+        if (capacity < *length) return EISCUE_AUTOMATION_CONFIGURATION;
+        memcpy(bytes, owner.screenshotData.bytes, *length);
+        owner.screenshotData = nil; owner.screenshotRequest = 0;
+        return 0;
+    }
+}
+void eiscue_automation_cancel_screenshot(uint64_t lease, uint64_t request) {
+    if (!NSThread.isMainThread) return;
+    EiscueOwnedAutomation *owner = current;
+    if (!owner || owner.lease != lease) return;
+    @synchronized(owner) {
+        if (!request || owner.screenshotRequest != request) return;
+        owner.screenshotRequest = 0; owner.screenshotData = nil; owner.screenshotError = 0;
+        if (owner.status.phase == EISCUE_AUTOMATION_CAPTURING) {
+            eiscue_automation_state state = owner.status; state.phase = EISCUE_AUTOMATION_READY; owner.status = state;
+        }
     }
 }
 static void eventReceipt(EiscueOwnedAutomation *owner, uint64_t request, BOOL delivered, NSError *error) {
@@ -545,7 +640,7 @@ int32_t eiscue_automation_type_text(uint64_t lease, uint64_t request, uint64_t r
 void eiscue_automation_abort(uint64_t lease) {
     if (!NSThread.isMainThread || !current || current.lease != lease) return;
     EiscueOwnedAutomation *owner = current;
-    @synchronized(owner) { owner.closed = YES; owner.queryGeneration++; eiscue_automation_state state = owner.status; state.phase = EISCUE_AUTOMATION_STOPPED; state.revision++; owner.status = state; }
+    @synchronized(owner) { owner.closed = YES; owner.queryGeneration++; owner.screenshotRequest = 0; owner.screenshotData = nil; eiscue_automation_state state = owner.status; state.phase = EISCUE_AUTOMATION_STOPPED; state.revision++; owner.status = state; }
     for (id observer in owner.observers) {
         @try { [NSNotificationCenter.defaultCenter removeObserver:observer]; }
         @catch (NSException *exception) { owner.cleanupFailed = YES; }
@@ -574,6 +669,9 @@ int32_t eiscue_automation_stop(uint64_t lease) {
 int32_t eiscue_automation_begin(const uint8_t uuid[16], uint64_t *lease) { return EISCUE_AUTOMATION_UNSUPPORTED; }
 int32_t eiscue_automation_poll(uint64_t lease, eiscue_automation_state *state) { return EISCUE_AUTOMATION_UNSUPPORTED; }
 int32_t eiscue_automation_refresh_geometry(uint64_t lease) { return EISCUE_AUTOMATION_UNSUPPORTED; }
+int32_t eiscue_automation_screenshot(uint64_t lease, uint64_t request, uint64_t revision) { return EISCUE_AUTOMATION_UNSUPPORTED; }
+int32_t eiscue_automation_copy_screenshot(uint64_t lease, uint64_t request, uint8_t *bytes, size_t capacity, size_t *length) { return EISCUE_AUTOMATION_UNSUPPORTED; }
+void eiscue_automation_cancel_screenshot(uint64_t lease, uint64_t request) {}
 int32_t eiscue_automation_touch(uint64_t lease, uint64_t request, uint64_t revision, uint32_t width, uint32_t height,
     uint16_t x, uint16_t y, uint16_t endX, uint16_t endY, uint16_t duration) { return EISCUE_AUTOMATION_UNSUPPORTED; }
 int32_t eiscue_automation_home(uint64_t lease, uint64_t request, uint64_t revision) { return EISCUE_AUTOMATION_UNSUPPORTED; }

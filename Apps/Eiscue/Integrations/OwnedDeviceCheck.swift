@@ -3,6 +3,7 @@ import SwiftUI
 import EiscueDeviceKit
 import UIKit
 import ImageIO
+import Synchronization
 
 /// Deterministic, opt-in target in the normal App process. No Runner App,
 /// external model request, credential export or programmatic button invocation.
@@ -259,9 +260,11 @@ extension AppModel {
     func runOwnedDeviceCheck(method: DeviceConnectionMethod = .localVPN) async {
         let proof = OwnedDeviceCheckState.shared
         let destination = URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json")
-        var report: [String: Any] = ["version": 3, "state": "started", "phase": "preparation",
+        var report: [String: Any] = ["version": 4, "state": "started", "phase": "preparation",
             "connectionMethod": method.rawValue, "localTunnelConnectedAtStart": localTunnel.isConnected]
         var orientationToRestore: (scene: UIWindowScene, orientation: UIInterfaceOrientation)?
+        var backgroundCheckID: UUID?
+        defer { if let id = backgroundCheckID { background.end(taskID: id, success: false) } }
         func save(_ phase: String) {
             proof.phase = phase; report["phase"] = phase
             guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { return }
@@ -331,10 +334,16 @@ extension AppModel {
                 report["width"] = frame.width; report["height"] = frame.height; report["mimeType"] = frame.mimeType
                 let before = proof.count
                 save("tap_\(cycle)")
-                try await deviceClient.tap(at: capture.geometry.point(CGPoint(x: capture.geometry.button.midX, y: capture.geometry.button.midY), frame: frame), frameID: frame.frameID)
+                let modelFrame = try DeviceObservationImage.prepare(frame)
+                let coordinates = DeviceObservationCoordinates(id: frame.frameID, width: modelFrame.width, height: modelFrame.height,
+                    nativeWidth: frame.width, nativeHeight: frame.height)
+                let modelPoint = try capture.geometry.point(CGPoint(x: capture.geometry.button.midX, y: capture.geometry.button.midY), frame: modelFrame)
+                try await deviceClient.tap(at: coordinates.nativePoint(modelPoint), frameID: modelFrame.frameID)
                 try await Task.sleep(for: .milliseconds(400))
                 guard proof.count == before + 1 else { throw DeviceControlError.connection("Owned button did not increment") }
                 report["tapVerified_\(cycle)"] = true
+                report["modelViewportTapVerified_\(cycle)"] = true
+                report["modelViewportWidth"] = modelFrame.width; report["modelViewportHeight"] = modelFrame.height
                 let afterTap = try await ownedCapture(proof)
                 report["postTapScreenshot_\(cycle)"] = !afterTap.frame.data.isEmpty
                 if cycle == 1 {
@@ -400,12 +409,35 @@ extension AppModel {
                     guard proof.input == testText else { throw DeviceControlError.connection("Owned text input did not match") }
                     report["unicodeTextVerified"] = true
                     save("after_text_screenshot")
-                    _ = try await ownedCapture(proof)
+                    let beforeHome = try await ownedCapture(proof)
+                    let leaseID = UUID(), expired = Mutex(false)
+                    save("background_lease")
+                    try await background.begin(taskID: leaseID, title: String(localized: "run.activity_title", table: "Runtime"),
+                        totalUnitCount: 4, onExpiration: { expired.withLock { $0 = true } })
+                    backgroundCheckID = leaseID
                     save("home")
                     try await deviceClient.home()
                     try await Task.sleep(for: .milliseconds(300))
                     guard currentScenePhase == .background else { throw DeviceControlError.connection("Home did not background the App") }
                     report["homeVerified"] = true
+                    // The former probe reopened Eiscue immediately after Home,
+                    // so it never covered a screenshot while the host was away.
+                    for sample in 1...3 {
+                        save("background_screenshot_\(sample)")
+                        guard background.isExecuting, !expired.withLock({ $0 }) else { throw BackgroundExecution.Failure.expired }
+                        let started = ContinuousClock.now
+                        let homeFrame = try await deviceClient.captureScreenshot()
+                        guard currentScenePhase == .background, background.isExecuting, !expired.withLock({ $0 }) else {
+                            throw BackgroundExecution.Failure.expired
+                        }
+                        try beforeHome.geometry.validatePNG(homeFrame)
+                        let duration = started.duration(to: .now).components
+                        report["backgroundScreenshotSeconds_\(sample)"] = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
+                        report["backgroundScreenshotVerified_\(sample)"] = true
+                        background.update(taskID: leaseID, completedUnitCount: Int64(sample), totalUnitCount: 4)
+                        try await Task.sleep(for: .seconds(2))
+                    }
+                    guard background.isExecuting, !expired.withLock({ $0 }) else { throw BackgroundExecution.Failure.expired }
                     save("launch")
                     try await deviceClient.launchApplication(bundleID: "org.eiscue.app")
                     let launchDeadline = ContinuousClock.now.advanced(by: .seconds(4))
@@ -415,6 +447,7 @@ extension AppModel {
                     guard currentScenePhase == .active else { throw DeviceControlError.connection("App did not return to foreground") }
                     report["launchVerified"] = true
                     _ = try await ownedCapture(proof)
+                    background.end(taskID: leaseID, success: true); backgroundCheckID = nil
                 }
                 save("stop_\(cycle)")
                 await deviceClient.disconnect()

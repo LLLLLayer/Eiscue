@@ -14,6 +14,7 @@ enum {
     EISCUE_AUTOMATION_FAILED = 5,
     EISCUE_AUTOMATION_STOPPED = 6,
     EISCUE_AUTOMATION_AUTHORIZING = 7,
+    EISCUE_AUTOMATION_CAPTURING = 8,
 };
 enum {
     EISCUE_AUTOMATION_UNSUPPORTED = 1,
@@ -50,6 +51,14 @@ typedef struct {
 int32_t eiscue_automation_begin(const uint8_t uuid[16], uint64_t *lease);
 int32_t eiscue_automation_poll(uint64_t lease, eiscue_automation_state *state);
 int32_t eiscue_automation_refresh_geometry(uint64_t lease);
+// Read through the owned runner, without a second Instruments connection.
+// Copy with NULL bytes to obtain the length; a successful non-NULL copy consumes
+// the image. BUSY means pending. Cancel only discards this read's local result;
+// late callbacks cannot publish into another request or authorize input.
+int32_t eiscue_automation_screenshot(uint64_t lease, uint64_t request_id, uint64_t revision);
+int32_t eiscue_automation_copy_screenshot(uint64_t lease, uint64_t request_id,
+    uint8_t *bytes, size_t capacity, size_t *length);
+void eiscue_automation_cancel_screenshot(uint64_t lease, uint64_t request_id);
 // Points are normalized screenshot coordinates; pixel size/scale and orientation
 // are checked before constructing an event. No replay or cancellation claim.
 int32_t eiscue_automation_touch(uint64_t lease, uint64_t request_id,
