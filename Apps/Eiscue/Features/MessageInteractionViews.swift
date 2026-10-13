@@ -20,8 +20,8 @@ struct ChatMessageRow: View {
     var body: some View {
         HStack(alignment: .top) {
             if message.role == .user { Spacer(minLength: 42) }
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
-                VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 8) {
                     if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
                     else if !message.text.isEmpty { Text(verbatim: message.text).textSelection(.enabled) }
                     ForEach(message.attachments) { attachment in ChatAttachmentView(attachment: attachment) }
@@ -30,19 +30,20 @@ struct ChatMessageRow: View {
                     }
                 }
                 .padding(.horizontal, message.role == .user ? 16 : 0)
-                .padding(.vertical, message.role == .user ? 12 : 4)
+                .padding(.vertical, message.role == .user ? 12 : 2)
                 .background(message.role == .user ? Color.primary.opacity(0.07) : .clear,
                             in: RoundedRectangle(cornerRadius: 22))
+                .contentShape(Rectangle())
                 .contextMenu { messageMenu }
                 .accessibilityElement(children: .contain).accessibilityIdentifier("messageBubble")
                 if showsActions {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 0) {
                         Text(message.createdAt, format: .dateTime.hour().minute())
                             .font(.caption2.monospacedDigit()).accessibilityIdentifier("messageTime")
-                            .padding(.trailing, 6)
+                            .padding(.trailing, 4)
                         if hasText {
                             Button { copy() } label: {
-                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 30, height: 32).contentShape(Rectangle())
+                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 32, height: 32).contentShape(Rectangle())
                             }
                             .accessibilityLabel(chatText(didCopy ? "chat.copied" : "chat.copy"))
                             .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
@@ -51,16 +52,11 @@ struct ChatMessageRow: View {
                             Group {
                                 if isPreparingShare { ProgressView().controlSize(.mini) }
                                 else { Image(systemName: "square.and.arrow.up") }
-                            }.frame(width: 30, height: 32).contentShape(Rectangle())
+                            }.frame(width: 32, height: 32).contentShape(Rectangle())
                         }
                         .disabled(!canShare || isPreparingShare || sharePayload != nil)
                         .accessibilityLabel(chatText("chat.share"))
                         .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
-                        Menu { messageMenu } label: {
-                            Image(systemName: "ellipsis").frame(width: 30, height: 32).contentShape(Rectangle())
-                        }
-                        .accessibilityLabel(chatText("chat.more"))
-                        .accessibilityIdentifier(message.role == .user ? "userMessageMoreButton" : "messageMoreButton")
                     }
                     .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
                     .padding(.horizontal, message.role == .user ? 8 : 0)

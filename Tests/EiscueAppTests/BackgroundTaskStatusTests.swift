@@ -48,4 +48,46 @@ final class BackgroundTaskStatusTests: XCTestCase {
             XCTAssertFalse(phase.subtitle.contains(where: \.isNumber), "Pairing codes must never enter activity text.")
         }
     }
+
+    @MainActor
+    func testRunnerStopKeepsHostFinalizingUntilCleanupAndJournalSaveFinish() throws {
+        let suite = "eiscue.background-tests.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer {
+            preferences.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let model = AppModel(storageDirectory: directory, preferences: preferences)
+        let runID = UUID()
+        model.activeRun = RunRecord(id: runID, conversationID: UUID(), requestID: UUID(), startedAt: .now,
+                                    scope: .control, model: "fixture", skill: nil, state: .completed,
+                                    detail: "", events: [RunLogEntry(kind: "run.started", summary: "")])
+        var callbacks: [TaskStatusPresentation] = []
+        model.deviceTools = DeviceToolSession(capabilities: [], client: model.deviceClient, scope: .control,
+                                             timeoutSeconds: 30, log: { _, _ in }, onUnknown: {},
+                                             onPhaseChanged: { [weak model] _ in
+                                                 if let status = model?.taskStatusPresentation() { callbacks.append(status) }
+                                             })
+
+        // This is the synchronous stop callback before DeviceRunCleanup runs.
+        model.companionFinalizingRunID = runID
+        model.deviceTools?.stop()
+        // endedAt is assigned before the asynchronous journal save finishes.
+        model.activeRun?.endedAt = .now
+        model.deviceTools?.stop()
+        XCTAssertEqual(callbacks.count, 2)
+        for status in callbacks {
+            XCTAssertEqual(status.title, String(localized: "task.status.title.finishing", defaultValue: "Finishing up", table: "TaskStatus"))
+            XCTAssertLessThan(status.completedWorkUnits, status.totalWorkUnits)
+        }
+        XCTAssertEqual(model.activeRun?.state, .completed, "Presentation must not overwrite the journal's outcome.")
+
+        model.companionFinalizingRunID = nil
+        model.deviceTools?.stop()
+        let completed = try XCTUnwrap(callbacks.last)
+        XCTAssertEqual(callbacks.count, 3)
+        XCTAssertEqual(completed.title, String(localized: "task.status.title.completed", defaultValue: "Turn ended", table: "TaskStatus"))
+        XCTAssertEqual(completed.completedWorkUnits, completed.totalWorkUnits)
+    }
 }

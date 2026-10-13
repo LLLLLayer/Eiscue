@@ -120,6 +120,7 @@ private struct SkillDetailView: View {
                                   systemImage: model.selectedSkillID == skill.id ? "checkmark.circle.fill" : "plus.circle")
                         }
                         .buttonStyle(.glassProminent)
+                        .foregroundStyle(EiscueStyle.onAccent)
                         .disabled(model.isBusy)
                         .accessibilityIdentifier("selectSkillButton")
                     }

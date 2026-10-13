@@ -41,46 +41,60 @@ struct TaskStatusPresentation: Equatable, Sendable {
         // Merely entering the finishing phase cannot complete this last unit.
         let finishingUnits: Int64 = run.state == .completed ? 1 : 0
 
+        let stage: Stage
         let phase: String
         switch run.state {
         case .completed:
-            phase = String(localized: "task.status.phase.completed", defaultValue: "This turn has ended", table: "TaskStatus")
+            stage = .completed
+            phase = String(localized: "task.status.phase.completed", defaultValue: "Open Eiscue to view the result", table: "TaskStatus")
         case .paused:
+            stage = .paused
             phase = String(localized: "task.status.phase.paused", defaultValue: "Open Eiscue to continue", table: "TaskStatus")
         case .interrupted:
-            phase = String(localized: "task.status.phase.interrupted", defaultValue: "Interrupted", table: "TaskStatus")
+            stage = .interrupted
+            phase = String(localized: "task.status.phase.interrupted", defaultValue: "Open Eiscue to review the task", table: "TaskStatus")
         case .failed:
-            phase = String(localized: "task.status.phase.failed", defaultValue: "Not completed", table: "TaskStatus")
+            stage = .failed
+            phase = String(localized: "task.status.phase.failed", defaultValue: "Open Eiscue to see what happened", table: "TaskStatus")
         case .preparing:
+            stage = isFinishing ? .finishing : .preparing
             phase = isFinishing
-                ? String(localized: "task.status.phase.finishing", defaultValue: "Saving results", table: "TaskStatus")
-                : String(localized: "task.status.phase.preparing", defaultValue: "Preparing", table: "TaskStatus")
+                ? String(localized: "task.status.phase.finishing", defaultValue: "Saving results and releasing the device", table: "TaskStatus")
+                : String(localized: "task.status.phase.preparing", defaultValue: "Preparing device and background access", table: "TaskStatus")
         case .running:
             if isFinishing {
-                phase = String(localized: "task.status.phase.finishing", defaultValue: "Saving results", table: "TaskStatus")
-            } else if devicePhase == .observing || devicePhase == .verifying {
+                stage = .finishing
+                phase = String(localized: "task.status.phase.finishing", defaultValue: "Saving results and releasing the device", table: "TaskStatus")
+            } else if devicePhase == .verifying {
+                stage = .verifying
+                phase = String(localized: "task.status.phase.verifying", defaultValue: "Checking the screen after the action", table: "TaskStatus")
+            } else if devicePhase == .observing {
+                stage = .observing
                 phase = operationSummary("device_screenshot")
             } else if devicePhase == .paused {
+                stage = .paused
                 phase = String(localized: "task.status.phase.paused", defaultValue: "Open Eiscue to continue", table: "TaskStatus")
             } else if devicePhase == .stopped {
-                phase = String(localized: "task.status.phase.interrupted", defaultValue: "Interrupted", table: "TaskStatus")
+                stage = .interrupted
+                phase = String(localized: "task.status.phase.interrupted", defaultValue: "Open Eiscue to review the task", table: "TaskStatus")
             } else if devicePhase == .deciding {
+                stage = isReceivingResponse ? .responding : .waiting
                 phase = isReceivingResponse
-                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Preparing a response", table: "TaskStatus")
-                    : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for AI", table: "TaskStatus")
+                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Receiving and preparing the response", table: "TaskStatus")
+                    : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for the next response", table: "TaskStatus")
             } else if let currentTool, !currentTool.isEmpty {
+                stage = currentTool == "device_screenshot" ? .observing : .executing
                 phase = operationSummary(currentTool)
             } else {
+                stage = isReceivingResponse ? .responding : .waiting
                 phase = isReceivingResponse
-                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Preparing a response", table: "TaskStatus")
-                    : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for AI", table: "TaskStatus")
+                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Receiving and preparing the response", table: "TaskStatus")
+                    : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for the next response", table: "TaskStatus")
             }
         }
 
         return Self(
-            title: run.state == .paused
-                ? String(localized: "task.status.title.paused", defaultValue: "Task paused", table: "TaskStatus")
-                : String(localized: "task.status.title", defaultValue: "Eiscue is working", table: "TaskStatus"),
+            title: stage.title,
             subtitle: phase,
             completedToolCalls: endedCalls,
             completedWorkUnits: preparationUnits + Int64(endedCalls) + finishingUnits,
@@ -88,9 +102,32 @@ struct TaskStatusPresentation: Equatable, Sendable {
         )
     }
 
+    // The system may omit the subtitle in smaller presentations. Keep the
+    // phase in the primary field, without claiming control of its layout.
+    private enum Stage {
+        case preparing, waiting, responding, observing, executing, verifying, finishing
+        case completed, paused, interrupted, failed
+
+        var title: String {
+            switch self {
+            case .preparing: String(localized: "task.status.title.preparing", defaultValue: "Preparing", table: "TaskStatus")
+            case .waiting: String(localized: "task.status.title.waiting", defaultValue: "Waiting for AI", table: "TaskStatus")
+            case .responding: String(localized: "task.status.title.responding", defaultValue: "Receiving a reply", table: "TaskStatus")
+            case .observing: String(localized: "task.status.title.observing", defaultValue: "Viewing screen", table: "TaskStatus")
+            case .executing: String(localized: "task.status.title.executing", defaultValue: "Running a step", table: "TaskStatus")
+            case .verifying: String(localized: "task.status.title.verifying", defaultValue: "Checking result", table: "TaskStatus")
+            case .finishing: String(localized: "task.status.title.finishing", defaultValue: "Finishing up", table: "TaskStatus")
+            case .completed: String(localized: "task.status.title.completed", defaultValue: "Turn ended", table: "TaskStatus")
+            case .paused: String(localized: "task.status.title.paused", defaultValue: "Task paused", table: "TaskStatus")
+            case .interrupted: String(localized: "task.status.title.interrupted", defaultValue: "Task stopped", table: "TaskStatus")
+            case .failed: String(localized: "task.status.title.failed", defaultValue: "Task failed", table: "TaskStatus")
+            }
+        }
+    }
+
     private static func operationSummary(_ name: String) -> String {
         switch name {
-        case "device_screenshot": String(localized: "task.status.operation.screenshot", defaultValue: "Viewing the screen", table: "TaskStatus")
+        case "device_screenshot": String(localized: "task.status.operation.screenshot", defaultValue: "Reading the current screen", table: "TaskStatus")
         case "device_tap": String(localized: "task.status.operation.tap", defaultValue: "Tapping the screen", table: "TaskStatus")
         case "device_swipe": String(localized: "task.status.operation.swipe", defaultValue: "Swiping the screen", table: "TaskStatus")
         case "device_type_text": String(localized: "task.status.operation.type-text", defaultValue: "Entering text", table: "TaskStatus")

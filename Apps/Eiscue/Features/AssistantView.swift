@@ -18,7 +18,7 @@ struct AssistantView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
                     if let conversation = model.selectedConversation, !model.displayedConversationFeed.isEmpty {
                         transcript(conversation)
                     } else { welcome }
@@ -149,9 +149,9 @@ struct AssistantView: View {
     private func transcript(_ conversation: Conversation) -> some View {
         let feed = model.displayedConversationFeed
         let actionMessageIDs = ConversationFeedItem.latestActionMessageIDs(in: feed, isAssistantStreaming: !model.displayedStreamingText.isEmpty)
-        return VStack(alignment: .leading, spacing: 22) {
+        return VStack(alignment: .leading, spacing: 16) {
             Text(conversation.createdAt, format: .dateTime.month().day())
-                .font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity)
+                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             ForEach(feed) { item in
                 switch item {
                 case .message(let message): ChatMessageRow(message: message, showsActions: actionMessageIDs.contains(message.id))
@@ -169,6 +169,7 @@ struct AssistantView: View {
                 HStack {
                     Button("assistant.resume") { Task { await model.continueInterruptedRun() } }
                         .buttonStyle(.glassProminent).accessibilityIdentifier("resumeRunButton")
+                        .foregroundStyle(EiscueStyle.onAccent)
                     Button("assistant.endTask") { Task { await model.abandonInterruptedRun() } }
                         .buttonStyle(.glass)
                 }
@@ -180,6 +181,7 @@ struct AssistantView: View {
                 HStack {
                     Button(String(localized: "run.paused.continue", table: "Runtime")) { Task { await model.continueInterruptedRun() } }
                         .buttonStyle(.glassProminent).accessibilityIdentifier("continuePausedRunButton")
+                        .foregroundStyle(EiscueStyle.onAccent)
                     Button(String(localized: "run.paused.end", table: "Runtime")) { Task { await model.abandonInterruptedRun() } }
                         .buttonStyle(.glass).accessibilityIdentifier("endPausedRunButton")
                 }.disabled(model.isBusy)
@@ -298,6 +300,7 @@ struct AssistantView: View {
                             .font(.subheadline.weight(.semibold)).frame(minHeight: 30)
                     }
                     .buttonStyle(.glassProminent).buttonBorderShape(.capsule)
+                    .foregroundStyle(EiscueStyle.onAccent)
                     .accessibilityIdentifier("stopRunButton")
                 } else if !isVoiceMode {
                     Button {
@@ -305,12 +308,13 @@ struct AssistantView: View {
                         Task { await model.sendMessage() }
                     } label: {
                         Group {
-                            if model.isSaving || model.isSubmittingMessage { ProgressView().controlSize(.small) }
+                            if model.isSaving || model.isSubmittingMessage { ProgressView().controlSize(.small).tint(EiscueStyle.onAccent) }
                             else { Image(systemName: "arrow.up").font(.system(size: 20, weight: .semibold)) }
                         }
                         .frame(width: 30, height: 30)
                     }
                     .buttonStyle(.glassProminent).buttonBorderShape(.circle)
+                    .foregroundStyle(EiscueStyle.onAccent)
                     .disabled(!model.canSend || speech.isBusy)
                     .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
                 }

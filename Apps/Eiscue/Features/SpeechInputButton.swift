@@ -76,6 +76,8 @@ private struct HoldToTalkControl: UIViewRepresentable {
     }
 
     func updateUIView(_ button: HoldToTalkButton, context: Context) {
+        button.overrideUserInterfaceStyle = context.environment.colorScheme == .dark ? .dark : .light
+        button.tintColor = .label
         // VoiceOver starts via accessibilityActivate without a pressed finger;
         // keep the surface enabled so its next activation can stop recording.
         button.isEnabled = !isDisabled

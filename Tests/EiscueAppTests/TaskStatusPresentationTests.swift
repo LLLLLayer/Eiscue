@@ -11,7 +11,7 @@ final class TaskStatusPresentationTests: XCTestCase {
 
         for currentTool in [secret, "device_tap\n\(secret)", "device_\(secret)"] {
             let snapshot = TaskStatusPresentation.snapshot(for: run, currentTool: currentTool, isReceivingResponse: true)
-            XCTAssertEqual(snapshot.title, localized("task.status.title", "Eiscue is working"))
+            XCTAssertEqual(snapshot.title, localized("task.status.title.executing", "Running a step"))
             XCTAssertEqual(snapshot.subtitle, localized("task.status.operation.other", "Performing the next step"))
             XCTAssertFalse(snapshot.title.contains(secret))
             XCTAssertFalse(snapshot.subtitle.contains(secret))
@@ -20,7 +20,7 @@ final class TaskStatusPresentationTests: XCTestCase {
 
     func testOnlyExactKnownToolNamesHaveSpecificOperationLabels() {
         let expected: [(String, StaticString, String.LocalizationValue)] = [
-            ("device_screenshot", "task.status.operation.screenshot", "Viewing the screen"),
+            ("device_screenshot", "task.status.operation.screenshot", "Reading the current screen"),
             ("device_tap", "task.status.operation.tap", "Tapping the screen"),
             ("device_swipe", "task.status.operation.swipe", "Swiping the screen"),
             ("device_type_text", "task.status.operation.type-text", "Entering text"),
@@ -40,15 +40,23 @@ final class TaskStatusPresentationTests: XCTestCase {
         let run = makeRun(.running, events: [event("run.started"), event("tool.started"), event("action.acknowledged")])
         for phase in [DeviceTaskPhase.observing, .verifying] {
             let snapshot = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: phase)
-            XCTAssertEqual(snapshot.subtitle, localized("task.status.operation.screenshot", "Viewing the screen"))
+            if phase == .verifying {
+                XCTAssertEqual(snapshot.title, localized("task.status.title.verifying", "Checking result"))
+                XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.verifying", "Checking the screen after the action"))
+            } else {
+                XCTAssertEqual(snapshot.title, localized("task.status.title.observing", "Viewing screen"))
+                XCTAssertEqual(snapshot.subtitle, localized("task.status.operation.screenshot", "Reading the current screen"))
+            }
             XCTAssertEqual(snapshot.completedToolCalls, 0)
             XCTAssertEqual(snapshot.completedWorkUnits, 1)
             XCTAssertEqual(snapshot.totalWorkUnits, 3, "Internal observations are not separate Pi tool calls.")
         }
         let deciding = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: .deciding)
-        XCTAssertEqual(deciding.subtitle, localized("task.status.phase.waiting", "Waiting for AI"))
+        XCTAssertEqual(deciding.title, localized("task.status.title.waiting", "Waiting for AI"))
+        XCTAssertEqual(deciding.subtitle, localized("task.status.phase.waiting", "Waiting for the next response"))
         let receiving = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", isReceivingResponse: true, devicePhase: .deciding)
-        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Preparing a response"))
+        XCTAssertEqual(receiving.title, localized("task.status.title.responding", "Receiving a reply"))
+        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Receiving and preparing the response"))
         let executing = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: .executing)
         XCTAssertEqual(executing.subtitle, localized("task.status.operation.tap", "Tapping the screen"))
     }
@@ -56,12 +64,13 @@ final class TaskStatusPresentationTests: XCTestCase {
     func testFinalizationAndTerminalStateOverrideStaleRunnerPhase() {
         let finishing = TaskStatusPresentation.snapshot(for: makeRun(.running), currentTool: "device_tap",
                                                         isFinishing: true, devicePhase: .verifying)
-        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results"))
+        XCTAssertEqual(finishing.title, localized("task.status.title.finishing", "Finishing up"))
+        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results and releasing the device"))
         let cases: [(RunState, StaticString, String.LocalizationValue)] = [
-            (.completed, "task.status.phase.completed", "This turn has ended"),
+            (.completed, "task.status.phase.completed", "Open Eiscue to view the result"),
             (.paused, "task.status.phase.paused", "Open Eiscue to continue"),
-            (.interrupted, "task.status.phase.interrupted", "Interrupted"),
-            (.failed, "task.status.phase.failed", "Not completed")
+            (.interrupted, "task.status.phase.interrupted", "Open Eiscue to review the task"),
+            (.failed, "task.status.phase.failed", "Open Eiscue to see what happened")
         ]
         for (state, key, fallback) in cases {
             let snapshot = TaskStatusPresentation.snapshot(for: makeRun(state), currentTool: "device_tap",
@@ -70,31 +79,49 @@ final class TaskStatusPresentationTests: XCTestCase {
         }
     }
 
+    func testPrimaryTitleNeverClaimsRunningAfterTerminalOrRunnerStop() {
+        let cases: [(RunState, StaticString, String.LocalizationValue)] = [
+            (.completed, "task.status.title.completed", "Turn ended"),
+            (.paused, "task.status.title.paused", "Task paused"),
+            (.interrupted, "task.status.title.interrupted", "Task stopped"),
+            (.failed, "task.status.title.failed", "Task failed")
+        ]
+        for (state, key, fallback) in cases {
+            let status = TaskStatusPresentation.snapshot(for: makeRun(state), currentTool: "device_tap",
+                                                        isReceivingResponse: true, devicePhase: .executing)
+            XCTAssertEqual(status.title, localized(key, fallback))
+        }
+        let paused = TaskStatusPresentation.snapshot(for: makeRun(.running), devicePhase: .paused)
+        XCTAssertEqual(paused.title, localized("task.status.title.paused", "Task paused"))
+        let stopped = TaskStatusPresentation.snapshot(for: makeRun(.running), devicePhase: .stopped)
+        XCTAssertEqual(stopped.title, localized("task.status.title.interrupted", "Task stopped"))
+    }
+
     func testPreparationModelResponseAndFinalizationAdvanceOnlyAtRealBoundaries() {
         var run = makeRun(.preparing)
         var snapshot = TaskStatusPresentation.snapshot(for: run)
-        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.preparing", "Preparing"))
+        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.preparing", "Preparing device and background access"))
         XCTAssertEqual(snapshot.completedWorkUnits, 0)
         XCTAssertEqual(snapshot.totalWorkUnits, 2)
 
         run.state = .running
         run.events.append(RunLogEntry(kind: "run.started", summary: "private"))
         snapshot = TaskStatusPresentation.snapshot(for: run)
-        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.waiting", "Waiting for AI"))
+        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.waiting", "Waiting for the next response"))
         XCTAssertEqual(snapshot.completedWorkUnits, 1)
 
         let receiving = TaskStatusPresentation.snapshot(for: run, isReceivingResponse: true)
-        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Preparing a response"))
+        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Receiving and preparing the response"))
         XCTAssertEqual(receiving.completedWorkUnits, snapshot.completedWorkUnits)
         XCTAssertEqual(receiving.totalWorkUnits, snapshot.totalWorkUnits)
 
         let finishing = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", isFinishing: true)
-        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results"))
+        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results and releasing the device"))
         XCTAssertEqual(finishing.completedWorkUnits, 1, "Starting cleanup does not mean cleanup has finished.")
 
         run.state = .completed
         let completed = TaskStatusPresentation.snapshot(for: run)
-        XCTAssertEqual(completed.subtitle, localized("task.status.phase.completed", "This turn has ended"))
+        XCTAssertEqual(completed.subtitle, localized("task.status.phase.completed", "Open Eiscue to view the result"))
         XCTAssertEqual(completed.completedWorkUnits, 2)
         XCTAssertEqual(completed.totalWorkUnits, 2)
     }
@@ -113,7 +140,7 @@ final class TaskStatusPresentationTests: XCTestCase {
         XCTAssertEqual(snapshot.completedToolCalls, 2)
         XCTAssertEqual(snapshot.completedWorkUnits, 3)
         XCTAssertEqual(snapshot.totalWorkUnits, 4)
-        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.waiting", "Waiting for AI"))
+        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.waiting", "Waiting for the next response"))
     }
 
     func testRepeatedJournalEntryDoesNotInventWorkButDistinctCallsToSameToolCount() {
@@ -142,8 +169,8 @@ final class TaskStatusPresentationTests: XCTestCase {
     func testTerminalFailureAndInterruptionOverrideStaleToolAndDoNotFillProgress() {
         let cases: [(RunState, StaticString, String.LocalizationValue)] = [
             (.paused, "task.status.phase.paused", "Open Eiscue to continue"),
-            (.interrupted, "task.status.phase.interrupted", "Interrupted"),
-            (.failed, "task.status.phase.failed", "Not completed")
+            (.interrupted, "task.status.phase.interrupted", "Open Eiscue to review the task"),
+            (.failed, "task.status.phase.failed", "Open Eiscue to see what happened")
         ]
         for (state, key, fallback) in cases {
             var run = makeRun(state)

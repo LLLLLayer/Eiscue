@@ -95,6 +95,7 @@ struct SettingsView: View {
                     Toggle(isOn: $model.hapticsEnabled) {
                         SettingsRowLabel(String(localized: "settings.haptics", table: "Runtime"), systemImage: "hand.tap")
                     }
+                    .tint(EiscueStyle.switchTint)
                     .disabled(model.isBusy)
                     .accessibilityIdentifier("hapticsToggle")
                     LabeledContent {
@@ -134,6 +135,7 @@ private struct TaskSettingsView: View {
                 )) {
                     SettingsRowLabel(String(localized: "settings.task_notifications", table: "Runtime"), systemImage: "bell.badge")
                 }
+                .tint(EiscueStyle.switchTint)
                 .disabled(model.taskNotifications.isRequestingAuthorization)
                 .accessibilityIdentifier("taskNotificationsToggle")
                 if let error = model.taskNotifications.lastError {

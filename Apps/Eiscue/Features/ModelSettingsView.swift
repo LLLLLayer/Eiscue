@@ -79,6 +79,7 @@ struct ModelSettingsView: View {
                 Section {
                     DisclosureGroup(isExpanded: $showsAdvanced) {
                         Toggle("model.supportsImages", isOn: $settings.supportsImages)
+                            .tint(EiscueStyle.switchTint)
                             .accessibilityIdentifier("modelSupportsImages")
                         Stepper(value: $settings.maxOutputTokens, in: 256...32_768, step: 256) {
                             LabeledContent("model.maxOutputTokens", value: settings.maxOutputTokens.formatted())

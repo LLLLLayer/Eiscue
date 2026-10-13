@@ -829,20 +829,27 @@ final class AppModel {
 
     private func updateTaskStatus(isFinishing: Bool = false) {
         syncBoardCompanion(isFinishing: isFinishing)
-        guard var run = activeRun, run.scope != .chat else { return }
-        // A successful model turn still has device cleanup and durable writes
-        // ahead of it. Do not report the final work unit until those finish.
-        let finishing = isFinishing || isStopping || (stopRequested && run.endedAt == nil)
-        if finishing, run.state == .completed { run.state = .running }
-        let presentation = TaskStatusPresentation.snapshot(for: run, currentTool: currentTool,
-                                                           isReceivingResponse: isReceivingResponse,
-                                                           isFinishing: finishing, devicePhase: deviceTools?.phase)
+        guard let runID = activeRun?.id,
+              let presentation = taskStatusPresentation(isFinishing: isFinishing) else { return }
         guard presentation != lastTaskPresentation else { return }
-        if background.update(taskID: run.id, completedUnitCount: presentation.completedWorkUnits,
+        if background.update(taskID: runID, completedUnitCount: presentation.completedWorkUnits,
                              totalUnitCount: presentation.totalWorkUnits,
                              title: presentation.title, subtitle: presentation.subtitle) {
             lastTaskPresentation = presentation
         }
+    }
+
+    func taskStatusPresentation(isFinishing: Bool = false) -> TaskStatusPresentation? {
+        guard var run = activeRun, run.scope != .chat else { return nil }
+        // A successful model turn still has device cleanup and durable writes
+        // ahead of it. Runner stop callbacks must retain the host's finalizing
+        // state until cleanup and the final journal write both finish.
+        let finishing = isFinishing || isStopping || companionFinalizingRunID == run.id
+            || (stopRequested && run.endedAt == nil)
+        if finishing, run.state == .completed { run.state = .running }
+        return TaskStatusPresentation.snapshot(for: run, currentTool: currentTool,
+                                               isReceivingResponse: isReceivingResponse,
+                                               isFinishing: finishing, devicePhase: deviceTools?.phase)
     }
 
     private func persistActiveRun() async throws { if let run = activeRun { try await journal.save(run) } }

@@ -125,6 +125,7 @@ struct MessageActivityPresenter: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> MessageShareHost { MessageShareHost() }
     func updateUIViewController(_ host: MessageShareHost, context: Context) {
+        host.updateAppearance(context.environment.colorScheme)
         host.finished = finished
         host.prepare(payload)
     }
@@ -146,6 +147,12 @@ struct MessageActivityPresenter: UIViewControllerRepresentable {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         queuePresentation()
+    }
+    func updateAppearance(_ colorScheme: ColorScheme) {
+        overrideUserInterfaceStyle = colorScheme == .dark ? .dark : .light
+        view.tintColor = .label
+        activityController?.overrideUserInterfaceStyle = overrideUserInterfaceStyle
+        activityController?.view.tintColor = .label
     }
     func prepare(_ value: MessageSharePayload?) {
         guard let value, payload == nil else { return }
@@ -199,7 +206,9 @@ struct MessageActivityPresenter: UIViewControllerRepresentable {
         let items = payload.activityItems()
         guard !items.isEmpty else { beginDismissal(hasError: true, animated: false); return }
         let activity = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        activity.overrideUserInterfaceStyle = overrideUserInterfaceStyle
         activity.loadViewIfNeeded()
+        activity.view.tintColor = .label
         activity.view.accessibilityIdentifier = "messageActivityController"
         activity.completionWithItemsHandler = MessageShareCallbacks.completion { [weak self] hasError in
             self?.beginDismissal(hasError: hasError, animated: true)

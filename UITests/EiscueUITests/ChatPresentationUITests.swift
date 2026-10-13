@@ -47,17 +47,34 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertTrue(rows["markdownQuote"].exists)
         XCTAssertGreaterThanOrEqual(rows.matching(identifier: "markdownListItem").count, 2)
         XCTAssertGreaterThanOrEqual(app.staticTexts.matching(identifier: "messageTime").count, 2)
-        let more = app.buttons["messageMoreButton"].firstMatch
-        if !more.isHittable { app.swipeUp() }
-        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["messageMoreButton"].exists)
+        XCTAssertFalse(app.buttons["userMessageMoreButton"].exists)
         XCTAssertTrue(app.buttons["copyMessageButton"].exists)
         XCTAssertTrue(app.buttons["shareMessageButton"].exists)
-        let messageScreenshot = XCTAttachment(screenshot: app.screenshot())
-        messageScreenshot.name = "Markdown message and actions"
-        messageScreenshot.lifetime = .keepAlways
-        add(messageScreenshot)
-        more.tap()
-        app.buttons["selectMessageTextButton"].tap()
+        for appearance in ["Light", "Dark"] {
+            openSettings(in: app)
+            let picker = app.buttons["appearancePicker"]
+            XCTAssertTrue(picker.waitForExistence(timeout: 5))
+            picker.tap()
+            app.buttons[appearance].tap()
+            XCTAssertTrue((picker.label + (picker.value as? String ?? "")).contains(appearance))
+            attachScreenshot(app, name: "Settings — \(appearance)")
+            returnToAssistant(in: app)
+            attachScreenshot(app, name: "Markdown message and compact actions — \(appearance)")
+        }
+        let heading = rows["markdownHeading"].firstMatch
+        for _ in 0..<4 where !heading.isHittable { app.swipeDown() }
+        XCTAssertTrue(heading.isHittable)
+        let message = rows.matching(identifier: "messageBubble")
+            .containing(.staticText, identifier: "markdownHeading").firstMatch
+        XCTAssertTrue(message.exists)
+        // Press the message's trailing space so native word selection does not
+        // intercept the row's long-press context menu.
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+            dx: message.frame.maxX - 8, dy: heading.frame.midY)).press(forDuration: 1)
+        let selectText = app.buttons["selectMessageTextButton"]
+        XCTAssertTrue(selectText.waitForExistence(timeout: 5))
+        selectText.tap()
         let selectable = app.textViews["selectableMessageText"]
         XCTAssertTrue(selectable.waitForExistence(timeout: 5))
         let completeText = selectable.value as? String ?? ""
@@ -89,10 +106,11 @@ final class ChatPresentationUITests: XCTestCase {
             let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
             XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed)
         }
-        for identifier in ["userCopyMessageButton", "copyMessageButton", "userShareMessageButton", "shareMessageButton",
-                           "userMessageMoreButton", "messageMoreButton"] {
+        for identifier in ["userCopyMessageButton", "copyMessageButton", "userShareMessageButton", "shareMessageButton"] {
             XCTAssertEqual(app.buttons.matching(identifier: identifier).count, 1, identifier)
         }
+        XCTAssertFalse(app.buttons["userMessageMoreButton"].exists)
+        XCTAssertFalse(app.buttons["messageMoreButton"].exists)
         let oldMessage = app.descendants(matching: .any).matching(identifier: "messageBubble")
             .containing(.staticText, identifier: "First message").firstMatch.staticTexts["First message"]
         if !oldMessage.isHittable { app.swipeDown() }
@@ -126,6 +144,13 @@ final class ChatPresentationUITests: XCTestCase {
         let result = field.exists ? field : app.textViews["messageInput"]
         XCTAssertTrue(result.waitForExistence(timeout: 5))
         return result
+    }
+
+    @MainActor private func attachScreenshot(_ app: XCUIApplication, name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     @MainActor private func tapEditMenu(_ title: String, in app: XCUIApplication) {

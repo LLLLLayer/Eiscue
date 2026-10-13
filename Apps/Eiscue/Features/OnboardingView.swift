@@ -118,6 +118,7 @@ struct OnboardingView: View {
                         .fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
                 .buttonStyle(.glassProminent).controlSize(.large)
+                .foregroundStyle(EiscueStyle.onAccent)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("onboardingContinueButton")
                 .frame(maxWidth: 520).padding(.horizontal, 28).padding(.vertical, 16)

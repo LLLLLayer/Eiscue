@@ -8,12 +8,12 @@ struct BluetoothBoardSetupView: View {
     @State private var confirmsUSBPhone = false
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
             if model.showsOnboarding, model.boardHardwareStopPending {
                 BoardHardwareStopNotice()
             }
             SurfaceCard {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     step("1", "bluetooth.connectTitle", complete: model.isBluetoothConnected)
                     Picker(text("bluetooth.inputRoute"), selection: Binding(
                         get: { model.bluetoothInputRoute },
@@ -41,11 +41,13 @@ struct BluetoothBoardSetupView: View {
                     } else {
                         Button { Task { await model.enableDeviceControl() } } label: {
                             HStack {
-                                if model.isConnecting { ProgressView() }
+                                if model.isConnecting { ProgressView().tint(EiscueStyle.onAccent) }
                                 Text(text(connectionLabel))
                             }
                         }
-                        .buttonStyle(.glass).disabled(model.isBusy)
+                        .buttonStyle(.glassProminent)
+                        .foregroundStyle(EiscueStyle.onAccent)
+                        .disabled(model.isBusy)
                         .accessibilityIdentifier("bluetoothConnectButton")
                         if model.isConnecting {
                             Button(String(localized: "common.cancel")) { Task { await model.disconnectDevice() } }
@@ -55,7 +57,7 @@ struct BluetoothBoardSetupView: View {
                 }
             }
             SurfaceCard {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     step("2", "bluetooth.shareTitle", complete: model.isBluetoothScreenShared)
                     if !model.isBluetoothScreenShared {
                         Text(text("bluetooth.shareDetail")).font(.subheadline).foregroundStyle(.secondary)
@@ -79,7 +81,7 @@ struct BluetoothBoardSetupView: View {
                 }
             }
             SurfaceCard {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     step("3", "bluetooth.verifyTitle", complete: model.isBluetoothPointerVerified)
                     Text(text(model.isBluetoothPointerVerified ? "bluetooth.readyDetail" : "bluetooth.verifyDetail"))
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -123,8 +125,15 @@ struct BluetoothBoardSetupView: View {
     }
 
     private func step(_ number: String, _ key: String, complete: Bool) -> some View {
-        Label(text(key), systemImage: complete ? "checkmark.circle.fill" : "\(number).circle")
-            .font(.headline).foregroundStyle(.primary)
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(Color.primary.opacity(0.08))
+                if complete { Image(systemName: "checkmark").font(.caption.weight(.bold)) }
+                else { Text(number).font(.caption.weight(.semibold).monospacedDigit()) }
+            }.frame(width: 28, height: 28).accessibilityHidden(true)
+            Text(text(key)).font(.subheadline.weight(.semibold))
+            Spacer(minLength: 0)
+        }.foregroundStyle(.primary)
     }
     private func text(_ key: String) -> String { NSLocalizedString(key, tableName: "Bluetooth", comment: "") }
 }
@@ -152,7 +161,10 @@ private struct BluetoothPointerValidation: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> BluetoothPointerValidationController {
         BluetoothPointerValidationController(controller: controller, onClose: onClose)
     }
-    func updateUIViewController(_ uiViewController: BluetoothPointerValidationController, context: Context) {}
+    func updateUIViewController(_ uiViewController: BluetoothPointerValidationController, context: Context) {
+        uiViewController.overrideUserInterfaceStyle = context.environment.colorScheme == .dark ? .dark : .light
+        uiViewController.view.tintColor = .label
+    }
 }
 
 @MainActor
@@ -160,7 +172,11 @@ private final class BluetoothPointerValidationController: UIViewController {
     private let controller: BluetoothDeviceController
     private let onClose: () -> Void
     private let target = UIButton(type: .custom)
+    private let symbol = UIImageView()
+    private let heading = UILabel()
     private let status = UILabel()
+    private let statusScroll = UIScrollView()
+    private let progress = UIProgressView(progressViewStyle: .default)
     private let close = UIButton(type: .system)
     private let field = UITextField()
     private var task: Task<Void, Never>?
@@ -170,6 +186,7 @@ private final class BluetoothPointerValidationController: UIViewController {
     private var stableBounds = CGRect.zero
     private var stableOrientation = UIInterfaceOrientation.unknown
     private var finished = false
+    private var failed = false
 
     init(controller: BluetoothDeviceController, onClose: @escaping () -> Void) {
         self.controller = controller; self.onClose = onClose
@@ -184,18 +201,48 @@ private final class BluetoothPointerValidationController: UIViewController {
         target.addTarget(self, action: #selector(observedTouch(_:event:)), for: .touchUpInside)
         target.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(target)
+        symbol.image = UIImage(systemName: "hand.tap")
+        symbol.preferredSymbolConfiguration = .init(pointSize: 32, weight: .regular)
+        symbol.contentMode = .center; symbol.tintColor = .label
+        symbol.backgroundColor = .secondarySystemBackground
+        symbol.layer.cornerRadius = 20
+        symbol.isAccessibilityElement = false
+        view.addSubview(symbol)
+        heading.text = text("bluetooth.validationTouchTitle")
+        heading.font = .preferredFont(forTextStyle: .title2)
+        heading.adjustsFontForContentSizeCategory = true
+        heading.textAlignment = .center; heading.numberOfLines = 0
+        heading.accessibilityTraits = .header
+        view.addSubview(heading)
         status.accessibilityIdentifier = "bluetoothValidationStatus"
         close.accessibilityIdentifier = "bluetoothValidationCloseButton"
         status.text = text("bluetooth.verifying")
         status.numberOfLines = 0; status.textAlignment = .center
-        status.font = .preferredFont(forTextStyle: .title2)
+        status.font = .preferredFont(forTextStyle: .subheadline)
+        status.adjustsFontForContentSizeCategory = true
+        status.textColor = .secondaryLabel
         status.isUserInteractionEnabled = false
-        view.addSubview(status)
-        field.borderStyle = .roundedRect; field.textAlignment = .center
+        statusScroll.isUserInteractionEnabled = false
+        statusScroll.addSubview(status)
+        view.addSubview(statusScroll)
+        progress.progressTintColor = .label; progress.trackTintColor = .tertiarySystemFill
+        progress.isUserInteractionEnabled = false
+        progress.accessibilityLabel = text("bluetooth.validationProgress")
+        view.addSubview(progress)
+        field.backgroundColor = .secondarySystemBackground
+        field.layer.cornerRadius = 16; field.textAlignment = .center
+        field.font = .preferredFont(forTextStyle: .body)
+        field.adjustsFontForContentSizeCategory = true
         field.placeholder = text("bluetooth.keyboardCheck")
+        field.isHidden = true
         field.inputView = UIView(frame: .zero)
         field.inputAssistantItem.leadingBarButtonGroups = []; field.inputAssistantItem.trailingBarButtonGroups = []
         view.addSubview(field)
+        var configuration = UIButton.Configuration.glass()
+        configuration.cornerStyle = .capsule
+        configuration.baseForegroundColor = .label
+        configuration.buttonSize = .large
+        close.configuration = configuration
         close.setTitle(text("bluetooth.cancel"), for: .normal)
         close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(close)
@@ -204,11 +251,34 @@ private final class BluetoothPointerValidationController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         target.frame = view.bounds
-        let statusY = view.safeAreaInsets.top + 32
-        let statusHeight = max(100, min(240, view.bounds.height * 0.44 - statusY - 20))
-        status.frame = CGRect(x: 28, y: statusY, width: view.bounds.width - 56, height: statusHeight)
-        field.frame = CGRect(x: 36, y: view.bounds.height * 0.44, width: view.bounds.width - 72, height: 48)
-        close.frame = CGRect(x: 36, y: view.bounds.height - view.safeAreaInsets.bottom - 62, width: view.bounds.width - 72, height: 48)
+        let width = min(500, view.bounds.width - 48), x = (view.bounds.width - width) / 2
+        let compact = view.bounds.height < 650
+        let top = view.safeAreaInsets.top + (compact ? 8 : 36)
+        let closeHeight = max(48, close.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height)
+        // In landscape a large bottom button can cover the lower-left
+        // calibration point. Keep the exit in the lower-right corner instead.
+        let closeWidth = compact ? min(width, view.bounds.width * 0.22) : width
+        let closeX = compact ? view.bounds.width - view.safeAreaInsets.right - 16 - closeWidth : x
+        close.frame = CGRect(x: closeX, y: view.bounds.height - view.safeAreaInsets.bottom - 14 - closeHeight,
+                             width: closeWidth, height: closeHeight)
+        let fieldHeight = max(52, (field.font?.lineHeight ?? 28) + 24)
+        let fieldY = min(view.bounds.height * 0.52, close.frame.minY - 16 - fieldHeight)
+        field.frame = CGRect(x: x, y: fieldY, width: width, height: fieldHeight)
+        let statusBottom = failed ? close.frame.minY - 20 : fieldY - 48
+        let naturalHeadingHeight = heading.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        let showsSymbol = !compact && statusBottom - top >= 96 + naturalHeadingHeight + 64
+        symbol.isHidden = !showsSymbol
+        symbol.frame = CGRect(x: view.bounds.midX - 36, y: top, width: 72, height: 72)
+        let headingY = showsSymbol ? symbol.frame.maxY + 24 : top
+        let headingHeight = min(naturalHeadingHeight, max(28, statusBottom - headingY - 54))
+        heading.frame = CGRect(x: x, y: headingY, width: width, height: headingHeight)
+        let statusY = heading.frame.maxY + 10
+        let naturalStatusHeight = status.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        statusScroll.frame = CGRect(x: x, y: statusY, width: width,
+                                    height: min(max(0, statusBottom - statusY), naturalStatusHeight))
+        status.frame = CGRect(x: 0, y: 0, width: width, height: naturalStatusHeight)
+        statusScroll.contentSize = status.bounds.size
+        progress.frame = CGRect(x: x + 32, y: statusScroll.frame.maxY + 20, width: width - 64, height: 4)
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
@@ -266,9 +336,13 @@ private final class BluetoothPointerValidationController: UIViewController {
                 }
                 armed = false
                 guard touches.count == count + 1 else { throw ValidationFailure.touchMissing }
+                progress.setProgress(Float(touches.count) / 5, animated: true)
                 try await Task.sleep(for: .milliseconds(150))
             }
             try controller.completeCalibration(observed: touches)
+            heading.text = text("bluetooth.validationInputTitle")
+            symbol.image = UIImage(systemName: "keyboard")
+            view.setNeedsLayout()
             field.isHidden = false
             // Clipboard + HID paste is checked through the actual text field.
             field.becomeFirstResponder()
@@ -286,18 +360,28 @@ private final class BluetoothPointerValidationController: UIViewController {
             try controller.markKeyboardVerified()
             field.resignFirstResponder()
             finished = true
+            heading.text = text("bluetooth.validationCompleteTitle")
+            symbol.image = UIImage(systemName: "checkmark")
+            progress.setProgress(1, animated: true)
             status.text = text("bluetooth.validationPassed")
             close.setTitle(text("bluetooth.done"), for: .normal)
             saveReport(passed: true)
+            view.setNeedsLayout()
         } catch {
             armed = false
             await controller.cancelCalibration()
+            field.resignFirstResponder()
+            failed = true; field.isHidden = true; progress.isHidden = true
+            statusScroll.isUserInteractionEnabled = true
+            heading.text = text("bluetooth.validationFailedTitle")
+            symbol.image = UIImage(systemName: "exclamationmark")
             status.font = .preferredFont(forTextStyle: .body)
             if error is ValidationFailure {
                 status.text = text(controller.inputRoute == .usb ? "bluetooth.usbTouchMissing" : "bluetooth.validationFailed")
             } else { status.text = text("bluetooth.validationFailed") + "\n" + error.localizedDescription }
             close.setTitle(text("bluetooth.done"), for: .normal)
             saveReport(passed: false)
+            view.setNeedsLayout()
         }
     }
     private func saveReport(passed: Bool) {

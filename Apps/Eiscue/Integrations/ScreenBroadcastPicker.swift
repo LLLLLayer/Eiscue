@@ -9,11 +9,15 @@ struct ScreenBroadcastPicker: UIViewRepresentable {
         let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 52, height: 52))
         picker.preferredExtension = ScreenBroadcastStore.broadcastExtensionBundleIdentifier
         picker.showsMicrophoneButton = false
-        picker.tintColor = .label
+        // ReplayKit supplies a black icon on some OS versions even in dark
+        // mode. Give the actual system control a consistent contrasting disc.
+        picker.backgroundColor = .white
+        picker.layer.cornerRadius = 26
         return picker
     }
 
     func updateUIView(_ picker: RPSystemBroadcastPickerView, context: Context) {
-        picker.tintColor = .label
+        picker.overrideUserInterfaceStyle = .light
+        picker.tintColor = .black
     }
 }

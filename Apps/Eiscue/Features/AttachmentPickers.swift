@@ -39,7 +39,10 @@ struct EiscueCameraPicker: UIViewControllerRepresentable {
         controller.delegate = context.coordinator
         return controller
     }
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {
+        uiViewController.overrideUserInterfaceStyle = context.environment.colorScheme == .dark ? .dark : .light
+        uiViewController.view.tintColor = .label
+    }
     @MainActor final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
         let onCapture: (UIImage) -> Void
         let onCancel: () -> Void

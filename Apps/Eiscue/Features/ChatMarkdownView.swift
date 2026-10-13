@@ -12,7 +12,7 @@ struct ChatMarkdownView: View, Equatable {
 private struct ChatMarkdownBlocks: View {
     let blocks: [ChatMarkdownBlock]
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(blocks) { block in ChatMarkdownBlockView(block: block).equatable() }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -27,17 +27,17 @@ private struct ChatMarkdownBlockView: View, Equatable {
                 .accessibilityIdentifier("markdownParagraph")
         case .heading(let level, let runs):
             inlineText(runs, base: headingFont(level)).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+                .fixedSize(horizontal: false, vertical: true).padding(.top, 2)
                 .accessibilityAddTraits(.isHeader).accessibilityIdentifier("markdownHeading")
         case .code(let language, let source):
             codeBlock(language: language, source: source)
         case .quote(let blocks):
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
                 RoundedRectangle(cornerRadius: 2).fill(.tertiary).frame(width: 3)
                 AnyView(ChatMarkdownBlocks(blocks: blocks)).foregroundStyle(.secondary)
             }.fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("markdownQuote")
         case .list(let items):
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(items) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(item.marker).monospacedDigit().frame(minWidth: 18, alignment: .trailing)
@@ -47,7 +47,7 @@ private struct ChatMarkdownBlockView: View, Equatable {
             }
         case .table(let header, let rows, let alignments):
             table(header: header, rows: rows, alignments: alignments)
-        case .divider: Divider().padding(.vertical, 4)
+        case .divider: Divider().padding(.vertical, 2)
         }
     }
 
@@ -72,7 +72,7 @@ private struct ChatMarkdownBlockView: View, Equatable {
     }
 
     private func codeBlock(language: String?, source: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(language.flatMap { $0.isEmpty ? nil : $0 } ?? chatText("chat.code"))
                     .font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -89,7 +89,7 @@ private struct ChatMarkdownBlockView: View, Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-        }.padding(14).background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+        }.padding(12).background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 12))
             .accessibilityElement(children: .contain).accessibilityIdentifier("markdownCodeBlock")
     }
 
@@ -115,9 +115,9 @@ private struct ChatMarkdownBlockView: View, Equatable {
                 }
                 inlineText(runs, base: isHeader ? .subheadline.bold() : .subheadline)
                     .textSelection(.enabled).frame(minWidth: 100, maxWidth: 230, alignment: alignment)
-                    .fixedSize(horizontal: false, vertical: true).padding(10)
+                    .fixedSize(horizontal: false, vertical: true).padding(8)
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .background(isHeader ? Color.primary.opacity(0.07) : Color.clear)
+                    .background { if isHeader { Rectangle().fill(Color.primary.opacity(0.07)) } }
                     .overlay(Rectangle().stroke(Color.primary.opacity(0.1), lineWidth: 0.5))
             }
         }

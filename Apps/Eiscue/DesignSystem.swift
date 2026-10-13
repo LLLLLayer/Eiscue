@@ -2,8 +2,13 @@ import SwiftUI
 
 enum EiscueStyle {
     static let accent = Color("AccentColor")
-    static let background = Color("Canvas")
-    static let surface = Color("Surface")
+    static let onAccent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .black : .white
+    })
+    static let background = Color(uiColor: .systemBackground)
+    static let surface = Color(uiColor: .secondarySystemBackground)
+    // Switch thumbs stay white even when the app's monochrome accent turns white.
+    static let switchTint = Color(uiColor: .systemGray)
     static let ink = Color.primary
     static let muted = Color.secondary
 }
