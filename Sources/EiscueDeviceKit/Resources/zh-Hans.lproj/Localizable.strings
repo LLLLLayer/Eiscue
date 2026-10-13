@@ -1,6 +1,7 @@
 // Official Foundation localization resources for this Swift package target.
 "device.app-list.too-large" = "App 列表过大。";
 "device.backend.app-list-failed" = "无法读取已安装的 App 列表，请重新连接设备后再试。";
+"device.backend.app-list-unavailable" = "暂时无法读取 App 列表。请重新查看屏幕，通过画面上的按钮继续操作。";
 "device.backend.closed" = "设备连接已关闭。";
 "device.backend.ddi-not-ready" = "设备的开发准备尚未完成。请在电脑上用 Xcode 连接这台设备，等待准备完成后再试。";
 "device.backend.developer-mode" = "开发者模式尚未就绪，请在系统设置中启用并按系统提示重启。";

@@ -24,7 +24,6 @@ struct SpeechInputButton: View {
                 onAccessibleTap: { controller.toggle(locale: locale, onTranscript: onTranscript) }
             )
             .frame(height: 50)
-            .glassEffect(.regular, in: .rect(cornerRadius: 26))
             .overlay(RoundedRectangle(cornerRadius: 26).stroke(isCancelling ? Color.primary.opacity(0.35) : .clear))
             if controller.isBusy {
                 Text(speechText(isCancelling ? "speech.releaseToCancel" : "speech.slideToCancel"))

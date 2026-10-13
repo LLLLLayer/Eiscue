@@ -55,13 +55,14 @@ enum DeviceTaskPhase: Sendable {
 }
 
 enum DeviceTaskPauseReason: Sendable {
-    case noProgress, staleFrames, verificationUnavailable
+    case noProgress, staleFrames, verificationUnavailable, connectionLost
 
     var detail: String {
         switch self {
         case .noProgress: String(localized: "toolError.noProgress")
         case .staleFrames: String(localized: "toolError.repeatedStaleFrames")
         case .verificationUnavailable: String(localized: "toolError.verificationUnavailable")
+        case .connectionLost: String(localized: "run.paused.connection", table: "Runtime")
         }
     }
 }
@@ -341,6 +342,20 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         if error is CancellationError || Task.isCancelled {
             stop()
             return CancellationError()
+        }
+        if isActive, let deviceError = error as? DeviceControlError {
+            let connectionLost: Bool
+            switch deviceError {
+            case .notConnected: connectionLost = true
+            case .connection:
+                // An optional service can fail while screen control remains
+                // usable. Pause only when the controller lost readiness.
+                if case .unavailable = await client.status() { connectionLost = true }
+                else { connectionLost = false }
+            default: connectionLost = false
+            }
+            if Task.isCancelled { stop(); return CancellationError() }
+            if isActive, connectionLost { return pause(.connectionLost) }
         }
         if action, isFrameRejection(error), isActive {
             consecutiveFrameRejections += 1

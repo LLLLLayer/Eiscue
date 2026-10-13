@@ -733,6 +733,57 @@
           }
         }
       }
+    },
+    "device.aiControl.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow AI to operate device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许 AI 操作设备"
+          }
+        }
+      }
+    },
+    "device.aiControl.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When the device is ready, AI can operate it for your requests. Turn off for chat only."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备就绪后，AI 可按你的要求操作。关闭后仅聊天。"
+          }
+        }
+      }
+    },
+    "device.aiControl.finishTask": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish or end the current task before changing this."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先完成或结束当前任务，再调整此设置。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

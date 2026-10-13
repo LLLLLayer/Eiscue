@@ -1,6 +1,7 @@
 // Official Foundation localization resources for this Swift package target.
 "device.app-list.too-large" = "The app list is too large.";
 "device.backend.app-list-failed" = "The list of installed apps could not be read. Try connecting again.";
+"device.backend.app-list-unavailable" = "The app list could not be read. Take a new screenshot and navigate using the visible controls.";
 "device.backend.closed" = "The device connection is closed.";
 "device.backend.ddi-not-ready" = "The device is not ready for development. Connect it to Xcode on your computer and wait for device preparation to finish, then try again.";
 "device.backend.developer-mode" = "Developer Mode is not ready. Enable it in Settings and restart when the system asks.";

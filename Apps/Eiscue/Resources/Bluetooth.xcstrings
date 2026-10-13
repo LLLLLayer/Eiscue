@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ready. Return to chat, tap + and enable Allow AI to control device, then describe your task."
+            "value": "Ready. Return to chat and describe your task. AI control can be turned off on the Device page."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已就绪。回到对话，点输入框左侧「+」，开启「允许 AI 操作设备」，再说出你的任务。"
+            "value": "已就绪，回到对话说出你的任务即可。只想聊天时，可在设备页关闭 AI 操作。"
           }
         }
       }

@@ -205,6 +205,23 @@
         }
       }
     },
+    "task.status.operation.press-key": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using the keyboard"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在使用键盘"
+          }
+        }
+      }
+    },
     "task.status.operation.launch-app": {
       "extractionState": "manual",
       "localizations": {

@@ -24,6 +24,7 @@ final class TaskStatusPresentationTests: XCTestCase {
             ("device_tap", "task.status.operation.tap", "Tapping the screen"),
             ("device_swipe", "task.status.operation.swipe", "Swiping the screen"),
             ("device_type_text", "task.status.operation.type-text", "Entering text"),
+            ("device_press_key", "task.status.operation.press-key", "Using the keyboard"),
             ("device_launch_app", "task.status.operation.launch-app", "Opening an app"),
             ("device_home", "task.status.operation.home", "Returning to the Home Screen"),
             ("device_list_apps", "task.status.operation.list-apps", "Finding apps")

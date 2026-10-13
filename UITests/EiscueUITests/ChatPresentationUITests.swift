@@ -79,6 +79,48 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertTrue(completeText.contains(pasted), "The pasted selection must be part of the message")
     }
 
+    @MainActor func testOnlyLatestSenderMessagesShowActionsAndOlderMessageStillShares() {
+        let app = launch()
+        for prompt in ["First message", "Second message"] {
+            let editor = input(in: app)
+            editor.tap(); editor.typeText(prompt)
+            app.buttons["sendMessageButton"].tap()
+            XCTAssertTrue(app.staticTexts["Fixture response: \(prompt)"].waitForExistence(timeout: 20))
+            let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
+            XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed)
+        }
+        for identifier in ["userCopyMessageButton", "copyMessageButton", "userShareMessageButton", "shareMessageButton",
+                           "userMessageMoreButton", "messageMoreButton"] {
+            XCTAssertEqual(app.buttons.matching(identifier: identifier).count, 1, identifier)
+        }
+        let oldMessage = app.descendants(matching: .any).matching(identifier: "messageBubble")
+            .containing(.staticText, identifier: "First message").firstMatch.staticTexts["First message"]
+        if !oldMessage.isHittable { app.swipeDown() }
+        XCTAssertTrue(oldMessage.isHittable)
+        oldMessage.press(forDuration: 1)
+        tapEditMenu("Share", in: app)
+        // iOS may replace the controller's root accessibility identifier when
+        // its system-hosted share surface attaches. Verify the actual sheet,
+        // original payload and completed Copy action, not only our marker.
+        let sheet = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier IN %@", ["ActivityListView", "messageActivityController"])).firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 8))
+        XCTAssertTrue(sheet.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "First message"))
+            .firstMatch.waitForExistence(timeout: 3))
+        let copy = sheet.cells.matching(NSPredicate(format: "label == %@", "Copy")).firstMatch
+        XCTAssertTrue(copy.waitForExistence(timeout: 3))
+        let shareScreenshot = XCTAttachment(screenshot: app.screenshot())
+        shareScreenshot.name = "Older message in native share sheet"
+        shareScreenshot.lifetime = .keepAlways
+        add(shareScreenshot)
+        copy.tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 5))
+        let destination = input(in: app)
+        destination.tap(); destination.press(forDuration: 1)
+        tapEditMenu("Paste", in: app)
+        XCTAssertEqual(destination.value as? String, "First message")
+    }
+
     @MainActor private func input(in app: XCUIApplication) -> XCUIElement {
         let field = app.textFields["messageInput"]
         let result = field.exists ? field : app.textViews["messageInput"]

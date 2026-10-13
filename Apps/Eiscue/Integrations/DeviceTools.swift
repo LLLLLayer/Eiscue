@@ -34,7 +34,7 @@ final class DeviceToolSession {
         guard scope != .chat else { return [] }
         var result = [
             tool("device_screenshot", "Observe a fresh screen. Returns an image and frameId with pixel dimensions. Use this frameId for the next action. Each action also returns a fresh screenshot.", properties: [:], required: [], sideEffect: false),
-            tool("device_list_apps", "List installed applications and their exact bundle IDs.", properties: [:], required: [], sideEffect: false)
+            tool("device_list_apps", "Optionally list installed applications and their exact bundle IDs when needed for bundle-ID launch. Visible navigation using screenshots and provided Home/tap tools does not require this list. If this query is unavailable, take a new screenshot and use the visible controls; do not repeatedly query the same unavailable service.", properties: [:], required: [], sideEffect: false)
         ]
         if scope == .control {
             let frame: AgentJSONValue = ["type": "string", "description": "frameId from the most recent screenshot"]

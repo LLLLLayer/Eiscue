@@ -1559,6 +1559,23 @@
           }
         }
       }
+    },
+    "run.paused.connection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device connection was lost. Reconnect from the Device page, then continue this task."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备连接已断开。请到设备页重新连接，再继续此任务。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

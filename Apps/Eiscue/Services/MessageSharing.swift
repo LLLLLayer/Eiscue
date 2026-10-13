@@ -116,7 +116,7 @@ enum MessageShareCallbacks {
     }
 }
 
-/// Installed behind the share button, giving iPad a source view in the correct
+/// Installed behind the message row, giving iPad a source view in the correct
 /// window. This presents Apple's controller directly, without nesting it in a
 /// SwiftUI sheet or using a global/key-window presenter.
 struct MessageActivityPresenter: UIViewControllerRepresentable {
@@ -155,19 +155,29 @@ struct MessageActivityPresenter: UIViewControllerRepresentable {
     private func queuePresentation() {
         guard let payload, activityController == nil, presentationTask == nil, !isFinishing else { return }
         presentationTask = Task { @MainActor [weak self] in
-            // Wait for the button's window and any existing modal/menu
+            // A context-menu action runs before UIKit starts dismissing the
+            // menu. Require readiness across a run-loop interval as well as
+            // waiting for existing modal/menu transitions to finish.
+            var readyChecks = 0
+            // Wait for the row's window and any existing modal/menu
             // transition. A lost presenter produces a bounded error, not an
             // indefinitely disabled Share button with abandoned files.
             for _ in 0..<30 {
                 guard let self, !Task.isCancelled, self.payload?.id == payload.id, !self.isFinishing else { return }
-                if self.isReadyToPresent {
+                readyChecks = self.isReadyToPresent ? readyChecks + 1 : 0
+                if readyChecks >= 2 {
                     self.presentActivity(payload)
-                    try? await Task.sleep(for: .milliseconds(100))
-                    guard !Task.isCancelled, self.payload?.id == payload.id else { return }
-                    if self.activityController?.presentingViewController == nil {
-                        self.beginDismissal(hasError: true, animated: false)
+                    // Activity initialization can itself wait on the system
+                    // share UI. Do not turn a slow attachment into a failure.
+                    for _ in 0..<30 {
+                        guard !Task.isCancelled, self.payload?.id == payload.id, !self.isFinishing else { return }
+                        if self.activityController?.presentingViewController != nil {
+                            self.presentationTask = nil
+                            return
+                        }
+                        try? await Task.sleep(for: .milliseconds(100))
                     }
-                    self.presentationTask = nil
+                    self.beginDismissal(hasError: true, animated: false)
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(100))
@@ -179,7 +189,8 @@ struct MessageActivityPresenter: UIViewControllerRepresentable {
         guard viewIfLoaded?.window != nil, view.bounds.width > 0, view.bounds.height > 0 else { return false }
         var ancestor: UIViewController? = self
         while let controller = ancestor {
-            if controller.presentedViewController != nil || controller.isBeingPresented || controller.isBeingDismissed { return false }
+            if controller.presentedViewController != nil || controller.isBeingPresented || controller.isBeingDismissed
+                || controller.transitionCoordinator != nil { return false }
             ancestor = controller.parent
         }
         return true

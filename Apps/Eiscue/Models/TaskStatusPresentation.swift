@@ -94,6 +94,7 @@ struct TaskStatusPresentation: Equatable, Sendable {
         case "device_tap": String(localized: "task.status.operation.tap", defaultValue: "Tapping the screen", table: "TaskStatus")
         case "device_swipe": String(localized: "task.status.operation.swipe", defaultValue: "Swiping the screen", table: "TaskStatus")
         case "device_type_text": String(localized: "task.status.operation.type-text", defaultValue: "Entering text", table: "TaskStatus")
+        case "device_press_key": String(localized: "task.status.operation.press-key", defaultValue: "Using the keyboard", table: "TaskStatus")
         case "device_launch_app": String(localized: "task.status.operation.launch-app", defaultValue: "Opening an app", table: "TaskStatus")
         case "device_home": String(localized: "task.status.operation.home", defaultValue: "Returning to the Home Screen", table: "TaskStatus")
         case "device_list_apps": String(localized: "task.status.operation.list-apps", defaultValue: "Finding apps", table: "TaskStatus")

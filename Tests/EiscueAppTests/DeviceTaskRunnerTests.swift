@@ -1,3 +1,4 @@
+import EiscueAgentKit
 import EiscueDeviceKit
 import Foundation
 import XCTest
@@ -146,15 +147,56 @@ final class DeviceTaskRunnerTests: XCTestCase {
         XCTAssertEqual(counts.captures, 2)
     }
 
-    func testFailedInitialObservationDoesNotImplySubmittedAction() async throws {
+    func testDisconnectedInitialObservationPausesWithoutImplyingSubmittedAction() async throws {
         let controller = RunnerDeviceController(captureFailures: [1])
         let runner = makeRunner(controller)
-        do { _ = try await runner.step(.observe); XCTFail("Expected a failed capture.") }
-        catch { XCTAssertEqual(error as? DeviceControlError, .notConnected) }
-        XCTAssertNil(runner.pauseReason)
+        await rejected(runner, .observe, as: .paused(""))
+        XCTAssertEqual(runner.pauseReason, .connectionLost)
+        XCTAssertEqual(runner.phase, .paused)
         XCTAssertFalse(runner.hasUnknownOutcome)
+        await rejected(runner, .observe, as: .stopped)
         let counts = await controller.counts()
+        XCTAssertEqual(counts.captures, 1)
         XCTAssertEqual(counts.actions, 0)
+    }
+
+    func testLostConnectionDuringAppListingTerminatesAdapterInsteadOfFinishingNormally() async throws {
+        let controller = RunnerDeviceController(listFailure: .connection("Transport closed"), losesConnectionOnListFailure: true)
+        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control,
+                                        timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+        let screenshot = try XCTUnwrap(session.tools.first { $0.name == "device_screenshot" })
+        let listApps = try XCTUnwrap(session.tools.first { $0.name == "device_list_apps" })
+        _ = try await screenshot.execute([:])
+        do {
+            _ = try await listApps.execute([:])
+            XCTFail("A disconnected tool must terminate this runtime turn.")
+        } catch {
+            guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected a terminating pause.") }
+        }
+        XCTAssertEqual(session.pauseReason, .connectionLost)
+        XCTAssertFalse(session.hasUnknownOutcome)
+        do { _ = try await screenshot.execute([:]); XCTFail("The paused runner must require explicit continuation.") }
+        catch { guard case .stopped = error as? DeviceTaskError else { return XCTFail("Expected the paused gate to be closed.") } }
+        let counts = await controller.counts()
+        XCTAssertEqual(counts.captures, 1)
+        XCTAssertEqual(counts.lists, 1)
+        XCTAssertEqual(counts.actions, 0)
+    }
+
+    func testOptionalAppListFailureKeepsFreshScreenNavigationAvailable() async throws {
+        let failure = DeviceControlError.connection("Optional app list service unavailable")
+        let controller = RunnerDeviceController(listFailure: failure)
+        let runner = makeRunner(controller)
+        let oldFrame = try observation(await runner.step(.observe)).screenshot.frameID
+        do { _ = try await runner.step(.listApplications); XCTFail("Expected optional service failure.") }
+        catch { XCTAssertEqual(error as? DeviceControlError, failure) }
+        XCTAssertNil(runner.pauseReason)
+        await rejected(runner, .action(.home, frameID: oldFrame), as: .frame)
+        let freshFrame = try observation(await runner.step(.observe)).screenshot.frameID
+        _ = try await runner.step(.action(.home, frameID: freshFrame))
+        let counts = await controller.counts()
+        XCTAssertEqual(counts.actions, 1)
+        XCTAssertEqual(counts.captures, 3)
     }
 
     func testCancellationDuringVerificationNeverReturnsSuccessOrNextFrame() async throws {
@@ -311,6 +353,8 @@ private enum RunnerTestError: Error, Equatable { case storage, unexpectedResult 
 private actor RunnerDeviceController: DeviceController {
     let captureFailures: Set<Int>
     let actionFailure: DeviceControlError?
+    let listFailure: DeviceControlError?
+    let losesConnectionOnListFailure: Bool
     let imageAge: TimeInterval
     let suspendCapture: Int?
     private var captures = 0
@@ -319,12 +363,17 @@ private actor RunnerDeviceController: DeviceController {
     private var continuation: CheckedContinuation<Void, Never>?
 
     init(captureFailures: Set<Int> = [], actionFailure: DeviceControlError? = nil,
+         listFailure: DeviceControlError? = nil, losesConnectionOnListFailure: Bool = false,
          imageAge: TimeInterval = 0, suspendCapture: Int? = nil) {
         self.captureFailures = captureFailures; self.actionFailure = actionFailure
+        self.listFailure = listFailure; self.losesConnectionOnListFailure = losesConnectionOnListFailure
         self.imageAge = imageAge; self.suspendCapture = suspendCapture
     }
 
-    func status() async -> DeviceStatus { .ready(capabilities: Set(DeviceCapability.allCases)) }
+    func status() async -> DeviceStatus {
+        if losesConnectionOnListFailure, lists > 0 { return .unavailable(reason: "Disconnected") }
+        return .ready(capabilities: Set(DeviceCapability.allCases))
+    }
     func captureScreenshot() async throws -> DeviceScreenshot {
         captures += 1
         if captures == suspendCapture { await withCheckedContinuation { continuation = $0 } }
@@ -338,7 +387,11 @@ private actor RunnerDeviceController: DeviceController {
     func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws { try performAction() }
     func home() async throws { try performAction() }
     func launchApplication(bundleID: String) async throws { try performAction() }
-    func listApplications() async throws -> [DeviceApplication] { lists += 1; return [] }
+    func listApplications() async throws -> [DeviceApplication] {
+        lists += 1
+        if let listFailure { throw listFailure }
+        return []
+    }
     private func performAction() throws { actions += 1; if let actionFailure { throw actionFailure } }
     func counts() -> (captures: Int, actions: Int, lists: Int) { (captures, actions, lists) }
     func isWaiting() -> Bool { continuation != nil }

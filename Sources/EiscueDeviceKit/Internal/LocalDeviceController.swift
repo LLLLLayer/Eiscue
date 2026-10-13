@@ -433,6 +433,14 @@ import OSLog
                 frames.invalidate()
                 throw DeviceControlError.staleFrame
             }
+            if case NativeBackendError.applicationQueryFailure(stage: 21, cause: let cause) = error,
+               [UInt32(1), 2, 4].contains(cause) {
+                // AppService queries use an independent read-only stream. The
+                // native backend retains the parent session on these failures;
+                // tearing it down here would also end working screen/control.
+                frames.invalidate()
+                throw Self.convert(error)
+            }
             // Validation failures happen before native submission and preserve the connection.
             if let error = error as? DeviceControlError,
                [.staleFrame, .invalidCoordinates, .invalidDuration, .invalidText, .invalidBundleID, .unsupported, .busy].contains(error) { throw error }
@@ -537,6 +545,8 @@ enum NativeDeviceErrorPresentation {
         case .automationDeliveryUnknown: return String(localized: "device.backend.automation-delivery-unknown", defaultValue: "The device did not confirm this action. It will not be repeated. Check the screen before reconnecting.", bundle: bundle)
         case .automationAuthorizationTimedOut: return String(localized: "device.backend.automation-authorization-timed-out", defaultValue: "Waiting for system authorization timed out. Reconnect with this device unlocked. If Enable UI Automation asks for your device passcode, enter it on the system screen.", bundle: bundle)
         case .screenshotFailure: return String(localized: "device.backend.screenshot-failed", defaultValue: "The device screen could not be read. Keep the device unlocked and try connecting again.", bundle: bundle)
+        case .applicationQueryFailure(stage: 21, cause: let cause) where [UInt32(1), 2, 4].contains(cause):
+            return String(localized: "device.backend.app-list-unavailable", defaultValue: "The app list could not be read. Take a new screenshot and navigate using the visible controls.", bundle: bundle)
         case .applicationQueryFailure: return String(localized: "device.backend.app-list-failed", defaultValue: "The list of installed apps could not be read. Try connecting again.", bundle: bundle)
         case .busy: return DeviceControlError.busy.localizedDescription
         case .closed: return String(localized: "device.backend.closed", defaultValue: "The device connection is closed.", bundle: bundle)

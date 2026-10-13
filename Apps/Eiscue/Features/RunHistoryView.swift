@@ -142,16 +142,6 @@ private struct RunDetailView: View {
 /// Reports deliberately format an allowlist of metadata, never raw errors,
 /// prompts, tool arguments or credentials stored elsewhere in the application.
 private enum RunReport {
-    private static let tools: [String: String] = [
-        "device_screenshot": String(localized: "scope.observe"),
-        "device_list_apps": String(localized: "tool.listApps"),
-        "device_tap": String(localized: "tool.tap"),
-        "device_swipe": String(localized: "tool.swipe"),
-        "device_type_text": String(localized: "tool.typeText"),
-        "device_launch_app": String(localized: "tool.launchApp"),
-        "device_home": String(localized: "tool.home")
-    ]
-
     static func eventTitle(_ event: RunLogEntry) -> String {
         switch event.kind {
         case "run.started": String(localized: "event.runStarted")
@@ -190,7 +180,7 @@ private enum RunReport {
             return String(localized: "event.capturedSummary")
         }
         let name = event.summary.components(separatedBy: "：").first ?? ""
-        guard let title = tools[name] else { return String(localized: "event.changedSummary") }
+        guard let title = DeviceToolPresentation.title(for: name) else { return String(localized: "event.changedSummary") }
         switch event.kind {
         case "action.acknowledged": return String(localized: "event.acknowledgedSummary \(title)")
         case "action.unknown": return String(localized: "event.unknownSummary \(title)")

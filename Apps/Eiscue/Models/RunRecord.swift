@@ -15,13 +15,14 @@ enum RunState: String, Codable, Sendable {
 }
 
 enum RunPauseReason: String, Codable, Sendable {
-    case toolLimit, noProgress, verification
+    case toolLimit, noProgress, verification, connection
 
     var detail: String {
         switch self {
         case .toolLimit: String(localized: "run.paused.toolLimit", table: "Runtime")
         case .noProgress: String(localized: "run.paused.noProgress", table: "Runtime")
         case .verification: String(localized: "run.paused.verification", table: "Runtime")
+        case .connection: String(localized: "run.paused.connection", table: "Runtime")
         }
     }
 }

@@ -12,7 +12,8 @@ enum DeviceRunCleanup {
             && deviceTools?.hasStartedExecution == false && (run.activities ?? []).isEmpty
         // The host marks a pause only after the runtime has closed cleanly.
         // A legacy or incomplete record cannot opt into connection retention.
-        let safePause = run.state == .paused && run.submission == .accepted && run.pauseReason != nil
+        let safePause = run.state == .paused && run.submission == .accepted
+            && run.pauseReason != nil && run.pauseReason != .connection
         guard method == .bluetoothBoard, !stopRequested, run.state == .completed || safePause || unusedModelFailure else {
             await disconnect()
             return

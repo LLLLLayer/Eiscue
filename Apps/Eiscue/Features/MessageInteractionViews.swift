@@ -5,6 +5,7 @@ import UIKit
 struct ChatMessageRow: View {
     @Environment(AppModel.self) private var model
     let message: AgentMessage
+    var showsActions = true
     @State private var showsSelection = false
     @State private var didCopy = false
     @State private var canShareAttachments = false
@@ -19,7 +20,7 @@ struct ChatMessageRow: View {
     var body: some View {
         HStack(alignment: .top) {
             if message.role == .user { Spacer(minLength: 42) }
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
                 VStack(alignment: .leading, spacing: 10) {
                     if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
                     else if !message.text.isEmpty { Text(verbatim: message.text).textSelection(.enabled) }
@@ -34,39 +35,36 @@ struct ChatMessageRow: View {
                             in: RoundedRectangle(cornerRadius: 22))
                 .contextMenu { messageMenu }
                 .accessibilityElement(children: .contain).accessibilityIdentifier("messageBubble")
-                HStack(spacing: 16) {
-                    Text(message.createdAt, format: .dateTime.hour().minute())
-                        .font(.caption2.monospacedDigit()).accessibilityIdentifier("messageTime")
-                    if hasText {
-                        Button { copy() } label: {
-                            Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 26, height: 26).contentShape(Rectangle())
+                if showsActions {
+                    HStack(spacing: 2) {
+                        Text(message.createdAt, format: .dateTime.hour().minute())
+                            .font(.caption2.monospacedDigit()).accessibilityIdentifier("messageTime")
+                            .padding(.trailing, 6)
+                        if hasText {
+                            Button { copy() } label: {
+                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 30, height: 32).contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(chatText(didCopy ? "chat.copied" : "chat.copy"))
+                            .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
                         }
-                        .accessibilityLabel(chatText(didCopy ? "chat.copied" : "chat.copy"))
-                        .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
+                        Button { share() } label: {
+                            Group {
+                                if isPreparingShare { ProgressView().controlSize(.mini) }
+                                else { Image(systemName: "square.and.arrow.up") }
+                            }.frame(width: 30, height: 32).contentShape(Rectangle())
+                        }
+                        .disabled(!canShare || isPreparingShare || sharePayload != nil)
+                        .accessibilityLabel(chatText("chat.share"))
+                        .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
+                        Menu { messageMenu } label: {
+                            Image(systemName: "ellipsis").frame(width: 30, height: 32).contentShape(Rectangle())
+                        }
+                        .accessibilityLabel(chatText("chat.more"))
+                        .accessibilityIdentifier(message.role == .user ? "userMessageMoreButton" : "messageMoreButton")
                     }
-                    Button { share() } label: {
-                        Group {
-                            if isPreparingShare { ProgressView().controlSize(.mini) }
-                            else { Image(systemName: "square.and.arrow.up") }
-                        }.frame(width: 26, height: 26).contentShape(Rectangle())
-                    }
-                    .disabled(!canShare || isPreparingShare || sharePayload != nil)
-                    .accessibilityLabel(chatText("chat.share"))
-                    .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
-                    .background {
-                        MessageActivityPresenter(payload: sharePayload) { id, hasError in
-                            if sharePayload?.id == id { sharePayload = nil }
-                            if hasError { model.errorMessage = MessageSharingError.delivery.localizedDescription }
-                        }.allowsHitTesting(false)
-                    }
-                    Menu { messageMenu } label: {
-                        Image(systemName: "ellipsis").frame(width: 26, height: 26).contentShape(Rectangle())
-                    }
-                    .accessibilityLabel(chatText("chat.more"))
-                    .accessibilityIdentifier(message.role == .user ? "userMessageMoreButton" : "messageMoreButton")
+                    .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
+                    .padding(.horizontal, message.role == .user ? 8 : 0)
                 }
-                .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
-                .padding(.horizontal, message.role == .user ? 8 : 0)
                 if !message.attachments.isEmpty, checkedAttachments, !canShareAttachments {
                     Text(String(localized: "messageSharing.unavailable", table: "MessageSharing"))
                         .font(.caption).foregroundStyle(.secondary)
@@ -74,6 +72,14 @@ struct ChatMessageRow: View {
                 }
             }
             if message.role != .user { Spacer(minLength: 0) }
+        }
+        .background(alignment: message.role == .user ? .bottomTrailing : .bottomLeading) {
+            // Older messages still share from their context menu after their
+            // visible footer moves to the sender's newest message.
+            MessageActivityPresenter(payload: sharePayload) { id, hasError in
+                if sharePayload?.id == id { sharePayload = nil }
+                if hasError { model.errorMessage = MessageSharingError.delivery.localizedDescription }
+            }.frame(width: 30, height: 32).allowsHitTesting(false)
         }
         .sheet(isPresented: $showsSelection) {
             NavigationStack {
@@ -210,23 +216,14 @@ struct ToolActivityRow: View {
         }
     }
     private var title: String {
-        switch activity.name {
-        case "device_screenshot": String(localized: "scope.observe")
-        case "device_list_apps": String(localized: "tool.listApps")
-        case "device_tap": String(localized: "tool.tap")
-        case "device_swipe": String(localized: "tool.swipe")
-        case "device_type_text": String(localized: "tool.typeText")
-        case "device_launch_app": String(localized: "tool.launchApp")
-        case "device_home": String(localized: "tool.home")
-        default: activity.name
-        }
+        DeviceToolPresentation.title(for: activity.name) ?? activity.name
     }
     private var symbol: String {
         switch activity.name {
         case "device_screenshot": "viewfinder"
         case "device_list_apps", "device_launch_app": "app"
         case "device_tap", "device_swipe": "hand.tap"
-        case "device_type_text": "keyboard"
+        case "device_type_text", "device_press_key": "keyboard"
         case "device_home": "house"
         default: "terminal"
         }

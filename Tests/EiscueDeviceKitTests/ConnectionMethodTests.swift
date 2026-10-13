@@ -95,6 +95,43 @@ import Testing
         await fixture.client().disconnect()
     }
 
+    @Test(arguments: [UInt32(1), 2, 4])
+    func isolatedAppListFailurePreservesScreenSessionButRequiresFreshObservation(cause: UInt32) async throws {
+        let fixture = try ConnectionFixture()
+        let client = fixture.client()
+        try await client.connectLocalVPN()
+        let oldFrame = try await client.captureScreenshot()
+        let queryFailure = NativeBackendError.applicationQueryFailure(stage: 21, cause: cause)
+        fixture.session.appListFailure = queryFailure
+        await #expect(throws: DeviceControlError.connection(NativeDeviceErrorPresentation.message(queryFailure))) {
+            try await client.listApplications()
+        }
+        #expect(!fixture.session.closed)
+        #expect(fixture.session.mediaStops == 0)
+        guard case .ready = await client.status() else { Issue.record("An isolated app query must not revoke working screen control"); return }
+        await #expect(throws: DeviceControlError.staleFrame) {
+            try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: oldFrame.frameID)
+        }
+        let current = try await client.captureScreenshot()
+        try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: current.frameID)
+        #expect(fixture.session.taps == 1)
+        #expect(fixture.session.vpnConnections == 1, "Continuing observation must not reconnect or replay input.")
+        await client.disconnect()
+    }
+
+    @Test(arguments: [NativeBackendError.transport(code: 3), .applicationQueryFailure(stage: 12, cause: 5), .malformedEvent])
+    func appListTransportLossStillClosesTheSession(error: NativeBackendError) async throws {
+        let fixture = try ConnectionFixture()
+        let client = fixture.client()
+        try await client.connectLocalVPN()
+        fixture.session.appListFailure = error
+        await #expect(throws: (any Error).self) { try await client.listApplications() }
+        #expect(fixture.session.closed)
+        #expect(fixture.session.mediaStops == 1)
+        guard case .unavailable = await client.status() else { Issue.record("Transport loss cannot retain readiness"); return }
+        await #expect(throws: DeviceControlError.notConnected) { try await client.captureScreenshot() }
+    }
+
     @Test func diagnosticCandidatesAndReadinessCannotClaimInputReady() async throws {
         let fixture = try ConnectionFixture()
         fixture.session.mediaFailure = NativeBackendError.touchPreparationFailure(stage: 10, cause: 4)
@@ -336,11 +373,12 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
 
 @MainActor private final class TestDeviceSession: LocalDeviceSession {
     var supportedControlActions = Set(NativeControlAction.allCases)
-    var boardConnections = 0, vpnConnections = 0, developerChecks = 0, mediaStarts = 0, taps = 0
+    var boardConnections = 0, vpnConnections = 0, developerChecks = 0, mediaStarts = 0, mediaStops = 0, taps = 0
     var closed = false, authorizedExistingIdentity = false, authorizedInput = false
     var peerID: String?
     var mediaFailure: (any Error)?
     var captureFailure: (any Error)?
+    var appListFailure: (any Error)?
     private var geometry = NativeVideoGeometry(id: UUID(), epoch: 1, revision: 1)
     private let image: Data
     init() throws {
@@ -370,7 +408,7 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
     }
     func checkDeveloperReadiness() async throws { developerChecks += 1 }
     func startTouchMedia() async throws { mediaStarts += 1; if let mediaFailure { throw mediaFailure } }
-    func stopTouchMediaWhenIdle() async throws -> Bool { mediaFailure == nil }
+    func stopTouchMediaWhenIdle() async throws -> Bool { mediaStops += 1; return mediaFailure == nil }
     func close() { closed = true }
     func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
         if let captureFailure { throw captureFailure }
@@ -382,7 +420,10 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
     func typeText(_ text: String) async throws {}
     func launchApplication(bundleID: String, arguments: [String]) async throws {}
     func home() async throws {}
-    func installedApplications() async throws -> Data { Data("[]".utf8) }
+    func installedApplications() async throws -> Data {
+        if let appListFailure { throw appListFailure }
+        return Data("[]".utf8)
+    }
 }
 
 private func boardRow(index: UInt32 = 7, name: String = "en-synthetic", address: String = "192.168.7.2") -> NCMInterfaceBinding.Row {

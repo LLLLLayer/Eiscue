@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect your device using the top-right button. Tap + beside the message field to let AI control it."
+            "value": "Connect using the top-right device button. AI control is on by default; you can turn it off there for chat only."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过右上角按钮连接设备，再点输入框旁的加号，允许 AI 操作设备。"
+            "value": "通过右上角按钮连接设备。AI 操作默认开启，只想聊天时可在设备页关闭。"
           }
         }
       }

@@ -13,7 +13,7 @@ final class RichComposerUITests: XCTestCase {
         return app
     }
 
-    @MainActor func testAddMenuControlsDeviceAccessWithoutSendingDraft() throws {
+    @MainActor func testDevicePageControlsAccessWithoutSendingDraft() throws {
         let app = launch()
         XCTAssertFalse(app.descendants(matching: .any)["taskScopePicker"].exists)
         XCTAssertTrue(app.buttons["speechInputButton"].exists)
@@ -28,26 +28,27 @@ final class RichComposerUITests: XCTestCase {
         for title in ["Photos", "Camera", "Files"] {
             XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3))
         }
-        let deviceToggle = app.descendants(matching: .any)["deviceControlToggle"].firstMatch
-        XCTAssertTrue(deviceToggle.waitForExistence(timeout: 3))
-        deviceToggle.tap()
-        XCTAssertTrue(app.staticTexts["Device control on"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["deviceControlEnabled"].firstMatch.exists)
-
-        app.buttons["composerAddButton"].tap()
-        XCTAssertTrue(deviceToggle.waitForExistence(timeout: 3))
-        deviceToggle.tap()
-        let controlOff = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: app.staticTexts["Device control on"])
-        XCTAssertEqual(XCTWaiter.wait(for: [controlOff], timeout: 3), .completed)
-
+        XCTAssertFalse(app.descendants(matching: .any)["deviceControlToggle"].exists)
+        // Dismiss the attachment menu without opening a system picker.
+        app.navigationBars["Eiscue"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let menuClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["Photos"])
+        XCTAssertEqual(XCTWaiter.wait(for: [menuClosed], timeout: 3), .completed)
         app.buttons["deviceNavigationLink"].tap()
         XCTAssertTrue(app.navigationBars["Device"].waitForExistence(timeout: 5))
+        let deviceToggle = app.switches["deviceControlToggle"]
+        XCTAssertTrue(deviceToggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(deviceToggle.value as? String, "1")
+        deviceToggle.tap()
+        XCTAssertEqual(deviceToggle.value as? String, "0")
         returnToAssistant(in: app)
         XCTAssertEqual(messageInput(in: app).value as? String, "Keep this as a draft")
         XCTAssertFalse(app.descendants(matching: .any)["messageBubble"].exists)
         XCTAssertFalse(app.buttons["stopRunButton"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["speechPreview"].exists)
+        app.terminate()
+        let restored = launch(reset: false)
+        restored.buttons["deviceNavigationLink"].tap()
+        XCTAssertEqual(restored.switches["deviceControlToggle"].value as? String, "0")
     }
 
     @MainActor func testPlainChatWithoutPluginsSurvivesRelaunch() throws {

@@ -42,6 +42,18 @@ enum ConversationFeedItem: Identifiable, Sendable, Equatable {
         }
     }
 
+    static func latestActionMessageIDs(in feed: [Self], isAssistantStreaming: Bool = false) -> Set<UUID> {
+        var roles = Set<AgentRole>()
+        var result = Set<UUID>()
+        for case .message(let message) in feed.reversed() {
+            guard message.role == .user || message.role == .assistant,
+                  roles.insert(message.role).inserted else { continue }
+            if message.role == .assistant && isAssistantStreaming { continue }
+            result.insert(message.id)
+        }
+        return result
+    }
+
     static func merge(messages: [AgentMessage], activities: [ToolActivity]) -> [Self] {
         var seen = Set<String>()
         let messageIDs = Set(messages.map(\.id))
@@ -79,6 +91,22 @@ enum ConversationFeedItem: Identifiable, Sendable, Equatable {
             if seen.insert(item.id).inserted { output.append(item) }
         }
         return output
+    }
+}
+
+enum DeviceToolPresentation {
+    static func title(for name: String) -> String? {
+        switch name {
+        case "device_screenshot": String(localized: "scope.observe")
+        case "device_list_apps": String(localized: "tool.listApps")
+        case "device_tap": String(localized: "tool.tap")
+        case "device_swipe": String(localized: "tool.swipe")
+        case "device_type_text": String(localized: "tool.typeText")
+        case "device_launch_app": String(localized: "tool.launchApp")
+        case "device_home": String(localized: "tool.home")
+        case "device_press_key": String(localized: "tool.pressKey")
+        default: nil
+        }
     }
 }
 

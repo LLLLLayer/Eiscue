@@ -4037,6 +4037,23 @@
         }
       }
     },
+    "tool.pressKey": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard action"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "键盘操作"
+          }
+        }
+      }
+    },
     "tool.swipe": {
       "extractionState": "manual",
       "localizations": {
@@ -4230,13 +4247,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable device control when you want AI to operate this device. Chat works without connecting."
+            "value": "Connect when you want AI to operate this device. Chat works without a device connection."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要 AI 操作这台设备时，再开启设备控制。普通聊天无需连接设备。"
+            "value": "需要 AI 操作时，连接这台设备即可。普通聊天无需连接设备。"
           }
         }
       }
@@ -4247,13 +4264,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable device control"
+            "value": "Connect device"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启设备控制"
+            "value": "连接设备"
           }
         }
       }

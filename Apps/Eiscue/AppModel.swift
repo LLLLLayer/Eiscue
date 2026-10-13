@@ -36,7 +36,13 @@ final class AppModel {
     var deviceStatus: DeviceStatus = .unavailable(reason: String(localized: "device.not_connected", table: "Runtime"))
     var modelSettings: ModelSettings
     var hasAPIKey = false
-    var scope = TaskScope.chat
+    var scope: TaskScope {
+        didSet { preferences.set(scope != .chat, forKey: "allowsDeviceControl") }
+    }
+    var allowsDeviceControl: Bool {
+        get { scope != .chat }
+        set { scope = newValue ? .control : .chat }
+    }
     var selectedSkillID: String?
     var skills: [AgentSkill] = []
     var runs: [RunRecord] = []
@@ -126,6 +132,7 @@ final class AppModel {
         if let suppliedPreferences { defaults = suppliedPreferences }
         storageDirectory = directory
         preferences = defaults
+        scope = (defaults.object(forKey: "allowsDeviceControl") as? Bool ?? true) ? .control : .chat
         deviceConnectionMethod = DeviceConnectionMethod(rawValue: defaults.string(forKey: "deviceConnectionMethod") ?? "") ?? .bluetoothBoard
         showsOnboarding = defaults.integer(forKey: "onboardingVersion") < 1
         #if DEBUG
@@ -197,6 +204,8 @@ final class AppModel {
     var canSend: Bool { !isLoading && !isBusy && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty) }
     var canAddAttachments: Bool { !isLoading && !isBusy && draftAttachments.count < MessageAttachments.maximumCount }
     var isDeviceReady: Bool { if case .ready = deviceStatus { true } else { false } }
+    var newRunScope: TaskScope { isDeviceReady ? scope : .chat }
+    var canChangeDeviceControl: Bool { !isBusy && !needsRecovery && pausedRun == nil }
     var hasConfiguredModel: Bool { agentAvailability == .ready }
     var agentStatusTitle: String { agentAvailability == .ready ? String(localized: "agent.configured", table: "Runtime") : String(localized: "agent.configure_first", table: "Runtime") }
     var selectedSkill: AgentSkill? { skills.first { $0.id == selectedSkillID } }
@@ -406,8 +415,10 @@ final class AppModel {
         guard canSend else { return }
         guard agentAvailability == .ready else { showsModelSettings = true; return }
         if needsRecovery { errorMessage = String(localized: "run.resolve_interruption", table: "Runtime"); return }
-        if scope != .chat && !isDeviceReady { errorMessage = String(localized: "run.connect_first", table: "Runtime"); return }
-        if scope != .chat && !modelSettings.supportsImages { errorMessage = String(localized: "run.images_required", table: "Runtime"); return }
+        // Permission makes tools available only for a ready device. Capture it
+        // before persistence so connecting later cannot widen this request.
+        let runScope = newRunScope
+        if runScope != .chat && !modelSettings.supportsImages { errorMessage = String(localized: "run.images_required", table: "Runtime"); return }
         let originalDraft = draft
         let text = originalDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = draftAttachments
@@ -433,7 +444,7 @@ final class AppModel {
             preferences.set(conversation.id.uuidString, forKey: "selectedConversationID")
             isSaving = false
             if hapticsEnabled { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
-            _ = await perform(conversationID: conversation.id, requestID: message.id, prompt: text, history: history, resume: false, attachments: attachments)
+            _ = await perform(conversationID: conversation.id, requestID: message.id, prompt: text, history: history, resume: false, attachments: attachments, runScope: runScope)
         } catch {
             // A local save failure did not submit the message. Remove only the
             // optimistic copy; restore the draft without overwriting new edits.
@@ -460,8 +471,8 @@ final class AppModel {
             // borrow an unrelated earlier task's device permission for it.
             let continuationScope: TaskScope
             if let pendingID = pendingRequestID(in: selectedConversation) {
-                continuationScope = selectedRuns.first { $0.requestID == pendingID }?.scope ?? scope
-            } else { continuationScope = selectedRuns.first?.scope ?? scope }
+                continuationScope = selectedRuns.first { $0.requestID == pendingID }?.scope ?? .chat
+            } else { continuationScope = selectedRuns.first?.scope ?? .chat }
             if continuationScope != .chat && !isDeviceReady {
                 isSaving = false; errorMessage = String(localized: "run.reconnect_first", table: "Runtime"); return
             }
@@ -472,14 +483,14 @@ final class AppModel {
                 let original = selectedConversation?.messages.first(where: { $0.id == selectedRuns.first?.requestID })
                     ?? recovery.messages.last(where: { $0.role == .user })
                 isSaving = false
-                let finished = await perform(conversationID: id, requestID: selectedRuns.first?.requestID ?? UUID(), prompt: "", history: [], resume: true, continuationScope: continuationScope)
+                let finished = await perform(conversationID: id, requestID: selectedRuns.first?.requestID ?? UUID(), prompt: "", history: [], resume: true, runScope: continuationScope)
                 if finished { clearDraftMatching(original) }
             } else if let conversation = selectedConversation,
                       let requestID = pendingRequestID(in: conversation) ?? selectedRuns.first.flatMap({ $0.submission == .pending ? $0.requestID : nil }),
                       let original = conversation.messages.first(where: { $0.id == requestID }) {
                 let history = conversation.messages.prefix { $0.id != original.id }.filter { !unsubmittedMessageIDs.contains($0.id) }
                 isSaving = false
-                let finished = await perform(conversationID: id, requestID: original.id, prompt: original.text, history: history, resume: false, attachments: original.attachments, continuationScope: continuationScope)
+                let finished = await perform(conversationID: id, requestID: original.id, prompt: original.text, history: history, resume: false, attachments: original.attachments, runScope: continuationScope)
                 if finished { clearDraftMatching(original) }
             } else if var conversation = selectedConversation {
                 let original = conversation.messages.last(where: { $0.role == .user })
@@ -491,7 +502,7 @@ final class AppModel {
                 conversation.pendingRequestID = message.id
                 try await repository.save(conversation); upsert(conversation)
                 isSaving = false
-                let finished = await perform(conversationID: id, requestID: message.id, prompt: message.text, history: history, resume: false, continuationScope: continuationScope)
+                let finished = await perform(conversationID: id, requestID: message.id, prompt: message.text, history: history, resume: false, runScope: continuationScope)
                 if finished { clearDraftMatching(original) }
             } else { isSaving = false }
         } catch { isSaving = false; errorMessage = safeError(error) }
@@ -508,7 +519,7 @@ final class AppModel {
             if let requestID = pendingRequestID(in: selectedConversation),
                !selectedRuns.contains(where: { $0.requestID == requestID }) {
                 var record = RunRecord(id: UUID(), conversationID: id, requestID: requestID, startedAt: Date(),
-                                       scope: scope, model: modelSettings.model, skill: nil, state: .failed,
+                                       scope: .chat, model: modelSettings.model, skill: nil, state: .failed,
                                        endedAt: Date(), detail: String(localized: "run.ended_by_user", table: "Runtime"), events: [])
                 record.submission = .abandoned
                 try await journal.save(record)
@@ -530,9 +541,8 @@ final class AppModel {
     }
 
     @discardableResult
-    private func perform(conversationID: UUID, requestID: UUID, prompt: String, history: [AgentMessage], resume: Bool, attachments: [AgentAttachment] = [], continuationScope: TaskScope? = nil) async -> Bool {
+    private func perform(conversationID: UUID, requestID: UUID, prompt: String, history: [AgentMessage], resume: Bool, attachments: [AgentAttachment] = [], runScope: TaskScope) async -> Bool {
         guard !isRunning else { return false }
-        let runScope = continuationScope ?? scope
         // The transcript's pending marker covers the earlier message-save
         // boundary; this journal owns preparation and runtime admission.
         let preparationInterrupted = isBusy || currentScenePhase != .active || (runScope != .chat && !isDeviceReady)
@@ -639,7 +649,8 @@ final class AppModel {
                     }
                 case .toolStarted(let call):
                     isReceivingResponse = false
-                    currentTool = call.name; activeRun?.detail = String(format: String(localized: "run.calling_tool", table: "Runtime"), call.name)
+                    currentTool = call.name
+                    activeRun?.detail = String(format: String(localized: "run.calling_tool", table: "Runtime"), DeviceToolPresentation.title(for: call.name) ?? call.name)
                     if let runID = activeRun?.id {
                         let activityID = "\(runID.uuidString):\(call.id)"
                         if !(activeRun?.activities ?? []).contains(where: { $0.id == activityID }) {
@@ -697,7 +708,11 @@ final class AppModel {
                 switch reportedError {
                 case AgentError.toolLimitReached: pauseReason = .toolLimit
                 case AgentError.toolExecutionPaused:
-                    pauseReason = deviceTools?.pauseReason == .verificationUnavailable ? .verification : .noProgress
+                    switch deviceTools?.pauseReason {
+                    case .verificationUnavailable: pauseReason = .verification
+                    case .connectionLost: pauseReason = .connection
+                    default: pauseReason = .noProgress
+                    }
                 default: pauseReason = nil
                 }
             } else { pauseReason = nil }

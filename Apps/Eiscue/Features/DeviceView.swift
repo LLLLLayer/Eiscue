@@ -26,6 +26,7 @@ struct DeviceView: View {
                             StatusLabel(title: model.connectionIndicator.title, color: model.connectionIndicator.color)
                         }.padding(.vertical, 8)
                     } else { deviceHeader }
+                    deviceControlPermission
                     connectionMethod
                     if model.deviceConnectionMethod == .bluetoothBoard {
                         BluetoothBoardSetupView()
@@ -51,6 +52,25 @@ struct DeviceView: View {
                 Button("device.removeIdentity", role: .destructive) { Task { await model.forgetPairingIdentity() } }
             }
             .sheet(isPresented: $showsProbe) { ControlProbeView() }
+        }
+    }
+
+    private var deviceControlPermission: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(isOn: Binding(get: { model.allowsDeviceControl }, set: { model.allowsDeviceControl = $0 })) {
+                    Label(String(localized: "device.aiControl.title", table: "Connections"), systemImage: "hand.tap")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .disabled(!model.canChangeDeviceControl)
+                .accessibilityIdentifier("deviceControlToggle")
+                Text(String(localized: "device.aiControl.detail", table: "Connections"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if !model.canChangeDeviceControl && (model.isRunning || model.needsRecovery || model.pausedRun != nil) {
+                    Text(String(localized: "device.aiControl.finishTask", table: "Connections"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

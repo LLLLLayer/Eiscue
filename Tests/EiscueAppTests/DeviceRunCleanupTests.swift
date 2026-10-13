@@ -97,6 +97,15 @@ final class DeviceRunCleanupTests: XCTestCase {
         }
     }
 
+    func testConnectionLossPauseDisconnectsInsteadOfRetainingFailedTransport() async throws {
+        let controller = CleanupDeviceController()
+        var run = makeRun()
+        run.state = .paused; run.pauseReason = .connection
+        try await finish(run, modelRequestFailed: false, session: makeSession(controller), controller: controller)
+        let events = await controller.events
+        XCTAssertEqual(events, ["disconnect"])
+    }
+
     func testPauseCannotRetainAnUnconfirmedReleaseOrUserStop() async throws {
         let failingController = CleanupDeviceController(failRelease: true)
         var run = makeRun()

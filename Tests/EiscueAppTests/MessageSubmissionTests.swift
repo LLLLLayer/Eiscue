@@ -5,6 +5,52 @@ import XCTest
 @testable import Eiscue
 
 @MainActor final class MessageSubmissionTests: XCTestCase {
+    func testDeviceControlDefaultsOnAndExplicitOffSurvivesRelaunch() throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let model = fixture.model(Conversation(title: "Preference"))
+        XCTAssertTrue(model.allowsDeviceControl)
+        XCTAssertEqual(model.newRunScope, .chat, "Unavailable devices must not block ordinary chat.")
+        model.deviceStatus = .ready(capabilities: [.screenshot, .tap])
+        XCTAssertEqual(model.newRunScope, .control)
+        model.allowsDeviceControl = false
+        let reopened = fixture.model(Conversation(title: "Relaunched"))
+        reopened.deviceStatus = .ready(capabilities: [.screenshot, .tap])
+        XCTAssertFalse(reopened.allowsDeviceControl)
+        XCTAssertEqual(reopened.newRunScope, .chat)
+    }
+
+    func testConnectingDuringMessageSaveCannotWidenCapturedChatScope() async throws {
+        let store = SuspendedConversationStore()
+        let model = makeModel(store)
+        defer { try? FileManager.default.removeItem(at: model.storageDirectory) }
+        model.draft = "Hello"
+        let sending = Task { await model.sendMessage() }
+        await store.waitForSave()
+        model.deviceStatus = .ready(capabilities: [.screenshot, .tap])
+        model.currentScenePhase = .background // Inspect preparation without contacting a provider.
+        await store.acceptSave()
+        await sending.value
+        XCTAssertEqual(model.runs.first?.scope, .chat)
+        XCTAssertEqual(model.runs.first?.state, .interrupted)
+    }
+
+    func testDisconnectingDuringMessageSaveDoesNotDowngradeCapturedControlScope() async throws {
+        let store = SuspendedConversationStore()
+        let model = makeModel(store)
+        defer { try? FileManager.default.removeItem(at: model.storageDirectory) }
+        model.deviceStatus = .ready(capabilities: [.screenshot, .tap])
+        model.modelSettings.supportsImages = true
+        model.draft = "Open settings"
+        let sending = Task { await model.sendMessage() }
+        await store.waitForSave()
+        model.deviceStatus = .unavailable(reason: "Disconnected")
+        await store.acceptSave()
+        await sending.value
+        XCTAssertEqual(model.runs.first?.scope, .control)
+        XCTAssertEqual(model.runs.first?.state, .interrupted, "A lost connection must stop preparation, never fall back mid-request.")
+    }
+
     func testSendMovesTextAndAttachmentsBeforePersistenceReturns() async throws {
         let store = SuspendedConversationStore()
         let model = makeModel(store)
@@ -165,7 +211,8 @@ import XCTest
                                 scope: .control, model: "fixture", skill: nil, state: .completed, detail: "", events: [])
         priorRun.submission = .accepted
         try await model.journal.save(priorRun); model.runs = [priorRun]
-        model.scope = .chat
+        model.deviceStatus = .ready(capabilities: [.screenshot, .tap])
+        XCTAssertEqual(model.newRunScope, .control, "Fresh requests allow control, but a recovered orphan has no permission record.")
         model.currentScenePhase = .background // No provider or credentials involved.
         await model.continueInterruptedRun()
         XCTAssertEqual(model.runs.first?.requestID, pending.id)
@@ -214,6 +261,7 @@ import XCTest
 
 private actor SuspendedConversationStore: ConversationRepository {
     private var saveEntered = false
+    private var acceptsFutureSaves = false
     private var admission: CheckedContinuation<Void, Never>?
     private var pendingSave: CheckedContinuation<Void, Error>?
     private var conversation: Conversation?
@@ -221,6 +269,7 @@ private actor SuspendedConversationStore: ConversationRepository {
     func delete(id: UUID) async throws {}
     func save(_ conversation: Conversation) async throws {
         self.conversation = conversation
+        if acceptsFutureSaves { return }
         try await withCheckedThrowingContinuation { continuation in
             pendingSave = continuation
             saveEntered = true
@@ -234,6 +283,10 @@ private actor SuspendedConversationStore: ConversationRepository {
     }
     func rejectSave() {
         pendingSave?.resume(throwing: CocoaError(.fileWriteNoPermission)); pendingSave = nil
+    }
+    func acceptSave() {
+        acceptsFutureSaves = true
+        pendingSave?.resume(); pendingSave = nil
     }
 }
 

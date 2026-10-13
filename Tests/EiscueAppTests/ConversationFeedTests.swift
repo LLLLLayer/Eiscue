@@ -4,6 +4,33 @@ import XCTest
 @testable import Eiscue
 
 final class ConversationFeedTests: XCTestCase {
+    func testActionsFollowLatestDisplayedMessagePerSenderAcrossToolProgress() {
+        let firstUser = AgentMessage(role: .user, text: "Change appearance")
+        let firstProgress = AgentMessage(role: .assistant, text: "Checking")
+        let secondProgress = AgentMessage(role: .assistant, text: "Opening Settings")
+        let lastUser = AgentMessage(role: .user, text: "Continue")
+        let final = AgentMessage(role: .assistant, text: "Done", createdAt: .distantPast)
+        let tool = ToolActivity(id: "call", name: "device_press_key")
+        let feed: [ConversationFeedItem] = [.message(firstUser), .message(firstProgress), .activity(tool),
+                                            .message(secondProgress), .message(lastUser), .message(final),
+                                            .message(AgentMessage(role: .tool, text: "Tool result")),
+                                            .message(AgentMessage(role: .system, text: "System event"))]
+        XCTAssertEqual(ConversationFeedItem.latestActionMessageIDs(in: feed), [lastUser.id, final.id])
+        XCTAssertEqual(ConversationFeedItem.latestActionMessageIDs(in: feed, isAssistantStreaming: true), [lastUser.id])
+        XCTAssertEqual(ConversationFeedItem.latestActionMessageIDs(in: Array(feed.prefix(4))), [firstUser.id, secondProgress.id],
+                       "A held device transcript uses only the messages actually displayed.")
+        XCTAssertTrue(ConversationFeedItem.latestActionMessageIDs(in: []).isEmpty)
+    }
+
+    func testDeviceToolTitlesCoverKeyboardActionsAndRejectUnrecognizedNames() throws {
+        let title = try XCTUnwrap(DeviceToolPresentation.title(for: "device_press_key"))
+        XCTAssertEqual(title, String(localized: "tool.pressKey"))
+        XCTAssertNotEqual(title, "device_press_key")
+        XCTAssertNotEqual(title, "tool.pressKey")
+        XCTAssertNil(DeviceToolPresentation.title(for: "device_press_key\nprivate input"))
+        XCTAssertNil(DeviceToolPresentation.title(for: "unknown_tool"))
+    }
+
     func testChronologicalMessagesAndRealToolsRemainSeparateAndDeduplicated() {
         let time = Date(timeIntervalSince1970: 1_000)
         let user = AgentMessage(role: .user, text: "Inspect", createdAt: time)
