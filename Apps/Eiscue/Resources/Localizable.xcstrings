@@ -4655,13 +4655,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Paused because the screen kept changing before an action could be sent. Wait for it to settle, then continue."
+            "value": "The screenshot could not be used for several actions, so the task is paused. Continue to inspect the screen again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作前画面多次发生变化，任务已暂停。请等待画面稳定后再继续。"
+            "value": "操作多次未能使用当前截图，任务已暂停。继续后会重新查看屏幕。"
           }
         }
       }

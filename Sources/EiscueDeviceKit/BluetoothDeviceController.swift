@@ -1,16 +1,15 @@
 import Foundation
 
 enum BluetoothFrameAuthority {
-    static func permits(sourceFrameID: UUID, capturedUptime: TimeInterval,
-                        currentSourceFrameID: UUID, currentConfirmedUptime: TimeInterval,
+    static func permits(decisionIssuedUptime: TimeInterval, currentConfirmedUptime: TimeInterval,
                         now: TimeInterval) -> Bool {
-        let capturedAge = now - capturedUptime, confirmedAge = now - currentConfirmedUptime
-        guard capturedAge.isFinite, capturedAge >= 0,
+        let decisionAge = now - decisionIssuedUptime, confirmedAge = now - currentConfirmedUptime
+        guard decisionAge.isFinite, decisionAge >= 0, decisionAge < 30,
               confirmedAge.isFinite, confirmedAge >= 0 else { return false }
-        // The current reading was validated by ScreenBroadcastStore. A live
-        // heartbeat for a newer buffer cannot extend an older observation.
-        return capturedAge <= ScreenBroadcastStore.maximumFrameAge ||
-            sourceFrameID == currentSourceFrameID && confirmedAge <= ScreenBroadcastStore.maximumFrameAge
+        // Stream liveness and model decision age are independent. New screen
+        // content alone does not revoke a decision; the model assesses it using
+        // the post-action observation. Session/geometry gates remain in consume.
+        return confirmedAge <= ScreenBroadcastStore.maximumFrameAge
     }
 }
 
@@ -33,7 +32,7 @@ public final class BluetoothDeviceController: DeviceController {
     private var store: ScreenBroadcastStore?
     private var calibration: Calibration?
     private var calibrationFrame: ObservedFrame?
-    private var latest: ObservedFrame?
+    private var latest: (frame: ObservedFrame, issuedUptime: TimeInterval)?
     private weak var calibrationWindow: UIWindow?
     private weak var calibrationView: UIView?
     private var calibrationViewport: Viewport?
@@ -202,7 +201,7 @@ public final class BluetoothDeviceController: DeviceController {
         // Host progress can change its own UI between actions. Observe after
         // this request too, rather than returning a pre-update cached frame.
         let observation = try await freshFrame(after: max(lastDispatchedUptime, requestedAt), token: epoch)
-        latest = observation
+        latest = (observation, ProcessInfo.processInfo.systemUptime)
         return observation.screenshot
     }
 
@@ -432,18 +431,17 @@ public final class BluetoothDeviceController: DeviceController {
         } catch { operations.endAction(); throw error }
     }
     private func consume(_ id: UUID) throws -> (ObservedFrame, Calibration) {
-        let frame = latest; latest = nil
+        let decision = latest; latest = nil
         // One capture authorizes one action: `latest` is cleared above, and the
         // observation must postdate every input sent since it was taken.
-        guard let frame, frame.screenshot.frameID == id, frame.observedUptime > lastDispatchedUptime,
-              (0..<30).contains(ProcessInfo.processInfo.systemUptime - frame.observedUptime),
-              let calibration, calibration.matches(frame) else {
+        guard let decision, decision.frame.screenshot.frameID == id,
+              decision.frame.observedUptime > lastDispatchedUptime,
+              let calibration, calibration.matches(decision.frame) else {
             throw DeviceControlError.staleFrame
         }
-        let current = try observe()
+        let frame = decision.frame, current = try observe()
         guard calibration.matches(current),
-              BluetoothFrameAuthority.permits(sourceFrameID: frame.sourceFrameID,
-                  capturedUptime: frame.capturedUptime, currentSourceFrameID: current.sourceFrameID,
+              BluetoothFrameAuthority.permits(decisionIssuedUptime: decision.issuedUptime,
                   currentConfirmedUptime: current.observedUptime, now: ProcessInfo.processInfo.systemUptime) else {
             throw DeviceControlError.staleFrame
         }
@@ -492,7 +490,6 @@ public final class BluetoothDeviceController: DeviceController {
 
     private struct ObservedFrame {
         let screenshot: DeviceScreenshot
-        let sourceFrameID: UUID
         let sessionID: UUID
         let orientation: ScreenBroadcastOrientation
         let capturedUptime: TimeInterval
@@ -504,7 +501,6 @@ public final class BluetoothDeviceController: DeviceController {
             let frame = reading.frame
             screenshot = DeviceScreenshot(frameID: UUID(), capturedAt: frame.capturedAt,
                 width: frame.width, height: frame.height, mimeType: "image/jpeg", data: frame.jpegData)
-            sourceFrameID = frame.frameID
             sessionID = frame.sessionID; orientation = frame.orientation
             capturedUptime = frame.capturedUptime; observedUptime = reading.confirmedUptime
         }

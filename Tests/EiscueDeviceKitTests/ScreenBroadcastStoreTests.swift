@@ -19,12 +19,10 @@ import Testing
         #expect(current.frame.frameID == observed.frame.frameID)
         #expect(current.frame.capturedAt > observed.frame.capturedAt)
         #expect(current.frame.capturedUptime > observed.frame.capturedUptime + ScreenBroadcastStore.maximumFrameAge)
-        #expect(BluetoothFrameAuthority.permits(sourceFrameID: observed.frame.frameID,
-            capturedUptime: observed.frame.capturedUptime, currentSourceFrameID: current.frame.frameID,
+        #expect(BluetoothFrameAuthority.permits(decisionIssuedUptime: observed.confirmedUptime,
             currentConfirmedUptime: current.confirmedUptime, now: ProcessInfo.processInfo.systemUptime))
         // Identity reuse alone cannot extend the broadcast's liveness window.
-        #expect(!BluetoothFrameAuthority.permits(sourceFrameID: observed.frame.frameID,
-            capturedUptime: observed.frame.capturedUptime, currentSourceFrameID: current.frame.frameID,
+        #expect(!BluetoothFrameAuthority.permits(decisionIssuedUptime: observed.confirmedUptime,
             currentConfirmedUptime: current.confirmedUptime,
             now: current.confirmedUptime + ScreenBroadcastStore.maximumFrameAge + 0.01))
     }
@@ -40,8 +38,20 @@ import Testing
         #expect(changed != original)
         #expect(returned != original && returned != changed)
         #expect(try fixture.publish(session) == returned)
-        #expect(!BluetoothFrameAuthority.permits(sourceFrameID: original, capturedUptime: 85,
-            currentSourceFrameID: returned, currentConfirmedUptime: 99.5, now: 100))
+    }
+
+    @Test func changedScreenContentDoesNotRevokeARecentModelDecision() throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        let original = try fixture.publish(session)
+        let changed = try fixture.store.publish(jpegData: BroadcastStoreFixture.makeJPEG(gray: 0.8),
+            width: 8, height: 4, orientation: .right, sessionID: session)
+        #expect(changed != original)
+        let current = try fixture.store.readCurrentFrame()
+        let now = ProcessInfo.processInfo.systemUptime
+        #expect(BluetoothFrameAuthority.permits(decisionIssuedUptime: now - 5,
+            currentConfirmedUptime: current.confirmedUptime, now: now))
     }
 
     @Test func geometryAndSessionChangesRequireNewIdentities() throws {
