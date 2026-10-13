@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Complete a small task"
+            "value": "Get something done"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成一个小任务"
+            "value": "帮我办件事"
           }
         }
       }
@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Describe your goal and the steps"
+            "value": "Tell me your goal"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "描述目标和操作步骤"
+            "value": "说说你想完成什么"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Describe what you'd like to do…"
+            "value": "What would you like to do…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "描述你想完成的事情…"
+            "value": "想做些什么…"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect a model to get started"
+            "value": "Set up AI to get started"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接模型，开始使用"
+            "value": "设置 AI 后开始使用"
           }
         }
       }
@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the top-right device button to pair and connect"
+            "value": "Tap the device icon at the top right to connect."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点右上角设备按钮，完成配对与连接"
+            "value": "点右上角设备图标，设置连接。"
           }
         }
       }
@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Conversations Yet"
+            "value": "No conversations yet"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "还没有会话"
+            "value": "还没有对话"
           }
         }
       }
@@ -126,13 +126,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your saved messages will appear here."
+            "value": "Your conversations will appear here."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "你保存的消息会出现在这里。"
+            "value": "聊过的内容会保存在这里。"
           }
         }
       }
@@ -143,7 +143,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "End Task"
+            "value": "End task"
           }
         },
         "zh-Hans": {
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Find information"
+            "value": "Find something"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "帮我查找信息"
+            "value": "帮我查一查"
           }
         }
       }
@@ -217,7 +217,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "会话记录"
+            "value": "对话记录"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Previous task interrupted"
+            "value": "Task interrupted"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上次任务已中断"
+            "value": "任务已中断"
           }
         }
       }
@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New Conversation"
+            "value": "New conversation"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新建对话"
+            "value": "新对话"
           }
         }
       }
@@ -262,13 +262,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Skill"
+            "value": "No skill"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "不使用 Skill"
+            "value": "不使用技能"
           }
         }
       }
@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check the device before continuing to avoid repeating actions. End the task if the result is uncertain."
+            "value": "Check the device before continuing to avoid duplicate actions. If the result is unclear, end the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "确认设备当前状态后再继续，避免重复操作。结果不确定时，可以结束任务。"
+            "value": "先检查设备，避免重复操作。结果不确定时，请结束任务。"
           }
         }
       }
@@ -296,13 +296,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Checked, Continue"
+            "value": "Checked, continue"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已核查，继续"
+            "value": "已检查，继续"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send Message"
+            "value": "Send"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "发送消息"
+            "value": "发送"
           }
         }
       }
@@ -330,13 +330,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start with an idea"
+            "value": "Try asking"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "从一个想法开始"
+            "value": "试着问我"
           }
         }
       }
@@ -347,13 +347,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Task Permissions"
+            "value": "Task permissions"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本次任务权限"
+            "value": "任务权限"
           }
         }
       }
@@ -364,13 +364,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Saved locally; submission unconfirmed"
+            "value": "Saved; submission unconfirmed"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地消息，提交未确认"
+            "value": "已保存，尚未确认发送"
           }
         }
       }
@@ -398,13 +398,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Describe your goal. Eiscue will help you get there."
+            "value": "Tell Eiscue what you want to do."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "描述目标，Eiscue 会帮你一步步完成。"
+            "value": "告诉 Eiscue 你想做什么。"
           }
         }
       }
@@ -415,13 +415,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Workflow"
+            "value": "How it works"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用流程"
+            "value": "使用方法"
           }
         }
       }
@@ -551,13 +551,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recorded skill"
+            "value": "Saved skill"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已记录的技能"
+            "value": "已保存的技能"
           }
         }
       }
@@ -619,7 +619,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unable to Complete"
+            "value": "Couldn't complete"
           }
         },
         "zh-Hans": {
@@ -670,13 +670,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Discovering and authenticating local developer services…"
+            "value": "Connecting to this device…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在发现并认证本机开发者服务…"
+            "value": "正在连接这台设备…"
           }
         }
       }
@@ -687,13 +687,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter this code in the system pairing dialog."
+            "value": "Enter this code in the system pairing prompt."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在系统配对窗口输入此验证码。"
+            "value": "在系统配对提示中输入此验证码。"
           }
         }
       }
@@ -704,13 +704,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pairing identity imported into the system Keychain."
+            "value": "Pairing imported and saved securely."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配对身份已导入系统钥匙串。"
+            "value": "配对信息已导入并安全保存。"
           }
         }
       }
@@ -721,13 +721,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The pairing identity saved on this device was removed."
+            "value": "Saved pairing removed."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已移除本机保存的配对身份。"
+            "value": "已移除保存的配对信息。"
           }
         }
       }
@@ -738,13 +738,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pairing identity saved securely."
+            "value": "Pairing saved securely."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配对身份已安全保存。"
+            "value": "配对信息已安全保存。"
           }
         }
       }
@@ -755,13 +755,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Starting the local connection was canceled."
+            "value": "Local VPN setup canceled."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地连接启动已取消。"
+            "value": "已取消开启本地 VPN。"
           }
         }
       }
@@ -772,13 +772,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local connection is active. Connect the device once its pairing identity is ready."
+            "value": "Local VPN is on. Complete pairing to connect."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地连接已开启。配对身份准备就绪后即可连接设备。"
+            "value": "本地 VPN 已开启，完成配对后即可连接。"
           }
         }
       }
@@ -789,13 +789,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local connection is closing. Device tasks have stopped."
+            "value": "Local VPN is closing. Device tasks have stopped."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地连接正在关闭，设备任务已停止。"
+            "value": "正在关闭本地 VPN，设备任务已停止。"
           }
         }
       }
@@ -806,13 +806,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Go to Settings → Privacy & Security → Developer Mode, select Eiscue in the pairing entry, and follow the system instructions."
+            "value": "In Settings → Privacy & Security → Developer Mode, select Eiscue under pairing and follow the prompts."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请前往「设置 → 隐私与安全性 → 开发者模式」，在配对入口中选择 Eiscue，并按系统提示完成配对。"
+            "value": "前往「设置 → 隐私与安全性 → 开发者模式」，在配对入口选择 Eiscue，按提示完成配对。"
           }
         }
       }
@@ -823,13 +823,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pairing is complete. You can now connect your device."
+            "value": "Paired. You can now connect."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配对完成，可以连接设备了。"
+            "value": "配对完成，可以连接了。"
           }
         }
       }
@@ -857,13 +857,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue Is Pairing"
+            "value": "Pairing device"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 正在配对"
+            "value": "正在配对设备"
           }
         }
       }
@@ -874,13 +874,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing system pairing…"
+            "value": "Preparing to pair…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在准备系统配对…"
+            "value": "正在准备配对…"
           }
         }
       }
@@ -891,13 +891,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A new screenshot was captured. This preview is not sent to the model."
+            "value": "Screenshot ready. This preview stays on your device."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已获取新截图。此预览不会发送给模型。"
+            "value": "截图已获取，仅在本机预览。"
           }
         }
       }
@@ -908,13 +908,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device connected. Verify screenshots, input, and other capabilities on this OS version."
+            "value": "Connected. Check screenshots and input before use."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备已连接。截图、输入等能力需在当前系统版本逐项验证。"
+            "value": "已连接，请先检查截图和输入是否正常。"
           }
         }
       }
@@ -925,13 +925,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This OS version cannot start Eiscue pairing from Settings. Connect this device to a computer using USB, then generate and import its Eiscue pairing file. No system pairing prompt will appear."
+            "value": "Use a computer and USB cable to create and import this device's pairing file. This OS version has no pairing entry in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此系统版本不支持从设置发起 Eiscue 配对。请先用 USB 连接电脑，生成并导入这台设备的 Eiscue 配对文件；无需等待系统配对提示。"
+            "value": "请用电脑通过 USB 生成并导入这台设备的配对文件。此系统版本的设置中没有配对入口。"
           }
         }
       }
@@ -942,13 +942,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start the local connection before pairing."
+            "value": "Turn on the local VPN before pairing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先开启本地连接，再开始配对。"
+            "value": "请先开启本地 VPN，再配对。"
           }
         }
       }
@@ -959,13 +959,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start the local connection first."
+            "value": "Turn on the local VPN first."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先开启本地连接。"
+            "value": "请先开启本地 VPN。"
           }
         }
       }
@@ -976,13 +976,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system Keychain operation failed (%d). No plain-text fallback file was written."
+            "value": "Couldn't access the system Keychain (%d)."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统钥匙串操作失败（%d），没有写入明文备用文件。"
+            "value": "无法访问系统钥匙串（%d）。"
           }
         }
       }
@@ -993,13 +993,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connection Options"
+            "value": "Advanced"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接选项与诊断"
+            "value": "高级选项"
           }
         }
       }
@@ -1010,13 +1010,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Capture Screenshot"
+            "value": "Preview screen"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "获取截图"
+            "value": "预览屏幕"
           }
         }
       }
@@ -1027,13 +1027,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device control uses developer services. OS compatibility and continued execution after switching apps still require validation on a physical device."
+            "value": "This method uses developer services. Compatibility and background control need to be checked on your device."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "控制后端使用开发者服务。系统版本兼容性、切换 App 后的后台持续运行仍需真机验证。"
+            "value": "此方式使用系统开发者服务，兼容性和后台操作效果需在设备上确认。"
           }
         }
       }
@@ -1044,13 +1044,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect Device"
+            "value": "Connect"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接设备"
+            "value": "连接"
           }
         }
       }
@@ -1061,13 +1061,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecting starts the local VPN and may disconnect another VPN."
+            "value": "Connecting turns on the local VPN and may disconnect another VPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接时会启用本地 VPN，其他 VPN 可能会断开。"
+            "value": "连接会开启本地 VPN，可能断开其他 VPN。"
           }
         }
       }
@@ -1112,13 +1112,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Control Connection"
+            "value": "Device connection"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "控制连接"
+            "value": "设备连接"
           }
         }
       }
@@ -1129,13 +1129,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable it in Settings, then use Xcode to prepare a compatible Developer Disk Image (DDI)."
+            "value": "Turn on Developer Mode in Settings, then use Xcode to prepare the matching Developer Disk Image (DDI)."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在系统设置中开启，并用 Xcode 准备匹配的开发者磁盘映像（DDI）。"
+            "value": "在设置中开启开发者模式，再用 Xcode 准备匹配的开发者磁盘映像（DDI）。"
           }
         }
       }
@@ -1146,7 +1146,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Disconnect and Stop"
+            "value": "Disconnect and stop"
           }
         },
         "zh-Hans": {
@@ -1180,13 +1180,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect Your Device"
+            "value": "Connect this device"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接你的设备"
+            "value": "连接这台设备"
           }
         }
       }
@@ -1197,13 +1197,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your pairing identity is securely saved in the system Keychain."
+            "value": "Pairing is saved in this device's Keychain."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配对身份已安全保存到系统钥匙串。"
+            "value": "配对信息保存在本机钥匙串中。"
           }
         }
       }
@@ -1214,13 +1214,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import Eiscue Pairing File"
+            "value": "Import pairing file"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入 Eiscue 配对文件"
+            "value": "导入配对文件"
           }
         }
       }
@@ -1231,7 +1231,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import Pairing Sent from Computer"
+            "value": "Import from computer"
           }
         },
         "zh-Hans": {
@@ -1248,13 +1248,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local Connection"
+            "value": "Local VPN"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地连接"
+            "value": "本地 VPN"
           }
         }
       }
@@ -1265,13 +1265,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The built-in VPN extension creates a local control channel. No additional app is needed. It handles only local control addresses and does not forward internet traffic."
+            "value": "Uses the built-in VPN for device control only. It doesn't route internet traffic."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过内置 VPN 扩展建立本机控制通道，无需额外安装 App。此通道仅处理本机控制地址，不转发互联网流量。"
+            "value": "通过内置 VPN 操作本机，不转发上网流量。"
           }
         }
       }
@@ -1282,13 +1282,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The required extension is included with Eiscue. Allow the system to add a VPN configuration the first time you start it."
+            "value": "When prompted, allow Eiscue to add a VPN configuration. No other app is needed."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "所需扩展已随 Eiscue 安装。首次开启时，请允许系统添加 VPN 配置。"
+            "value": "首次开启时，请允许添加 VPN 配置，无需安装其他 App。"
           }
         }
       }
@@ -1299,13 +1299,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The built-in VPN is used only for local control. Starting it may disconnect another VPN."
+            "value": "For device control only. Turning it on may disconnect another VPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "内置 VPN 仅用于本机控制。开启后，其他 VPN 可能会断开。"
+            "value": "仅用于操作本机，开启时可能断开其他 VPN。"
           }
         }
       }
@@ -1316,13 +1316,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Verification Screen"
+            "value": "Open input check"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开验证页面"
+            "value": "检查点击和输入"
           }
         }
       }
@@ -1333,13 +1333,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Starting this connection may disconnect another active VPN. You can also turn off Eiscue's VPN in Settings."
+            "value": "This may disconnect your current VPN. You can turn Eiscue's VPN off in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "若正在使用其他 VPN，开启此连接可能使其断开。你也可以在系统设置中关闭 Eiscue 的 VPN。"
+            "value": "可能断开正在使用的 VPN。可在系统设置中关闭 Eiscue 的 VPN。"
           }
         }
       }
@@ -1350,13 +1350,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pair This Device"
+            "value": "Pair device"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "建立本机配对"
+            "value": "配对设备"
           }
         }
       }
@@ -1384,13 +1384,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On iOS 27 or later, use the pairing entry in Settings → Privacy & Security → Developer Mode to select Eiscue. VPN authorization and device pairing are separate steps."
+            "value": "In Settings → Privacy & Security → Developer Mode, select Eiscue under pairing. VPN approval and pairing are separate steps."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "iOS 27 或更高版本可在「设置 → 隐私与安全性 → 开发者模式」中的配对入口选择 Eiscue。VPN 许可与设备配对是两个步骤。"
+            "value": "在「设置 → 隐私与安全性 → 开发者模式」的配对入口选择 Eiscue。允许 VPN 后，仍需完成配对。"
           }
         }
       }
@@ -1401,7 +1401,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connection Setup"
+            "value": "Connection setup"
           }
         },
         "zh-Hans": {
@@ -1418,7 +1418,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prepare a Pairing File"
+            "value": "Get a pairing file"
           }
         },
         "zh-Hans": {
@@ -1435,13 +1435,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remove Identity"
+            "value": "Remove pairing"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "移除身份"
+            "value": "移除配对"
           }
         }
       }
@@ -1452,13 +1452,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remove Pairing Identity"
+            "value": "Remove pairing?"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "移除配对身份"
+            "value": "移除配对？"
           }
         }
       }
@@ -1469,13 +1469,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After removal, set up a pairing identity again before controlling this device."
+            "value": "You'll need to pair again to use this connection method."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "移除后需要重新设置配对身份才能控制设备。"
+            "value": "移除后，需重新配对才能使用此连接方式。"
           }
         }
       }
@@ -1486,13 +1486,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start Local Connection"
+            "value": "Turn on local VPN"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启本地连接"
+            "value": "开启本地 VPN"
           }
         }
       }
@@ -1503,7 +1503,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start Pairing"
+            "value": "Start pairing"
           }
         },
         "zh-Hans": {
@@ -1520,13 +1520,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stop Local Connection"
+            "value": "Turn off local VPN"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭本地连接"
+            "value": "关闭本地 VPN"
           }
         }
       }
@@ -1554,13 +1554,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pair with this device to get started."
+            "value": "Pair this device first."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先与这台设备配对，即可开始使用。"
+            "value": "请先完成设备配对。"
           }
         }
       }
@@ -1571,13 +1571,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "For first-time setup on iOS 26, generate a pairing file on a computer over USB, then import it here."
+            "value": "On iOS 26, first use a computer and USB cable to create a pairing file, then import it here."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "iOS 26 首次连接需用电脑通过 USB 生成配对文件，再导入这里。"
+            "value": "iOS 26 首次使用需通过电脑和 USB 线生成配对文件，再导入这里。"
           }
         }
       }
@@ -1588,13 +1588,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "For first-time setup, connect this device to a computer using USB. Run the Eiscue pairing tool on the computer, then transfer the generated pairing file back to this device and import it."
+            "value": "Connect this device to a computer by USB. Run the Eiscue pairing tool, then send the file to this device and import it."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "首次使用时，用 USB 将这台设备连接到电脑，在电脑上运行 Eiscue 配对工具生成配对文件，然后传回这台设备并导入。"
+            "value": "用 USB 将设备接到电脑，运行 Eiscue 配对工具，再把生成的文件传回设备并导入。"
           }
         }
       }
@@ -1605,13 +1605,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verify Device Control"
+            "value": "Check device control"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "验证控制能力"
+            "value": "检查设备操作"
           }
         }
       }
@@ -1622,13 +1622,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After connecting, verify screenshots first, then test taps on the verification screen. An acknowledgment means an action was sent; observe again to confirm its result."
+            "value": "Preview the screen, then check taps and typing. A sent command still needs its result checked."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接后先验证截图，再在受控页面验证点击。动作回执仅表示已发送，实际结果需要重新观察。"
+            "value": "先预览屏幕，再检查点击和输入。指令已发送不代表操作成功，需查看实际结果。"
           }
         }
       }
@@ -1656,13 +1656,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@: submitted. Observe again to confirm the result."
+            "value": "%@: sent. Check the screen to confirm the result."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@：已提交，需要再次观察确认效果。"
+            "value": "%@：已发送，请查看屏幕确认结果。"
           }
         }
       }
@@ -1673,13 +1673,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device Acknowledged Submission"
+            "value": "Action sent"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备已确认提交"
+            "value": "操作已发送"
           }
         }
       }
@@ -1690,13 +1690,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sending Action"
+            "value": "Sending action"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "发送操作"
+            "value": "正在发送操作"
           }
         }
       }
@@ -1707,13 +1707,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing Action"
+            "value": "Preparing action"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "准备操作"
+            "value": "正在准备操作"
           }
         }
       }
@@ -1724,13 +1724,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Action Outcome Unknown"
+            "value": "Result unknown"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作结果未知"
+            "value": "结果不确定"
           }
         }
       }
@@ -1741,13 +1741,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld × %2$lld, observation ID %3$@"
+            "value": "%1$lld × %2$lld, frame %3$@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld × %2$lld，观察编号 %3$@"
+            "value": "%1$lld × %2$lld，截图编号 %3$@"
           }
         }
       }
@@ -1758,13 +1758,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A fresh screen image was captured."
+            "value": "New screenshot captured."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已获取新的屏幕画面。"
+            "value": "已获取新截图。"
           }
         }
       }
@@ -1775,13 +1775,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A status change was recorded."
+            "value": "Status updated."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已记录状态变化。"
+            "value": "状态已更新。"
           }
         }
       }
@@ -1792,13 +1792,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Screen Captured"
+            "value": "Screenshot captured"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已获取屏幕画面"
+            "value": "已获取截图"
           }
         }
       }
@@ -1809,13 +1809,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing Observation"
+            "value": "Capturing screen"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "准备观察"
+            "value": "正在获取截图"
           }
         }
       }
@@ -1826,13 +1826,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run Event"
+            "value": "Task event"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行事件"
+            "value": "任务记录"
           }
         }
       }
@@ -1843,13 +1843,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Task Started"
+            "value": "Task started"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务开始"
+            "value": "任务已开始"
           }
         }
       }
@@ -1860,13 +1860,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This execution has started."
+            "value": "Task started."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已开始本轮执行。"
+            "value": "任务已开始。"
           }
         }
       }
@@ -1877,13 +1877,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tool Returned an Error"
+            "value": "Step failed"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "工具返回错误"
+            "value": "步骤失败"
           }
         }
       }
@@ -1894,13 +1894,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tool Returned"
+            "value": "Step result received"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "工具已返回"
+            "value": "已收到步骤结果"
           }
         }
       }
@@ -1911,13 +1911,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tool Call Started"
+            "value": "Step started"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开始调用工具"
+            "value": "步骤已开始"
           }
         }
       }
@@ -1928,13 +1928,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@: outcome unknown. Automatic retries have stopped."
+            "value": "%@: result unknown. Automatic retries stopped."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@：是否生效未知，已停止自动重发。"
+            "value": "%@：结果不确定，已停止自动重试。"
           }
         }
       }
@@ -1945,7 +1945,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Advanced Options"
+            "value": "Advanced"
           }
         },
         "zh-Hans": {
@@ -1962,13 +1962,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The Anthropic base URL is usually https://api.anthropic.com, without /v1/messages. For compatible services, use the base URL supplied by the provider."
+            "value": "For Anthropic, use https://api.anthropic.com without /v1/messages. For other services, use the provider's base URL."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Anthropic 根地址通常为 https://api.anthropic.com，不需要填写 /v1/messages。兼容服务请使用其提供的根地址。"
+            "value": "Anthropic 填写 https://api.anthropic.com，不含 /v1/messages。其他服务使用提供商给出的根地址。"
           }
         }
       }
@@ -2030,7 +2030,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "API Type"
+            "value": "API type"
           }
         },
         "zh-Hans": {
@@ -2081,13 +2081,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "An OpenAI-compatible base URL usually ends with /v1, for example https://api.openai.com/v1. Do not append /chat/completions."
+            "value": "Use the provider's base URL, such as https://api.openai.com/v1, without /chat/completions."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "OpenAI 兼容根地址通常以 /v1 结尾，例如 https://api.openai.com/v1，不需要填写 /chat/completions。"
+            "value": "填写提供商给出的根地址，如 https://api.openai.com/v1，不含 /chat/completions。"
           }
         }
       }
@@ -2098,13 +2098,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete the saved API Key?"
+            "value": "Delete API Key?"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除已保存的 API Key？"
+            "value": "删除 API Key？"
           }
         }
       }
@@ -2115,13 +2115,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your key stays in this device’s system Keychain."
+            "value": "Saved securely in this device's Keychain."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "密钥保存在这台设备的系统钥匙串中。"
+            "value": "安全保存在本机钥匙串中。"
           }
         }
       }
@@ -2132,13 +2132,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Credentials"
+            "value": "API Key"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "凭据"
+            "value": "API Key"
           }
         }
       }
@@ -2166,13 +2166,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your provider's model ID"
+            "value": "Model ID from your provider"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "服务提供商的模型 ID"
+            "value": "填写提供商的模型 ID"
           }
         }
       }
@@ -2183,13 +2183,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter an HTTPS service URL without credentials or query parameters."
+            "value": "Use an HTTPS URL without credentials, query parameters, or a fragment."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请输入不含账号、查询参数的 HTTPS 服务地址。"
+            "value": "请使用 HTTPS 地址，不含账号信息、查询参数或 # 片段。"
           }
         }
       }
@@ -2234,13 +2234,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Each device action and its automatic screen check use two units. Standalone observations use one. Reaching the budget pauses the task; the time limit stops execution. Output length also depends on the model service."
+            "value": "Each device action and its screen check use two steps; a screenshot alone uses one. The task pauses at the step limit and stops at the time limit. The service may also limit reply length."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每次操作和随后的画面核查共使用两次额度，单独观察使用一次。额度用完会暂停任务；达到时限会停止执行。输出长度还受模型服务限制。"
+            "value": "每次操作及随后的截图检查计 2 次，单独截图计 1 次。次数用完会暂停，超时会停止。回复长度也受模型服务限制。"
           }
         }
       }
@@ -2251,13 +2251,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Execution Limits"
+            "value": "Task limits"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行限制"
+            "value": "任务限制"
           }
         }
       }
@@ -2268,13 +2268,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Maximum Output Tokens"
+            "value": "Reply limit (tokens)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最大输出 Token"
+            "value": "回复上限（Token）"
           }
         }
       }
@@ -2285,13 +2285,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Execution Budget"
+            "value": "Step limit"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本轮执行额度"
+            "value": "执行次数上限"
           }
         }
       }
@@ -2302,13 +2302,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter an API Key. It will be stored only in the system Keychain."
+            "value": "Enter an API Key."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请输入 API Key。密钥只会保存在系统钥匙串。"
+            "value": "请输入 API Key。"
           }
         }
       }
@@ -2319,13 +2319,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter your provider's model ID."
+            "value": "Enter a model ID from your provider."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请输入服务提供商的模型 ID。"
+            "value": "请输入提供商的模型 ID。"
           }
         }
       }
@@ -2353,7 +2353,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete Key"
+            "value": "Delete key"
           }
         },
         "zh-Hans": {
@@ -2370,13 +2370,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set up a new key before using the model again. Saved conversations and run history will be kept."
+            "value": "Add a key to use AI again. Your conversations and task history will stay."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新配置密钥后才能使用模型。已保存的会话和运行记录会保留。"
+            "value": "重新添加密钥后才能使用 AI。对话和任务记录会保留。"
           }
         }
       }
@@ -2387,13 +2387,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete Saved Key"
+            "value": "Delete API Key"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除已保存的密钥"
+            "value": "删除 API Key"
           }
         }
       }
@@ -2404,13 +2404,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A Responses base URL usually ends with /v1, for example https://api.openai.com/v1. Do not append /responses."
+            "value": "Use the provider's base URL, such as https://api.openai.com/v1, without /responses."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Responses 根地址通常以 /v1 结尾，例如 https://api.openai.com/v1，不需要填写 /responses。"
+            "value": "填写提供商给出的根地址，如 https://api.openai.com/v1，不含 /responses。"
           }
         }
       }
@@ -2421,13 +2421,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Leave blank to keep the saved key"
+            "value": "Leave blank to keep your key"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "留空以保留已存密钥"
+            "value": "留空以保留当前密钥"
           }
         }
       }
@@ -2438,13 +2438,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The service URL must use HTTPS. Screen observation requires a model that supports images."
+            "value": "Use HTTPS. Screen tasks need a model that accepts images."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "服务地址必须使用 HTTPS，观察屏幕需要模型支持图片。"
+            "value": "服务地址须使用 HTTPS，操作设备需模型支持图片。"
           }
         }
       }
@@ -2455,13 +2455,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Model Service"
+            "value": "AI service"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型服务"
+            "value": "AI 服务"
           }
         }
       }
@@ -2472,13 +2472,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Model Settings"
+            "value": "AI settings"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型配置"
+            "value": "AI 设置"
           }
         }
       }
@@ -2489,13 +2489,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Model Supports Image Input"
+            "value": "Accepts images"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型支持图片输入"
+            "value": "支持图片"
           }
         }
       }
@@ -2506,13 +2506,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Task Time Limit"
+            "value": "Time limit"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "单次任务时限"
+            "value": "任务时限"
           }
         }
       }
@@ -2552,13 +2552,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unable to Save Settings"
+            "value": "Couldn't save"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法保存配置"
+            "value": "无法保存"
           }
         }
       }
@@ -2586,13 +2586,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No input yet"
+            "value": "Nothing typed yet"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未输入"
+            "value": "还没有输入"
           }
         }
       }
@@ -2603,13 +2603,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Increment Count"
+            "value": "Tap to count"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "计数加一"
+            "value": "点一下"
           }
         }
       }
@@ -2620,13 +2620,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enter Chinese, English, or emoji"
+            "value": "Try text or emoji"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "输入中文、英文或 emoji"
+            "value": "输入文字或表情"
           }
         }
       }
@@ -2637,13 +2637,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Input Verification"
+            "value": "Typing"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "输入验证"
+            "value": "输入文字"
           }
         }
       }
@@ -2688,13 +2688,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scroll Verification"
+            "value": "Scrolling"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "滑动验证"
+            "value": "滑动页面"
           }
         }
       }
@@ -2705,13 +2705,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tap Verification"
+            "value": "Tapping"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点击验证"
+            "value": "点击按钮"
           }
         }
       }
@@ -2722,13 +2722,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Control Verification"
+            "value": "Input check"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "控制验证"
+            "value": "点击和输入检查"
           }
         }
       }
@@ -2745,7 +2745,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "会话 ID：%@"
+            "value": "对话 ID：%@"
           }
         }
       }
@@ -2875,13 +2875,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Completed"
+            "value": "Turn ended"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已完成"
+            "value": "本轮已结束"
           }
         }
       }
@@ -2892,13 +2892,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The model has finished this turn. Check the conversation response and device state to verify the outcome."
+            "value": "This turn has ended. Check the reply and device to confirm the result."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型本轮处理已结束。实际操作效果请结合会话回复核查。"
+            "value": "本轮已结束，请结合回复和设备状态确认结果。"
           }
         }
       }
@@ -2926,13 +2926,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This task did not complete. Check your model and device settings before trying again."
+            "value": "Task incomplete. Check the error and current device state before trying again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本次任务未完成，请核查模型与设备配置后再试。"
+            "value": "任务未完成。请查看错误和设备现状，再决定是否重试。"
           }
         }
       }
@@ -2960,13 +2960,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check the device's current state, then return to Assistant to continue or end the task."
+            "value": "Check the device, then return to the conversation to continue or end the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "核查设备当前状态后，可回到助手页选择继续或结束任务。"
+            "value": "检查设备后，回到对话继续或结束任务。"
           }
         }
       }
@@ -2994,13 +2994,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing the execution environment."
+            "value": "Getting ready to start."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在准备执行环境。"
+            "value": "正在准备任务。"
           }
         }
       }
@@ -3028,13 +3028,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The task is running. Return to Assistant to stop it."
+            "value": "Task in progress. You can stop it in the conversation."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务正在执行，可回到助手页停止。"
+            "value": "任务正在运行，可在对话中停止。"
           }
         }
       }
@@ -3045,13 +3045,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conversation Run History"
+            "value": "Conversation tasks"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本次会话的运行记录"
+            "value": "本次对话的任务"
           }
         }
       }
@@ -3062,13 +3062,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run Details"
+            "value": "Task details"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行详情"
+            "value": "任务详情"
           }
         }
       }
@@ -3096,13 +3096,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Runs Yet"
+            "value": "No tasks yet"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "还没有运行记录"
+            "value": "还没有任务记录"
           }
         }
       }
@@ -3113,13 +3113,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start a task to view its execution status and action history here."
+            "value": "Your task status and actions will appear here."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "发起任务后，可以在这里查看执行状态和操作记录。"
+            "value": "任务状态和操作记录会显示在这里。"
           }
         }
       }
@@ -3176,13 +3176,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Execution Log"
+            "value": "Activity log"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "执行日志"
+            "value": "操作记录"
           }
         }
       }
@@ -3193,13 +3193,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Logs include status, tool names, and observation IDs, without entered text, tool arguments, or API Keys. A submitted action does not confirm that the goal was achieved."
+            "value": "Includes status, tool names, and frame IDs. Excludes typed text, tool arguments, and API Keys. Sent commands don't confirm success."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "日志保留状态、工具名称与观察编号，不包含输入文字、工具参数或 API Key。操作已提交并不代表目标已经完成。"
+            "value": "记录状态、操作名称和截图编号，不含输入文字、操作参数或 API Key。指令已发送不代表成功。"
           }
         }
       }
@@ -3210,13 +3210,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No execution events yet"
+            "value": "No activity yet"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚无执行事件"
+            "value": "还没有操作记录"
           }
         }
       }
@@ -3227,13 +3227,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This report excludes message text, tool arguments, raw errors, and credentials. A submitted action does not confirm that the goal was achieved."
+            "value": "Excludes messages, tool arguments, raw errors, and credentials. Sent commands don't confirm success."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此报告不含消息正文、工具参数、原始错误或凭据。操作已提交不代表目标已完成。"
+            "value": "不含消息内容、操作参数、原始错误或密钥。指令已发送不代表成功。"
           }
         }
       }
@@ -3244,13 +3244,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue Run Report"
+            "value": "Eiscue task report"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 运行记录"
+            "value": "Eiscue 任务报告"
           }
         }
       }
@@ -3261,13 +3261,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Task Scope"
+            "value": "Task permissions"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务范围"
+            "value": "任务权限"
           }
         }
       }
@@ -3278,13 +3278,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Share Text Report"
+            "value": "Share report"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "分享文本报告"
+            "value": "分享报告"
           }
         }
       }
@@ -3312,13 +3312,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run History"
+            "value": "Task history"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行记录"
+            "value": "任务记录"
           }
         }
       }
@@ -3329,7 +3329,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chat Only"
+            "value": "Chat only"
           }
         },
         "zh-Hans": {
@@ -3346,13 +3346,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send only text from this conversation, without reading the screen."
+            "value": "Use messages and attachments in this conversation, without reading the screen."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "只发送本次会话的文字，不读取屏幕。"
+            "value": "使用本次对话的消息和附件，不读取屏幕。"
           }
         }
       }
@@ -3363,7 +3363,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Control Device"
+            "value": "Control device"
           }
         },
         "zh-Hans": {
@@ -3380,13 +3380,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow screenshots, taps, swipes, text input, and app switching. Clearly describe your goal and permitted actions."
+            "value": "Allow screenshots and device actions. Describe your goal and what AI may do."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "允许截图、点击、滑动、输入与切换 App。请明确描述目标与允许的操作。"
+            "value": "允许截图和操作设备，请说明目标及允许的操作。"
           }
         }
       }
@@ -3397,13 +3397,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Observe Screen"
+            "value": "View screen"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "观察屏幕"
+            "value": "查看屏幕"
           }
         }
       }
@@ -3414,13 +3414,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow screenshots to be sent to the configured model, without touch input."
+            "value": "Send screenshots to your AI service without tapping or typing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "允许将设备截图发送给所配置的模型，不执行触控。"
+            "value": "将截图发送给你设置的 AI 服务，不点击或输入。"
           }
         }
       }
@@ -3431,7 +3431,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "More Settings"
+            "value": "More settings"
           }
         },
         "zh-Hans": {
@@ -3448,13 +3448,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "About Background Status"
+            "value": "About background tasks"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "后台状态说明"
+            "value": "后台任务说明"
           }
         }
       }
@@ -3465,13 +3465,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "View Getting Started Guide"
+            "value": "Getting started"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "重新查看入门引导"
+            "value": "使用指南"
           }
         }
       }
@@ -3482,13 +3482,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tasks & Notifications"
+            "value": "Task notifications"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务与通知"
+            "value": "任务通知"
           }
         }
       }
@@ -3499,13 +3499,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Get notified when a task completes or is interrupted."
+            "value": "Notify when a task ends or is interrupted."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可在任务完成或中断时通知你。"
+            "value": "任务结束或中断时通知你。"
           }
         }
       }
@@ -3516,7 +3516,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Built-in Skills"
+            "value": "Built-in"
           }
         },
         "zh-Hans": {
@@ -3533,13 +3533,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Built into Eiscue"
+            "value": "Built-in"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 内置"
+            "value": "内置"
           }
         }
       }
@@ -3550,13 +3550,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete Imported Skill"
+            "value": "Delete skill"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除导入的技能"
+            "value": "删除技能"
           }
         }
       }
@@ -3573,7 +3573,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "取消选用"
+            "value": "取消使用"
           }
         }
       }
@@ -3584,13 +3584,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Content Digest · SHA-256"
+            "value": "File fingerprint · SHA-256"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "内容摘要 · SHA-256"
+            "value": "文件指纹 · SHA-256"
           }
         }
       }
@@ -3601,13 +3601,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import Markdown"
+            "value": "Import skill"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入 Markdown"
+            "value": "导入技能"
           }
         }
       }
@@ -3618,13 +3618,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Supports UTF-8 .md or .markdown files up to 64 KB. Imported skills are selected automatically; you can review the content and deselect them."
+            "value": "Choose a UTF-8 .md or .markdown file up to 64 KB. Imported skills are selected automatically; review or deselect them below."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "支持 UTF-8 编码的 .md 或 .markdown 文件，最大 64 KB。导入后自动选用，可以阅读内容后取消选用。"
+            "value": "支持 UTF-8 格式的 .md 或 .markdown 文件，上限 64 KB。导入后自动选用，可查看内容或取消使用。"
           }
         }
       }
@@ -3635,13 +3635,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skills cannot be imported while a task is running. Try again after it ends."
+            "value": "Wait for the task to end before importing a skill."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务执行期间不能导入技能，请在任务结束后重试。"
+            "value": "请在任务结束后导入技能。"
           }
         }
       }
@@ -3652,13 +3652,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Imported Skills"
+            "value": "Imported"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入的技能"
+            "value": "已导入"
           }
         }
       }
@@ -3669,7 +3669,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Imported Locally"
+            "value": "Local import"
           }
         },
         "zh-Hans": {
@@ -3692,7 +3692,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请选择非空的 UTF-8 Markdown 文件。"
+            "value": "请选择有内容的 UTF-8 Markdown 文件。"
           }
         }
       }
@@ -3703,13 +3703,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "iOS Navigation"
+            "value": "Navigate apps"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "iOS 页面导航"
+            "value": "操作 App"
           }
         }
       }
@@ -3720,13 +3720,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Observe the screen, verify the result after each action, and stay within the task's permissions."
+            "value": "Read the screen and check each action's result within your task permissions."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先观察屏幕，每次操作后核查结果，并遵守本次任务的操作权限。"
+            "value": "查看屏幕，按任务权限操作，并检查每步结果。"
           }
         }
       }
@@ -3737,7 +3737,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No Skill"
+            "value": "No skill"
           }
         },
         "zh-Hans": {
@@ -3754,13 +3754,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Content Preview"
+            "value": "Instructions"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "内容预览"
+            "value": "操作指引"
           }
         }
       }
@@ -3771,13 +3771,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recovery Review"
+            "value": "Review an interrupted task"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "中断后核查"
+            "value": "检查中断的任务"
           }
         }
       }
@@ -3788,13 +3788,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Review device state and uncertain outcomes after an interruption to avoid repeating actions."
+            "value": "Check what happened before continuing to avoid duplicate actions."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "中断后先核查设备状态和未知结果，避免重复操作。"
+            "value": "先确认之前的操作结果，避免重复操作。"
           }
         }
       }
@@ -3805,7 +3805,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skill Removed"
+            "value": "Skill removed"
           }
         },
         "zh-Hans": {
@@ -3822,13 +3822,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Return to the list to choose another skill."
+            "value": "Choose another skill from the list."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "返回列表选择其他技能。"
+            "value": "请从列表选择其他技能。"
           }
         }
       }
@@ -3839,13 +3839,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Read-only Search Check"
+            "value": "Search in an app"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "只读搜索检查"
+            "value": "App 内搜索"
           }
         }
       }
@@ -3856,13 +3856,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search and check results in the specified app without sending messages or changing account settings."
+            "value": "Search a chosen app without sending messages or changing settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在指定 App 中搜索并检查结果，不发送消息或修改账号设置。"
+            "value": "在指定 App 中搜索，不发送消息或修改设置。"
           }
         }
       }
@@ -3873,13 +3873,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use This Skill"
+            "value": "Use skill"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用此技能"
+            "value": "使用技能"
           }
         }
       }
@@ -3907,13 +3907,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skills provide instructions for a task. A selected skill applies to the next run and does not expand the task's device permissions."
+            "value": "Skills guide the next task. They can't grant additional device access."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "技能为任务提供操作指引。选用后用于下一次执行，不会扩大任务的设备操作范围。"
+            "value": "技能为下一次任务提供操作指引，不会增加设备权限。"
           }
         }
       }
@@ -3924,13 +3924,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Provided By"
+            "value": "Source"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "提供方式"
+            "value": "来源"
           }
         }
       }
@@ -3958,13 +3958,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open to read the full instructions."
+            "value": "Open to read the instructions."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开查看完整操作指引。"
+            "value": "打开查看操作指引。"
           }
         }
       }
@@ -3975,13 +3975,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skill files cannot exceed 64 KB."
+            "value": "Choose a skill file no larger than 64 KB."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Skill 文件不能超过 64 KB。"
+            "value": "请选择不超过 64 KB 的技能文件。"
           }
         }
       }
@@ -4009,13 +4009,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Launch Application"
+            "value": "Open app"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启动应用"
+            "value": "打开 App"
           }
         }
       }
@@ -4026,13 +4026,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "List Applications"
+            "value": "Read app list"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "读取应用列表"
+            "value": "读取 App 列表"
           }
         }
       }
@@ -4213,13 +4213,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device control is ready"
+            "value": "Ready to control"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备控制已就绪"
+            "value": "设备操作已就绪"
           }
         }
       }
@@ -4230,13 +4230,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device authorization saved"
+            "value": "Pairing saved"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备授权已保存"
+            "value": "配对信息已保存"
           }
         }
       }
@@ -4247,13 +4247,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect when you want AI to operate this device. Chat works without a device connection."
+            "value": "Connect to let AI operate this device. Chat works without it."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要 AI 操作时，连接这台设备即可。普通聊天无需连接设备。"
+            "value": "连接后可让 AI 操作设备，聊天无需连接。"
           }
         }
       }
@@ -4264,13 +4264,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect device"
+            "value": "Connect"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接设备"
+            "value": "连接"
           }
         }
       }
@@ -4281,13 +4281,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Retry device control"
+            "value": "Reconnect"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "重试设备控制"
+            "value": "重新连接"
           }
         }
       }
@@ -4332,13 +4332,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB network relay"
+            "value": "USB network board"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB 网卡中继"
+            "value": "USB 网卡开发板"
           }
         }
       }
@@ -4349,13 +4349,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses Eiscue’s local VPN. Other VPN connections cannot be active at the same time."
+            "value": "Uses the local VPN. Another VPN can't be active at the same time."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用 Eiscue 本机 VPN 回环，不能同时使用其他 VPN。"
+            "value": "使用本地 VPN，不能同时使用其他 VPN。"
           }
         }
       }
@@ -4366,13 +4366,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the board’s USB network relay without starting Eiscue VPN. Initial developer pairing is required."
+            "value": "Connects through the board's USB network, without Eiscue VPN. Initial developer pairing is required."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过开发板的 USB 网卡连接，不开启 Eiscue 本地 VPN；首次需完成开发者配对。"
+            "value": "通过开发板 USB 网卡连接，无需开启本地 VPN，首次需完成开发者配对。"
           }
         }
       }
@@ -4383,13 +4383,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use an ESP32-S3 board configured with Eiscue USB network firmware."
+            "value": "Requires an ESP32-S3 with Eiscue USB network firmware."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用已配置 Eiscue USB 网卡固件的 ESP32-S3 开发板。"
+            "value": "需使用装有 Eiscue USB 网卡固件的 ESP32-S3 开发板。"
           }
         }
       }
@@ -4406,7 +4406,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开发板配置说明"
+            "value": "开发板设置指南"
           }
         }
       }
@@ -4417,13 +4417,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import this device’s Eiscue pairing authorization first. Connecting a board does not replace pairing."
+            "value": "Import this device's pairing file first. The board doesn't replace pairing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先导入这台设备的 Eiscue 配对授权。连接开发板不能代替配对。"
+            "value": "请先导入这台设备的配对文件，开发板不能代替配对。"
           }
         }
       }
@@ -4434,13 +4434,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecting through the USB network relay…"
+            "value": "Connecting to the USB network board…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在连接 USB 网卡中继…"
+            "value": "正在连接 USB 网卡开发板…"
           }
         }
       }
@@ -4451,13 +4451,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect the configured ESP32-S3 board when you want AI to operate this device. Chat works without it."
+            "value": "Connect your configured ESP32-S3 to use device control. Chat works without it."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要 AI 操作设备时，再接入已配置好的 ESP32-S3 开发板。聊天不需要连接开发板。"
+            "value": "接入已设置好的 ESP32-S3 后可操作设备，聊天无需连接。"
           }
         }
       }
@@ -4468,13 +4468,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable the local connection when you want AI to operate this device. Chat works without it."
+            "value": "Turn on the local VPN to use device control. Chat works without it."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要 AI 操作设备时，再开启本机连接。聊天不需要开启连接。"
+            "value": "开启本地 VPN 后可操作设备，聊天无需开启。"
           }
         }
       }
@@ -4485,13 +4485,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device control stopped because the connection method changed."
+            "value": "Connection method changed. Device control stopped."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接方式已切换，设备控制已停止。"
+            "value": "连接方式已切换，设备操作已停止。"
           }
         }
       }
@@ -4502,13 +4502,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import this device’s Eiscue pairing authorization before connecting the board."
+            "value": "Import this device's pairing file before connecting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接开发板前，请先导入这台设备的 Eiscue 配对授权。"
+            "value": "连接前，请先导入这台设备的配对文件。"
           }
         }
       }
@@ -4519,13 +4519,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecting. If Enable UI Automation asks for your device passcode, enter it on the system screen."
+            "value": "Connecting. If asked to enable UI automation, enter your device passcode on the system screen."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在连接。若「启用 UI 自动化」要求设备解锁密码，请在系统页面输入。"
+            "value": "正在连接。若系统要求启用 UI 自动化，请在系统页面输入设备密码。"
           }
         }
       }
@@ -4553,13 +4553,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use an ESP32-C3 board configured with Eiscue Wi-Fi firmware. In Settings, join its Eiscue-xxxx network using the password provided during setup."
+            "value": "Use an ESP32-C3 with Eiscue Wi-Fi firmware. In Settings, join Eiscue-xxxx with the password from board setup."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用已配置 Eiscue Wi-Fi 固件的 ESP32-C3 开发板。在系统设置中加入它的 Eiscue-xxxx 网络，密码见开发板连接信息。"
+            "value": "使用装有 Eiscue Wi-Fi 固件的 ESP32-C3。在设置中加入 Eiscue-xxxx，密码见开发板连接信息。"
           }
         }
       }
@@ -4570,13 +4570,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep cellular data available for AI requests. This connection does not start Eiscue VPN; access through a company VPN depends on its local network policy."
+            "value": "AI requests need cellular data. This method doesn't use Eiscue VPN; company VPN access depends on its local network policy."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请保持蜂窝数据可用，供 AI 请求联网。此方式不会开启 Eiscue VPN；公司 VPN 能否访问开发板，取决于其局域网策略。"
+            "value": "AI 请求需使用蜂窝网络。此方式无需开启本地 VPN；公司 VPN 能否同时使用取决于其局域网策略。"
           }
         }
       }
@@ -4604,13 +4604,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect to the board’s Eiscue-xxxx Wi-Fi when you want AI to operate this device. Chat works without the board."
+            "value": "Join the board's Eiscue-xxxx Wi-Fi to use device control. Chat works without the board."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "需要 AI 操作设备时，请先连接开发板的 Eiscue-xxxx Wi-Fi。聊天不需要连接开发板。"
+            "value": "先加入开发板的 Eiscue-xxxx Wi-Fi，再操作设备。聊天无需开发板。"
           }
         }
       }
@@ -4638,13 +4638,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Return to Assistant to review the current state and continue or end the task."
+            "value": "Check the conversation, then continue or end the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "回到对话查看当前状态，再继续或结束任务。"
+            "value": "查看对话中的状态，再继续或结束任务。"
           }
         }
       }
@@ -4689,13 +4689,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The action was sent, but the screen could not be retrieved to check the result. Return to Eiscue, check the connection on the Device page, then continue. Eiscue will inspect the screen before taking another action."
+            "value": "The action was sent, but its result couldn't be checked. Check the connection on Eiscue's Device page, then continue. Eiscue will view the screen before acting again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作已发送，但未能获取屏幕画面来确认结果。请返回 Eiscue，在设备页检查连接后继续。Eiscue 会先查看屏幕，再进行下一步操作。"
+            "value": "操作已发送，但未能截图确认结果。请在设备页检查连接后继续；Eiscue 会先查看屏幕，再操作。"
           }
         }
       }

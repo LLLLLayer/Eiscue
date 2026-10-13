@@ -66,21 +66,21 @@ public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .unsupported: String(localized: "device.error.unsupported", defaultValue: "Local device control requires a physical iOS device. Simulators and Macs cannot establish this connection.", bundle: .module)
-        case .notConnected: String(localized: "device.error.not-connected", defaultValue: "The device is not connected. Complete pairing and connect using your selected connection method first.", bundle: .module)
-        case .busy: String(localized: "device.error.busy", defaultValue: "The device is performing another operation. Wait for it to finish.", bundle: .module)
-        case .noIdentity: String(localized: "device.error.no-identity", defaultValue: "System pairing is incomplete. Pair the device or import this app's pairing identity first.", bundle: .module)
+        case .unsupported: String(localized: "device.error.unsupported", defaultValue: "Local device control needs a physical iOS device. This connection is unavailable on simulators and Macs.", bundle: .module)
+        case .notConnected: String(localized: "device.error.not-connected", defaultValue: "Device not connected. Complete pairing, then connect using your selected method.", bundle: .module)
+        case .busy: String(localized: "device.error.busy", defaultValue: "The device is busy. Wait for the current operation to finish.", bundle: .module)
+        case .noIdentity: String(localized: "device.error.no-identity", defaultValue: "System pairing is incomplete. Pair the device or import a pairing file for this app.", bundle: .module)
         case .invalidIdentity: String(localized: "device.error.invalid-identity", defaultValue: "The pairing identity is invalid or incomplete. A completed version 1 RemotePairing identity is required.", bundle: .module)
-        case .pairingAlreadyExists: String(localized: "device.error.pairing-exists", defaultValue: "A pairing identity is already saved. Remove the local identity before pairing again.", bundle: .module)
-        case .systemPairingUnavailable: String(localized: "device.error.system-pairing-unavailable", defaultValue: "Starting a new pairing from Settings requires iOS 27 or later. On iOS 26, import a compatible RemotePairing identity created on a computer.", bundle: .module)
-        case .staleFrame: String(localized: "device.error.stale-frame", defaultValue: "The screenshot has expired, has already been used, or belongs to an old connection. Capture a new screenshot before acting.", bundle: .module)
-        case .invalidCoordinates: String(localized: "device.error.invalid-coordinates", defaultValue: "Operation coordinates must be within the current screenshot.", bundle: .module)
+        case .pairingAlreadyExists: String(localized: "device.error.pairing-exists", defaultValue: "Pairing is already saved. Remove it locally before pairing again.", bundle: .module)
+        case .systemPairingUnavailable: String(localized: "device.error.system-pairing-unavailable", defaultValue: "Pairing from Settings requires iOS 27 or later. On iOS 26, import a compatible RemotePairing file created on a computer.", bundle: .module)
+        case .staleFrame: String(localized: "device.error.stale-frame", defaultValue: "The screenshot expired, was used, or belongs to an old connection. Take a new screenshot before acting.", bundle: .module)
+        case .invalidCoordinates: String(localized: "device.error.invalid-coordinates", defaultValue: "Coordinates must be inside the current screenshot.", bundle: .module)
         case .invalidDuration: String(localized: "device.error.invalid-duration", defaultValue: "Swipe duration must be between 0.1 and 2 seconds.", bundle: .module)
         case .invalidText: String(localized: "device.error.invalid-text", defaultValue: "Input text must not be empty or exceed 8 KB in UTF-8. The encoded request must not exceed 16 KB.", bundle: .module)
         case .invalidBundleID: String(localized: "device.error.invalid-bundle-id", defaultValue: "The app bundle ID is invalid.", bundle: .module)
-        case .keychain(let status): String(localized: "device.error.keychain", defaultValue: "Secure storage could not be accessed (\(String(describing: status))).", bundle: .module)
+        case .keychain(let status): String(localized: "device.error.keychain", defaultValue: "Could not access secure storage (\(String(describing: status))).", bundle: .module)
         case .connection(let message): message
-        case .deliveryUnknown(let message): String(localized: "device.error.delivery-unknown", defaultValue: "It is unknown whether the operation was delivered. Do not retry automatically. \(String(describing: message)) Reconnect and capture a screenshot to verify.", bundle: .module)
+        case .deliveryUnknown(let message): String(localized: "device.error.delivery-unknown", defaultValue: "The action may have reached the device. Do not repeat it. \(String(describing: message)) Reconnect and view the screen to check the result.", bundle: .module)
         }
     }
 }

@@ -25,13 +25,13 @@ final class RichComposerUITests: XCTestCase {
         input.tap()
         input.typeText("Keep this as a draft")
         app.buttons["composerAddButton"].tap()
-        for title in ["Photos", "Camera", "Files"] {
+        for title in ["Choose photos", "Take photo", "Choose files"] {
             XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 3))
         }
         XCTAssertFalse(app.descendants(matching: .any)["deviceControlToggle"].exists)
         // Dismiss the attachment menu without opening a system picker.
         app.navigationBars["Eiscue"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let menuClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["Photos"])
+        let menuClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["Choose photos"])
         XCTAssertEqual(XCTWaiter.wait(for: [menuClosed], timeout: 3), .completed)
         app.buttons["deviceNavigationLink"].tap()
         XCTAssertTrue(app.navigationBars["Device"].waitForExistence(timeout: 5))

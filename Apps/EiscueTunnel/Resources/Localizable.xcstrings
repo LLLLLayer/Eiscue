@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel is already starting or running."
+            "value": "Local VPN is already starting or on."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地隧道已在启动或运行。"
+            "value": "本地 VPN 已开启或正在开启。"
           }
         }
       }
@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The previous local tunnel is still stopping. Try connecting again shortly."
+            "value": "Local VPN is still closing. Try connecting shortly."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上一次本地隧道仍在结束，请稍后重新连接。"
+            "value": "本地 VPN 尚未关闭，请稍后连接。"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel configuration version does not match. Configure it again in Eiscue."
+            "value": "VPN settings are incompatible. Set up the local VPN again in Eiscue."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地隧道配置版本不匹配，请在 Eiscue 中重新配置。"
+            "value": "VPN 配置不兼容，请在 Eiscue 中重新设置本地 VPN。"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel stopped before it was ready."
+            "value": "Local VPN stopped during startup. Try connecting again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地隧道在就绪前已停止。"
+            "value": "本地 VPN 启动中断，请重新连接。"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel could not write packets. The connection has stopped."
+            "value": "Local VPN couldn't send data and has disconnected."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地隧道写入失败，连接已停止。"
+            "value": "本地 VPN 无法传输数据，连接已断开。"
           }
         }
       }

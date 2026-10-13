@@ -15,7 +15,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["onboardingConfigureModel"].exists)
         assertGuideHasNoNavigationExit(app)
         next.tap()
-        XCTAssertTrue(app.staticTexts["准备好你的设备。"].exists)
+        XCTAssertTrue(app.staticTexts["连接设备"].exists)
         assertGuideHasNoNavigationExit(app)
         XCTAssertFalse(app.buttons["startPairingButton"].exists, "iOS 26 must not offer the iOS 27 system flow.")
         saveScreenshot(app, name: "Onboarding-Device-Chinese")
@@ -44,7 +44,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.textFields["modelIdentifier"].waitForExistence(timeout: 5))
         app.navigationBars.buttons["Cancel"].tap()
         XCTAssertTrue(next.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Connect your AI."].exists)
+        XCTAssertTrue(app.staticTexts["Connect your AI"].exists)
         assertGuideHasNoNavigationExit(app)
     }
 

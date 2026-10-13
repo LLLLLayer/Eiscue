@@ -13,7 +13,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "蓝牙输入验证"
+            "value": "蓝牙输入检查"
           }
         }
       }
@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep this page open and leave the screen untouched during the check. Allow the iOS Bluetooth and pairing prompts. Mouse input may require AssistiveTouch. Your Wi-Fi settings stay unchanged."
+            "value": "Keep this page open and leave the screen untouched. Allow Bluetooth and pairing when prompted, and turn on AssistiveTouch for pointer input. Wi-Fi stays unchanged."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请保持本页面打开，验证期间不要触摸屏幕。请按 iOS 提示允许蓝牙和配对；鼠标可能需要开启辅助触控。此验证不会更改 Wi-Fi 设置。"
+            "value": "保持此页面打开，请勿触屏。按提示允许蓝牙和配对，并开启辅助触控。不会更改 Wi-Fi 设置。"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bluetooth keyboard target"
+            "value": "Keyboard test field"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "蓝牙键盘输入目标"
+            "value": "键盘测试输入框"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bluetooth pointer target"
+            "value": "Pointer test target"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "蓝牙鼠标点击目标"
+            "value": "点击测试区域"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Real input received"
+            "value": "Tap received"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已收到实际输入"
+            "value": "已收到点击"
           }
         }
       }
@@ -98,7 +98,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在验证蓝牙输入…"
+            "value": "正在检查蓝牙输入…"
           }
         }
       }
@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keyboard and pointer input verified."
+            "value": "Typing and taps verified."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "键盘输入和鼠标点击已验证。"
+            "value": "文字输入和点击已通过检查。"
           }
         }
       }
@@ -126,13 +126,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check stopped. See the diagnostic stage below."
+            "value": "Check stopped. See the stage below."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "验证已停止，请查看下方诊断阶段。"
+            "value": "检查已停止，请查看下方阶段。"
           }
         }
       }
@@ -143,13 +143,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Could not save the protected diagnostic report."
+            "value": "Could not save the diagnostic report."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法保存受保护的诊断记录。"
+            "value": "诊断记录保存失败。"
           }
         }
       }
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "One Bluetooth click\nKeep the screen untouched"
+            "value": "Checking one tap\nLeave the screen untouched"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "验证一次蓝牙点击\n请不要触摸屏幕"
+            "value": "检查一次点击\n请勿触屏"
           }
         }
       }

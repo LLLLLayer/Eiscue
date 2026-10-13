@@ -46,7 +46,7 @@ struct OnboardingView: View {
                         if model.deviceConnectionMethod == .bluetoothBoard {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(text("setup.deviceSetup")).font(.largeTitle.bold())
-                                Text(String(localized: "bluetooth.powerDetail", table: "Bluetooth"))
+                                Text(String(localized: "bluetooth.connectionDetail", table: "Bluetooth"))
                                     .font(.body).foregroundStyle(.secondary)
                             }
                         } else {

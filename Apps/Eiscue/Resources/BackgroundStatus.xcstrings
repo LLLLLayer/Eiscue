@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue is working"
+            "value": "Task in progress"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 正在处理任务"
+            "value": "任务进行中"
           }
         }
       }
@@ -30,7 +30,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务正在进行中"
+            "value": "任务进行中"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing device setup"
+            "value": "Preparing to pair"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在准备设备配对"
+            "value": "准备配对"
           }
         }
       }
@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finishing device setup"
+            "value": "Finishing pairing"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在完成设备配对"
+            "value": "正在完成配对"
           }
         }
       }
@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device setup complete"
+            "value": "Pairing complete"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备配对已完成"
+            "value": "配对完成"
           }
         }
       }

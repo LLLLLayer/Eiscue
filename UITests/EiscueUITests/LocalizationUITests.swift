@@ -43,7 +43,7 @@ final class LocalizationUITests: XCTestCase {
         closeSidebar(in: app)
         openSettings(in: app)
         XCTAssertTrue(app.buttons["appLanguageSettingsButton"].exists)
-        XCTAssertTrue(app.staticTexts["Model settings"].exists)
+        XCTAssertTrue(app.staticTexts["Model"].exists)
         app.buttons["modelSettingsButton"].tap()
         XCTAssertTrue(app.textFields["modelBaseURL"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars.buttons["Cancel"].exists)

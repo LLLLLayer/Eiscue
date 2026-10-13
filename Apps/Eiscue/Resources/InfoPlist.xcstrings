@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect to your Eiscue board to control this device over Bluetooth."
+            "value": "Connect to a development board to control this device over Bluetooth."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过蓝牙连接你的 Eiscue 开发板，以操作这台设备。"
+            "value": "通过蓝牙连接开发板，操作这台设备。"
           }
         }
       }
@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board."
+            "value": "Connect to this device for control through the local VPN or a development board."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过本机连接或附近的 Eiscue 开发板，连接这台设备的开发者服务。"
+            "value": "通过本地 VPN 或开发板连接并操作这台设备。"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Take a photo to attach to your message."
+            "value": "Take photos to add to your messages."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "拍摄照片并添加到你要发送的消息中。"
+            "value": "拍摄照片并添加到消息中。"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn your speech into text in the message field."
+            "value": "Turn your speech into message text."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将你说的话转换为输入框中的文字。"
+            "value": "将你说的话转换为消息文字。"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Transcribe speech on this device without sending a message automatically."
+            "value": "Transcribe speech on this device. Messages are sent only when you tap Send."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在设备上将语音转换为文字；不会自动发送。"
+            "value": "在本机将语音转成文字，点击发送后才会发出消息。"
           }
         }
       }

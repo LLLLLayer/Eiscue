@@ -39,7 +39,7 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Markdown title"].waitForExistence(timeout: 20))
         let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
         XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed)
-        XCTAssertFalse(app.staticTexts["Completed"].exists)
+        XCTAssertFalse(app.staticTexts["Turn ended"].exists)
         let rows = app.descendants(matching: .any)
         XCTAssertTrue(rows["markdownHeading"].exists)
         XCTAssertTrue(rows["markdownCodeBlock"].exists)

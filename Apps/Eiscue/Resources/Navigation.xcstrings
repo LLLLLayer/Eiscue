@@ -47,7 +47,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "还没有会话"
+            "value": "还没有对话"
           }
         }
       }
@@ -109,7 +109,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pin to top"
+            "value": "Pin"
           }
         },
         "zh-Hans": {

@@ -1,29 +1,29 @@
 // Official Foundation localization resources for this Swift package target.
 "agent.configuration.invalid-verification" = "用于确认操作结果的工具必须为只读工具。";
-"agent.configuration.empty-message" = "消息不能为空。";
+"agent.configuration.empty-message" = "请输入消息。";
 "agent.configuration.invalid-budget" = "任务的运行时间或工具调用上限无效。";
 "agent.configuration.invalid-context" = "模型上下文和输出长度配置无效。";
 "agent.configuration.invalid-storage" = "Agent 存储目录必须是本地文件地址。";
 "agent.configuration.invalid-tools" = "工具名称不能重复，参数必须是 JSON Schema 对象。";
 "agent.configuration.invalid-url" = "请输入有效的 HTTP 或 HTTPS 模型服务地址。";
-"agent.configuration.missing-model" = "请输入模型名称。";
+"agent.configuration.missing-model" = "请输入模型 ID。";
 "agent.conversation.new-title" = "新对话";
-"agent.error.busy" = "已有任务正在运行，请先停止或等待完成。";
-"agent.error.interrupted-run" = "这个会话有未完成的任务，请明确选择继续或停止。";
-"agent.error.nothing-to-resume" = "这个会话没有需要继续的任务。";
-"agent.error.timeout" = "任务已达到运行时间上限并停止。";
-"agent.error.tool-limit" = "已达到本次任务的工具调用上限。";
-"agent.error.unconfigured" = "Agent 引擎尚未接入。";
+"agent.error.busy" = "任务正在运行，请先停止或等待结束。";
+"agent.error.interrupted-run" = "对话中有未完成的任务，请先继续或结束任务。";
+"agent.error.nothing-to-resume" = "此对话没有可继续的任务。";
+"agent.error.timeout" = "任务已达时间上限并停止。";
+"agent.error.tool-limit" = "任务已达步骤上限。";
+"agent.error.unconfigured" = "AI 引擎尚未配置。";
 "agent.runtime.model-failed" = "模型请求失败。";
-"agent.runtime.unhandled-tools" = "模型结束了回复，但请求的操作尚未执行。";
+"agent.runtime.unhandled-tools" = "模型已结束回复，请求的操作尚未执行。";
 "agent.runtime.unfinished" = "任务未完成（%@）。%@";
-"agent.storage.duplicate-conversation" = "会话文件包含重复记录。原文件已保留。";
-"agent.storage.unsupported-version" = "暂不支持会话文件版本 %@。原文件已保留。";
-"agent.tool.interrupted" = "工具执行已中断。";
+"agent.storage.duplicate-conversation" = "对话文件有重复记录，原文件已保留。";
+"agent.storage.unsupported-version" = "不支持版本 %@ 的对话文件，原文件已保留。";
+"agent.tool.interrupted" = "操作已中断。";
 
-"agent.attachment.limit" = "一条消息最多包含 4 个附件，总大小不超过 8 MB。";
+"agent.attachment.limit" = "每条消息最多 4 个附件，总计不超过 8 MB。";
 
-"agent.attachment.invalid" = "附件为空、格式不受支持或超过大小限制。";
+"agent.attachment.invalid" = "附件为空、格式不支持或过大。";
 
-"agent.attachment.images-unavailable" = "请选择支持图片的模型再发送此附件。";
+"agent.attachment.images-unavailable" = "请选用支持图片的模型，再发送此附件。";
 "agent.configuration.invalid-tool-cost" = "工具执行额度必须大于零。包含结果检查的操作必须至少预留两个额度。";

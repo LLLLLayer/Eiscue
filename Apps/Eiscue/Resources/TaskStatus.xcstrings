@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue is working"
+            "value": "Task in progress"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 正在处理任务"
+            "value": "任务进行中"
           }
         }
       }
@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing device and background access"
+            "value": "Preparing device access"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在准备设备与后台运行"
+            "value": "准备连接设备"
           }
         }
       }
@@ -47,7 +47,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在等待模型返回下一步"
+            "value": "等待下一步回复"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Receiving and preparing the response"
+            "value": "Receiving the response"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在接收并整理回复"
+            "value": "正在接收回复"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Saving results and releasing the device"
+            "value": "Saving results and ending device control"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在保存结果并释放设备"
+            "value": "保存结果，结束设备操作"
           }
         }
       }
@@ -115,7 +115,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开 Eiscue 查看任务记录"
+            "value": "打开 Eiscue 查看记录"
           }
         }
       }
@@ -149,7 +149,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在读取当前画面"
+            "value": "读取当前画面"
           }
         }
       }
@@ -166,7 +166,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在点击屏幕"
+            "value": "点击屏幕"
           }
         }
       }
@@ -183,7 +183,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在滑动屏幕"
+            "value": "滑动屏幕"
           }
         }
       }
@@ -200,7 +200,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在输入文字"
+            "value": "输入文字"
           }
         }
       }
@@ -217,7 +217,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在使用键盘"
+            "value": "使用键盘"
           }
         }
       }
@@ -234,7 +234,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在打开 App"
+            "value": "打开 App"
           }
         }
       }
@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Returning to the Home Screen"
+            "value": "Returning to Home Screen"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在返回主屏幕"
+            "value": "返回主屏幕"
           }
         }
       }
@@ -268,7 +268,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在查找 App"
+            "value": "查找 App"
           }
         }
       }
@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Performing the next step"
+            "value": "Running the next step"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在执行步骤"
+            "value": "执行下一步"
           }
         }
       }
@@ -336,7 +336,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在检查操作后的画面"
+            "value": "检查操作后的画面"
           }
         }
       }
@@ -381,13 +381,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Receiving a reply"
+            "value": "Receiving reply"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在接收回复"
+            "value": "接收回复"
           }
         }
       }

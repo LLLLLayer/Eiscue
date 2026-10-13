@@ -296,7 +296,7 @@ struct BackgroundTaskStatus: Equatable, Sendable {
     private static func normalizedTitle(_ value: String) -> String {
         let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty
-            ? String(localized: "background.status.title", defaultValue: "Eiscue is working", table: "BackgroundStatus")
+            ? String(localized: "background.status.title", defaultValue: "Task in progress", table: "BackgroundStatus")
             : text
     }
 

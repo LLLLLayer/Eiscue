@@ -53,7 +53,7 @@ actor RuntimeEventTranslator {
             if let entry { receiveEntry(entry) }
             else if completedCalls.insert(id).inserted {
                 let call = calls[id] ?? AgentToolCall(id: id, name: name, arguments: .object([:]))
-                continuation.yield(.toolFinished(.init(call: call, result: .error(String(localized: "agent.tool.interrupted", defaultValue: "Tool execution was interrupted.", bundle: .module)))))
+                continuation.yield(.toolFinished(.init(call: call, result: .error(String(localized: "agent.tool.interrupted", defaultValue: "The operation was interrupted.", bundle: .module)))))
             }
         default: break
         }

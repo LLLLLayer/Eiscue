@@ -26,7 +26,7 @@ final class AgentIntegrationUITests: XCTestCase {
         send("Plan a calm morning", in: app)
         XCTAssertTrue(app.staticTexts["Fixture response: Plan a calm morning"].waitForExistence(timeout: 20))
         waitUntilIdle(in: app)
-        XCTAssertFalse(app.staticTexts["已完成"].exists)
+        XCTAssertFalse(app.staticTexts["本轮已结束"].exists)
         app.terminate()
         app = launch(reset: false)
         XCTAssertTrue(app.staticTexts["Fixture response: Plan a calm morning"].waitForExistence(timeout: 10))
@@ -39,7 +39,7 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.press(forDuration: 1)
         app.buttons["deleteConversationButton"].tap()
-        XCTAssertTrue(app.staticTexts["还没有会话"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["还没有对话"].waitForExistence(timeout: 5))
     }
 
     @MainActor func testStopDoesNotAutomaticallyResumeOnLaunch() throws {
@@ -95,7 +95,7 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Fixture response: Conversation after service failure"].waitForExistence(timeout: 20),
                       file: file, line: line)
         waitUntilIdle(in: app, file: file, line: line)
-        XCTAssertFalse(app.staticTexts["已完成"].exists, file: file, line: line)
+        XCTAssertFalse(app.staticTexts["本轮已结束"].exists, file: file, line: line)
         XCTAssertEqual(app.state, .runningForeground, file: file, line: line)
     }
 
@@ -130,7 +130,7 @@ final class AgentIntegrationUITests: XCTestCase {
         app = launch(reset: false, timeline: true)
         XCTAssertTrue(app.staticTexts["Markdown title"].waitForExistence(timeout: 10))
         assertTimeline(in: app)
-        XCTAssertFalse(app.staticTexts["已完成"].exists)
+        XCTAssertFalse(app.staticTexts["本轮已结束"].exists)
     }
 
     @MainActor func testToolPauseRequiresExplicitContinuationAcrossRelaunch() {

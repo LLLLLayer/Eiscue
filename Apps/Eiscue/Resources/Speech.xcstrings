@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing the microphone…"
+            "value": "Starting the microphone…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在准备麦克风…"
+            "value": "正在开启麦克风…"
           }
         }
       }
@@ -98,7 +98,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在听你说话…"
+            "value": "正在听…"
           }
         }
       }
@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finishing transcription…"
+            "value": "Transcribing…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在整理文字…"
+            "value": "正在转成文字…"
           }
         }
       }
@@ -126,13 +126,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow speech recognition for Eiscue in Settings, then try again."
+            "value": "Allow speech recognition for Eiscue in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在系统设置中允许 Eiscue 使用语音识别，然后重试。"
+            "value": "请在系统设置中允许 Eiscue 使用语音识别。"
           }
         }
       }
@@ -143,13 +143,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow microphone access for Eiscue in Settings, then try again."
+            "value": "Allow Eiscue to use the microphone in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在系统设置中允许 Eiscue 使用麦克风，然后重试。"
+            "value": "请在系统设置中允许 Eiscue 使用麦克风。"
           }
         }
       }
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Speech recognition is restricted on this device. You can still type your message."
+            "value": "Speech recognition is restricted. Type your message instead."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此设备限制了语音识别，你仍然可以输入文字。"
+            "value": "语音识别受限，请改用文字输入。"
           }
         }
       }
@@ -177,13 +177,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On-device speech recognition is unavailable for this language or device. You can still type your message."
+            "value": "This device or language doesn't support on-device speech recognition. Type your message instead."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前语言或设备暂不支持本机语音识别，你仍然可以输入文字。"
+            "value": "当前设备或语言不支持本机语音识别，请改用文字输入。"
           }
         }
       }
@@ -194,7 +194,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On-device speech recognition is unavailable right now. Please try again or type your message."
+            "value": "On-device speech recognition is unavailable. Try again later or type your message."
           }
         },
         "zh-Hans": {
@@ -211,13 +211,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The microphone is unavailable. Check your audio device and try again."
+            "value": "Microphone unavailable. Check your microphone or headset and try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "麦克风暂时不可用，请检查音频设备后重试。"
+            "value": "麦克风不可用，请检查麦克风或耳机后重试。"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No speech was recognized. Please try again."
+            "value": "No speech recognized. Try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有识别到语音，请再试一次。"
+            "value": "没有识别到语音，请重试。"
           }
         }
       }

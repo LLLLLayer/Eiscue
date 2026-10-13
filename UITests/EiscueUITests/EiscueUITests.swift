@@ -107,11 +107,11 @@ final class EiscueUITests: XCTestCase {
         openDevice(in: app)
         selectInAppConnection(in: app)
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
-        XCTAssertFalse(app.buttons["打开验证页面"].exists)
+        XCTAssertFalse(app.buttons["检查点击和输入"].exists)
         expandDeviceOptions(in: app)
         XCTAssertTrue(app.buttons["startLocalTunnelButton"].exists)
         // Verification tools appear only once device control is ready.
-        XCTAssertFalse(app.buttons["打开验证页面"].exists)
+        XCTAssertFalse(app.buttons["检查点击和输入"].exists)
     }
 
     @MainActor
@@ -128,7 +128,7 @@ final class EiscueUITests: XCTestCase {
         app.navigationBars.buttons["取消"].tap()
 
         openSidebar(in: app)
-        XCTAssertTrue(app.staticTexts["还没有会话"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["还没有对话"].waitForExistence(timeout: 5))
         closeSidebar(in: app)
         XCTAssertTrue(field.value as? String == "Help me plan a morning")
     }
@@ -145,8 +145,8 @@ final class EiscueUITests: XCTestCase {
         secureField.tap()
         secureField.typeText(key)
         app.buttons["saveModelSettingsButton"].tap()
-        XCTAssertTrue(app.alerts["无法保存配置"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.alerts.staticTexts["请输入不含账号、查询参数的 HTTPS 服务地址。"].exists)
+        XCTAssertTrue(app.alerts["无法保存"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.alerts.staticTexts["请使用 HTTPS 地址，不含账号信息、查询参数或 # 片段。"].exists)
         app.alerts.buttons["好"].tap()
 
         replace(app.textFields["modelBaseURL"], with: "https://example.invalid/v1", in: app)
@@ -161,7 +161,7 @@ final class EiscueUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["已保存 API Key"].exists)
         let savedKeyField = app.secureTextFields["modelAPIKey"]
         reveal(savedKeyField, in: app)
-        XCTAssertEqual(savedKeyField.value as? String, "留空以保留已存密钥")
+        XCTAssertEqual(savedKeyField.value as? String, "留空以保留当前密钥")
         XCTAssertFalse(app.staticTexts[key].exists)
 
         app.buttons["removeAPIKeyButton"].tap()
@@ -204,15 +204,15 @@ final class EiscueUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["skillContentPreview"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["skillContentPreview"].label.contains("先观察当前屏幕"))
         let source = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Eiscue 内置", "Eiscue 内置")
+            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "内置", "内置")
         ).firstMatch
         XCTAssertTrue(source.exists)
-        XCTAssertFalse(app.buttons["删除导入的技能"].exists)
+        XCTAssertFalse(app.buttons["删除技能"].exists)
         let selection = app.buttons["selectSkillButton"]
         selection.tap()
-        XCTAssertTrue(selection.label.contains("取消选用"))
+        XCTAssertTrue(selection.label.contains("取消使用"))
         selection.tap()
-        XCTAssertTrue(selection.label.contains("使用此技能"))
+        XCTAssertTrue(selection.label.contains("使用技能"))
     }
 
     @MainActor
@@ -257,7 +257,7 @@ final class EiscueUITests: XCTestCase {
         let importButton = app.buttons["importPairingIdentityButton"]
         reveal(importButton, in: app)
         XCTAssertTrue(importButton.isEnabled)
-        XCTAssertEqual(importButton.label, "导入 Eiscue 配对文件")
+        XCTAssertEqual(importButton.label, "导入配对文件")
         XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
         XCTAssertFalse(app.staticTexts["pairingCode"].exists)
         #endif
@@ -270,7 +270,7 @@ final class EiscueUITests: XCTestCase {
         selectInAppConnection(in: app)
         expandDeviceOptions(in: app)
         XCTAssertTrue(app.staticTexts["连接准备"].waitForExistence(timeout: 5))
-        let openProbe = app.buttons["打开验证页面"]
+        let openProbe = app.buttons["检查点击和输入"]
         guard openProbe.waitForExistence(timeout: 2) else {
             throw XCTSkip("The probe entry is shown only when device control is ready, which a simulator cannot reach.")
         }
@@ -298,6 +298,6 @@ final class EiscueUITests: XCTestCase {
         let app = launch()
         openSettings(in: app)
         app.buttons["runHistoryNavigationLink"].tap()
-        XCTAssertTrue(app.staticTexts["还没有运行记录"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["还没有任务记录"].waitForExistence(timeout: 5))
     }
 }

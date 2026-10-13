@@ -32,7 +32,7 @@ final class AppLocalizationTests: XCTestCase {
         let width = 390, height = 844, frameID = "00000000-0000-0000-0000-000000000001"
         XCTAssertEqual(
             String(localized: "event.capturedMetadata \(width) \(height) \(frameID)", bundle: bundle, locale: locale),
-            "390 × 844，观察编号 00000000-0000-0000-0000-000000000001"
+            "390 × 844，截图编号 00000000-0000-0000-0000-000000000001"
         )
     }
 

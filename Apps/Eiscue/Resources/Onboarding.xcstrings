@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your assistant, right on your device. Let’s take a minute to get started."
+            "value": "Your AI assistant, wherever you go."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "你的随身助手。花一分钟，了解如何开始。"
+            "value": "你的随身 AI 助手。"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Talk naturally"
+            "value": "Talk to AI"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "像聊天一样使用"
+            "value": "与 AI 对话"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask a question or describe what you want to do."
+            "value": "Ask a question or describe your task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "直接提问，或告诉我你想做什么。"
+            "value": "直接提问，或描述你的任务。"
           }
         }
       }
@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Get help on your device"
+            "value": "Let AI operate your device"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "让设备帮你做事"
+            "value": "让 AI 操作设备"
           }
         }
       }
@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect using the top-right device button. AI control is on by default; you can turn it off there for chat only."
+            "value": "Connect with the device button at the top right. AI control is on by default; turn it off there for chat only."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过右上角按钮连接设备。AI 操作默认开启，只想聊天时可在设备页关闭。"
+            "value": "点右上角设备按钮连接。AI 操作默认开启，仅对话时可在设备页关闭。"
           }
         }
       }
@@ -126,13 +126,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect your AI."
+            "value": "Connect your AI"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先连接 AI。"
+            "value": "连接 AI"
           }
         }
       }
@@ -143,13 +143,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Add your model name and API key. Eiscue uses these to understand your requests."
+            "value": "Enter the service URL, model name, and API key from your AI provider."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "填写模型名称和 API 密钥，让 Eiscue 理解你的要求。"
+            "value": "填写 AI 服务商提供的服务地址、模型 ID 和 API Key。"
           }
         }
       }
@@ -177,7 +177,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Edit AI connection"
+            "value": "Edit AI settings"
           }
         },
         "zh-Hans": {
@@ -211,13 +211,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the connection details from your AI provider. Other options already have defaults."
+            "value": "You can keep the defaults for other options."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用 AI 服务商提供的信息即可，其他选项已有默认值。"
+            "value": "其他选项使用默认值即可。"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Prepare your device."
+            "value": "Connect your device"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "准备好你的设备。"
+            "value": "连接设备"
           }
         }
       }
@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device control needs pairing and a prepared developer environment. You can start with chat."
+            "value": "This connection needs pairing and developer setup. You can start with chat and set it up later."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作设备需要先配对，并准备好系统开发环境。你也可以先使用聊天。"
+            "value": "此连接方式需先配对并完成开发者设置，也可以稍后设置，先开始对话。"
           }
         }
       }
@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Find it in Settings → Privacy & Security. Restart and confirm if asked."
+            "value": "Turn it on in Settings → Privacy & Security → Developer Mode. Restart and confirm when prompted."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在「设置 → 隐私与安全性」中开启，按提示重启并确认。"
+            "value": "开启「设置 → 隐私与安全性 → 开发者模式」，按提示重启并确认。"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After this guide, use the device button at the top right to start pairing. Choose Eiscue in the system pairing settings and enter the code shown in the app."
+            "value": "After this guide, tap the device button to start pairing. Select Eiscue in system pairing settings and enter the code shown in the App."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成引导后，点右上角设备按钮开始配对。再到系统配对设置选择 Eiscue，输入 App 显示的配对码。"
+            "value": "完成引导后，点设备按钮开始配对。在系统配对设置中选择 Eiscue，输入 App 显示的配对码。"
           }
         }
       }
@@ -330,13 +330,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This version still needs a computer for initial pairing on iOS or iPadOS 26. The Eiscue tool creates a pairing identity; import it here to authorize the connection."
+            "value": "On iOS or iPadOS 26, initial pairing needs a USB connection to a computer. Create a pairing file with the Eiscue tool, then import it here."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前版本在 iOS / iPadOS 26 上仍需电脑完成首次配对。电脑工具生成配对身份，导入后用于连接认证。"
+            "value": "iOS / iPadOS 26 首次配对需用 USB 连接电脑。用 Eiscue 工具生成配对文件，再导入这里。"
           }
         }
       }
@@ -347,13 +347,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Computer setup instructions"
+            "value": "View pairing instructions"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查看电脑配对步骤"
+            "value": "查看配对步骤"
           }
         }
       }
@@ -364,13 +364,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pairing identity saved"
+            "value": "Pairing saved"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配对身份已保存"
+            "value": "已保存配对授权"
           }
         }
       }
@@ -381,13 +381,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import from computer"
+            "value": "Import pairing from computer"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入电脑发送的配对"
+            "value": "导入电脑配对文件"
           }
         }
       }
@@ -398,13 +398,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose pairing file"
+            "value": "Import pairing file"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择配对文件"
+            "value": "导入配对文件"
           }
         }
       }
@@ -415,13 +415,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow a local connection"
+            "value": "Allow local VPN"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "允许本地连接"
+            "value": "允许本地 VPN"
           }
         }
       }
@@ -432,13 +432,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow the VPN prompt when it appears. This connection stays on your device."
+            "value": "Allow the system VPN prompt. This connection controls only this device and may disconnect another VPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "出现系统 VPN 提示时选择允许，这条连接只用于本机。"
+            "value": "在系统 VPN 提示中点「允许」。此连接仅控制本机，可能断开其他 VPN。"
           }
         }
       }
@@ -449,13 +449,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local connection is on"
+            "value": "Local VPN is on"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地连接已开启"
+            "value": "本地 VPN 已开启"
           }
         }
       }
@@ -466,13 +466,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable local connection"
+            "value": "Enable local VPN"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启本地连接"
+            "value": "开启本地 VPN"
           }
         }
       }
@@ -483,13 +483,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You can chat first and finish setup later using the device button at the top right."
+            "value": "You can finish device setup later using the top-right device button."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可以先聊天，之后再点右上角设备按钮完成连接。"
+            "value": "也可稍后点右上角设备按钮，完成连接设置。"
           }
         }
       }
@@ -568,13 +568,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import an Eiscue RemotePairing identity for this device. The board uses this authorization and cannot pair on your behalf."
+            "value": "Create this device’s Eiscue pairing file on a computer, then import it here. Connecting the board does not replace pairing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入这台设备的 Eiscue 配对授权。开发板会复用该授权，不能替你完成配对。"
+            "value": "先用电脑生成这台设备的 Eiscue 配对文件，再导入。连接开发板不能代替配对。"
           }
         }
       }
@@ -585,13 +585,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect a USB network relay"
+            "value": "Connect USB network board"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "接入 USB 网卡中继"
+            "value": "连接 USB 网卡开发板"
           }
         }
       }
@@ -602,13 +602,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect an ESP32-S3 board configured with Eiscue USB network firmware."
+            "value": "Connect an ESP32-S3 board running Eiscue USB network firmware. Lightning devices need a powered USB host adapter."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "接入已配置 Eiscue USB 网卡固件的 ESP32-S3 开发板。"
+            "value": "接入装有 Eiscue USB 网卡固件的 ESP32-S3 开发板。Lightning 设备需使用带供电的 USB 主机转接器。"
           }
         }
       }
@@ -636,13 +636,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use an ESP32-C3 board configured with Eiscue Wi-Fi firmware. In Settings, join its Eiscue-xxxx network using the password provided during setup."
+            "value": "Use an ESP32-C3 board with Eiscue Wi-Fi firmware. Join its Eiscue-xxxx network in Settings; the password is in the board setup details."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用已配置 Eiscue Wi-Fi 固件的 ESP32-C3 开发板。在系统设置中加入它的 Eiscue-xxxx 网络，密码见开发板连接信息。"
+            "value": "使用装有 Eiscue Wi-Fi 固件的 ESP32-C3 开发板。在系统设置中加入 Eiscue-xxxx 网络，密码见开发板连接信息。"
           }
         }
       }
@@ -653,13 +653,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep cellular data available for AI requests. A company VPN may restrict access to the local board network."
+            "value": "AI requests need cellular data. A company VPN may block access to the board’s local network."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请保持蜂窝数据可用，供 AI 请求联网。公司 VPN 是否允许访问开发板，取决于其局域网策略。"
+            "value": "AI 请求需使用蜂窝数据。公司 VPN 可能限制访问开发板的局域网。"
           }
         }
       }
@@ -670,13 +670,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wi-Fi board setup guide"
+            "value": "Wi-Fi board guide"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wi-Fi 开发板配置说明"
+            "value": "Wi-Fi 开发板设置说明"
           }
         }
       }

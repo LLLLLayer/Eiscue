@@ -4,7 +4,7 @@
     "messageSharing.unavailable": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The original attachment is unavailable. Add the file again to share it." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Attachment missing. Add the file again to share it." } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "找不到原附件，请重新添加文件后分享。" } }
       }
     },
@@ -18,15 +18,15 @@
     "messageSharing.preparation": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The message could not be prepared for sharing. Please try again." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂时无法准备分享内容，请重试。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Couldn't share this message. Try again." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂时无法分享，请重试。" } }
       }
     },
     "messageSharing.delivery": {
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The selected app could not share the message. Try another sharing option." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选应用未能分享这条消息，请尝试其他分享方式。" } }
+        "en": { "stringUnit": { "state": "translated", "value": "The selected app couldn't share this message. Try another sharing option." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "所选 App 分享失败，请换一种分享方式。" } }
       }
     }
   },

@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Photos"
+            "value": "Choose photos"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "照片"
+            "value": "选择照片"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Camera"
+            "value": "Take photo"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "拍摄"
+            "value": "拍照"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Files"
+            "value": "Choose files"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "文件"
+            "value": "选择文件"
           }
         }
       }
@@ -126,7 +126,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set up your device"
+            "value": "Connect device"
           }
         },
         "zh-Hans": {
@@ -177,7 +177,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Discard recording"
+            "value": "Cancel voice input"
           }
         },
         "zh-Hans": {
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The camera is unavailable on this device. Choose a photo instead."
+            "value": "Camera unavailable. Choose a photo instead."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这台设备暂时无法拍摄，可以选择已有照片。"
+            "value": "相机不可用，请选择已有照片。"
           }
         }
       }
@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow camera access in Settings to take a photo."
+            "value": "Allow Eiscue to use the camera in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在系统设置中允许相机访问，再进行拍摄。"
+            "value": "请在系统设置中允许 Eiscue 使用相机。"
           }
         }
       }

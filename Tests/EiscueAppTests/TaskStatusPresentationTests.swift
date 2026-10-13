@@ -12,7 +12,7 @@ final class TaskStatusPresentationTests: XCTestCase {
         for currentTool in [secret, "device_tap\n\(secret)", "device_\(secret)"] {
             let snapshot = TaskStatusPresentation.snapshot(for: run, currentTool: currentTool, isReceivingResponse: true)
             XCTAssertEqual(snapshot.title, localized("task.status.title.executing", "Running a step"))
-            XCTAssertEqual(snapshot.subtitle, localized("task.status.operation.other", "Performing the next step"))
+            XCTAssertEqual(snapshot.subtitle, localized("task.status.operation.other", "Running the next step"))
             XCTAssertFalse(snapshot.title.contains(secret))
             XCTAssertFalse(snapshot.subtitle.contains(secret))
         }
@@ -55,8 +55,8 @@ final class TaskStatusPresentationTests: XCTestCase {
         XCTAssertEqual(deciding.title, localized("task.status.title.waiting", "Waiting for AI"))
         XCTAssertEqual(deciding.subtitle, localized("task.status.phase.waiting", "Waiting for the next response"))
         let receiving = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", isReceivingResponse: true, devicePhase: .deciding)
-        XCTAssertEqual(receiving.title, localized("task.status.title.responding", "Receiving a reply"))
-        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Receiving and preparing the response"))
+        XCTAssertEqual(receiving.title, localized("task.status.title.responding", "Receiving reply"))
+        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Receiving the response"))
         let executing = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: .executing)
         XCTAssertEqual(executing.subtitle, localized("task.status.operation.tap", "Tapping the screen"))
     }
@@ -65,7 +65,7 @@ final class TaskStatusPresentationTests: XCTestCase {
         let finishing = TaskStatusPresentation.snapshot(for: makeRun(.running), currentTool: "device_tap",
                                                         isFinishing: true, devicePhase: .verifying)
         XCTAssertEqual(finishing.title, localized("task.status.title.finishing", "Finishing up"))
-        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results and releasing the device"))
+        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results and ending device control"))
         let cases: [(RunState, StaticString, String.LocalizationValue)] = [
             (.completed, "task.status.phase.completed", "Open Eiscue to view the result"),
             (.paused, "task.status.phase.paused", "Open Eiscue to continue"),
@@ -100,7 +100,7 @@ final class TaskStatusPresentationTests: XCTestCase {
     func testPreparationModelResponseAndFinalizationAdvanceOnlyAtRealBoundaries() {
         var run = makeRun(.preparing)
         var snapshot = TaskStatusPresentation.snapshot(for: run)
-        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.preparing", "Preparing device and background access"))
+        XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.preparing", "Preparing device access"))
         XCTAssertEqual(snapshot.completedWorkUnits, 0)
         XCTAssertEqual(snapshot.totalWorkUnits, 2)
 
@@ -111,12 +111,12 @@ final class TaskStatusPresentationTests: XCTestCase {
         XCTAssertEqual(snapshot.completedWorkUnits, 1)
 
         let receiving = TaskStatusPresentation.snapshot(for: run, isReceivingResponse: true)
-        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Receiving and preparing the response"))
+        XCTAssertEqual(receiving.subtitle, localized("task.status.phase.analyzing", "Receiving the response"))
         XCTAssertEqual(receiving.completedWorkUnits, snapshot.completedWorkUnits)
         XCTAssertEqual(receiving.totalWorkUnits, snapshot.totalWorkUnits)
 
         let finishing = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", isFinishing: true)
-        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results and releasing the device"))
+        XCTAssertEqual(finishing.subtitle, localized("task.status.phase.finishing", "Saving results and ending device control"))
         XCTAssertEqual(finishing.completedWorkUnits, 1, "Starting cleanup does not mean cleanup has finished.")
 
         run.state = .completed

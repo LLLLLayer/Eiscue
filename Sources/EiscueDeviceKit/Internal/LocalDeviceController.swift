@@ -16,7 +16,7 @@ import OSLog
     private var epoch = UUID()
     private var busy = false
     private var ready = false
-    private var failure = String(localized: "device.status.not-connected", defaultValue: "The device is not connected.", bundle: .module)
+    private var failure = String(localized: "device.status.not-connected", defaultValue: "Device not connected", bundle: .module)
     private var frames = FrameLedger()
     private var mediaReleaseTask: Task<Bool, Never>?
     private var mediaReleaseID: UUID?
@@ -98,7 +98,7 @@ import OSLog
                         let service = NetService(domain: "local.", type: "_remotepairing-pairable-host._tcp.", name: info.identifier, port: Int32(info.port))
                         service.delegate = self
                         guard service.setTXTRecord(NetService.data(fromTXTRecord: info.txt.mapValues { Data($0.utf8) })) else {
-                            throw DeviceControlError.connection(String(localized: "device.pairing.publish-failed", defaultValue: "The system pairing entry point could not be published.", bundle: .module))
+                            throw DeviceControlError.connection(String(localized: "device.pairing.publish-failed", defaultValue: "Could not make system pairing available.", bundle: .module))
                         }
                         self.advertisement = service
                         service.publish()
@@ -129,7 +129,7 @@ import OSLog
 
     func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
         guard advertisement === sender else { return }
-        let error = DeviceControlError.connection(String(localized: "device.pairing.network-denied", defaultValue: "The system pairing entry point could not be published. Check local network permission.", bundle: .module))
+        let error = DeviceControlError.connection(String(localized: "device.pairing.network-denied", defaultValue: "Could not make pairing available. Allow Local Network access for Eiscue.", bundle: .module))
         pairingContinuation?.finish(throwing: error)
         disconnectNow()
         failure = error.localizedDescription
@@ -164,7 +164,7 @@ import OSLog
         if let release {
             let confirmed = await release.value
             try Task.checkCancellation()
-            guard confirmed else { throw DeviceControlError.connection(String(localized: "device.media.previous-release-unconfirmed", defaultValue: "The previous screen session's release is unconfirmed. Check the system remote control status before connecting again.", bundle: .module)) }
+            guard confirmed else { throw DeviceControlError.connection(String(localized: "device.media.previous-release-unconfirmed", defaultValue: "The previous screen connection may still be active. Check the system’s remote-control status before reconnecting.", bundle: .module)) }
         }
         try ensureCurrent(connectionEpoch)
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
@@ -172,9 +172,9 @@ import OSLog
         busy = true
         failure = switch method {
         case .bluetoothBoard: throw DeviceControlError.unsupported
-        case .localVPN: String(localized: "device.status.discovering", defaultValue: "Discovering the local VPN connection.", bundle: .module)
-        case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB board.", bundle: .module)
-        case .wirelessBoard: String(localized: "device.wireless.discovering", defaultValue: "Connecting to the wireless board.", bundle: .module)
+        case .localVPN: String(localized: "device.status.discovering", defaultValue: "Finding the local VPN connection", bundle: .module)
+        case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB network board", bundle: .module)
+        case .wirelessBoard: String(localized: "device.wireless.discovering", defaultValue: "Connecting to the Wi-Fi board", bundle: .module)
         }
         let service = dependencies.makeSession()
         services = service
@@ -285,25 +285,25 @@ import OSLog
         if let previous, shouldReleaseMedia {
             let releaseID = UUID()
             mediaReleaseID = releaseID
-            failure = String(localized: "device.status.releasing", defaultValue: "Local control has stopped. Releasing the remote screen session.", bundle: .module)
+            failure = String(localized: "device.status.releasing", defaultValue: "Device control stopped. Closing the screen connection.", bundle: .module)
             let task = Task { @MainActor [weak self] in
                 let confirmed = await BoundedMediaRelease.run(
                     stop: {
                         guard try await previous.stopTouchMediaWhenIdle() else {
-                            throw DeviceControlError.connection(String(localized: "device.media.start-incomplete", defaultValue: "Screen startup did not complete. The remote release cannot be confirmed.", bundle: .module))
+                            throw DeviceControlError.connection(String(localized: "device.media.start-incomplete", defaultValue: "Screen connection did not finish starting. Its closure is unconfirmed; check the system’s remote-control status.", bundle: .module))
                         }
                     },
                     close: { previous.close() })
                 guard let self, self.mediaReleaseID == releaseID else { return confirmed }
                 self.mediaReleaseTask = nil; self.mediaReleaseID = nil
                 self.releaseUnconfirmed = !confirmed
-                self.failure = confirmed ? String(localized: "device.status.released", defaultValue: "The device is disconnected, and the remote screen session has been released.", bundle: .module) : String(localized: "device.status.release-unconfirmed", defaultValue: "Local control has stopped, but release of the remote screen session is unconfirmed. Check the system remote control status.", bundle: .module)
+                self.failure = confirmed ? String(localized: "device.status.released", defaultValue: "Device and screen disconnected", bundle: .module) : String(localized: "device.status.release-unconfirmed", defaultValue: "Device control stopped, but the screen connection may still be active. Check the system’s remote-control status.", bundle: .module)
                 return confirmed
             }
             mediaReleaseTask = task
         } else {
             previous?.close()
-            if mediaReleaseTask == nil, !releaseUnconfirmed { failure = String(localized: "device.status.disconnected", defaultValue: "The device is disconnected.", bundle: .module) }
+            if mediaReleaseTask == nil, !releaseUnconfirmed { failure = String(localized: "device.status.disconnected", defaultValue: "Device disconnected", bundle: .module) }
         }
         return mediaReleaseTask
     }
@@ -319,10 +319,10 @@ import OSLog
                   let width = properties[kCGImagePropertyPixelWidth] as? Int,
                   let height = properties[kCGImagePropertyPixelHeight] as? Int,
                   width > 1, height > 1, width <= 16384, height <= 16384 else {
-                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The received screen image is invalid.", bundle: .module))
+                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The screen image is invalid.", bundle: .module))
             }
             guard ["image/jpeg", "image/png"].contains(snapshot.mimeType) else {
-                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The received screen image is invalid.", bundle: .module))
+                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The screen image is invalid.", bundle: .module))
             }
             let frame = DeviceScreenshot(width: width, height: height, mimeType: snapshot.mimeType, data: data)
             self.frames.record(frame, geometryID: snapshot.geometry.id)
@@ -464,17 +464,17 @@ import OSLog
         if error is CancellationError { return String(localized: "device.operation.stopped", defaultValue: "The operation has stopped.", bundle: .module) }
         if let error = error as? LocalVPNError {
             switch error {
-            case .inactive: return String(localized: "device.vpn.inactive", defaultValue: "The local loopback VPN is off, or its interface address does not match the configuration.", bundle: .module)
-            case .ambiguousInterface: return String(localized: "device.vpn.ambiguous-interface", defaultValue: "Multiple VPN interfaces were found. Keep only the intended local loopback VPN active.", bundle: .module)
-            case .serviceNotFound: return String(localized: "device.vpn.service-not-found", defaultValue: "The local pairing service was not found. Check Developer Mode and the VPN connection.", bundle: .module)
-            case .ambiguousService: return String(localized: "device.vpn.ambiguous-service", defaultValue: "Multiple local pairing services were found. Reconnect the VPN and try again.", bundle: .module)
-            case .discoveryDenied: return String(localized: "device.vpn.discovery-denied", defaultValue: "Local service discovery failed. Allow local network access.", bundle: .module)
+            case .inactive: return String(localized: "device.vpn.inactive", defaultValue: "The local VPN is off or its address does not match the configuration.", bundle: .module)
+            case .ambiguousInterface: return String(localized: "device.vpn.ambiguous-interface", defaultValue: "Multiple VPN connections found. Keep only the local VPN selected for Eiscue.", bundle: .module)
+            case .serviceNotFound: return String(localized: "device.vpn.service-not-found", defaultValue: "Pairing service not found. Check Developer Mode and the local VPN.", bundle: .module)
+            case .ambiguousService: return String(localized: "device.vpn.ambiguous-service", defaultValue: "Multiple local pairing services found. Reconnect the local VPN.", bundle: .module)
+            case .discoveryDenied: return String(localized: "device.vpn.discovery-denied", defaultValue: "Could not find local services. Allow Local Network access.", bundle: .module)
             case .invalidConfiguration: return String(localized: "device.vpn.invalid-configuration", defaultValue: "The local and peer addresses must be distinct, valid IPv4 addresses.", bundle: .module)
             }
         }
         if let error = error as? NativeBackendError { return NativeDeviceErrorPresentation.message(error) }
         if let error = error as? NCMError { return NCMDeviceErrorPresentation.message(error) }
-        return String(localized: "device.operation.failed", defaultValue: "The device operation failed. Check local network permission, the selected connection method, and system pairing authorization.", bundle: .module)
+        return String(localized: "device.operation.failed", defaultValue: "Device operation failed. Check Local Network permission, the connection method, and system pairing.", bundle: .module)
     }
 }
 
@@ -482,15 +482,15 @@ enum WirelessBoardErrorPresentation {
     static func message(_ error: NCMError, bundle: Bundle = .module) -> String {
         switch error {
         case .interfaceUnavailable, .interfaceInvalid, .interfaceScopeUnsupported, .staleDiscovery:
-            return String(localized: "device.wireless.join-network", defaultValue: "Connect this device to the board’s Eiscue-xxxx Wi-Fi in Settings, then try again. The password is in your local flashing configuration.", bundle: bundle)
+            return String(localized: "device.wireless.join-network", defaultValue: "Join the board’s Eiscue-xxxx Wi-Fi in Settings, then reconnect. Find its password in the local flashing configuration.", bundle: bundle)
         case .interfaceAmbiguous:
-            return String(localized: "device.wireless.multiple-connections", defaultValue: "More than one board network was found. Keep only the intended Eiscue Wi-Fi connection and try again.", bundle: bundle)
+            return String(localized: "device.wireless.multiple-connections", defaultValue: "Multiple board networks found. Keep only the intended Eiscue Wi-Fi connection.", bundle: bundle)
         case .network, .timeout, .disconnected:
-            return String(localized: "device.wireless.unreachable", defaultValue: "The wireless board did not respond. Check its power, the Eiscue Wi-Fi connection, and Eiscue’s Local Network permission. A company VPN may restrict local network access.", bundle: bundle)
+            return String(localized: "device.wireless.unreachable", defaultValue: "Wi-Fi board did not respond. Check its power, the Eiscue Wi-Fi connection, and Local Network permission. A company VPN may block local access.", bundle: bundle)
         case .malformedReply, .unavailableBackend:
-            return String(localized: "device.wireless.firmware-required", defaultValue: "The board did not provide the wireless connection service. Install the Eiscue wireless firmware and try again.", bundle: bundle)
+            return String(localized: "device.wireless.firmware-required", defaultValue: "The board lacks the Wi-Fi connection service. Install Eiscue Wi-Fi firmware.", bundle: bundle)
         case .pairingServiceUnavailable:
-            return String(localized: "device.wireless.pairing-unavailable", defaultValue: "The wireless board is reachable, but this device’s pairing service was not found. Keep this device unlocked with Developer Mode on, then try again.", bundle: bundle)
+            return String(localized: "device.wireless.pairing-unavailable", defaultValue: "Wi-Fi board connected, but device pairing is unavailable. Keep the device unlocked, enable Developer Mode, then reconnect.", bundle: bundle)
         case .busy: return DeviceControlError.busy.localizedDescription
         }
     }
@@ -500,19 +500,19 @@ enum NCMDeviceErrorPresentation {
     static func message(_ error: NCMError, bundle: Bundle = .module) -> String {
         switch error {
         case .interfaceUnavailable:
-            return String(localized: "device.board.not-attached", defaultValue: "No USB board was found. Connect the configured board to this device and try again. You can keep chatting.", bundle: bundle)
+            return String(localized: "device.board.not-attached", defaultValue: "USB network board not found. Connect a configured board to this device.", bundle: bundle)
         case .interfaceAmbiguous:
-            return String(localized: "device.board.multiple-boards", defaultValue: "More than one USB board connection was found. Keep one board connected and try again.", bundle: bundle)
+            return String(localized: "device.board.multiple-boards", defaultValue: "Multiple USB network boards found. Connect only one board.", bundle: bundle)
         case .interfaceInvalid, .interfaceScopeUnsupported, .staleDiscovery:
-            return String(localized: "device.board.connection-changed", defaultValue: "The USB board connection changed. Reconnect the board and try again.", bundle: bundle)
+            return String(localized: "device.board.connection-changed", defaultValue: "USB network board connection changed. Disconnect and reconnect the board.", bundle: bundle)
         case .pairingServiceUnavailable:
-            return String(localized: "device.board.pairing-service-unavailable", defaultValue: "The board is connected, but this device's pairing service was not found. Keep the device unlocked with Developer Mode on, then try again.", bundle: bundle)
+            return String(localized: "device.board.pairing-service-unavailable", defaultValue: "USB network board connected, but device pairing is unavailable. Keep the device unlocked, enable Developer Mode, then reconnect.", bundle: bundle)
         case .malformedReply, .unavailableBackend:
-            return String(localized: "device.board.firmware-unavailable", defaultValue: "The board did not provide the required connection service. Install the Eiscue board firmware and try again.", bundle: bundle)
+            return String(localized: "device.board.firmware-unavailable", defaultValue: "The board lacks the USB network service. Install Eiscue USB network firmware.", bundle: bundle)
         case .network, .disconnected:
-            return String(localized: "device.board.interrupted", defaultValue: "The USB board connection was interrupted. Check its cable and power, then try again.", bundle: bundle)
+            return String(localized: "device.board.interrupted", defaultValue: "USB network board disconnected. Check its cable and power.", bundle: bundle)
         case .timeout:
-            return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.", bundle: bundle)
+            return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked, then reconnect.", bundle: bundle)
         case .busy: return DeviceControlError.busy.localizedDescription
         }
     }
@@ -526,32 +526,32 @@ enum NativeDeviceErrorPresentation {
     static func message(_ error: NativeBackendError, bundle: Bundle = .module) -> String {
         switch error {
         case .invalidIdentity: return DeviceControlError.invalidIdentity.localizedDescription
-        case .protocolFailure(stage: _, cause: 2): return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked and try connecting again. You can keep chatting.", bundle: bundle)
-        case .protocolFailure(stage: 7, cause: _): return String(localized: "device.backend.developer-mode", defaultValue: "Developer Mode is not ready. Enable it in Settings and restart when the system asks.", bundle: bundle)
+        case .protocolFailure(stage: _, cause: 2): return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked, then reconnect.", bundle: bundle)
+        case .protocolFailure(stage: 7, cause: _): return String(localized: "device.backend.developer-mode", defaultValue: "Developer Mode is not ready. Turn it on in Settings and restart when asked.", bundle: bundle)
         case .protocolFailure(stage: 8, cause: _): return String(localized: "device.backend.ddi-not-ready", defaultValue: "The device is not ready for development. Connect it to Xcode on your computer and wait for device preparation to finish, then try again.", bundle: bundle)
-        case .protocolFailure: return String(localized: "device.backend.protocol-failed", defaultValue: "The device connection could not be completed. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
+        case .protocolFailure: return String(localized: "device.backend.protocol-failed", defaultValue: "Device connection failed. Keep the device unlocked, then reconnect.", bundle: bundle)
         // Media service lookup runs only after identity verification and developer preparation.
         // MissingService includes unusable ports or service flags, so do not claim iOS lacks it.
-        case .touchPreparationFailure(stage: 38, cause: 8): return String(localized: "device.backend.automation-consent", defaultValue: "Device control could not get system permission. Keep this device unlocked and allow automation if the system asks, then try again.", bundle: bundle)
-        case .touchPreparationFailure(stage: 38, cause: 9): return String(localized: "device.backend.automation-geometry", defaultValue: "The current screen could not be confirmed. Keep the device unlocked and steady, then try connecting again.", bundle: bundle)
-        case .touchPreparationFailure(stage: 38, cause: 14): return String(localized: "device.backend.touch-timed-out", defaultValue: "Preparing device control timed out. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
-        case .touchPreparationFailure(stage: 38, cause: _): return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not be started. You can keep chatting; device control is currently unavailable.", bundle: bundle)
-        case .touchPreparationFailure(stage: 10, cause: 4): return String(localized: "device.backend.screen-service-unavailable", defaultValue: "Pairing is complete, but the screen service needed for device control could not be found. You can keep chatting; device control is currently unavailable.", bundle: bundle)
-        case .touchPreparationFailure(stage: 11, cause: 4): return String(localized: "device.backend.touch-service-unavailable", defaultValue: "Pairing is complete, but the touch service needed for device control could not be found. You can keep chatting; device control is currently unavailable.", bundle: bundle)
-        case .touchPreparationFailure(stage: _, cause: 2): return String(localized: "device.backend.touch-timed-out", defaultValue: "Preparing device control timed out. Keep the device unlocked and try again. You can keep chatting.", bundle: bundle)
-        case .touchPreparationFailure: return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not be started. You can keep chatting; device control is currently unavailable.", bundle: bundle)
+        case .touchPreparationFailure(stage: 38, cause: 8): return String(localized: "device.backend.automation-consent", defaultValue: "Device control needs system permission. Keep the device unlocked and allow automation when asked.", bundle: bundle)
+        case .touchPreparationFailure(stage: 38, cause: 9): return String(localized: "device.backend.automation-geometry", defaultValue: "Could not confirm the screen size and orientation. Keep the device unlocked and steady, then reconnect.", bundle: bundle)
+        case .touchPreparationFailure(stage: 38, cause: 14): return String(localized: "device.backend.touch-timed-out", defaultValue: "Device control setup timed out. Keep the device unlocked, then reconnect.", bundle: bundle)
+        case .touchPreparationFailure(stage: 38, cause: _): return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not start. Chat is still available.", bundle: bundle)
+        case .touchPreparationFailure(stage: 10, cause: 4): return String(localized: "device.backend.screen-service-unavailable", defaultValue: "Pairing succeeded, but screen access is unavailable on this connection. Device control is unavailable; chat still works.", bundle: bundle)
+        case .touchPreparationFailure(stage: 11, cause: 4): return String(localized: "device.backend.touch-service-unavailable", defaultValue: "Pairing succeeded, but touch input is unavailable on this connection. Device control is unavailable; chat still works.", bundle: bundle)
+        case .touchPreparationFailure(stage: _, cause: 2): return String(localized: "device.backend.touch-timed-out", defaultValue: "Device control setup timed out. Keep the device unlocked, then reconnect.", bundle: bundle)
+        case .touchPreparationFailure: return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not start. Chat is still available.", bundle: bundle)
         case .coordinateSpaceChanged: return DeviceControlError.staleFrame.localizedDescription
         case .unsupportedControlAction: return DeviceControlError.unsupported.localizedDescription
-        case .automationDeliveryUnknown: return String(localized: "device.backend.automation-delivery-unknown", defaultValue: "The device did not confirm this action. It will not be repeated. Check the screen before reconnecting.", bundle: bundle)
-        case .automationAuthorizationTimedOut: return String(localized: "device.backend.automation-authorization-timed-out", defaultValue: "Waiting for system authorization timed out. Reconnect with this device unlocked. If Enable UI Automation asks for your device passcode, enter it on the system screen.", bundle: bundle)
-        case .screenshotFailure: return String(localized: "device.backend.screenshot-failed", defaultValue: "The device screen could not be read. Keep the device unlocked and try connecting again.", bundle: bundle)
+        case .automationDeliveryUnknown: return String(localized: "device.backend.automation-delivery-unknown", defaultValue: "The device did not confirm this action; it will not be repeated. Check the screen before reconnecting.", bundle: bundle)
+        case .automationAuthorizationTimedOut: return String(localized: "device.backend.automation-authorization-timed-out", defaultValue: "System authorization timed out. Keep the device unlocked and reconnect. Enter your passcode only on the system’s Enable UI Automation screen if asked.", bundle: bundle)
+        case .screenshotFailure: return String(localized: "device.backend.screenshot-failed", defaultValue: "Could not read the screen. Keep the device unlocked, then reconnect.", bundle: bundle)
         case .applicationQueryFailure(stage: 21, cause: let cause) where [UInt32(1), 2, 4].contains(cause):
-            return String(localized: "device.backend.app-list-unavailable", defaultValue: "The app list could not be read. Take a new screenshot and navigate using the visible controls.", bundle: bundle)
-        case .applicationQueryFailure: return String(localized: "device.backend.app-list-failed", defaultValue: "The list of installed apps could not be read. Try connecting again.", bundle: bundle)
+            return String(localized: "device.backend.app-list-unavailable", defaultValue: "App list unavailable. View the screen and use the visible controls.", bundle: bundle)
+        case .applicationQueryFailure: return String(localized: "device.backend.app-list-failed", defaultValue: "Could not read the app list. View the screen and use the visible controls instead.", bundle: bundle)
         case .busy: return DeviceControlError.busy.localizedDescription
-        case .closed: return String(localized: "device.backend.closed", defaultValue: "The device connection is closed.", bundle: bundle)
-        case .transport: return String(localized: "device.backend.transport-failed", defaultValue: "The local connection was interrupted. Try connecting again. You can keep chatting.", bundle: bundle)
-        default: return String(localized: "device.backend.invalid-state", defaultValue: "The device connection could not be completed. Try connecting again.", bundle: bundle)
+        case .closed: return String(localized: "device.backend.closed", defaultValue: "Device connection closed.", bundle: bundle)
+        case .transport: return String(localized: "device.backend.transport-failed", defaultValue: "Device connection lost. Reconnect the device.", bundle: bundle)
+        default: return String(localized: "device.backend.invalid-state", defaultValue: "Device connection could not be completed. Reconnect from the Device page.", bundle: bundle)
         }
     }
 

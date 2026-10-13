@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device is not connected"
+            "value": "Device not connected"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未连接设备"
+            "value": "设备未连接"
           }
         }
       }
@@ -81,7 +81,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未连接"
+            "value": "未连接"
           }
         }
       }
@@ -126,13 +126,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local connection was interrupted. Reconnect the device."
+            "value": "Local VPN disconnected. Reconnect from the Device page."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地连接已中断，请重新连接设备。"
+            "value": "本地 VPN 已断开，请到设备页重新连接。"
           }
         }
       }
@@ -143,13 +143,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local VPN connection was interrupted and the device task stopped. Check the device before continuing."
+            "value": "Local VPN disconnected; the task stopped. Check the screen before continuing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地 VPN 连接已中断，设备任务已停止。请检查设备当前状态。"
+            "value": "本地 VPN 已断开，任务已停止。请先查看屏幕，再继续任务。"
           }
         }
       }
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent configured"
+            "value": "AI ready"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent 已配置"
+            "value": "AI 已设置"
           }
         }
       }
@@ -177,13 +177,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Configure a model to start"
+            "value": "Set up a model to start"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "配置模型后开始"
+            "value": "请先设置 AI"
           }
         }
       }
@@ -194,13 +194,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The previous run did not finish normally. Check the device before continuing."
+            "value": "The last task was interrupted. Check the screen before continuing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上次执行没有正常结束。请先核查设备当前状态，再决定继续。"
+            "value": "上次任务已中断。请先查看屏幕，再继续任务。"
           }
         }
       }
@@ -211,13 +211,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Resume or end the interrupted task before sending a new message."
+            "value": "Continue or end the interrupted task before sending a new message."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先继续或结束上次中断的任务，再发送新消息。"
+            "value": "请先继续或结束上次任务，再发送新消息。"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the device button at the top right to pair and connect first."
+            "value": "Open Device at the top right to finish setup and connect."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先点右上角设备按钮，完成配对并连接。"
+            "value": "请点右上角设备按钮，完成设置并连接。"
           }
         }
       }
@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device tasks require a model that accepts images."
+            "value": "Device tasks need a model that supports images."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备任务需要支持图片输入的模型。"
+            "value": "操作设备需要支持图片的模型。"
           }
         }
       }
@@ -262,13 +262,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reconnect the device before resuming the task."
+            "value": "Reconnect the device, then continue the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先重新连接设备，再继续任务。"
+            "value": "请重新连接设备，再继续任务。"
           }
         }
       }
@@ -296,13 +296,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The user ended the interrupted task."
+            "value": "You ended the interrupted task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用户结束了中断任务。"
+            "value": "你已结束中断的任务。"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing to run"
+            "value": "Preparing task"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在准备执行"
+            "value": "准备任务"
           }
         }
       }
@@ -330,13 +330,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The starting conditions changed and this message has not been submitted. Return to the app and check the connection before resuming, or end this task."
+            "value": "The app or connection state changed before this message was sent. Return to Eiscue and check the connection, then continue or end the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启动条件已变化，本条消息尚未提交。请返回前台并检查连接后继续，或结束本次任务。"
+            "value": "App 或连接状态已变化，消息尚未发送。请返回 Eiscue 检查连接，再继续或结束任务。"
           }
         }
       }
@@ -347,13 +347,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The action outcome is unknown. Check the device screen before continuing."
+            "value": "The action outcome is unknown. Check the screen before continuing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作结果未知，请检查设备当前画面后再继续。"
+            "value": "操作结果未知。请先查看屏幕，再继续任务。"
           }
         }
       }
@@ -364,13 +364,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue is working"
+            "value": "Task in progress"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 正在处理任务"
+            "value": "任务进行中"
           }
         }
       }
@@ -381,13 +381,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing device actions"
+            "value": "Preparing device control"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "准备设备操作"
+            "value": "准备操作设备"
           }
         }
       }
@@ -398,13 +398,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system ended background execution. Return to Eiscue to check the task."
+            "value": "The system stopped background execution. Open Eiscue to check the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统结束了后台执行，请返回 App 核查任务。"
+            "value": "系统已停止后台运行，请返回 Eiscue 查看任务。"
           }
         }
       }
@@ -415,13 +415,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Resuming task"
+            "value": "Continuing task"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在恢复任务"
+            "value": "继续任务"
           }
         }
       }
@@ -432,13 +432,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Waiting for the model"
+            "value": "Waiting for AI"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "等待模型响应"
+            "value": "等待 AI 回复"
           }
         }
       }
@@ -449,13 +449,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Resumed after the user checked the current state"
+            "value": "You checked the screen and continued the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用户核查后显式继续"
+            "value": "你已查看屏幕并继续任务。"
           }
         }
       }
@@ -466,13 +466,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The model finished this round. Check the response and log for action outcomes."
+            "value": "This turn has ended. Check the reply and task record for the result."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型本轮处理已结束，操作结果请查看回复与日志。"
+            "value": "本轮已结束，操作结果请查看回复和任务记录。"
           }
         }
       }
@@ -483,13 +483,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The user stopped the task. Actions already performed are not undone."
+            "value": "You stopped the task. Completed actions are not undone."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用户停止了任务。已发生的操作不会撤销。"
+            "value": "你已停止任务，已执行的操作不会撤销。"
           }
         }
       }
@@ -500,13 +500,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The app moved to the background and the conversation paused. Return to continue."
+            "value": "The conversation paused when the app moved to the background. Return to Eiscue to continue."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "App 已离开前台，对话已暂停。返回后可继续。"
+            "value": "App 退到后台，对话已暂停。返回 Eiscue 后可继续。"
           }
         }
       }
@@ -551,13 +551,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unable to recover the agent conversation.\n%@"
+            "value": "Could not restore the conversation.\n%@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法恢复 Agent 会话。\n%@"
+            "value": "无法恢复对话。\n%@"
           }
         }
       }
@@ -602,13 +602,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Calling %@"
+            "value": "Running: %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在调用 %@"
+            "value": "正在执行：%@"
           }
         }
       }
@@ -653,13 +653,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conversation cleanup is incomplete. Retry to finish: %@"
+            "value": "Some conversation data could not be deleted. Delete the conversation again to finish cleanup: %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "会话清理未全部完成，可重试完成清理：%@"
+            "value": "部分对话数据未能删除，可再次删除此对话以完成清理：%@"
           }
         }
       }
@@ -670,13 +670,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Unable to register background tasks. Check the app’s task identifier configuration."
+            "value": "Background tasks could not be registered. The app’s task identifier needs to be checked."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法注册后台任务，请检查 App 的后台任务标识配置。"
+            "value": "后台任务注册失败，需要检查 App 的后台任务标识配置。"
           }
         }
       }
@@ -687,13 +687,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Background tasks are not registered."
+            "value": "Background tasks are not registered. Reopen Eiscue."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "后台任务尚未注册。"
+            "value": "后台任务尚未注册，请重新打开 Eiscue。"
           }
         }
       }
@@ -704,13 +704,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Another task is requesting or using background execution."
+            "value": "Another background task is starting or running. Wait for it to finish."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已有任务正在申请或使用后台执行。"
+            "value": "已有后台任务正在启动或运行，请等待结束。"
           }
         }
       }
@@ -721,13 +721,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Return to the app before starting a task."
+            "value": "Return to Eiscue to start the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请回到 App 后再启动任务。"
+            "value": "请返回 Eiscue 再启动任务。"
           }
         }
       }
@@ -755,13 +755,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system did not start the background task in time."
+            "value": "The system did not start the background task in time. Return to Eiscue to check the task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统未及时启动后台任务。"
+            "value": "系统未及时启动后台任务，请返回 Eiscue 查看任务。"
           }
         }
       }
@@ -772,13 +772,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A previous background task is still starting. Background execution is temporarily unavailable."
+            "value": "A previous background task is still starting. Wait for it to finish starting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上次后台任务的启动尚未结束，本次暂时无法申请后台执行。"
+            "value": "上次后台任务仍在启动，请稍候。"
           }
         }
       }
@@ -789,13 +789,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The background task was stopped by the system or the user."
+            "value": "The background task was stopped by the system or cancelled."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "后台任务已被系统或用户停止。"
+            "value": "后台任务已被系统停止或手动取消。"
           }
         }
       }
@@ -823,13 +823,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Running task"
+            "value": "Task in progress"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在执行任务"
+            "value": "任务进行中"
           }
         }
       }
@@ -863,7 +863,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用偏好"
+            "value": "偏好设置"
           }
         }
       }
@@ -908,13 +908,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Model settings"
+            "value": "Model"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型配置"
+            "value": "模型"
           }
         }
       }
@@ -976,13 +976,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Run history"
+            "value": "Task history"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行记录"
+            "value": "任务记录"
           }
         }
       }
@@ -1010,13 +1010,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Settings cannot be changed while a task is running."
+            "value": "Wait for the task to finish before changing settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务执行期间暂时不能修改配置。"
+            "value": "任务结束后可修改设置。"
           }
         }
       }
@@ -1027,13 +1027,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses your configured model service. The API key is stored in Keychain."
+            "value": "Uses your model service. Your API key is stored in Keychain."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用你配置的模型服务。API Key 保存在系统钥匙串中。"
+            "value": "使用你设置的模型服务，API Key 保存在系统钥匙串中。"
           }
         }
       }
@@ -1044,13 +1044,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local conversations"
+            "value": "Saved conversations"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地会话"
+            "value": "已保存的对话"
           }
         }
       }
@@ -1095,13 +1095,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conversations and run records are stored on this device. During a task, conversation content is sent to your configured model. Screenshots are sent only within the selected task scope."
+            "value": "Conversations and task records are saved on this device. Conversation content is sent to your model when you send a message. Screenshots are sent only when AI views the screen during a device task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "会话和运行记录保存在本机。执行时，会话内容会发送给所配置的模型；设备截图按本次任务选定的范围发送。"
+            "value": "对话和任务记录保存在本机。发送消息时，对话内容会发给你设置的模型；设备任务中，AI 查看屏幕时才会发送截图。"
           }
         }
       }
@@ -1163,13 +1163,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local connectivity uses a loopback approach based on LocalDevVPN / StosVPN."
+            "value": "Local VPN is based on LocalDevVPN / StosVPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地连接使用基于 LocalDevVPN / StosVPN 的回环方案。"
+            "value": "本地 VPN 基于 LocalDevVPN / StosVPN。"
           }
         }
       }
@@ -1294,13 +1294,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Background status"
+            "value": "Task status"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "后台提示"
+            "value": "任务状态"
           }
         }
       }
@@ -1311,13 +1311,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Running status"
+            "value": "Live status"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运行状态"
+            "value": "实时状态"
           }
         }
       }
@@ -1345,13 +1345,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Completion and interruption notifications"
+            "value": "Task result notifications"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成与中断通知"
+            "value": "任务结果通知"
           }
         }
       }
@@ -1362,13 +1362,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System notification settings"
+            "value": "Notification settings"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统通知设置"
+            "value": "通知设置"
           }
         }
       }
@@ -1379,13 +1379,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device tasks use the system Live Activity to show progress and allow cancellation. Its appearance depends on your device and system settings. Optional notifications report only the final status while Eiscue is in the background."
+            "value": "The system Live Activity shows device-task progress and lets you stop the task. The system controls its appearance. Optional notifications report the result when Eiscue is in the background."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备任务通过系统实时活动显示进展，并允许取消；显示位置由设备和系统设置决定。开启通知后，仅在 App 处于后台时提醒任务的结束状态。"
+            "value": "系统实时活动显示任务进展，也可停止任务；样式由系统决定。开启通知后，App 在后台时会提醒任务结果。"
           }
         }
       }
@@ -1430,13 +1430,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gemini rejected this request because its API is unavailable in the region of the request. Check the model service’s supported regions, or choose a service available in your region."
+            "value": "Gemini does not support requests from this region. Check its supported regions or use another model service."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Gemini 因当前请求所在地区不受支持而拒绝了请求。请确认模型服务支持的地区，或改用当地可用的模型服务。"
+            "value": "Gemini 不支持当前请求所在地区。请确认支持范围，或更换模型服务。"
           }
         }
       }
@@ -1447,13 +1447,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Follows your preferred app language. Change it in the system settings for Eiscue."
+            "value": "Change your preferred language in Eiscue’s system settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "跟随 App 的首选语言，可在系统的 Eiscue 设置中更改。"
+            "value": "可在系统的 Eiscue 设置中更改语言。"
           }
         }
       }
@@ -1464,13 +1464,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This turn reached its step limit. Continue to check the current screen and pick up the task."
+            "value": "This turn reached its step limit. Continue to recheck the screen and carry on."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本轮操作已达到步骤上限。点击“继续任务”，AI 会先重新查看屏幕再接着处理。"
+            "value": "本轮已达步骤上限。继续任务时，AI 会先重新查看屏幕。"
           }
         }
       }
@@ -1481,13 +1481,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The task could not make progress. Check the device, then continue or give another instruction."
+            "value": "The task is not making progress. Check the screen, then continue or add instructions."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务暂时无法继续推进。请查看设备，再继续任务或补充说明。"
+            "value": "任务暂无进展。请查看屏幕，再继续任务或补充说明。"
           }
         }
       }
@@ -1549,13 +1549,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The action was sent, but its result could not be observed. Return to Eiscue, check the connection on the Device page, then continue. Eiscue will inspect the screen first."
+            "value": "The action was sent, but the result could not be checked. Check the connection on the Device page, then continue. AI will view the screen first."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "操作已发送，但未能查看结果。请返回 Eiscue，在设备页检查连接后继续；继续时会先重新查看屏幕。"
+            "value": "操作已发送，但未能查看结果。请到设备页检查连接后继续，AI 会先重新查看屏幕。"
           }
         }
       }
@@ -1566,13 +1566,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device connection was lost. Reconnect from the Device page, then continue this task."
+            "value": "Device disconnected. Reconnect from the Device page, then continue."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备连接已断开。请到设备页重新连接，再继续此任务。"
+            "value": "设备已断开。请到设备页重新连接，再继续任务。"
           }
         }
       }

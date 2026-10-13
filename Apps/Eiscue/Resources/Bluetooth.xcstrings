@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep your usual Wi-Fi. Connect board commands over Bluetooth; choose Bluetooth or USB input."
+            "value": "Keep your usual Wi-Fi. The board uses Bluetooth for commands and Bluetooth or USB for input."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "继续使用平常的 Wi-Fi，通过蓝牙连接开发板，可选择蓝牙或 USB 输入。"
+            "value": "保持平常的 Wi-Fi 连接。开发板通过蓝牙接收指令，可选择蓝牙或 USB 输入。"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use an ESP32-C3 or ESP32-S3 board configured with Eiscue HID firmware. Connect it to a charger or computer for power. No cable to your iPhone is needed for Bluetooth input."
+            "value": "Use an ESP32-C3 or ESP32-S3 board with Eiscue keyboard and mouse firmware. Power it from a charger or computer; Bluetooth input needs no cable to your device."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用已配置 Eiscue 键鼠固件的 ESP32-C3 或 ESP32-S3 开发板。接充电器或电脑供电即可；选择蓝牙输入时，不用插到 iPhone。"
+            "value": "使用装有 Eiscue 键鼠固件的 ESP32-C3 或 ESP32-S3 开发板，接充电器或电脑供电。蓝牙输入无需接线到手机或 iPad。"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn on Settings → Accessibility → Touch → AssistiveTouch. Keep Bluetooth on and allow the pairing prompt."
+            "value": "Turn on AssistiveTouch in Settings → Accessibility → Touch. Keep Bluetooth on and tap Pair when prompted."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开「设置 → 辅助功能 → 触控 → 辅助触控」。保持蓝牙开启，出现配对提示时点「配对」。"
+            "value": "开启「设置 → 辅助功能 → 触控 → 辅助触控」。保持蓝牙开启，出现提示时点「配对」。"
           }
         }
       }
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tap the recording icon, then choose Start Broadcast in the system panel. Eiscue uses your screen to guide the AI; screenshots are sent to your configured model only during device tasks. Microphone audio is not captured."
+            "value": "Tap the recording icon, then Start Broadcast. During device tasks, Eiscue sends screenshots to your AI service as needed. No audio is recorded."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点击下方录屏图标，在系统面板中点「开始直播」。Eiscue 会读取屏幕，仅在设备任务中将截图发送给你配置的模型；不会录制麦克风声音。"
+            "value": "点录屏图标，再点「开始直播」。设备任务中会按需发送截图给你配置的 AI 服务，不采集音频。"
           }
         }
       }
@@ -194,13 +194,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open system screen sharing"
+            "value": "Start screen sharing"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开系统屏幕共享"
+            "value": "开始屏幕共享"
           }
         }
       }
@@ -217,7 +217,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "验证设备操作"
+            "value": "检查设备操作"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A short check confirms where the board clicks and whether it can enter text. Leave the screen untouched during the check. Repeat after rotating the device or reconnecting."
+            "value": "Checks taps and typing. Leave the screen untouched. Check again after rotating or reconnecting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过简短检查，确认开发板能点中位置、输入文字。检查期间请不要触碰屏幕；旋转设备或重新连接后需再检查一次。"
+            "value": "检查点击和文字输入，期间请勿触屏。旋转设备或重新连接后需再次检查。"
           }
         }
       }
@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ready. Return to chat and describe your task. AI control can be turned off on the Device page."
+            "value": "Return to chat and describe your task. Turn off AI control here for chat only."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已就绪，回到对话说出你的任务即可。只想聊天时，可在设备页关闭 AI 操作。"
+            "value": "回到对话，告诉 AI 要做什么。仅对话时，在此关闭 AI 操作即可。"
           }
         }
       }
@@ -296,13 +296,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Checking clicks and text input…\nPlease leave the screen untouched."
+            "value": "Checking taps and typing…\nPlease leave the screen untouched."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在检查点击和文字输入…\n请不要触碰屏幕。"
+            "value": "正在检查点击和输入…\n请勿触屏。"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Checking text input"
+            "value": "Checking typing"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在检查文字输入"
+            "value": "正在检查输入"
           }
         }
       }
@@ -381,13 +381,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The check did not finish. Keep AssistiveTouch on and try again."
+            "value": "Check incomplete. Keep AssistiveTouch on and try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检查未完成。请保持辅助触控开启，再试一次。"
+            "value": "检查未完成。请开启辅助触控后重试。"
           }
         }
       }
@@ -398,13 +398,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep this page open and keep the device in the same orientation."
+            "value": "Keep this page open without rotating the device, then try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请保持此页面打开，不要旋转设备。"
+            "value": "请保持此页面打开，不要旋转设备，然后重试。"
           }
         }
       }
@@ -415,13 +415,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Text input was not received. Check the selected keyboard connection."
+            "value": "No text received. Check the input connection and try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "未收到文字输入，请检查所选的键鼠连接方式。"
+            "value": "未收到文字。请检查输入连接后重试。"
           }
         }
       }
@@ -432,13 +432,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Device connection or screen sharing ended. The task has stopped."
+            "value": "Connection or screen sharing ended. The task stopped."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备连接或屏幕共享已结束，任务已停止。"
+            "value": "连接或屏幕共享已结束，任务已停止。"
           }
         }
       }
@@ -500,13 +500,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect the S3 USB/OTG port to this phone; COM/UART is for a computer. Lightning requires a USB camera/host adapter with power. An ordinary Lightning to USB-C cable cannot provide USB input. Commands still use Bluetooth."
+            "value": "Connect the S3 USB/OTG port to your iPhone or iPad; COM/UART is for a computer. Lightning devices need a powered USB host adapter, such as a camera adapter. A regular Lightning to USB-C cable will not work. Commands still use Bluetooth."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "S3 的 USB／OTG 口接这台手机；COM／UART 口用于电脑。Lightning 手机需要带 USB 插口的相机／主机转接器，并给转接器供电。普通 Lightning 转 USB-C 线无法提供 USB 输入。指令仍通过蓝牙传输。"
+            "value": "将 S3 的 USB／OTG 口接到 iPhone 或 iPad；COM／UART 口用于电脑。Lightning 设备需用带 USB 插口的相机／主机转接器，并给转接器供电；普通 Lightning 转 USB-C 线不适用。指令仍通过蓝牙传输。"
           }
         }
       }
@@ -517,13 +517,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Input connection changed. Reconnect the board and run the check again."
+            "value": "Input changed. Reconnect the board and check again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "输入方式已切换，请重新连接开发板并完成操作检查。"
+            "value": "输入方式已切换，请重新连接开发板并检查。"
           }
         }
       }
@@ -534,13 +534,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "For the first connection to an S3 board, restart its power and connect within one minute. Eiscue saves the board connection securely; no configuration file is needed."
+            "value": "For first-time S3 setup, restart the board and connect within one minute. No configuration file is needed."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "S3 首次连接时，请给开发板重新通电，并在一分钟内连接。Eiscue 会安全保存连接信息，无需导入配置文件。"
+            "value": "S3 首次设置时，给开发板重新通电，并在一分钟内连接。无需配置文件。"
           }
         }
       }
@@ -551,13 +551,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check incomplete: this phone received no click. Connect the board’s native USB/OTG port to this phone, not a computer. UART/COM is for the computer. Power the adapter and keep AssistiveTouch enabled, then reconnect and check again."
+            "value": "Check incomplete: no tap received. Connect USB/OTG to this iPhone or iPad, not the computer. COM/UART is for the computer. Power the adapter, turn on AssistiveTouch, then reconnect and check again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检查未完成：本机没有收到点击。请把开发板的原生 USB／OTG 口接到这台 iPhone，别接电脑；UART／COM 口用于电脑。给转接器接电源并保持辅助触控开启，再重新连接和检查。"
+            "value": "检查未完成：未收到点击。USB／OTG 口应接这台 iPhone 或 iPad，COM／UART 口用于电脑。请给转接器供电、开启辅助触控，再重新连接并检查。"
           }
         }
       }
@@ -568,13 +568,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Waiting for the phone to recognize USB…"
+            "value": "Waiting for USB recognition…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在等待手机识别 USB…"
+            "value": "等待设备识别 USB…"
           }
         }
       }
@@ -585,13 +585,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Is USB connected to this phone?"
+            "value": "Is USB connected to this device?"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB 接的是这台手机吗？"
+            "value": "USB 接的是这台设备吗？"
           }
         }
       }
@@ -602,13 +602,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The check sends keyboard and mouse input. Connect the board’s USB/OTG port only to this iPhone or iPad. COM/UART may connect to a computer for power. USB recognition alone does not identify which device is connected."
+            "value": "The check sends taps and typing. USB/OTG must connect to this iPhone or iPad; COM/UART can connect to a computer for power. USB detection cannot tell which device is connected."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检查会发送键鼠输入。请确认开发板的 USB／OTG 口只接这台 iPhone 或 iPad，COM／UART 口可接电脑供电。检测到 USB 连接不能判断接的是哪台设备。"
+            "value": "检查会发送点击和文字。USB／OTG 口须接这台 iPhone 或 iPad；COM／UART 可接电脑供电。检测到 USB 不能确认接的是哪台设备。"
           }
         }
       }
@@ -619,13 +619,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connected to this phone; start check"
+            "value": "Connected; start check"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已接这台手机，开始检查"
+            "value": "已连接，开始检查"
           }
         }
       }
@@ -636,13 +636,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The board shows Eiscue’s expressions and progress. Press OK to stop; release it, then hold OK to unlock and reconnect."
+            "value": "The board shows expressions and progress. Press OK to stop. Release, then hold OK to unlock; reconnect and check again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开发板会显示 Eiscue 表情和进展。按 OK 停止；松开后长按 OK 恢复，再重新连接。"
+            "value": "开发板显示表情和进展。按 OK 停止；松开后长按解锁，再重新连接并检查。"
           }
         }
       }
@@ -653,13 +653,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stopped with the board button. Release OK, then hold it for 1.5 seconds to unlock. Reconnect and complete the device check before another device task."
+            "value": "Stopped with the board button. Release OK, then hold for 1.5 seconds to unlock. Reconnect and check before starting another device task."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已通过开发板按键停止。松开 OK，再长按 1.5 秒解锁；重新连接并完成操作检查后再开始设备任务。"
+            "value": "已通过开发板停止。松开 OK，再长按 1.5 秒解锁；重新连接并检查后才能继续操作设备。"
           }
         }
       }
@@ -738,7 +738,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ready to go"
+            "value": "Check complete"
           }
         },
         "zh-Hans": {
@@ -755,7 +755,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check not completed"
+            "value": "Check incomplete"
           }
         },
         "zh-Hans": {

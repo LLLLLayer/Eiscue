@@ -53,7 +53,7 @@ actor DefaultEngine: AgentEngine {
         try AgentAttachment.validate(request.attachments, supportsImages: configuration?.supportsImages ?? false)
         for message in request.history { try AgentAttachment.validate(message.attachments, supportsImages: configuration?.supportsImages ?? false) }
         if request.mode == .message, request.attachments.isEmpty, request.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw AgentError.invalidConfiguration(String(localized: "agent.configuration.empty-message", defaultValue: "The message must not be empty.", bundle: .module))
+            throw AgentError.invalidConfiguration(String(localized: "agent.configuration.empty-message", defaultValue: "Enter a message.", bundle: .module))
         }
         let id = UUID()
         let budget = RunBudget(limit: request.maxToolCalls, verificationCost: tools.filter(\.isVerification).map(\.executionCost).min())
@@ -165,7 +165,7 @@ actor DefaultEngine: AgentEngine {
             var settledAnswers: [EntryID] = []
             if configuration?.supportsImages == false,
                view.entries.contains(where: { ($0.userMessage?.content ?? []).contains { if case .image = $0 { true } else { false } } }) {
-                throw AgentError.invalidConfiguration(String(localized: "agent.attachment.images-unavailable", defaultValue: "Select a model that supports images to send this attachment.", bundle: .module))
+                throw AgentError.invalidConfiguration(String(localized: "agent.attachment.images-unavailable", defaultValue: "Choose a model that supports images to send this attachment.", bundle: .module))
             }
             try await opened.conversation.configure(AgentChange(model: opened.model, instructions: request.systemPrompt))
             try checkRunning(id)
@@ -237,7 +237,7 @@ actor DefaultEngine: AgentEngine {
             // A provider can incorrectly label tool calls as its final answer.
             // Never report those unexecuted calls as a successful task or replay them here.
             if finalView.entries.contains(where: { settledAnswers.contains($0.id) && !($0.assistantMessage?.toolCalls.isEmpty ?? true) }) {
-                throw AgentError.runtime(String(localized: "agent.runtime.unhandled-tools", defaultValue: "The model ended its reply before the requested actions could run.", bundle: .module))
+                throw AgentError.runtime(String(localized: "agent.runtime.unhandled-tools", defaultValue: "The model ended its reply without running the requested actions.", bundle: .module))
             }
         } catch {
             failure = error

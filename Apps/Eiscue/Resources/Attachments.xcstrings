@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This file format is not supported. Choose an image, PDF, or text file."
+            "value": "Unsupported format. Choose an image, PDF, or text file."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "不支持此文件格式。请选择图片、PDF 或文本文件。"
+            "value": "不支持此格式，请选择图片、PDF 或文本文件。"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This file could not be read. It may be empty, locked, or use an unsupported encoding."
+            "value": "Cannot read this file. It may be empty, encrypted, or use unsupported text encoding. Try another file."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法读取此文件，可能为空、已加密或使用了不支持的编码。"
+            "value": "无法读取文件，可能为空、已加密或文字编码不受支持。请换一个文件。"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This image could not be read. Choose one still image up to 40 megapixels."
+            "value": "Cannot read this image. Choose a still image up to 40 megapixels."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法读取此图片。请选择不超过 4000 万像素的单张静态图片。"
+            "value": "无法读取图片，请选择不超过 4000 万像素的静态图片。"
           }
         }
       }
@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This PDF has no extractable text. Scanned pages need OCR; attach the relevant pages as images instead."
+            "value": "This PDF has no readable text. Add the pages you need as images."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此 PDF 没有可提取的文字。扫描页需要 OCR，请将相关页面以图片添加。"
+            "value": "此 PDF 无法提取文字，请将需要的页面作为图片添加。"
           }
         }
       }
@@ -109,7 +109,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The extracted text exceeds 60 KB. Choose a shorter document."
+            "value": "Document text exceeds 60 KB. Choose a shorter document."
           }
         },
         "zh-Hans": {
@@ -143,13 +143,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A camera is not available on this device."
+            "value": "Camera unavailable. Choose a photo instead."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这台设备无法使用相机。"
+            "value": "相机不可用，请选择已有照片。"
           }
         }
       }
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow camera access in Settings to take a photo."
+            "value": "Allow Eiscue to use the camera in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在系统设置中允许相机权限后拍照。"
+            "value": "请在系统设置中允许 Eiscue 使用相机。"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Photos"
+            "value": "Choose photos"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "照片"
+            "value": "选择照片"
           }
         }
       }
@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Camera"
+            "value": "Take photo"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "相机"
+            "value": "拍照"
           }
         }
       }
@@ -262,13 +262,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Files"
+            "value": "Choose files"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "文件"
+            "value": "选择文件"
           }
         }
       }

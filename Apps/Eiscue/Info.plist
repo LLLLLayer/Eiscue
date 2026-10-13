@@ -33,20 +33,20 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Connect to your Eiscue board to control this device over Bluetooth.</string>
+	<string>Connect to a development board to control this device over Bluetooth.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_remotepairing._tcp</string>
 		<string>_remotepairing-pairable-host._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Take a photo to attach to your message.</string>
+	<string>Take photos to add to your messages.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board.</string>
+	<string>Connect to this device for control through the local VPN or a development board.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Turn your speech into text in the message field.</string>
+	<string>Turn your speech into message text.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Transcribe speech on this device without sending a message automatically.</string>
+	<string>Transcribe speech on this device. Messages are sent only when you tap Send.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

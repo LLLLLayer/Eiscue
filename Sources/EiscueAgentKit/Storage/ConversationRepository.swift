@@ -14,9 +14,9 @@ public enum ConversationStoreError: Error, LocalizedError, Sendable, Equatable {
     public var errorDescription: String? {
         switch self {
         case .unsupportedVersion(let version):
-            String(localized: "agent.storage.unsupported-version", defaultValue: "Conversation file version \(String(describing: version)) is not supported. The original file has been preserved.", bundle: .module)
+            String(localized: "agent.storage.unsupported-version", defaultValue: "Conversation file version \(String(describing: version)) is unsupported. The original file is preserved.", bundle: .module)
         case .duplicateConversationID:
-            String(localized: "agent.storage.duplicate-conversation", defaultValue: "The conversation file contains duplicate records. The original file has been preserved.", bundle: .module)
+            String(localized: "agent.storage.duplicate-conversation", defaultValue: "The conversation file has duplicate records. The original file is preserved.", bundle: .module)
         }
     }
 }

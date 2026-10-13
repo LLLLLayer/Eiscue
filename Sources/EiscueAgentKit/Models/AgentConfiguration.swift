@@ -35,7 +35,7 @@ public struct AgentConfiguration: Sendable, Equatable {
             throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-url", defaultValue: "Enter a valid HTTP or HTTPS model service URL.", bundle: .module))
         }
         guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AgentError.invalidConfiguration(String(localized: "agent.configuration.missing-model", defaultValue: "Enter a model name.", bundle: .module))
+            throw AgentError.invalidConfiguration(String(localized: "agent.configuration.missing-model", defaultValue: "Enter a model ID.", bundle: .module))
         }
         guard contextWindow > 0, maxOutputTokens > 0, maxOutputTokens <= contextWindow else {
             throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-context", defaultValue: "The model context and output length settings are invalid.", bundle: .module))

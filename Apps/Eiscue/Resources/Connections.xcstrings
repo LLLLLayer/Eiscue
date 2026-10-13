@@ -24,13 +24,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel requires an iOS device. The simulator is not supported."
+            "value": "Local VPN needs an iPhone or iPad. It is unavailable in Simulator."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道需要 iOS 真机，模拟器不支持。"
+            "value": "本地 VPN 需要 iPhone 或 iPad 真机，模拟器不支持。"
           }
         }
       }
@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The App identifier is missing, so its local tunnel extension cannot be identified."
+            "value": "The App ID is missing. The developer needs to fix the App configuration."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "缺少 App 标识，无法确定本机通道扩展。"
+            "value": "缺少 App 标识，请开发者检查 App 配置。"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel is still processing the previous operation. Try again shortly."
+            "value": "Local VPN is busy. Try again shortly."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道正在处理上一项操作，请稍后重试。"
+            "value": "本地 VPN 正忙，请稍后重试。"
           }
         }
       }
@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Multiple Eiscue tunnel configurations were found. Review them in Settings > VPN and keep one before trying again."
+            "value": "Multiple Eiscue VPN configurations found. Keep one in Settings → VPN, then try again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检测到多个 Eiscue 通道配置，请在系统设置的 VPN 页面核对并保留一个后重试。"
+            "value": "发现多个 Eiscue VPN 配置。请在「设置 → VPN」中保留一个，再重试。"
           }
         }
       }
@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel connection timed out. A stop request has been sent."
+            "value": "Local VPN timed out. A stop was requested; check its status before reconnecting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道连接超时，已请求停止连接。"
+            "value": "本地 VPN 连接超时，已请求停止。请确认 VPN 状态后重新连接。"
           }
         }
       }
@@ -109,13 +109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel disconnected before the connection was established."
+            "value": "Local VPN disconnected during setup. Try connecting again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道在完成连接前已断开。"
+            "value": "本地 VPN 在连接过程中断开，请重新连接。"
           }
         }
       }
@@ -126,13 +126,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system has not confirmed that the local tunnel disconnected. Check the VPN status."
+            "value": "Disconnection is not confirmed. Check the VPN status in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统尚未确认本机通道断开，请查看 VPN 状态。"
+            "value": "尚未确认是否断开。请在系统设置中查看 VPN 状态。"
           }
         }
       }
@@ -143,13 +143,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local tunnel unavailable in Simulator"
+            "value": "Local VPN unavailable in Simulator"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模拟器不支持本机通道"
+            "value": "模拟器不支持本地 VPN"
           }
         }
       }
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The tunnel configuration returned by the system does not belong to this App."
+            "value": "This VPN configuration is not Eiscue’s. Check it in Settings → VPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统返回的通道配置不属于当前 App。"
+            "value": "此 VPN 配置不属于 Eiscue，请在「设置 → VPN」中检查。"
           }
         }
       }
@@ -177,13 +177,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This tunnel configuration does not belong to this App. The operation has stopped."
+            "value": "This VPN configuration is not Eiscue’s. The operation stopped; check Settings → VPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通道配置不属于当前 App，已停止操作。"
+            "value": "此 VPN 配置不属于 Eiscue，已停止操作。请在「设置 → VPN」中检查。"
           }
         }
       }
@@ -194,13 +194,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue Local Tunnel"
+            "value": "Eiscue Local VPN"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 本机通道"
+            "value": "Eiscue 本地 VPN"
           }
         }
       }
@@ -211,13 +211,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local tunnel connected"
+            "value": "Local VPN connected"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道已连接"
+            "value": "本地 VPN 已连接"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecting local tunnel"
+            "value": "Connecting local VPN…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在连接本机通道"
+            "value": "正在连接本地 VPN…"
           }
         }
       }
@@ -245,13 +245,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reconnecting local tunnel"
+            "value": "Reconnecting local VPN…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道正在重新连接"
+            "value": "正在重新连接本地 VPN…"
           }
         }
       }
@@ -262,13 +262,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Disconnecting local tunnel"
+            "value": "Disconnecting local VPN…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在断开本机通道"
+            "value": "正在断开本地 VPN…"
           }
         }
       }
@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stopping local tunnel"
+            "value": "Stopping local VPN…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在停止本机通道"
+            "value": "正在停止本地 VPN…"
           }
         }
       }
@@ -296,13 +296,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing local tunnel"
+            "value": "Preparing local VPN…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在准备本机通道"
+            "value": "正在准备本地 VPN…"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Waiting for the system to finish configuration"
+            "value": "Waiting for VPN setup…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在等待系统完成配置"
+            "value": "等待系统完成 VPN 配置…"
           }
         }
       }
@@ -330,13 +330,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local tunnel disconnected"
+            "value": "Local VPN disconnected"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道未连接"
+            "value": "本地 VPN 未连接"
           }
         }
       }
@@ -347,13 +347,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local tunnel status unknown"
+            "value": "Local VPN status unknown"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道状态未知"
+            "value": "本地 VPN 状态未知"
           }
         }
       }
@@ -364,13 +364,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System authorization was cancelled. The local tunnel was not started."
+            "value": "Authorization cancelled. Local VPN was not started."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统授权已取消，本机通道未启动。"
+            "value": "授权已取消，本地 VPN 未启动。"
           }
         }
       }
@@ -381,13 +381,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system denied the local tunnel configuration. Check VPN authorization and the signing entitlements of the App and extension."
+            "value": "VPN permission was denied. Check Settings → VPN; if it still fails, ask the developer to check App signing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统拒绝了本机通道配置，请检查 VPN 配置授权及 App 与扩展的签名权限。"
+            "value": "VPN 授权被拒绝。请检查系统 VPN 设置；仍失败时，请开发者检查 App 签名权限。"
           }
         }
       }
@@ -398,13 +398,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel configuration is invalid. Check the App and extension configuration and signing entitlements."
+            "value": "Local VPN configuration is invalid. The developer needs to check the App and VPN extension setup and signing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道配置无效，请检查 App 与通道扩展的配置及签名权限。"
+            "value": "本地 VPN 配置无效，请开发者检查 App 和 VPN 扩展的配置及签名。"
           }
         }
       }
@@ -415,13 +415,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system disabled the local tunnel configuration. Start the tunnel again."
+            "value": "Local VPN was disabled. Start it again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道配置被系统停用，请重新启动通道。"
+            "value": "本地 VPN 已停用，请重新开启。"
           }
         }
       }
@@ -432,13 +432,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The local tunnel configuration changed. Refresh and try again."
+            "value": "VPN settings changed. Try connecting again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道配置已变化，请刷新后重试。"
+            "value": "VPN 配置已变化，请重新连接。"
           }
         }
       }
@@ -449,13 +449,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The system could not read or write the local tunnel configuration. Check VPN authorization and the App signing entitlements."
+            "value": "VPN settings could not be saved or read. Check VPN permission; if it still fails, ask the developer to check App signing."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统无法读写本机通道配置，请检查 VPN 配置授权及 App 的签名权限。"
+            "value": "无法读写 VPN 配置。请检查 VPN 授权；仍失败时，请开发者检查 App 签名权限。"
           }
         }
       }
@@ -466,13 +466,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System notification permission has not been checked"
+            "value": "Notification permission not checked"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未检查系统通知权限"
+            "value": "尚未检查通知权限"
           }
         }
       }
@@ -483,13 +483,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notifications are not allowed by the system. You can change notification permissions in Settings."
+            "value": "Notifications are off. You can enable them in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通知未获系统允许，可在系统设置中调整通知权限。"
+            "value": "通知未开启，可在系统设置中允许。"
           }
         }
       }
@@ -500,13 +500,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notification permission could not be requested. Try again later."
+            "value": "Could not request notification permission. Try again later."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂时无法请求通知权限，请稍后重试。"
+            "value": "无法请求通知权限，请稍后重试。"
           }
         }
       }
@@ -517,13 +517,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue Task Status"
+            "value": "Eiscue task update"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 任务状态"
+            "value": "Eiscue 任务进展"
           }
         }
       }
@@ -534,13 +534,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The task status notification could not be submitted. View the run history in the App."
+            "value": "Notification could not be sent. Open Eiscue to view the task history."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务状态通知未能提交，请在 App 中查看运行记录。"
+            "value": "通知发送失败，请在 Eiscue 中查看任务记录。"
           }
         }
       }
@@ -551,13 +551,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The model has finished this turn. Open Eiscue to view the run history."
+            "value": "This turn has ended. Open Eiscue to view the result."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "模型本轮处理已结束，可打开 Eiscue 查看运行记录。"
+            "value": "本轮处理已结束。打开 Eiscue 查看结果。"
           }
         }
       },
@@ -569,13 +569,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The task was interrupted. Open Eiscue to view the run history."
+            "value": "Task interrupted. Open Eiscue to view its progress."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务已中断，可打开 Eiscue 查看运行记录。"
+            "value": "任务已中断。打开 Eiscue 查看进展。"
           }
         }
       }
@@ -586,13 +586,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The task failed. Open Eiscue to view the run history."
+            "value": "Task failed. Open Eiscue to see what happened."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务运行失败，可打开 Eiscue 查看运行记录。"
+            "value": "任务运行失败。打开 Eiscue 查看原因。"
           }
         }
       }
@@ -603,13 +603,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System notification permission has not been requested"
+            "value": "Notification permission not requested"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未请求系统通知权限"
+            "value": "尚未请求通知权限"
           }
         }
       }
@@ -620,13 +620,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System notifications are not allowed"
+            "value": "Notifications off"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统未允许通知"
+            "value": "通知未开启"
           }
         }
       }
@@ -637,13 +637,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System notifications are allowed"
+            "value": "Notifications allowed"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统通知已允许"
+            "value": "已允许通知"
           }
         }
       }
@@ -654,13 +654,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only quiet notifications are allowed"
+            "value": "Quiet notifications only"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统仅允许静默通知"
+            "value": "仅允许静默通知"
           }
         }
       }
@@ -671,13 +671,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notifications are temporarily allowed"
+            "value": "Notifications temporarily allowed"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统暂时允许通知"
+            "value": "暂时允许通知"
           }
         }
       }
@@ -688,13 +688,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "System notification permission is unknown"
+            "value": "Notification permission unknown"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "系统通知权限未知"
+            "value": "通知权限未知"
           }
         }
       }
@@ -705,13 +705,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local tunnel operation failed: %@"
+            "value": "Local VPN failed: %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机通道操作失败：%@"
+            "value": "本地 VPN 操作失败：%@"
           }
         }
       },
@@ -723,7 +723,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your task is paused. Open Eiscue to review progress and continue."
+            "value": "Task paused. Open Eiscue to review and continue."
           }
         },
         "zh-Hans": {
@@ -757,13 +757,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When the device is ready, AI can operate it for your requests. Turn off for chat only."
+            "value": "AI can operate the device when connected and ready. Turn off for chat only."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备就绪后，AI 可按你的要求操作。关闭后仅聊天。"
+            "value": "设备就绪后，AI 可按你的要求操作。关闭后仅对话。"
           }
         }
       }
@@ -774,13 +774,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finish or end the current task before changing this."
+            "value": "End the current task before changing this setting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先完成或结束当前任务，再调整此设置。"
+            "value": "请先结束当前任务，再修改此设置。"
           }
         }
       }

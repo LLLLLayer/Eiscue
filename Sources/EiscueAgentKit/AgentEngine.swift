@@ -24,13 +24,13 @@ public enum AgentError: Error, LocalizedError, Sendable, Equatable {
     public var errorDescription: String? {
         switch self {
         case .unconfigured:
-            String(localized: "agent.error.unconfigured", defaultValue: "The agent engine has not been configured.", bundle: .module)
+            String(localized: "agent.error.unconfigured", defaultValue: "The AI engine is not configured.", bundle: .module)
         case .invalidConfiguration(let reason): reason
-        case .busy: String(localized: "agent.error.busy", defaultValue: "A task is already running. Stop it or wait for it to finish.", bundle: .module)
-        case .interruptedRun: String(localized: "agent.error.interrupted-run", defaultValue: "This conversation has an unfinished task. Choose whether to resume or stop it.", bundle: .module)
-        case .nothingToResume: String(localized: "agent.error.nothing-to-resume", defaultValue: "This conversation has no task to resume.", bundle: .module)
-        case .toolLimitReached: String(localized: "agent.error.tool-limit", defaultValue: "This task has reached its tool call limit.", bundle: .module)
-        case .timedOut: String(localized: "agent.error.timeout", defaultValue: "The task reached its time limit and stopped.", bundle: .module)
+        case .busy: String(localized: "agent.error.busy", defaultValue: "A task is running. Stop it or wait for it to finish.", bundle: .module)
+        case .interruptedRun: String(localized: "agent.error.interrupted-run", defaultValue: "This conversation has an unfinished task. Continue or end it first.", bundle: .module)
+        case .nothingToResume: String(localized: "agent.error.nothing-to-resume", defaultValue: "No task to continue in this conversation.", bundle: .module)
+        case .toolLimitReached: String(localized: "agent.error.tool-limit", defaultValue: "This task reached its step limit.", bundle: .module)
+        case .timedOut: String(localized: "agent.error.timeout", defaultValue: "The task stopped at its time limit.", bundle: .module)
         case .toolExecutionPaused(let message), .modelRequestFailed(let message), .runtime(let message): message
         }
     }

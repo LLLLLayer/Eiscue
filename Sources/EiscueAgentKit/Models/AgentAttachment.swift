@@ -26,24 +26,24 @@ public struct AgentAttachment: Identifiable, Codable, Sendable, Equatable {
     public static func validate(_ attachments: [Self], supportsImages: Bool) throws {
         guard attachments.count <= 4, Set(attachments.map(\.id)).count == attachments.count,
               attachments.reduce(0, { $0 + $1.byteCount }) <= 8 * 1_024 * 1_024 else {
-            throw AgentError.invalidConfiguration(String(localized: "agent.attachment.limit", defaultValue: "A message can include up to 4 attachments (8 MB total).", bundle: .module))
+            throw AgentError.invalidConfiguration(String(localized: "agent.attachment.limit", defaultValue: "Up to 4 attachments per message, 8 MB total.", bundle: .module))
         }
         for attachment in attachments {
             guard !attachment.name.isEmpty, attachment.name.utf8.count <= 512 else {
-                throw AgentError.invalidConfiguration(String(localized: "agent.attachment.invalid", defaultValue: "The attachment is empty, unsupported, or exceeds the allowed size.", bundle: .module))
+                throw AgentError.invalidConfiguration(String(localized: "agent.attachment.invalid", defaultValue: "The attachment is empty, unsupported, or too large.", bundle: .module))
             }
             switch attachment.content {
             case .image(let bytes):
                 guard supportsImages else {
-                    throw AgentError.invalidConfiguration(String(localized: "agent.attachment.images-unavailable", defaultValue: "Select a model that supports images to send this attachment.", bundle: .module))
+                    throw AgentError.invalidConfiguration(String(localized: "agent.attachment.images-unavailable", defaultValue: "Choose a model that supports images to send this attachment.", bundle: .module))
                 }
                 guard ["image/jpeg", "image/png", "image/webp"].contains(attachment.mimeType),
                       !bytes.isEmpty, bytes.count <= 2 * 1_024 * 1_024 else {
-                    throw AgentError.invalidConfiguration(String(localized: "agent.attachment.invalid", defaultValue: "The attachment is empty, unsupported, or exceeds the allowed size.", bundle: .module))
+                    throw AgentError.invalidConfiguration(String(localized: "agent.attachment.invalid", defaultValue: "The attachment is empty, unsupported, or too large.", bundle: .module))
                 }
             case .text(let text):
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 60_000 else {
-                    throw AgentError.invalidConfiguration(String(localized: "agent.attachment.invalid", defaultValue: "The attachment is empty, unsupported, or exceeds the allowed size.", bundle: .module))
+                    throw AgentError.invalidConfiguration(String(localized: "agent.attachment.invalid", defaultValue: "The attachment is empty, unsupported, or too large.", bundle: .module))
                 }
             }
         }

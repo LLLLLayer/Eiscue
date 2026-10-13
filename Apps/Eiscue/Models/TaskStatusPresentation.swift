@@ -59,12 +59,12 @@ struct TaskStatusPresentation: Equatable, Sendable {
         case .preparing:
             stage = isFinishing ? .finishing : .preparing
             phase = isFinishing
-                ? String(localized: "task.status.phase.finishing", defaultValue: "Saving results and releasing the device", table: "TaskStatus")
-                : String(localized: "task.status.phase.preparing", defaultValue: "Preparing device and background access", table: "TaskStatus")
+                ? String(localized: "task.status.phase.finishing", defaultValue: "Saving results and ending device control", table: "TaskStatus")
+                : String(localized: "task.status.phase.preparing", defaultValue: "Preparing device access", table: "TaskStatus")
         case .running:
             if isFinishing {
                 stage = .finishing
-                phase = String(localized: "task.status.phase.finishing", defaultValue: "Saving results and releasing the device", table: "TaskStatus")
+                phase = String(localized: "task.status.phase.finishing", defaultValue: "Saving results and ending device control", table: "TaskStatus")
             } else if devicePhase == .verifying {
                 stage = .verifying
                 phase = String(localized: "task.status.phase.verifying", defaultValue: "Checking the screen after the action", table: "TaskStatus")
@@ -80,7 +80,7 @@ struct TaskStatusPresentation: Equatable, Sendable {
             } else if devicePhase == .deciding {
                 stage = isReceivingResponse ? .responding : .waiting
                 phase = isReceivingResponse
-                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Receiving and preparing the response", table: "TaskStatus")
+                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Receiving the response", table: "TaskStatus")
                     : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for the next response", table: "TaskStatus")
             } else if let currentTool, !currentTool.isEmpty {
                 stage = currentTool == "device_screenshot" ? .observing : .executing
@@ -88,7 +88,7 @@ struct TaskStatusPresentation: Equatable, Sendable {
             } else {
                 stage = isReceivingResponse ? .responding : .waiting
                 phase = isReceivingResponse
-                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Receiving and preparing the response", table: "TaskStatus")
+                    ? String(localized: "task.status.phase.analyzing", defaultValue: "Receiving the response", table: "TaskStatus")
                     : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for the next response", table: "TaskStatus")
             }
         }
@@ -112,7 +112,7 @@ struct TaskStatusPresentation: Equatable, Sendable {
             switch self {
             case .preparing: String(localized: "task.status.title.preparing", defaultValue: "Preparing", table: "TaskStatus")
             case .waiting: String(localized: "task.status.title.waiting", defaultValue: "Waiting for AI", table: "TaskStatus")
-            case .responding: String(localized: "task.status.title.responding", defaultValue: "Receiving a reply", table: "TaskStatus")
+            case .responding: String(localized: "task.status.title.responding", defaultValue: "Receiving reply", table: "TaskStatus")
             case .observing: String(localized: "task.status.title.observing", defaultValue: "Viewing screen", table: "TaskStatus")
             case .executing: String(localized: "task.status.title.executing", defaultValue: "Running a step", table: "TaskStatus")
             case .verifying: String(localized: "task.status.title.verifying", defaultValue: "Checking result", table: "TaskStatus")
@@ -133,9 +133,9 @@ struct TaskStatusPresentation: Equatable, Sendable {
         case "device_type_text": String(localized: "task.status.operation.type-text", defaultValue: "Entering text", table: "TaskStatus")
         case "device_press_key": String(localized: "task.status.operation.press-key", defaultValue: "Using the keyboard", table: "TaskStatus")
         case "device_launch_app": String(localized: "task.status.operation.launch-app", defaultValue: "Opening an app", table: "TaskStatus")
-        case "device_home": String(localized: "task.status.operation.home", defaultValue: "Returning to the Home Screen", table: "TaskStatus")
+        case "device_home": String(localized: "task.status.operation.home", defaultValue: "Returning to Home Screen", table: "TaskStatus")
         case "device_list_apps": String(localized: "task.status.operation.list-apps", defaultValue: "Finding apps", table: "TaskStatus")
-        default: String(localized: "task.status.operation.other", defaultValue: "Performing the next step", table: "TaskStatus")
+        default: String(localized: "task.status.operation.other", defaultValue: "Running the next step", table: "TaskStatus")
         }
     }
 }
@@ -159,15 +159,15 @@ enum PairingStatusPresentation: CaseIterable {
     var subtitle: String {
         switch self {
         case .preparing:
-            String(localized: "background.pairing.preparing", defaultValue: "Preparing device setup", table: "BackgroundStatus")
+            String(localized: "background.pairing.preparing", defaultValue: "Preparing to pair", table: "BackgroundStatus")
         case .waitingForDevice:
             String(localized: "background.pairing.waiting", defaultValue: "Open pairing in Settings", table: "BackgroundStatus")
         case .confirming:
             String(localized: "background.pairing.confirming", defaultValue: "Confirm pairing in Settings", table: "BackgroundStatus")
         case .identitySaved:
-            String(localized: "background.pairing.saved", defaultValue: "Finishing device setup", table: "BackgroundStatus")
+            String(localized: "background.pairing.saved", defaultValue: "Finishing pairing", table: "BackgroundStatus")
         case .completed:
-            String(localized: "background.pairing.completed", defaultValue: "Device setup complete", table: "BackgroundStatus")
+            String(localized: "background.pairing.completed", defaultValue: "Pairing complete", table: "BackgroundStatus")
         }
     }
 }

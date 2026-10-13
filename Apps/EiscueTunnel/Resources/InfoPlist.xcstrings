@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue Local Connection"
+            "value": "Eiscue Local VPN"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eiscue 本地连接"
+            "value": "Eiscue 本地 VPN"
           }
         }
       }

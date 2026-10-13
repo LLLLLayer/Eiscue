@@ -37,11 +37,11 @@ targets:
       properties:
         BGTaskSchedulerPermittedIdentifiers:
           - $(PRODUCT_BUNDLE_IDENTIFIER).agent.continued-processing
-        NSCameraUsageDescription: "Take a photo to attach to your message."
-        NSBluetoothAlwaysUsageDescription: "Connect to your Eiscue board to control this device over Bluetooth."
-        NSMicrophoneUsageDescription: "Turn your speech into text in the message field."
-        NSSpeechRecognitionUsageDescription: "Transcribe speech on this device without sending a message automatically."
-        NSLocalNetworkUsageDescription: "Connect to this device’s developer services through Eiscue’s local connection or a nearby Eiscue board."
+        NSCameraUsageDescription: "Take photos to add to your messages."
+        NSBluetoothAlwaysUsageDescription: "Connect to a development board to control this device over Bluetooth."
+        NSMicrophoneUsageDescription: "Turn your speech into message text."
+        NSSpeechRecognitionUsageDescription: "Transcribe speech on this device. Messages are sent only when you tap Send."
+        NSLocalNetworkUsageDescription: "Connect to this device for control through the local VPN or a development board."
         CFBundleLocalizations: [en, zh-Hans]
         UIBackgroundModes: [bluetooth-central]
         NSAppTransportSecurity:
@@ -85,7 +85,7 @@ targets:
     info:
       path: Apps/EiscueTunnel/Info.plist
       properties:
-        CFBundleDisplayName: Eiscue Local Connection
+        CFBundleDisplayName: Eiscue Local VPN
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider

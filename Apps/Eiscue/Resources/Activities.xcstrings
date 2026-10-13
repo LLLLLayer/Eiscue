@@ -1,12 +1,22 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "activity.interrupted" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stopped before the tool returned a result." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已停止，工具尚未返回结果。" } }
+  "sourceLanguage": "en",
+  "strings": {
+    "activity.interrupted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped before the result was received."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止，尚未收到结果。"
+          }
+        }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

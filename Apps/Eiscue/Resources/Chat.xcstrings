@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI is operating your device. Progress updates after each action."
+            "value": "AI is operating this device…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI 正在操作设备，每步操作后会更新进展。"
+            "value": "AI 正在操作设备…"
           }
         }
       }
@@ -211,13 +211,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reading the app list…"
+            "value": "Viewing the app list…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在读取 App 列表"
+            "value": "正在查看 App 列表"
           }
         }
       }
@@ -364,13 +364,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Read the app list"
+            "value": "Viewed the app list"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已读取 App 列表"
+            "value": "已查看 App 列表"
           }
         }
       }
@@ -387,7 +387,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已执行点击"
+            "value": "已发送点击"
           }
         }
       }
@@ -404,7 +404,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已执行滑动"
+            "value": "已发送滑动"
           }
         }
       }
@@ -415,13 +415,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sent text input"
+            "value": "Text input sent"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已发送文字输入"
+            "value": "已发送文字"
           }
         }
       }
@@ -449,13 +449,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sent a Home Screen action"
+            "value": "Requested return to Home Screen"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已发送返回主屏幕操作"
+            "value": "已请求返回主屏幕"
           }
         }
       }
@@ -466,13 +466,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sent a keyboard action"
+            "value": "Key press sent"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已执行键盘操作"
+            "value": "已发送按键"
           }
         }
       }

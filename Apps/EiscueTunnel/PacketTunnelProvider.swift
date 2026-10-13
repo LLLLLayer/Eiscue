@@ -166,11 +166,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .alreadyStarted: String(localized: "tunnel.error.already-started", defaultValue: "The local tunnel is already starting or running.")
-            case .previousReadPending: String(localized: "tunnel.error.previous-read-pending", defaultValue: "The previous local tunnel is still stopping. Try connecting again shortly.")
-            case .incompatibleConfiguration: String(localized: "tunnel.error.incompatible-configuration", defaultValue: "The local tunnel configuration version does not match. Configure it again in Eiscue.")
-            case .stoppedBeforeReady: String(localized: "tunnel.error.stopped-before-ready", defaultValue: "The local tunnel stopped before it was ready.")
-            case .packetWriteFailed: String(localized: "tunnel.error.packet-write-failed", defaultValue: "The local tunnel could not write packets. The connection has stopped.")
+            case .alreadyStarted: String(localized: "tunnel.error.already-started", defaultValue: "Local VPN is already starting or on.")
+            case .previousReadPending: String(localized: "tunnel.error.previous-read-pending", defaultValue: "Local VPN is still closing. Try connecting shortly.")
+            case .incompatibleConfiguration: String(localized: "tunnel.error.incompatible-configuration", defaultValue: "VPN settings are incompatible. Set up the local VPN again in Eiscue.")
+            case .stoppedBeforeReady: String(localized: "tunnel.error.stopped-before-ready", defaultValue: "Local VPN stopped during startup. Try connecting again.")
+            case .packetWriteFailed: String(localized: "tunnel.error.packet-write-failed", defaultValue: "Local VPN couldn't send data and has disconnected.")
             }
         }
     }
