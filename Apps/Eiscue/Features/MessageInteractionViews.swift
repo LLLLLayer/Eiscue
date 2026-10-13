@@ -180,61 +180,34 @@ struct ChatAttachmentView: View {
 struct ToolActivityRow: View {
     let activity: ToolActivity
     var showsProgress = true
-    @State private var isExpanded = false
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 12) {
-                if !activity.arguments.isEmpty {
-                    detail(chatText("chat.toolInput"), text: activity.arguments)
-                }
-                if !activity.output.isEmpty { detail(chatText("chat.toolOutput"), text: activity.output) }
-            }.padding(.vertical, 8)
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                if activity.isRunning && showsProgress { ProgressView().controlSize(.small).frame(width: 20) }
-                else { Image(systemName: activity.isError ? "exclamationmark.circle" : symbol).frame(width: 20) }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-                    if let summary { Text(summary).font(.caption.monospaced()).lineLimit(2).foregroundStyle(.secondary) }
-                }
-                Spacer(minLength: 0)
-                Text(activity.startedAt, format: .dateTime.hour().minute())
-                    .font(.caption2.monospacedDigit()).foregroundStyle(.tertiary)
-            }.padding(.vertical, 4)
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+            if activity.isRunning && showsProgress {
+                ProgressView().controlSize(.small).frame(width: 20)
+            } else {
+                Image(systemName: activity.isError ? "exclamationmark.circle" : symbol)
+                    .frame(width: 20).accessibilityHidden(true)
+            }
+            Text(DeviceToolPresentation.activityTitle(for: activity))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .tint(.secondary).padding(12)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+        .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 2)
+        // Activities retain metadata, not screen images. Without actual preview
+        // content there is no disclosure control or raw tool payload in chat.
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("toolActivityRow")
-    }
-    private func detail(_ title: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            ScrollView(.horizontal) {
-                Text(verbatim: text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: false)
-            }.scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-        }
-    }
-    private var title: String {
-        DeviceToolPresentation.title(for: activity.name) ?? activity.name
     }
     private var symbol: String {
         switch activity.name {
-        case "device_screenshot": "viewfinder"
+        case "device_screenshot": "photo.on.rectangle.angled"
         case "device_list_apps", "device_launch_app": "app"
-        case "device_tap", "device_swipe": "hand.tap"
+        case "device_tap": "hand.tap"
+        case "device_swipe": "hand.draw"
         case "device_type_text", "device_press_key": "keyboard"
         case "device_home": "house"
-        default: "terminal"
+        default: "sparkle"
         }
-    }
-    private var summary: String? {
-        guard let data = activity.arguments.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        for key in ["command", "path", "bundle_id", "text"] {
-            if let value = object[key] as? String, !value.isEmpty { return value }
-        }
-        return nil
     }
 }
 

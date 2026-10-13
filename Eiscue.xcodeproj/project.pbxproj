@@ -56,6 +56,7 @@
 		4FC5E87EB3D9D92623F91D38 /* DeviceConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE9E6334DAC0A5193DFE765 /* DeviceConnection.swift */; };
 		50AFD68759F7819B87838F50 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16932B04B3C656D0F674951 /* PacketTunnelProvider.swift */; };
 		51117E4C5962ACEF1DF6D6F5 /* ConversationSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64C475638AAA22A532A6A8A1 /* ConversationSidebarView.swift */; };
+		536A1C48AB590735CF3D3CC1 /* DeviceObservationImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CE0594104194CA053D240AA /* DeviceObservationImageTests.swift */; };
 		5D4DD2BC524126154E86D424 /* DeviceRunCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DECED6397276FD82580E3294 /* DeviceRunCleanupTests.swift */; };
 		6152EF03E4375C154B4464CC /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC8ABABC1676BF5AD324B2 /* AssistantView.swift */; };
 		61893A5AFA9B78C1E384FBBE /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 4980A377457D284AE7D070C1 /* Localizable.xcstrings */; };
@@ -110,6 +111,7 @@
 		BEF1B27E5D4F4D469EDAD9D5 /* LocalTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E99374CDAEE0119160714A27 /* LocalTunnelConfiguration.swift */; };
 		C0DAE94A99E405A457B172F8 /* EiscueBroadcast.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E25C8C95415672033F595171 /* EiscueBroadcast.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C21D2869B88F7F2A784C65F9 /* BackgroundTaskStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01B9BDDFD7C06B9D7C358D71 /* BackgroundTaskStatusTests.swift */; };
+		C45ECA4266623306E20A31DE /* DeviceObservationImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7FBE1FAEBB7440B99E7CC3F /* DeviceObservationImage.swift */; };
 		C5D5B11972031426686CB168 /* Speech.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 04849AC312425FBC83FAFA71 /* Speech.xcstrings */; };
 		C772B756B528E7C492D8D397 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4893D49FE11574B85AF2C19C /* DesignSystem.swift */; };
 		C8A5C7E27EAB676201E4133F /* SampleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E239D456D6ACB3661079E5CF /* SampleHandler.swift */; };
@@ -260,6 +262,7 @@
 		74A505109E0ECA9E58007AD2 /* ConversationReconciliationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationReconciliationTests.swift; sourceTree = "<group>"; };
 		78A63C30EF964BF5B9C42A22 /* Runtime.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Runtime.xcstrings; sourceTree = "<group>"; };
 		7C136779D1B7E995E563D863 /* SpeechInputSessionGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechInputSessionGateTests.swift; sourceTree = "<group>"; };
+		7CE0594104194CA053D240AA /* DeviceObservationImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceObservationImageTests.swift; sourceTree = "<group>"; };
 		7E243958F91356B3A30120CD /* DeviceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceView.swift; sourceTree = "<group>"; };
 		7F5F3D1DE33A5A6E01F11E8C /* SpeechInputCallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechInputCallbackTests.swift; sourceTree = "<group>"; };
 		83419005CFB2850C52F954E6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -280,6 +283,7 @@
 		A29F08DF64FB95B30868D1C0 /* Eiscue.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Eiscue.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3E981BFCD5F4A671CFD7946 /* ChatPresentationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPresentationUITests.swift; sourceTree = "<group>"; };
 		A66379A812D3C89AAE2ED92F /* ios-navigation.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "ios-navigation.md"; sourceTree = "<group>"; };
+		A7FBE1FAEBB7440B99E7CC3F /* DeviceObservationImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceObservationImage.swift; sourceTree = "<group>"; };
 		AA51E9D88918296B0A34E836 /* ChatMarkdownParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownParser.swift; sourceTree = "<group>"; };
 		AC250402F80F8DA3C197939B /* SkillsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsView.swift; sourceTree = "<group>"; };
 		AD4E96AAF2837F0255F59155 /* Chat.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Chat.xcstrings; sourceTree = "<group>"; };
@@ -628,6 +632,7 @@
 				1D6C3BABD980923EA1EB9715 /* DebugMessageSharingFixture.swift */,
 				2AAB2DFA9E5E2331A793E397 /* DebugTimelineFixture.swift */,
 				9DE9E6334DAC0A5193DFE765 /* DeviceConnection.swift */,
+				A7FBE1FAEBB7440B99E7CC3F /* DeviceObservationImage.swift */,
 				409D745B9EDAFB3293291E0C /* DeviceRunCleanup.swift */,
 				57C02E4303121DA4D37AC681 /* DeviceTaskRunner.swift */,
 				17DAECA4B9B978DF3B90D031 /* DeviceTools.swift */,
@@ -651,6 +656,7 @@
 				02F279EADF83B018334CB6E5 /* ConversationOrderingTests.swift */,
 				74A505109E0ECA9E58007AD2 /* ConversationReconciliationTests.swift */,
 				ADB99E05C4F646B5E96F4300 /* DeviceConnectionMethodTests.swift */,
+				7CE0594104194CA053D240AA /* DeviceObservationImageTests.swift */,
 				66E4175D979EB76F8D4EC5CB /* DevicePairingAvailabilityTests.swift */,
 				DECED6397276FD82580E3294 /* DeviceRunCleanupTests.swift */,
 				2D7780F0C690A36215914D9D /* DeviceTaskRunnerTests.swift */,
@@ -941,6 +947,7 @@
 				C772B756B528E7C492D8D397 /* DesignSystem.swift in Sources */,
 				4FC5E87EB3D9D92623F91D38 /* DeviceConnection.swift in Sources */,
 				E64BCB26F66A91DBFD1B5BE3 /* DeviceConnectionIndicator.swift in Sources */,
+				C45ECA4266623306E20A31DE /* DeviceObservationImage.swift in Sources */,
 				A084BB52CCE59522D9332EB2 /* DeviceRunCleanup.swift in Sources */,
 				1545FC6D0F9667061F706464 /* DeviceTaskRunner.swift in Sources */,
 				7DF293E753E1C3376405803A /* DeviceTools.swift in Sources */,
@@ -987,6 +994,7 @@
 				27827981D2B65DEDAB95DBDC /* ConversationOrderingTests.swift in Sources */,
 				896303C2BDDBBDC6DD804881 /* ConversationReconciliationTests.swift in Sources */,
 				7356EB83AAE2B1A3D1B0122D /* DeviceConnectionMethodTests.swift in Sources */,
+				536A1C48AB590735CF3D3CC1 /* DeviceObservationImageTests.swift in Sources */,
 				ED443FC145D794F43DC8ADC8 /* DevicePairingAvailabilityTests.swift in Sources */,
 				5D4DD2BC524126154E86D424 /* DeviceRunCleanupTests.swift in Sources */,
 				724168F55DB29001D093E104 /* DeviceTaskRunnerTests.swift in Sources */,

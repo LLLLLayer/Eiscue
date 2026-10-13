@@ -88,7 +88,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
     private var isActive = true
     private var isExecuting = false
     private var operationCount = 0
-    private var latestFrame: (id: UUID, width: Int, height: Int)?
+    private var latestFrame: DeviceObservationCoordinates?
     private var latestScreenDigest: Data?
     private var actionCounts: [Data: Int] = [:]
     private var unverifiedAction: (screen: Data, action: Data)?
@@ -179,7 +179,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
                 try check()
                 try await record("action.dispatched", action.toolName)
                 try check()
-                try await dispatch(action, frameID: frameID)
+                try await dispatch(action, frame: frame)
                 try check()
                 try await record("action.acknowledged", action.toolName)
                 consecutiveFrameRejections = 0
@@ -205,8 +205,13 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         try await record("observation.prepared", "device_screenshot")
         await onObservationWillCapture()
         try check()
+        let nativeImage: DeviceScreenshot
         let image: DeviceScreenshot
-        do { image = try await client.captureScreenshot() }
+        do {
+            nativeImage = try await client.captureScreenshot()
+            try check()
+            image = try DeviceObservationImage.prepare(nativeImage)
+        }
         catch {
             try check()
             if error is CancellationError { throw error }
@@ -225,28 +230,31 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         let feedback = observe(image)
         try await record("observation.captured", "width=\(image.width);height=\(image.height);frame=\(image.frameID.uuidString)")
         try check()
-        latestFrame = (image.frameID, image.width, image.height)
+        latestFrame = DeviceObservationCoordinates(id: image.frameID, width: image.width, height: image.height,
+                                                   nativeWidth: nativeImage.width, nativeHeight: nativeImage.height)
         transition(to: .deciding)
         try check()
         return DeviceObservation(screenshot: image, feedback: feedback)
     }
 
-    private func dispatch(_ action: DeviceAction, frameID: UUID) async throws {
+    private func dispatch(_ action: DeviceAction, frame: DeviceObservationCoordinates) async throws {
         switch action {
-        case .tap(let point): try await client.tap(at: point, frameID: frameID)
-        case .swipe(let from, let to, let duration): try await client.swipe(from: from, to: to, duration: .seconds(duration), frameID: frameID)
-        case .typeText(let text): try await client.typeText(text, frameID: frameID)
-        case .pressKey(let key): try await client.pressKey(key, frameID: frameID)
+        case .tap(let point): try await client.tap(at: frame.nativePoint(point), frameID: frame.id)
+        case .swipe(let from, let to, let duration):
+            try await client.swipe(from: frame.nativePoint(from), to: frame.nativePoint(to),
+                                   duration: .seconds(duration), frameID: frame.id)
+        case .typeText(let text): try await client.typeText(text, frameID: frame.id)
+        case .pressKey(let key): try await client.pressKey(key, frameID: frame.id)
         case .home: try await client.home()
         case .launchApplication(let bundleID): try await client.launchApplication(bundleID: bundleID)
         }
     }
 
-    private func frame(for id: UUID) throws -> (width: Int, height: Int) {
+    private func frame(for id: UUID) throws -> DeviceObservationCoordinates {
         // The controller owns freshness, including ReplayKit's heartbeat rule
         // for an unchanged screen whose JPEG timestamp can be older than 30 s.
         guard let frame = latestFrame, frame.id == id else { throw DeviceTaskError.frame }
-        return (frame.width, frame.height)
+        return frame
     }
 
     private func validate(_ action: DeviceAction, width: Int, height: Int) throws {

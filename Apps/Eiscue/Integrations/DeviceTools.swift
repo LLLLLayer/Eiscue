@@ -38,7 +38,8 @@ final class DeviceToolSession {
         ]
         if scope == .control {
             let frame: AgentJSONValue = ["type": "string", "description": "frameId from the most recent screenshot"]
-            let coordinate: AgentJSONValue = ["type": "number", "minimum": 0]
+            let coordinate: AgentJSONValue = ["type": "number", "minimum": 0,
+                                               "description": "Pixels in the attached screenshot at its declared width and height, not screen points or normalized coordinates."]
             result += [
                 tool("device_tap", "Tap a pixel coordinate in the newest screenshot. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: ["frameId": frame, "x": coordinate, "y": coordinate], required: ["frameId", "x", "y"]),
                 tool("device_swipe", "Drag between pixel coordinates. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: [
@@ -132,7 +133,7 @@ final class DeviceToolSession {
     private func imageResult(_ observation: DeviceObservation, prefix: String = "") -> AgentToolResult {
         let image = observation.screenshot
         return .image(image.data, mimeType: image.mimeType,
-                      caption: "\(prefix)frameId=\(image.frameID.uuidString); width=\(image.width); height=\(image.height); capturedAt=\(image.capturedAt.ISO8601Format()). Coordinates are image pixels. Use this frame for one next action; no additional screenshot is needed unless the screen may have changed.\(observation.feedback)")
+                      caption: "\(prefix)frameId=\(image.frameID.uuidString); width=\(image.width); height=\(image.height); capturedAt=\(image.capturedAt.ISO8601Format()). Coordinates are pixels in this attached image: top-left=(0,0), bottom-right=(\(image.width - 1),\(image.height - 1)). Do not use screen points, a resized preview's coordinates, or 0-1000 normalization. Use this frame for one next action; no additional screenshot is needed unless the screen may have changed.\(observation.feedback)")
     }
 
     private func point(_ x: String, _ y: String, _ arguments: AgentJSONValue) throws -> DevicePoint {

@@ -196,9 +196,13 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 1, file: file, line: line)
         XCTAssertLessThan(firstReply.frame.midY, tool.frame.midY, file: file, line: line)
         XCTAssertLessThan(tool.frame.midY, finalReply.frame.midY, file: file, line: line)
+        XCTAssertEqual(tool.label, "操作已执行", file: file, line: line)
+        XCTAssertEqual(tool.buttons.count, 0, "Plain activity rows have no disclosure control.", file: file, line: line)
         if !tool.isHittable { app.swipeDown() }
         tool.tap()
-        XCTAssertTrue(app.staticTexts["Fixture document content"].waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertFalse(app.staticTexts["Fixture document content"].exists, "Raw tool output stays out of chat.", file: file, line: line)
+        XCTAssertFalse(app.staticTexts["fixture_read_file"].exists, file: file, line: line)
+        XCTAssertFalse(app.staticTexts["fixture.txt"].exists, file: file, line: line)
     }
 
     @MainActor private func waitUntilIdle(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {

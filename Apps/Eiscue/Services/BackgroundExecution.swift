@@ -336,9 +336,15 @@ private final class ContinuedTaskLease: @unchecked Sendable {
     func update(status: BackgroundTaskStatus) -> Bool {
         lock.withLock {
             guard !completed else { return false }
-            task.progress.totalUnitCount = status.totalUnitCount
-            task.progress.completedUnitCount = status.completedUnitCount
-            task.updateTitle(status.title, subtitle: status.subtitle)
+            if task.progress.totalUnitCount != status.totalUnitCount {
+                task.progress.totalUnitCount = status.totalUnitCount
+            }
+            if task.progress.completedUnitCount != status.completedUnitCount {
+                task.progress.completedUnitCount = status.completedUnitCount
+            }
+            if task.title != status.title || task.subtitle != status.subtitle {
+                task.updateTitle(status.title, subtitle: status.subtitle)
+            }
             return true
         }
     }

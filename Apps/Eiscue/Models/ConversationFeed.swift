@@ -95,6 +95,42 @@ enum ConversationFeedItem: Identifiable, Sendable, Equatable {
 }
 
 enum DeviceToolPresentation {
+    static func activityTitle(for activity: ToolActivity) -> String {
+        if activity.isError {
+            guard let operation = title(for: activity.name) else {
+                return String(localized: "chat.activity.failed", table: "Chat")
+            }
+            return String(localized: "chat.activity.failed \(operation)", table: "Chat")
+        }
+        let key: String.LocalizationValue
+        if activity.isRunning {
+            key = switch activity.name {
+            case "device_screenshot": "chat.activity.observing"
+            case "device_list_apps": "chat.activity.listingApps"
+            case "device_tap": "chat.activity.tapping"
+            case "device_swipe": "chat.activity.swiping"
+            case "device_type_text": "chat.activity.typing"
+            case "device_launch_app": "chat.activity.launchingApp"
+            case "device_home": "chat.activity.goingHome"
+            case "device_press_key": "chat.activity.pressingKey"
+            default: "chat.activity.running"
+            }
+        } else {
+            key = switch activity.name {
+            case "device_screenshot": "chat.activity.observedImage"
+            case "device_list_apps": "chat.activity.listedApps"
+            case "device_tap": "chat.activity.tapped"
+            case "device_swipe": "chat.activity.swiped"
+            case "device_type_text": "chat.activity.typed"
+            case "device_launch_app": "chat.activity.sentAppLaunch"
+            case "device_home": "chat.activity.sentHome"
+            case "device_press_key": "chat.activity.pressedKey"
+            default: "chat.activity.finished"
+            }
+        }
+        return String(localized: key, table: "Chat")
+    }
+
     static func title(for name: String) -> String? {
         switch name {
         case "device_screenshot": String(localized: "scope.observe")
