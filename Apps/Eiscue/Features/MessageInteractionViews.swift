@@ -37,13 +37,12 @@ struct ChatMessageRow: View {
                 .contextMenu { messageMenu }
                 .accessibilityElement(children: .contain).accessibilityIdentifier("messageBubble")
                 if showsActions {
-                    HStack(spacing: 0) {
+                    HStack(spacing: 2) {
                         Text(message.createdAt, format: .dateTime.hour().minute())
                             .font(.caption2.monospacedDigit()).accessibilityIdentifier("messageTime")
-                            .padding(.trailing, 4)
                         if hasText {
                             Button { copy() } label: {
-                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 32, height: 32).contentShape(Rectangle())
+                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 24, height: 32).contentShape(Rectangle())
                             }
                             .accessibilityLabel(chatText(didCopy ? "chat.copied" : "chat.copy"))
                             .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
@@ -52,13 +51,14 @@ struct ChatMessageRow: View {
                             Group {
                                 if isPreparingShare { ProgressView().controlSize(.mini) }
                                 else { Image(systemName: "square.and.arrow.up") }
-                            }.frame(width: 32, height: 32).contentShape(Rectangle())
+                            }.frame(width: 24, height: 32).contentShape(Rectangle())
                         }
                         .disabled(!canShare || isPreparingShare || sharePayload != nil)
                         .accessibilityLabel(chatText("chat.share"))
                         .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
                     }
                     .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, message.role == .user ? 8 : 0)
                 }
                 if !message.attachments.isEmpty, checkedAttachments, !canShareAttachments {
@@ -174,9 +174,65 @@ struct ChatAttachmentView: View {
 }
 
 struct ToolActivityRow: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let activity: ToolActivity
     var showsProgress = true
+    @State private var isExpanded = false
+    @State private var selectedImageID: String?
+
+    private var previews: [ToolImagePreview] {
+        guard !activity.isRunning, !activity.isError else { return [] }
+        return model.toolImagePreviews.previews(for: activity.id)
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if previews.isEmpty {
+                titleRow.accessibilityElement(children: .combine)
+            } else {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { isExpanded.toggle() }
+                } label: { titleRow.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .accessibilityValue(chatText(isExpanded ? "chat.activity.expanded" : "chat.activity.collapsed"))
+                    .accessibilityIdentifier("toolActivityDisclosureButton")
+                if isExpanded {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(previews) { preview in
+                                Button { selectedImageID = preview.id } label: {
+                                    Image(uiImage: preview.image).resizable().scaledToFit()
+                                        .frame(width: 104, height: 112)
+                                        .background(Color(uiColor: .secondarySystemBackground))
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.primary.opacity(0.08)))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(chatText("chat.activity.openImage"))
+                                .accessibilityIdentifier("toolActivityImageThumbnail")
+                            }
+                        }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("toolActivityRow")
+        .sheet(isPresented: Binding(get: { selectedImageID != nil }, set: { if !$0 { selectedImageID = nil } })) {
+            if let preview = previews.first(where: { $0.id == selectedImageID }) {
+                ToolImageViewer(image: preview.image)
+            }
+        }
+        .onChange(of: previews.map(\.id)) { _, ids in
+            if ids.isEmpty { isExpanded = false }
+            if let selectedImageID, !ids.contains(selectedImageID) { self.selectedImageID = nil }
+        }
+    }
+
+    private var titleRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 9) {
             if activity.isRunning && showsProgress {
                 ProgressView().controlSize(.small).frame(width: 20)
@@ -186,13 +242,11 @@ struct ToolActivityRow: View {
             }
             Text(DeviceToolPresentation.activityTitle(for: activity))
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            if !previews.isEmpty {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption2.weight(.medium)).accessibilityHidden(true)
+            }
         }
-        .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 2)
-        // Activities retain metadata, not screen images. Without actual preview
-        // content there is no disclosure control or raw tool payload in chat.
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("toolActivityRow")
     }
     private var symbol: String {
         switch activity.name {

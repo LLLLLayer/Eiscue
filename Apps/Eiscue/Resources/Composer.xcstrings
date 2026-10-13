@@ -296,13 +296,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connected"
+            "value": "Ready"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已连接"
+            "value": "已就绪"
           }
         }
       }

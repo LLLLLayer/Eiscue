@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     let openSidebar: () -> Void
+    let revealSidebar: () -> Void
     @FocusState private var isComposerFocused: Bool
     @State private var showsPhotoPicker = false
     @State private var selectedPhotos: [PhotosPickerItem] = []
@@ -41,6 +42,15 @@ struct AssistantView: View {
                 .padding(.horizontal, 24).padding(.top, 20)
                 .frame(maxWidth: .infinity)
             }
+            .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
+                guard !speech.isBusy,
+                      value.startLocation.x > 24,
+                      value.translation.width < -80,
+                      abs(value.translation.width) > abs(value.translation.height) * 2 else { return }
+                isComposerFocused = false
+                speech.cancel()
+                revealSidebar()
+            })
             .scrollDismissesKeyboard(.interactively)
             .defaultScrollAnchor(model.isHoldingDeviceTranscript ? nil : .bottom, for: .sizeChanges)
             .onChange(of: model.displayedConversationFeed.count) {
@@ -309,11 +319,13 @@ struct AssistantView: View {
                     } label: {
                         Group {
                             if model.isSaving || model.isSubmittingMessage { ProgressView().controlSize(.small).tint(EiscueStyle.onAccent) }
-                            else { Image(systemName: "arrow.up").font(.system(size: 20, weight: .semibold)) }
+                            else { Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)) }
                         }
-                        .frame(width: 30, height: 30)
+                        .frame(width: 22, height: 22)
                     }
                     .buttonStyle(.glassProminent).buttonBorderShape(.circle)
+                    .controlSize(.small)
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
                     .foregroundStyle(EiscueStyle.onAccent)
                     .disabled(!model.canSend || speech.isBusy)
                     .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")

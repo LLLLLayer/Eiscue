@@ -34,6 +34,12 @@ struct RootView: View {
                             } else {
                                 setSidebarVisible(true)
                             }
+                        }, revealSidebar: {
+                            if usesWideLayout {
+                                withAnimation(.easeInOut(duration: 0.22)) { wideSidebarIsExpanded = true }
+                            } else {
+                                setSidebarVisible(true)
+                            }
                         })
                         .safeAreaInset(edge: .top, spacing: 0) { boardStopNotice }
                         .navigationDestination(for: AppDestination.self) { destination in

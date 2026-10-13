@@ -39,6 +39,7 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.press(forDuration: 1)
         app.buttons["deleteConversationButton"].tap()
+        app.buttons["confirmDeleteConversationsButton"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["还没有对话"].waitForExistence(timeout: 5))
     }
 
@@ -243,6 +244,7 @@ final class AgentIntegrationUITests: XCTestCase {
         assertOrder(["Second conversation", "First conversation", "Third conversation"], in: app)
         row(titled: "First conversation", in: app).press(forDuration: 1)
         app.buttons["deleteConversationButton"].tap()
+        app.buttons["confirmDeleteConversationsButton"].firstMatch.tap()
         let deleted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: row(titled: "First conversation", in: app))
         XCTAssertEqual(XCTWaiter.wait(for: [deleted], timeout: 10), .completed)
         assertOrder(["Second conversation", "Third conversation"], in: app)

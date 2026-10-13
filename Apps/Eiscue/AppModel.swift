@@ -54,6 +54,7 @@ final class AppModel {
     private var controlTranscriptSnapshot: (runID: UUID, conversationID: UUID, feed: [ConversationFeedItem], text: String)?
     var streamingText = ""
     var currentTool = ""
+    let toolImagePreviews = ToolImagePreviewStore()
     var interruptedConversationIDs = Set<UUID>()
     var showsModelSettings = false
     var showsOnboarding = false
@@ -667,6 +668,7 @@ final class AppModel {
                     currentTool = ""
                     if let runID = activeRun?.id {
                         let activityID = "\(runID.uuidString):\(completion.call.id)"
+                        toolImagePreviews.record(completion, activityID: activityID, conversationID: conversationID)
                         var activities = activeRun?.activities ?? []
                         if let index = activities.firstIndex(where: { $0.id == activityID }) {
                             activities[index].endedAt = Date()
@@ -855,18 +857,29 @@ final class AppModel {
     private func persistActiveRun() async throws { if let run = activeRun { try await journal.save(run) } }
 
     func delete(_ conversation: Conversation) async {
+        await deleteConversations([conversation.id])
+    }
+
+    func deleteConversations(_ ids: Set<UUID>) async {
         guard !isBusy else { return }
+        let selected = conversations.filter { ids.contains($0.id) }
+        guard !selected.isEmpty else { return }
         isSaving = true; defer { isSaving = false }
         do {
-            let records = try await journal.load().records.filter { $0.conversationID == conversation.id }
-            try await agent?.removeConversation(id: conversation.id)
-            try await journal.delete(records)
-            try await repository.delete(id: conversation.id)
-            conversations.removeAll { $0.id == conversation.id }; runs.removeAll { $0.conversationID == conversation.id }
-            interruptedConversationIDs.remove(conversation.id)
-            if selectedConversationID == conversation.id { composerSessionID = UUID(); discardDraftAttachments(); selectedConversationID = nil; draft = ""; preferences.removeObject(forKey: "selectedConversationID") }
-            await removeStoredAttachmentsIfUnreferenced(conversation.messages.flatMap { $0.attachments.map(\.id) })
+            for conversation in selected { try await deleteStoredConversation(conversation) }
         } catch { errorMessage = String(format: String(localized: "error.delete_partial", table: "Runtime"), safeError(error)) }
+    }
+
+    private func deleteStoredConversation(_ conversation: Conversation) async throws {
+        let records = try await journal.load().records.filter { $0.conversationID == conversation.id }
+        try await agent?.removeConversation(id: conversation.id)
+        try await journal.delete(records)
+        try await repository.delete(id: conversation.id)
+        toolImagePreviews.remove(conversationID: conversation.id)
+        conversations.removeAll { $0.id == conversation.id }; runs.removeAll { $0.conversationID == conversation.id }
+        interruptedConversationIDs.remove(conversation.id)
+        if selectedConversationID == conversation.id { composerSessionID = UUID(); discardDraftAttachments(); selectedConversationID = nil; draft = ""; preferences.removeObject(forKey: "selectedConversationID") }
+        await removeStoredAttachmentsIfUnreferenced(conversation.messages.flatMap { $0.attachments.map(\.id) })
     }
 
     func importSkill(_ url: URL) {

@@ -27,6 +27,7 @@ final class SpeechInputController {
     }
 
     @ObservationIgnored private var gate = SpeechInputSessionGate()
+    @ObservationIgnored private var transcriptBuffer = SpeechTranscriptBuffer()
     @ObservationIgnored private var onTranscript: (@MainActor (String) -> Void)?
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var finishTimeout: Task<Void, Never>?
@@ -122,6 +123,7 @@ final class SpeechInputController {
         guard UIApplication.shared.applicationState != .background,
               let token = gate.begin(mode: mode) else { return }
         self.onTranscript = onTranscript
+        transcriptBuffer = SpeechTranscriptBuffer()
         transcript = ""
         errorMessage = nil
         state = .requestingPermission
@@ -188,7 +190,8 @@ final class SpeechInputController {
         hasTap = true
         recognitionTask = recognizer.recognitionTask(with: request, resultHandler: SpeechInputCallbacks.recognition { [weak self] update in
             guard let self, self.gate.accepts(token) else { return }
-            if let text = update.text { self.transcript = text }
+            self.transcriptBuffer.receive(update)
+            self.transcript = self.transcriptBuffer.text
             if update.isFinal { self.complete(token: token) }
             else if update.hasError {
                 if self.state == .finishing || !self.transcript.isEmpty { self.complete(token: token) }
@@ -247,6 +250,7 @@ final class SpeechInputController {
         stopAudio()
         recognitionTask?.cancel(); recognitionTask = nil
         recognizer = nil; pipe = nil; onTranscript = nil
+        transcriptBuffer = SpeechTranscriptBuffer()
         state = .idle
     }
 
@@ -275,6 +279,7 @@ enum SpeechInputCallbacks {
         let text: String?
         let isFinal: Bool
         let hasError: Bool
+        var completedRange: SpeechTranscriptBuffer.AudioRange? = nil
     }
 
     nonisolated static func authorization(
@@ -292,9 +297,68 @@ enum SpeechInputCallbacks {
     ) -> @Sendable (SFSpeechRecognitionResult?, (any Error)?) -> Void {
         { @Sendable result, error in
             // Speech objects stay on their callback queue; only values cross.
+            let range = (result?.speechRecognitionMetadata).flatMap {
+                SpeechTranscriptBuffer.AudioRange(start: $0.speechStartTimestamp, duration: $0.speechDuration)
+            }
             let update = RecognitionUpdate(text: result?.bestTranscription.formattedString,
-                                           isFinal: result?.isFinal == true, hasError: error != nil)
+                                           isFinal: result?.isFinal == true, hasError: error != nil,
+                                           completedRange: range)
             Task { @MainActor in onUpdate(update) }
+        }
+    }
+}
+
+/// On-device recognition may close an utterance at a pause without ending the
+/// request. Its next hypothesis then contains only the next utterance. Keep
+/// those boundaries instead of replacing everything with each partial result.
+struct SpeechTranscriptBuffer {
+    struct AudioRange: Sendable, Equatable {
+        let start: TimeInterval
+        let end: TimeInterval
+        init?(start: TimeInterval, duration: TimeInterval) {
+            guard start.isFinite, duration.isFinite, start >= 0, duration > 0,
+                  (start + duration).isFinite else { return nil }
+            self.start = start; self.end = start + duration
+        }
+    }
+
+    private struct Utterance {
+        var text: String
+        let range: AudioRange
+    }
+    private var completed: [Utterance] = []
+    private var partial = ""
+
+    var text: String {
+        (completed.map(\.text) + [partial]).filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    mutating func receive(_ update: SpeechInputCallbacks.RecognitionUpdate) {
+        guard let value = update.text?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            // Stopping after a pause can produce an empty final result.
+            return
+        }
+        if let range = update.completedRange {
+            if let index = completed.firstIndex(where: {
+                abs($0.range.start - range.start) < 0.05 && abs($0.range.end - range.end) < 0.05
+            }) {
+                // A repeated boundary (including final punctuation corrections)
+                // must neither append twice nor erase the next live utterance.
+                completed[index].text = value
+                return
+            }
+            if let last = completed.last, range.end < last.range.start { return }
+            if let overlap = completed.firstIndex(where: { $0.range.end > range.start + 0.05 }) {
+                // Some recognizers return the cumulative request at completion.
+                completed.removeSubrange(overlap...)
+            }
+            completed.append(Utterance(text: value, range: range))
+            partial = ""
+        } else {
+            if update.isFinal, partial.isEmpty, value == completed.last?.text { return }
+            // Text prefixes are not utterance identities: users can repeat the
+            // same words after a pause. Only timed results may replace history.
+            partial = value
         }
     }
 }

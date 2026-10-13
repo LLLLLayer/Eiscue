@@ -72,3 +72,73 @@ final class SpeechInputCallbackTests: XCTestCase {
     }
 }
 
+final class SpeechTranscriptBufferTests: XCTestCase {
+    func testPauseKeepsEarlierUtteranceWhileOnlyCurrentPartialIsRevised() {
+        var buffer = SpeechTranscriptBuffer()
+        buffer.receive(update("先打开设置"))
+        buffer.receive(update("先打开设置。", start: 0.4, duration: 1.8))
+        buffer.receive(update("然后把屏幕调成"))
+        XCTAssertEqual(buffer.text, "先打开设置。 然后把屏幕调成")
+        buffer.receive(update("然后切换深色模式"))
+        XCTAssertEqual(buffer.text, "先打开设置。 然后切换深色模式")
+        buffer.receive(update("然后切换深色模式。", start: 7.1, duration: 2.5))
+        XCTAssertEqual(buffer.text, "先打开设置。 然后切换深色模式。")
+    }
+
+    func testEmptyFinalAfterPauseDoesNotEraseRecognizedSpeech() {
+        var buffer = SpeechTranscriptBuffer()
+        buffer.receive(update("Keep this sentence.", start: 0.2, duration: 2))
+        buffer.receive(update("And this partial"))
+        buffer.receive(update("", isFinal: true))
+        XCTAssertEqual(buffer.text, "Keep this sentence. And this partial")
+    }
+
+    func testRepeatedBoundaryDoesNotDuplicateOrClearNewPartial() {
+        var buffer = SpeechTranscriptBuffer()
+        buffer.receive(update("Hello", start: 0.2, duration: 1))
+        buffer.receive(update("Hello", start: 0.2, duration: 1))
+        XCTAssertEqual(buffer.text, "Hello")
+        buffer.receive(update("Next sentence"))
+        buffer.receive(update("Hello.", start: 0.2, duration: 1))
+        XCTAssertEqual(buffer.text, "Hello. Next sentence")
+    }
+
+    func testSameWordsSpokenAgainAreNotDiscardedAsDuplicateCallback() {
+        var buffer = SpeechTranscriptBuffer()
+        buffer.receive(update("Go.", start: 0.3, duration: 0.7))
+        buffer.receive(update("Go."))
+        XCTAssertEqual(buffer.text, "Go. Go.")
+        buffer.receive(update("Go.", start: 4, duration: 0.8))
+        buffer.receive(update("Go.", isFinal: true))
+        XCTAssertEqual(buffer.text, "Go. Go.")
+        buffer.receive(update("Go. Go. Again."))
+        XCTAssertEqual(buffer.text, "Go. Go. Go. Go. Again.")
+    }
+
+    func testCumulativeResultsReplaceCoveredUtterancesWithoutDuplication() {
+        var buffer = SpeechTranscriptBuffer()
+        buffer.receive(update("First.", start: 0.2, duration: 1))
+        buffer.receive(update("Second"))
+        XCTAssertEqual(buffer.text, "First. Second")
+        buffer.receive(update("First. Second.", start: 0.2, duration: 5, isFinal: true))
+        XCTAssertEqual(buffer.text, "First. Second.")
+    }
+
+    func testSingleUtteranceRevisionsRemainReplaceableUntilCompletion() {
+        var buffer = SpeechTranscriptBuffer()
+        buffer.receive(update("Open the setting"))
+        buffer.receive(update("Open Settings"))
+        buffer.receive(update("Open Settings.", start: 0.1, duration: 2, isFinal: true))
+        XCTAssertEqual(buffer.text, "Open Settings.")
+        buffer = SpeechTranscriptBuffer()
+        buffer.receive(update("A new recording"))
+        XCTAssertEqual(buffer.text, "A new recording")
+    }
+
+    private func update(_ text: String, start: TimeInterval? = nil, duration: TimeInterval = 0,
+                        isFinal: Bool = false) -> SpeechInputCallbacks.RecognitionUpdate {
+        .init(text: text, isFinal: isFinal, hasError: false,
+              completedRange: start.flatMap { .init(start: $0, duration: duration) })
+    }
+}
+

@@ -93,6 +93,7 @@ extension AppModel {
     }
 
     func moveConversation(_ id: UUID, direction: ConversationMoveDirection) {
+        guard !isBusy else { return }
         var ordering = conversationOrdering
         ordering.move(id, direction: direction, in: conversations)
         ordering.save(to: preferences)
@@ -100,9 +101,36 @@ extension AppModel {
     }
 
     func toggleConversationPinned(_ id: UUID) {
+        guard !isBusy else { return }
         var ordering = conversationOrdering
         ordering.togglePin(id, in: conversations)
         ordering.save(to: preferences)
         conversationOrderRevision += 1
+    }
+
+    func setConversationsPinned(_ ids: Set<UUID>, pinned: Bool) {
+        guard !isBusy else { return }
+        var ordering = conversationOrdering
+        // Inserting at the front in reverse order keeps the selected rows' order.
+        for conversation in ordering.sorted(conversations).reversed()
+            where ids.contains(conversation.id) && ordering.pinnedIDs.contains(conversation.id) != pinned {
+            ordering.togglePin(conversation.id, in: conversations)
+        }
+        ordering.save(to: preferences)
+        conversationOrderRevision += 1
+    }
+
+    func renameConversation(_ id: UUID, title: String) async {
+        let name = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
+        guard !isBusy, !name.isEmpty,
+              var conversation = conversations.first(where: { $0.id == id }), conversation.title != name else { return }
+        isSaving = true; defer { isSaving = false }
+        conversation.title = name
+        do {
+            try await repository.save(conversation)
+            if let index = conversations.firstIndex(where: { $0.id == id }) { conversations[index] = conversation }
+        } catch {
+            errorMessage = String(format: String(localized: "sidebar.renameFailed", table: "Navigation"), safeError(error))
+        }
     }
 }

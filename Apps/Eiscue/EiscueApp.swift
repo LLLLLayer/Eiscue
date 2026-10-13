@@ -33,6 +33,10 @@ struct EiscueApp: App {
                     await model.load()
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+                       ProcessInfo.processInfo.arguments.contains("--tool-image-preview-fixture") {
+                        model.installToolImagePreviewFixture()
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                        ProcessInfo.processInfo.arguments.contains("--board-stop-notice-fixture") {
                         model.handleBoardHardwareStop()
                     }
