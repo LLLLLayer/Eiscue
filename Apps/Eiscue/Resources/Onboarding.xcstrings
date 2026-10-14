@@ -1190,6 +1190,261 @@
           }
         }
       }
+    },
+    "setup.inlineSystemPreparation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Developer Mode and finish device preparation in Xcode or compatible computer tools before pairing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先开启开发者模式，并用 Xcode 或兼容的电脑工具完成设备准备，再开始配对。"
+          }
+        }
+      }
+    },
+    "setup.inlineTransferReady": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your computer sent a pairing file. Import it to continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收到电脑发送的配对文件，导入后即可继续连接。"
+          }
+        }
+      }
+    },
+    "setup.transferReadyTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing file received"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收到配对文件"
+          }
+        }
+      }
+    },
+    "setup.stepMacTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prepare your Mac"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准备 Mac"
+          }
+        }
+      }
+    },
+    "setup.stepMacDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Xcode 26+, Python 3.9+ and Rust 1.96.0. Keep your Mac online."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装 Xcode 26+、Python 3.9+、Rust 1.96.0，并保持联网。"
+          }
+        }
+      }
+    },
+    "setup.stepPhoneTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect by USB"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB 连接设备"
+          }
+        }
+      }
+    },
+    "setup.stepPhoneDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect by USB and trust your Mac. Enable Developer Mode in Settings → Privacy & Security, then finish device preparation in Xcode."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB 连接并信任 Mac。在“设置 → 隐私与安全性”开启开发者模式，再用 Xcode 完成设备准备。"
+          }
+        }
+      }
+    },
+    "setup.stepRunTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run the command"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行命令"
+          }
+        }
+      }
+    },
+    "setup.stepRunDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste into Mac Terminal from any folder. It downloads the source and starts setup; select this device when prompted."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mac 终端任意目录粘贴，自动下载源码并运行；按提示选择这台设备。"
+          }
+        }
+      }
+    },
+    "setup.terminalLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac Terminal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac 终端"
+          }
+        }
+      }
+    },
+    "setup.stepImportTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import pairing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入配对"
+          }
+        }
+      }
+    },
+    "setup.stepImportWaiting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When your computer sends the file, the import button appears here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电脑发送完成后，这里会自动显示导入按钮。"
+          }
+        }
+      }
+    },
+    "setup.chooseExistingFile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose an existing file"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择已有配对文件"
+          }
+        }
+      }
+    },
+    "setup.stepConnectTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接设备"
+          }
+        }
+      }
+    },
+    "setup.stepConnectAfterImport": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After importing, choose Connect device and follow the system authorization prompts."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入后点“连接设备”，按系统提示完成授权。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

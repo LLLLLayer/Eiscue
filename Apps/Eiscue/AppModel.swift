@@ -140,7 +140,7 @@ final class AppModel {
         storageDirectory = directory
         preferences = defaults
         scope = (defaults.object(forKey: "allowsDeviceControl") as? Bool ?? true) ? .control : .chat
-        deviceConnectionMethod = DeviceConnectionMethod(rawValue: defaults.string(forKey: "deviceConnectionMethod") ?? "") ?? .bluetoothBoard
+        deviceConnectionMethod = DeviceConnectionMethod(rawValue: defaults.string(forKey: "deviceConnectionMethod") ?? "") ?? .localVPN
         showsOnboarding = defaults.integer(forKey: "onboardingVersion") < 1
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"),

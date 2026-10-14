@@ -4,12 +4,13 @@ import UniformTypeIdentifiers
 
 struct DeviceView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @State private var importsIdentity = false
     @State private var confirmsForget = false
     #if DEBUG
     @State private var showsProbe = false
     #endif
-    @State private var showsConnectionHelp = false
+    @State private var showsConnectionFeedback = false
     @State private var previewImage: UIImage?
     @State private var showsPreview = false
 
@@ -29,7 +30,6 @@ struct DeviceView: View {
                         screenPreview
                     }
                     if model.deviceConnectionMethod != .bluetoothBoard {
-                        connectionSupport
                         #if DEBUG
                         if model.isDeviceReady { debugSection }
                         #endif
@@ -44,17 +44,29 @@ struct DeviceView: View {
             .navigationTitle("common.device")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("devicePage")
-            .onAppear { model.refreshPairingTransfer() }
+            .task(id: shouldRefreshPairingTransfer) {
+                guard shouldRefreshPairingTransfer else { return }
+                while !Task.isCancelled {
+                    model.refreshPairingTransfer()
+                    do { try await Task.sleep(for: .seconds(2)) }
+                    catch { return }
+                }
+            }
+            .onChange(of: model.deviceConnectionMethod) { _, _ in showsConnectionFeedback = false }
             .fileImporter(isPresented: $importsIdentity, allowedContentTypes: [.json, .data]) { result in
-                if case .success(let url) = result { Task { await model.importPairingIdentity(url) } }
+                if case .success(let url) = result { showsConnectionFeedback = true; Task { await model.importPairingIdentity(url) } }
                 if case .failure(let error) = result { model.errorMessage = error.localizedDescription }
             }
             #if DEBUG
             .sheet(isPresented: $showsProbe) { ControlProbeView() }
             #endif
-            .sheet(isPresented: $showsConnectionHelp) { connectionHelpSheet }
-            .onChange(of: showsConnectionHelp) { _, isPresented in
-                if !isPresented { model.refreshPairingTransfer() }
+            .confirmationDialog(String(localized: "setup.pairAgainConfirm", table: "Onboarding"), isPresented: $confirmsForget, titleVisibility: .visible) {
+                Button("device.removeIdentity", role: .destructive) {
+                    showsConnectionFeedback = false
+                    Task { await model.forgetPairingIdentity() }
+                }
+            } message: {
+                Text(String(localized: "setup.pairAgainDetail", table: "Onboarding"))
             }
             .sheet(isPresented: $showsPreview) {
                 if let previewImage { DeviceScreenPreview(image: previewImage) }
@@ -112,6 +124,13 @@ struct DeviceView: View {
         }
     }
 
+    private var shouldRefreshPairingTransfer: Bool {
+        scenePhase == .active && !model.hasPairingIdentity && model.deviceConnectionMethod != .bluetoothBoard
+    }
+
+    private var isConnecting: Bool { model.isConnecting || model.isPairing || model.isManagingTunnel }
+    private var usesSystemPairing: Bool { model.deviceConnectionMethod == .localVPN && model.supportsSystemPairing }
+
     private var connectionCard: some View {
         SurfaceCard {
             VStack(alignment: .leading, spacing: 12) {
@@ -121,58 +140,84 @@ struct DeviceView: View {
                             Label("device.controlReady", systemImage: "checkmark.circle")
                                 .font(.subheadline.weight(.semibold))
                                 .accessibilityIdentifier("devicePairingComplete")
-                            if model.deviceConnectionMethod == .localVPN {
-                                Text(String(localized: "device.connection.vpnUsage", table: "Connections"))
-                                    .font(.caption).foregroundStyle(.secondary)
-                                    .accessibilityIdentifier("deviceVPNUsage")
-                            }
+                            if model.deviceConnectionMethod == .localVPN { vpnUsage }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         disconnectButton
                     }
-                } else if model.isConnecting || model.isPairing || model.isManagingTunnel {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                        Text(model.isPairing ? String(localized: "device.pairing") : String(localized: "device.connecting"))
-                            .font(.headline)
-                    }
-                } else if !model.hasPairingIdentity {
-                    Text("device.firstConnection").font(.headline)
-                    if model.deviceConnectionMethod != .localVPN {
-                        Text("device.boardPairingRequired")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    } else if !model.supportsSystemPairing {
-                        Text("device.usbPairingRequired")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("usbPairingGuidance")
-                    } else {
-                        Text("device.systemPairingShort")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
                 } else {
-                    Label(model.isDeviceReady ? String(localized: "device.controlReady") : String(localized: "device.pairingSaved"),
-                          systemImage: "checkmark.shield")
-                        .font(.headline)
-                        .accessibilityIdentifier("devicePairingComplete")
-                    if !model.isDeviceReady {
-                        Text("device.pairingSavedDetail")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                    if isConnecting {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text(model.isPairing ? String(localized: "device.pairing") : String(localized: "device.connecting"))
+                                .font(.headline)
+                        }
+                    } else if model.hasPairingIdentity {
+                        HStack(alignment: .center, spacing: 12) {
+                            Label(String(localized: "setup.savedPairing", table: "Onboarding"), systemImage: "checkmark.shield")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityIdentifier("devicePairingComplete")
+                            Button(String(localized: "setup.pairAgain", table: "Onboarding")) { confirmsForget = true }
+                                .buttonStyle(.glass).controlSize(.small)
+                                .disabled(model.isBusy)
+                                .accessibilityIdentifier("removePairingButton")
+                        }
+                        Text(String(localized: "setup.savedPairingDetail", table: "Onboarding"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        if !model.hasTransferredPairingIdentity {
+                            Text("device.firstConnection").font(.headline)
+                            if usesSystemPairing {
+                                Text(String(localized: "setup.inlineSystemPreparation", table: "Onboarding"))
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                Text(String(localized: "setup.systemPairingDetail", table: "Onboarding"))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                ComputerPairingHelpView()
+                            }
+                        }
                     }
-                }
 
-                if let code = model.pairingCode {
-                    Text(code).font(.system(.largeTitle, design: .monospaced).weight(.bold))
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("pairingCode")
-                }
-
-                if !model.isDeviceReady {
+                    if let code = model.pairingCode {
+                        Text(code).font(.system(.largeTitle, design: .monospaced).weight(.bold))
+                            .textSelection(.enabled)
+                            .accessibilityIdentifier("pairingCode")
+                    }
+                    if !isConnecting {
+                        if model.hasPairingIdentity {
+                            PairingSetupStepTitle(number: 5, title: String(localized: "setup.stepConnectTitle", table: "Onboarding"))
+                        } else if !usesSystemPairing {
+                            PairingSetupStepTitle(number: 4, title: String(localized: "setup.stepImportTitle", table: "Onboarding"))
+                            Text(String(localized: model.hasTransferredPairingIdentity ? "setup.inlineTransferReady" : "setup.stepImportWaiting", table: "Onboarding"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                     connectionActions.controlSize(.large)
+                    if !isConnecting && !model.hasPairingIdentity && !usesSystemPairing {
+                        PairingSetupStepTitle(number: 5, title: String(localized: "setup.stepConnectTitle", table: "Onboarding"))
+                        Text(String(localized: "setup.stepConnectAfterImport", table: "Onboarding"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if model.deviceConnectionMethod == .localVPN {
+                        HStack(alignment: .center, spacing: 16) {
+                            vpnUsage.frame(maxWidth: .infinity, alignment: .leading)
+                            if !isConnecting && (model.localTunnel.isConnected || model.localTunnel.isTransitioning) {
+                                disconnectButton
+                            }
+                        }
+                    }
+                    routeRequirements
                 }
-                if !model.isDeviceReady { connectionHelp }
                 if showsConnectionMessage { connectionMessage }
             }
         }
+    }
+
+    private var vpnUsage: some View {
+        Text(String(localized: "device.connection.vpnUsage", table: "Connections"))
+            .font(.caption).foregroundStyle(.secondary)
+            .accessibilityIdentifier("deviceVPNUsage")
     }
 
     @ViewBuilder private var connectionActions: some View {
@@ -181,6 +226,7 @@ struct DeviceView: View {
         } else {
             if !model.hasPairingIdentity && model.hasTransferredPairingIdentity {
                 Button("device.importTransferredPairing") {
+                    showsConnectionFeedback = true
                     Task { await model.importTransferredPairingIdentity() }
                 }
                 .buttonStyle(.glassProminent)
@@ -188,13 +234,13 @@ struct DeviceView: View {
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("importTransferredPairingButton")
             } else if !model.hasPairingIdentity && (!model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN) {
-                Button("device.importIdentity") { importsIdentity = true }
-                    .buttonStyle(.glassProminent)
-                    .foregroundStyle(EiscueStyle.onAccent)
+                Button(String(localized: "setup.chooseExistingFile", table: "Onboarding")) { importsIdentity = true }
+                    .buttonStyle(.glass)
                     .disabled(model.isBusy)
                     .accessibilityIdentifier("importPairingIdentityButton")
             } else if !model.hasPairingIdentity {
                 Button("device.startPairing") {
+                    showsConnectionFeedback = true
                     Task {
                         if !model.localTunnel.isConnected { await model.startLocalTunnel() }
                         if model.localTunnel.isConnected { model.startPairing() }
@@ -207,6 +253,7 @@ struct DeviceView: View {
             }
             if model.hasPairingIdentity {
                 Button(model.deviceConnectionError == nil ? String(localized: "device.enableControl") : String(localized: "device.retryControl")) {
+                    showsConnectionFeedback = true
                     Task { await model.enableDeviceControl() }
                 }
                 .buttonStyle(.glassProminent)
@@ -230,16 +277,6 @@ struct DeviceView: View {
         .frame(minHeight: 44)
         .disabled(model.isStoppingTunnel || model.isStopping)
         .accessibilityIdentifier("disconnectDeviceButton")
-    }
-
-    private var connectionSupport: some View {
-        SurfaceCard {
-            Button { showsConnectionHelp = true } label: {
-                connectionSupportLabel(String(localized: "device.connection.help", table: "Connections"), symbol: "questionmark.circle")
-            }
-            .accessibilityIdentifier("deviceConnectionHelpButton")
-            .buttonStyle(.plain)
-        }
     }
 
     #if DEBUG
@@ -271,121 +308,34 @@ struct DeviceView: View {
         .frame(minHeight: 32).contentShape(Rectangle())
     }
 
-    private var connectionHelpSheet: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if model.deviceConnectionMethod == .localVPN { SurfaceCard { localConnection } }
-                    SurfaceCard {
-                        VStack(alignment: .leading, spacing: 12) {
-                            connectionHelp
-                            if !model.hasPairingIdentity {
-                                Text("device.developerModeDetail")
-                                Text(model.supportsSystemPairing && model.deviceConnectionMethod == .localVPN ? String(localized: "device.pairingSetup") : String(localized: "device.usbPairingSetup"))
-                                Text("device.compatibilityDetail")
-                            }
-                        }
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    if !model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN {
-                        ComputerPairingHelpView()
-                    }
-                    if model.hasPairingIdentity {
-                        Button("device.removePairing", role: .destructive) { confirmsForget = true }
-                            .buttonStyle(.glass).disabled(model.isBusy)
-                            .accessibilityIdentifier("removePairingButton")
-                    }
-                }
-                .frame(maxWidth: 600).padding(20).frame(maxWidth: .infinity)
-            }
-            .background(EiscueStyle.background)
-            .navigationTitle(String(localized: "device.connection.help", table: "Connections"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("common.done") { showsConnectionHelp = false }
-                }
-            }
-            .confirmationDialog("device.removePairingWarning", isPresented: $confirmsForget, titleVisibility: .visible) {
-                Button("device.removeIdentity", role: .destructive) { Task { await model.forgetPairingIdentity() } }
-            }
-            .alert("common.unableToComplete", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
-                Button("common.understood") { model.errorMessage = nil }
-            } message: { Text(model.errorMessage ?? "") }
-        }
-    }
-
-    private var connectionHelp: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(connectionDetail)
+    @ViewBuilder private var routeRequirements: some View {
+        if model.deviceConnectionMethod == .usbBoard {
+            Text("device.boardConnectionDetail")
                 .font(.caption).foregroundStyle(.secondary)
-            if model.deviceConnectionMethod == .usbBoard {
-                Text("device.boardHardwareRequirement")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("boardHardwareRequirement")
-                Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/tree/main/Firmware/NCM-Relay")!) {
-                    Label("device.boardFirmwareGuide", systemImage: "arrow.up.right")
-                }
-                .font(.caption)
-            } else if model.deviceConnectionMethod == .wirelessBoard {
-                Text("device.wirelessBoardNetworkNote")
-                    .font(.caption).foregroundStyle(.secondary)
-                Link(destination: URL(string: "https://github.com/LLLLLayer/Eiscue/tree/main/Firmware/Passport-Relay")!) {
-                    Label("device.boardFirmwareGuide", systemImage: "arrow.up.right")
-                }
-                .font(.caption)
-            }
+            Text("device.boardHardwareRequirement")
+                .font(.caption).foregroundStyle(.secondary)
+                .accessibilityIdentifier("boardHardwareRequirement")
+        } else if model.deviceConnectionMethod == .wirelessBoard {
+            Text("device.wirelessBoardConnectionDetail")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("device.wirelessBoardNetworkNote")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     private var showsConnectionMessage: Bool {
-        !model.isDeviceReady || model.isConnecting || model.isPairing || model.isManagingTunnel || model.deviceConnectionError != nil
+        isConnecting || model.deviceConnectionError != nil
+            || (showsConnectionFeedback && !model.isDeviceReady)
             || (model.deviceConnectionMethod == .localVPN && model.localTunnel.lastError != nil)
     }
 
     private var connectionMessage: some View {
-        Text(model.connectionMessage)
+        Text(model.deviceConnectionError
+             ?? (model.deviceConnectionMethod == .localVPN ? model.localTunnel.lastError : nil)
+             ?? model.connectionMessage)
             .font(.caption).foregroundStyle(.secondary)
             .textSelection(.enabled)
             .accessibilityIdentifier("deviceConnectionMessage")
-    }
-
-    private var connectionDetail: String {
-        switch model.deviceConnectionMethod {
-        case .bluetoothBoard: String(localized: "bluetooth.connectionDetail", table: "Bluetooth")
-        case .localVPN: String(localized: "device.appConnectionDetail")
-        case .usbBoard: String(localized: "device.boardConnectionDetail")
-        case .wirelessBoard: String(localized: "device.wirelessBoardConnectionDetail")
-        }
-    }
-
-    private var localConnection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("device.localConnection").font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(model.localTunnel.statusTitle).font(.caption).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("localTunnelStatus")
-            }
-            Text("device.localConnectionShort").font(.caption).foregroundStyle(.secondary)
-            if let error = model.localTunnel.lastError {
-                Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.primary)
-            }
-            if model.localTunnel.isConnected || model.localTunnel.isTransitioning || model.isManagingTunnel {
-                Button(model.isStoppingTunnel ? String(localized: "device.stoppingLocalConnection") : String(localized: "device.stopLocalConnection"), role: .destructive) {
-                    Task { await model.stopLocalTunnel() }
-                }
-                .buttonStyle(.glass)
-                .foregroundStyle(.primary)
-                .disabled(model.isStoppingTunnel)
-                .accessibilityIdentifier("stopLocalTunnelButton")
-            } else {
-                Button("device.startLocalConnection") { Task { await model.startLocalTunnel() } }
-                    .buttonStyle(.glass)
-                    .disabled(model.isBusy)
-                    .accessibilityIdentifier("startLocalTunnelButton")
-            }
-        }
     }
 
     private var screenPreview: some View {

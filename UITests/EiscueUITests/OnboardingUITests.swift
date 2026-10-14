@@ -16,6 +16,7 @@ final class OnboardingUITests: XCTestCase {
         assertGuideHasNoNavigationExit(app)
         next.tap()
         XCTAssertTrue(app.staticTexts["连接设备"].exists)
+        XCTAssertEqual(app.buttons["deviceConnectionMethodPicker"].value as? String, "App 内连接")
         assertGuideHasNoNavigationExit(app)
         XCTAssertFalse(app.buttons["startPairingButton"].exists, "iOS 26 must not offer the iOS 27 system flow.")
         saveScreenshot(app, name: "Onboarding-Device-Chinese")
@@ -49,36 +50,59 @@ final class OnboardingUITests: XCTestCase {
     }
 
     @MainActor
-    func testLocalVPNOnboardingKeepsComputerHelpInsideTheApp() {
+    func testLocalVPNOnboardingShowsSetupAndCopiesCompleteCommandInline() {
         let app = launchPairingGuide(saved: false)
         let importFile = app.buttons["onboardingImportPairingButton"]
-        let help = app.buttons["onboardingConnectionHelpButton"]
         XCTAssertTrue(importFile.waitForExistence(timeout: 5))
-        XCTAssertTrue(help.exists)
+        XCTAssertFalse(app.buttons["onboardingConnectionHelpButton"].exists)
         XCTAssertFalse(app.buttons["onboardingConnectDeviceButton"].exists,
                        "An unpaired device must not be offered a working VPN connection.")
         XCTAssertFalse(app.buttons["onboardingReconnectPairingButton"].exists)
-        assertNoGitHubLinks(app)
-        saveScreenshot(app, name: "Onboarding-VPN-Unpaired")
-
-        help.tap()
-        assertNativeConnectionHelp(app)
-        let command = app.staticTexts["computerPairingCommand"]
-        XCTAssertTrue(command.waitForExistence(timeout: 5))
-        XCTAssertEqual(command.label, "python3 Scripts/setup-device.py")
+        XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
+        assertNoExternalSetupLinks(app)
         let copyCommand = app.buttons["copyComputerPairingCommandButton"]
-        for _ in 0..<4 where !copyCommand.isHittable { app.swipeUp() }
+        XCTAssertTrue(copyCommand.exists, "Copying the setup command must not require a separate help page.")
+        XCTAssertFalse(app.buttons["showComputerPairingCommandButton"].exists)
+        let steps = (1...5).map { app.staticTexts["pairingSetupStep\($0)"] }
+        for step in steps { XCTAssertTrue(step.exists) }
+        for index in 1..<steps.count {
+            XCTAssertGreaterThan(steps[index].frame.minY, steps[index - 1].frame.maxY)
+        }
+        saveScreenshot(app, name: "Onboarding-VPN-Five-Steps-Top")
+
+        let command = app.staticTexts["computerPairingCommand"]
+        XCTAssertTrue(command.exists, "The full code block must appear without another disclosure action.")
+        let completeCommand = command.label
+        XCTAssertTrue(completeCommand.contains("git clone"))
+        XCTAssertTrue(completeCommand.contains("mktemp"))
+        XCTAssertTrue(completeCommand.contains("setup-device.py"))
+        XCTAssertTrue(completeCommand.contains("python3"))
+        XCTAssertNotEqual(completeCommand, "python3 Scripts/setup-device.py")
+        XCTAssertFalse(app.buttons["onboardingCloseConnectionHelpButton"].exists)
+        assertGuideHasNoNavigationExit(app)
+        let footer = app.buttons["onboardingContinueButton"]
+        for _ in 0..<5 where command.frame.maxY >= footer.frame.minY - 12 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+        }
+        XCTAssertLessThan(command.frame.maxY, footer.frame.minY)
+        XCTAssertGreaterThan(command.frame.minY, app.frame.minY + 60)
         XCTAssertTrue(copyCommand.isHittable)
         XCTAssertEqual(copyCommand.label, "复制命令")
         saveScreenshot(app, name: "Onboarding-VPN-Computer-Command")
         copyCommand.tap()
         let copied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "已复制"), object: copyCommand)
         XCTAssertEqual(XCTWaiter.wait(for: [copied], timeout: 3), .completed)
-        assertNoGitHubLinks(app)
+        assertNoExternalSetupLinks(app)
         saveScreenshot(app, name: "Onboarding-VPN-Command-Copied")
-        app.buttons["onboardingCloseConnectionHelpButton"].tap()
-        XCTAssertTrue(importFile.waitForExistence(timeout: 5))
-        app.swipeDown()
+        // SwiftUI may report off-screen scroll content as hittable. Check its
+        // visible position instead before recording the lower setup steps.
+        for _ in 0..<4 where steps[4].frame.maxY >= footer.frame.minY - 80 { app.swipeUp() }
+        XCTAssertTrue(steps[4].isHittable)
+        XCTAssertLessThan(steps[4].frame.maxY, footer.frame.minY - 80)
+        XCTAssertGreaterThan(steps[3].frame.minY, app.frame.minY + 60)
+        XCTAssertTrue(importFile.isHittable)
+        saveScreenshot(app, name: "Onboarding-VPN-Five-Steps-Bottom")
         XCTAssertTrue(app.buttons["onboardingContinueButton"].isHittable)
         assertGuideHasNoNavigationExit(app)
 
@@ -99,7 +123,7 @@ final class OnboardingUITests: XCTestCase {
             XCTAssertTrue(pasteButton.waitForExistence(timeout: 3))
             pasteButton.tap()
         }
-        XCTAssertEqual(input.value as? String, "python3 Scripts/setup-device.py")
+        XCTAssertEqual(input.value as? String, completeCommand)
         saveScreenshot(app, name: "Onboarding-VPN-Command-Paste-Readback")
     }
 
@@ -112,7 +136,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["devicePairingComplete"].exists)
         XCTAssertTrue(app.buttons["onboardingConnectDeviceButton"].isEnabled)
         XCTAssertFalse(app.buttons["onboardingImportPairingButton"].exists)
-        assertNoGitHubLinks(app)
+        assertNoExternalSetupLinks(app)
         saveScreenshot(app, name: "Onboarding-VPN-Saved-Pairing")
 
         app.buttons["onboardingReconnectPairingButton"].tap()
@@ -128,6 +152,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["onboardingImportPairingButton"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["onboardingConnectDeviceButton"].exists)
         XCTAssertFalse(app.buttons["onboardingReconnectPairingButton"].exists)
+        XCTAssertTrue(app.buttons["copyComputerPairingCommandButton"].exists)
         assertGuideHasNoNavigationExit(app)
     }
 
@@ -145,32 +170,17 @@ final class OnboardingUITests: XCTestCase {
         next.tap()
         let picker = app.buttons["deviceConnectionMethodPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        XCTAssertEqual(picker.value as? String, "ESP32-C3 / S3 键鼠")
-        picker.tap()
-        let localVPN = app.buttons["deviceConnectionChoice_localVPN"]
-        XCTAssertTrue(localVPN.waitForExistence(timeout: 5))
-        localVPN.tap()
-        XCTAssertTrue(localVPN.waitForNonExistence(timeout: 5))
         XCTAssertEqual(picker.value as? String, "App 内连接")
         return app
     }
 
     @MainActor
-    private func assertNativeConnectionHelp(_ app: XCUIApplication) {
-        XCTAssertTrue(app.descendants(matching: .any)["onboardingConnectionHelp"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["onboardingCloseConnectionHelpButton"].isHittable)
-        let copy = app.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: "\n")
-        XCTAssertTrue(copy.contains("电脑"))
-        XCTAssertTrue(copy.contains("开发者模式"))
-        XCTAssertTrue(copy.contains("配对文件"))
-        assertNoGitHubLinks(app)
-    }
-
-    @MainActor
-    private func assertNoGitHubLinks(_ app: XCUIApplication) {
-        XCTAssertFalse(app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", "github", "github")
-        ).firstMatch.exists)
+    private func assertNoExternalSetupLinks(_ app: XCUIApplication) {
+        // The copyable shell command includes the repository URL, but setup
+        // should never send the user to an external GitHub page.
+        let github = NSPredicate(format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", "github", "github")
+        XCTAssertFalse(app.links.matching(github).firstMatch.exists)
+        XCTAssertFalse(app.buttons.matching(github).firstMatch.exists)
     }
 
     @MainActor

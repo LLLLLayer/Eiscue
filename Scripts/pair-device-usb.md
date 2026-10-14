@@ -2,12 +2,17 @@
 
 ## Guided setup on a Mac
 
-The app's setup help can copy this command. Run it in Terminal **from the root
-of a complete Eiscue source checkout**:
+The app's connection page lists five steps: prepare the Mac, connect by USB, run the command, import pairing, and connect the device. The command is shown in a code block with a **Copy command** button. It copies the full source-download and setup command below, which works from **any folder** in Mac Terminal:
 
 ```sh
-python3 Scripts/setup-device.py
+(
+  eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" || exit 1
+  git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
+  python3 "$eiscue_setup_dir/Scripts/setup-device.py"
+)
 ```
+
+This uses a new temporary checkout, leaving existing folders untouched. Source and build caches remain there; the helper cleans up its separate private identity file. If you already have a complete source checkout, you can instead run `python3 Scripts/setup-device.py` from its project root.
 
 The Mac needs Xcode 26 or newer selected as its active developer directory,
 Python 3.9 or newer, and the Rust 1.96.0 toolchain already installed through
@@ -33,8 +38,7 @@ explicitly enables Wi-Fi developer connections, generates a new identity using
 the USB helper below, and sends it to the **same selected device** at
 `org.eiscue.app`'s `tmp/EiscuePairingTransfer.json`.
 
-Return to Eiscue's device page, choose **In-app connection**, then **Import
-from computer**. The command does not launch the app, automatically
+Eiscue detects the received file while the connection page is open. Choose **Import from computer** on that page. The command does not launch the app, automatically
 import an identity, start XCTest or connect a VPN. After importing, choose
 **Connect device** in the app and handle any system authorization there.
 

@@ -11,7 +11,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 ## Features
 
 - **Chat and multiple models**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. Save multiple service/model configurations and switch from the conversation header. Each configuration keeps its own API key in Keychain.
-- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. The default route is a **Bluetooth board + system screen sharing**. The board only needs power and does not occupy the phone's Wi-Fi or VPN connection.
+- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations default to **In-app connection (local VPN)**, which needs initial computer pairing. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved route choices are retained.
 - **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required.
 - **Conversation management**: streaming responses, Markdown, tool progress, copy and share. The sidebar supports pinning, reordering, renaming and bulk deletion; wide iPad windows can keep it visible.
 - **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. Task details show saved input/output, screenshots and tap/swipe positions when the matching image is available. An iOS 26 system Live Activity shows the current task phase. Completion/interruption notifications are optional and off by default.
@@ -42,7 +42,9 @@ Model service URLs must use HTTPS. OpenAI-compatible services usually include `/
 
 ### Let the AI operate the device
 
-Start with the Bluetooth route:
+The default **In-app connection** route guides you through five steps: prepare a Mac, connect the phone by USB, run the copyable command, import pairing, and connect the device. The command and requirements appear below. Choosing a route does not start it automatically.
+
+To use the optional Bluetooth route:
 
 1. Prepare the Bluetooth firmware using the [C3 / S3 firmware instructions](Firmware/Passport-BLE/README.md#build-and-flash-layout), then power the board.
 2. On iPhone, enable **Settings → Accessibility → Touch → AssistiveTouch**.
@@ -55,9 +57,9 @@ The connection, screen sharing and calibration must all remain valid. Disconnect
 
 | Route | Screen / input | Initial setup | Uses Eiscue's VPN connection |
 | --- | --- | --- | --- |
-| Bluetooth board (default, C3 / S3) | ReplayKit / BLE HID | Bluetooth pairing, AssistiveTouch, screen sharing and calibration; no computer-generated pairing file or DDI | No |
+| Bluetooth board (C3 / S3) | ReplayKit / BLE HID | Bluetooth pairing, AssistiveTouch, screen sharing and calibration; no computer-generated pairing file or DDI | No |
 | S3 USB input | ReplayKit / USB HID; control commands still use Bluetooth | As above, plus a USB connection with the phone acting as host | No |
-| Local VPN | In-app XCTest screenshots and input on iOS 26 | Initial USB identity setup on a computer, developer environment / DDI | Yes |
+| In-app connection (default, local VPN) | In-app XCTest screenshots and input on iOS 26 | Initial USB identity setup on a computer, developer environment / DDI | Yes |
 | Wi-Fi board | As above, through a Wi-Fi relay | As above, with the phone joined to the board's Wi-Fi | No |
 | S3 USB network adapter | As above, through a USB NCM relay | As above, plus a USB host connection and network adapter configuration | No |
 
@@ -65,15 +67,21 @@ The connection, screen sharing and calibration must all remain valid. Disconnect
 
 For developer-services setup, see the [USB pairing tool](Scripts/pair-device-usb.md). Routine tasks run on the phone, but these routes depend on DDI developer frameworks and private interfaces, with no App Store distribution commitment. Bluetooth and S3 USB input do not require this pairing workflow.
 
-Onboarding keeps setup help inside the app. A saved pairing identity is checked when connecting; it does not by itself mean device control is ready. Uninstalling may leave the identity in Keychain and the system VPN configuration in place. **Pair again** removes only Eiscue's pairing identity, retaining model settings and keys; removing Eiscue's VPN configuration is a separate action in iOS Settings.
+Onboarding and the device page show setup steps inline, with no separate help page. A saved pairing identity is checked when connecting; it does not by itself mean device control is ready. Uninstalling may leave the identity in Keychain and the system VPN configuration in place. **Pair again** removes only Eiscue's pairing identity, retaining model settings and keys; removing Eiscue's VPN configuration is a separate action in iOS Settings.
 
-On a Mac with Xcode, Python 3, Rust 1.96.0 and this source checkout, run the following from the project folder. The app's setup help includes a **Copy command** button for the same command:
+The **Copy command** button includes downloading the source before running the pairing helper. Paste the entire command into Mac Terminal from **any folder**; it creates a new temporary checkout without touching existing folders:
 
 ```sh
-python3 Scripts/setup-device.py
+(
+  eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" || exit 1
+  git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
+  python3 "$eiscue_setup_dir/Scripts/setup-device.py"
+)
 ```
 
-The helper checks prerequisites, asks you to select and confirm a USB-connected device, then generates and transfers its pairing identity to the installed Eiscue app. It does not prepare DDI, replace a pending transfer, import the identity in the app or start a VPN. After it finishes, close the app's setup help (or reopen the device page), choose **Import from computer**, then **Connect device**. Initial compilation may download pinned Cargo dependencies. This convenience helper is macOS-only; the lower-level pairing tool remains separate.
+The Mac needs Xcode 26+, Python 3.9+, Rust 1.96.0 and internet access. Device trust, Developer Mode and Xcode device preparation are still required; the command does not install these tools or prepare DDI. It asks you to select and confirm a USB-connected device, then generates and transfers its pairing identity to the installed Eiscue app. It does not replace a pending transfer, import the identity or start a VPN. The app detects the received file on the same page; choose **Import from computer**, then **Connect device**. The source and build cache remain in the Mac's temporary folder; the helper deletes its separate private pairing file after sending. Initial compilation may download pinned Cargo dependencies.
+
+With an existing checkout, contributors can instead run `python3 Scripts/setup-device.py` from its project folder. The convenience helper is macOS-only; the lower-level pairing tool remains separate.
 
 The C3 companion display shows only fixed phases, expressions and step counts, not model-generated text. A short press of OK latches a stop. To unlock, release OK, hold it for about 1.5 seconds, then disconnect; reconnection and calibration are required afterward.
 

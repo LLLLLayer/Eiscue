@@ -27,7 +27,7 @@ extension AppModel {
         // read a pairing Keychain item or connect to any device.
         deviceClient = client
         networkDeviceClient = client
-        deviceConnectionMethod = .bluetoothBoard
+        deviceConnectionMethod = .localVPN
         activeDeviceConnectionMethod = nil
         hasPairingIdentity = saved
         deviceStatus = .unavailable(reason: String(localized: "connection.disconnected"))

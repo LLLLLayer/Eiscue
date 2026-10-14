@@ -56,24 +56,13 @@ final class EiscueUITests: XCTestCase {
         XCTAssertTrue(element.isHittable)
     }
 
+    /// These cases launch with reset state. Assert the actual default instead
+    /// of selecting it and hiding a default-route regression.
     @MainActor
-    private func expandDeviceOptions(in app: XCUIApplication) {
-        let help = app.buttons["deviceConnectionHelpButton"]
-        reveal(help, in: app)
-        help.tap()
-    }
-
-    /// New installs default to the Bluetooth board, whose page has no tunnel,
-    /// pairing or advanced options. Choose the in-app connection explicitly.
-    @MainActor
-    private func selectInAppConnection(in app: XCUIApplication) {
+    private func assertInAppConnection(in app: XCUIApplication) {
         let picker = app.buttons["deviceConnectionMethodPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        picker.tap()
-        let option = app.buttons["deviceConnectionChoice_localVPN"]
-        XCTAssertTrue(option.waitForExistence(timeout: 5))
-        option.tap()
-        XCTAssertTrue(app.buttons["deviceConnectionHelpButton"].waitForExistence(timeout: 5))
+        XCTAssertEqual(picker.value as? String, "App 内连接")
     }
 
     @MainActor
@@ -108,11 +97,14 @@ final class EiscueUITests: XCTestCase {
         XCTAssertTrue(outputLimit.exists)
         app.navigationBars.buttons["取消"].tap()
         openDevice(in: app)
-        selectInAppConnection(in: app)
+        assertInAppConnection(in: app)
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
         XCTAssertFalse(app.buttons["检查点击和输入"].exists)
-        expandDeviceOptions(in: app)
-        XCTAssertTrue(app.buttons["startLocalTunnelButton"].exists)
+        XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
+        let copyCommand = app.buttons["copyComputerPairingCommandButton"]
+        reveal(copyCommand, in: app)
+        XCTAssertTrue(copyCommand.isEnabled)
+        XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         // Verification tools appear only once device control is ready.
         XCTAssertFalse(app.buttons["检查点击和输入"].exists)
     }
@@ -223,24 +215,23 @@ final class EiscueUITests: XCTestCase {
     }
 
     @MainActor
-    func testEmbeddedLocalConnectionRejectsSimulatorWithoutExternalApp() throws {
+    func testUnpairedLocalConnectionShowsPreparationBeforeStartingVPN() throws {
         #if !targetEnvironment(simulator)
-        throw XCTSkip("This case checks the simulator-only rejection and must not start a real VPN.")
+        throw XCTSkip("This case checks setup gating on a simulator and must not start a real VPN.")
         #else
         let app = launch()
         openDevice(in: app)
-        selectInAppConnection(in: app)
-        expandDeviceOptions(in: app)
-        let start = app.buttons["startLocalTunnelButton"]
-        reveal(start, in: app)
-        XCTAssertTrue(app.staticTexts["localTunnelStatus"].exists)
-        start.tap()
-        let alert = app.alerts["暂时无法完成"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 5))
-        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "模拟器")).firstMatch.exists)
-        alert.buttons["知道了"].tap()
+        assertInAppConnection(in: app)
+        XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
+        XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
+        XCTAssertFalse(app.staticTexts["localTunnelStatus"].exists)
+        XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 {
             XCTAssertFalse(app.buttons["startPairingButton"].exists)
+            let copyCommand = app.buttons["copyComputerPairingCommandButton"]
+            reveal(copyCommand, in: app)
+            XCTAssertTrue(copyCommand.isEnabled)
+            XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         }
         XCTAssertFalse(app.staticTexts["pairingCode"].exists)
         #endif
@@ -256,16 +247,19 @@ final class EiscueUITests: XCTestCase {
         }
         let app = launch()
         openDevice(in: app)
-        selectInAppConnection(in: app)
-        let guidance = app.staticTexts["usbPairingGuidance"]
+        assertInAppConnection(in: app)
+        let guidance = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "USB", "开发者模式")).firstMatch
         reveal(guidance, in: app)
         XCTAssertTrue(guidance.label.contains("USB"))
         XCTAssertFalse(app.buttons["startPairingButton"].exists)
         let importButton = app.buttons["importPairingIdentityButton"]
         reveal(importButton, in: app)
         XCTAssertTrue(importButton.isEnabled)
-        XCTAssertEqual(importButton.label, "导入配对文件")
+        XCTAssertEqual(importButton.label, "选择已有配对文件")
         XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
+        XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
+        XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
+        XCTAssertTrue(app.buttons["copyComputerPairingCommandButton"].exists)
         XCTAssertFalse(app.staticTexts["pairingCode"].exists)
         #endif
     }
@@ -274,7 +268,7 @@ final class EiscueUITests: XCTestCase {
     func testDeviceControlProbeRespondsToTapInputAndScroll() throws {
         let app = launch()
         openDevice(in: app)
-        selectInAppConnection(in: app)
+        assertInAppConnection(in: app)
         let openProbe = app.buttons["deviceProbeButton"]
         guard openProbe.waitForExistence(timeout: 2) else {
             throw XCTSkip("The probe entry is shown only when device control is ready, which a simulator cannot reach.")

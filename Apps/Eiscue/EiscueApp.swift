@@ -48,6 +48,7 @@ struct EiscueApp: App {
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                        ProcessInfo.processInfo.arguments.contains("--board-stop-notice-fixture") {
+                        await model.selectDeviceConnectionMethod(.bluetoothBoard)
                         model.handleBoardHardwareStop()
                     }
                     // Opens the real setup UI for the explicitly requested device
