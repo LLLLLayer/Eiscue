@@ -1,5 +1,62 @@
 # USB pairing bootstrap
 
+## Guided setup on a Mac
+
+The app's setup help can copy this command. Run it in Terminal **from the root
+of a complete Eiscue source checkout**:
+
+```sh
+python3 Scripts/setup-device.py
+```
+
+The Mac needs Xcode 26 or newer selected as its active developer directory,
+Python 3.9 or newer, and the Rust 1.96.0 toolchain already installed through
+rustup. The command does not install these tools or change the default Rust
+toolchain. The first build can download the project's locked Cargo dependencies
+and may take several minutes. This guided command is macOS-only.
+
+Before running it:
+
+1. Install and open Eiscue on the iPhone or iPad.
+2. Connect the device to the Mac with a USB data cable and keep it unlocked.
+   Trust this computer in Finder or Xcode if the device asks.
+3. Enable Developer Mode in the device's Settings > Privacy & Security.
+4. Select the device in Xcode > Window > Devices and Simulators and finish its
+   developer preparation. The helper checks that Developer Disk Image (DDI)
+   services are available; **it does not download, personalize or mount DDI**.
+
+The command lists only physical iPhones/iPads with a current wired connection.
+Enter the intended device's number, even when only one is listed, then confirm
+its name and USB identifier. It verifies the developer environment and access
+to that device's installed Eiscue container before creating an identity. It
+explicitly enables Wi-Fi developer connections, generates a new identity using
+the USB helper below, and sends it to the **same selected device** at
+`org.eiscue.app`'s `tmp/EiscuePairingTransfer.json`.
+
+Return to Eiscue's device page, choose **In-app connection**, then **Import
+from computer**. The command does not launch the app, automatically
+import an identity, start XCTest or connect a VPN. After importing, choose
+**Connect device** in the app and handle any system authorization there.
+
+An existing pending transfer is not replaced. Import it on the device first,
+or resolve it in the app, before retrying. The command never reads or modifies
+other apps' pairing identities or the Mac's Keychain. Its temporary directory
+is private (`0700`), and the generated identity must be an owned regular file
+with `0600` permissions. The Mac's temporary file is removed after success,
+failure or Ctrl-C. If transfer was interrupted, check the app for a pending
+import before retrying; it may have received the file even when the Mac did
+not confirm success. The app removes the transferred file when importing it.
+Neither the identity's contents nor subprocess diagnostics are printed.
+
+Offline helper checks (fake commands only; no device, Keychain or network):
+
+```sh
+python3 Scripts/setup-device.py --help
+python3 -m unittest discover -s Scripts/Tests -p test_setup_device.py -v
+```
+
+## Direct export for manual use
+
 This desktop helper creates Eiscue's own RemotePairing identity for iOS 26. It
 uses the selected device's existing system USB trust. The device must be
 unlocked, have Developer Mode enabled, and already trust the computer in

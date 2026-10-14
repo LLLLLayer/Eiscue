@@ -53,6 +53,9 @@ struct DeviceView: View {
             .sheet(isPresented: $showsProbe) { ControlProbeView() }
             #endif
             .sheet(isPresented: $showsConnectionHelp) { connectionHelpSheet }
+            .onChange(of: showsConnectionHelp) { _, isPresented in
+                if !isPresented { model.refreshPairingTransfer() }
+            }
             .sheet(isPresented: $showsPreview) {
                 if let previewImage { DeviceScreenPreview(image: previewImage) }
             }
@@ -283,6 +286,9 @@ struct DeviceView: View {
                             }
                         }
                         .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if !model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN {
+                        ComputerPairingHelpView()
                     }
                     if model.hasPairingIdentity {
                         Button("device.removePairing", role: .destructive) { confirmsForget = true }

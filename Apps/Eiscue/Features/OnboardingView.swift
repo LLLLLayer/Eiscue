@@ -171,6 +171,9 @@ private struct DeveloperConnectionSetupView: View {
             if case .failure(let error) = result { showsFeedback = true; model.errorMessage = error.localizedDescription }
         }
         .onChange(of: model.deviceConnectionMethod) { _, _ in showsFeedback = false }
+        .onChange(of: showsHelp) { _, isPresented in
+            if !isPresented { model.refreshPairingTransfer() }
+        }
     }
 
     private var statusTitle: String {
@@ -233,7 +236,7 @@ private struct DeveloperConnectionSetupView: View {
                         helpStep("2", "setup.pairing", "setup.systemPairingDetail")
                     } else {
                         helpStep("2", "setup.computerTrustTitle", "setup.computerTrustDetail")
-                        helpStep("3", "setup.transferTitle", "setup.transferDetail")
+                        ComputerPairingHelpView()
                         Text(text("setup.computerRequiredNote")).font(.caption).foregroundStyle(.secondary)
                     }
                     if model.deviceConnectionMethod == .localVPN {

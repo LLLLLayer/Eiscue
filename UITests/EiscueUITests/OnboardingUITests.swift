@@ -63,12 +63,44 @@ final class OnboardingUITests: XCTestCase {
 
         help.tap()
         assertNativeConnectionHelp(app)
-        saveScreenshot(app, name: "Onboarding-VPN-Native-Help")
+        let command = app.staticTexts["computerPairingCommand"]
+        XCTAssertTrue(command.waitForExistence(timeout: 5))
+        XCTAssertEqual(command.label, "python3 Scripts/setup-device.py")
+        let copyCommand = app.buttons["copyComputerPairingCommandButton"]
+        for _ in 0..<4 where !copyCommand.isHittable { app.swipeUp() }
+        XCTAssertTrue(copyCommand.isHittable)
+        XCTAssertEqual(copyCommand.label, "复制命令")
+        saveScreenshot(app, name: "Onboarding-VPN-Computer-Command")
+        copyCommand.tap()
+        let copied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "已复制"), object: copyCommand)
+        XCTAssertEqual(XCTWaiter.wait(for: [copied], timeout: 3), .completed)
+        assertNoGitHubLinks(app)
+        saveScreenshot(app, name: "Onboarding-VPN-Command-Copied")
         app.buttons["onboardingCloseConnectionHelpButton"].tap()
         XCTAssertTrue(importFile.waitForExistence(timeout: 5))
         app.swipeDown()
         XCTAssertTrue(app.buttons["onboardingContinueButton"].isHittable)
         assertGuideHasNoNavigationExit(app)
+
+        // Paste inside the same isolated app instead of relying on the
+        // simulator's host clipboard bridge. The draft is never sent.
+        app.buttons["onboardingContinueButton"].tap()
+        let field = app.textFields["messageInput"]
+        let input = field.exists ? field : app.textViews["messageInput"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5))
+        input.tap()
+        input.press(forDuration: 1)
+        let pasteLabel = NSPredicate(format: "label IN %@", ["粘贴", "Paste"])
+        let pasteItem = app.menuItems.matching(pasteLabel).firstMatch
+        if pasteItem.waitForExistence(timeout: 3) {
+            pasteItem.tap()
+        } else {
+            let pasteButton = app.buttons.matching(pasteLabel).firstMatch
+            XCTAssertTrue(pasteButton.waitForExistence(timeout: 3))
+            pasteButton.tap()
+        }
+        XCTAssertEqual(input.value as? String, "python3 Scripts/setup-device.py")
+        saveScreenshot(app, name: "Onboarding-VPN-Command-Paste-Readback")
     }
 
     @MainActor

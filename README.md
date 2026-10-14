@@ -67,6 +67,14 @@ For developer-services setup, see the [USB pairing tool](Scripts/pair-device-usb
 
 Onboarding keeps setup help inside the app. A saved pairing identity is checked when connecting; it does not by itself mean device control is ready. Uninstalling may leave the identity in Keychain and the system VPN configuration in place. **Pair again** removes only Eiscue's pairing identity, retaining model settings and keys; removing Eiscue's VPN configuration is a separate action in iOS Settings.
 
+On a Mac with Xcode, Python 3, Rust 1.96.0 and this source checkout, run the following from the project folder. The app's setup help includes a **Copy command** button for the same command:
+
+```sh
+python3 Scripts/setup-device.py
+```
+
+The helper checks prerequisites, asks you to select and confirm a USB-connected device, then generates and transfers its pairing identity to the installed Eiscue app. It does not prepare DDI, replace a pending transfer, import the identity in the app or start a VPN. After it finishes, close the app's setup help (or reopen the device page), choose **Import from computer**, then **Connect device**. Initial compilation may download pinned Cargo dependencies. This convenience helper is macOS-only; the lower-level pairing tool remains separate.
+
 The C3 companion display shows only fixed phases, expressions and step counts, not model-generated text. A short press of OK latches a stop. To unlock, release OK, hold it for about 1.5 seconds, then disconnect; reconnection and calibration are required afterward.
 
 ## Architecture

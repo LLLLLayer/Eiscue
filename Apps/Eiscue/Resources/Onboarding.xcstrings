@@ -381,13 +381,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import pairing from computer"
+            "value": "Import from computer"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入电脑配对文件"
+            "value": "导入电脑发送的配对"
           }
         }
       }
@@ -1051,6 +1051,142 @@
           "stringUnit": {
             "state": "translated",
             "value": "VPN 配置由 iOS 单独保存。若要重新测试 VPN 授权弹窗，请先在 iPhone 设置中移除 Eiscue 的 VPN 配置，再回来连接。"
+          }
+        }
+      }
+    },
+    "setup.commandTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run on your Mac"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mac 上运行"
+          }
+        }
+      }
+    },
+    "setup.commandRequirements": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You need the Eiscue source folder, Xcode, Python 3 and Rust 1.96.0 on your Mac. First use Xcode to prepare this device for development."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac 需备有 Eiscue 项目源码、Xcode、Python 3 和 Rust 1.96.0。先用 Xcode 完成这台设备的开发准备。"
+          }
+        }
+      }
+    },
+    "setup.commandLocation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect this device by USB and keep it unlocked. Open Terminal in the Eiscue project folder, then paste this command and press Return."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 USB 连接并解锁这台设备。在 Eiscue 项目文件夹中打开终端，粘贴以下命令并按回车。"
+          }
+        }
+      }
+    },
+    "setup.copyCommand": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy command"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制命令"
+          }
+        }
+      }
+    },
+    "setup.commandCopied": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制"
+          }
+        }
+      }
+    },
+    "setup.commandSelection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select this device and confirm in Terminal. The tool generates a pairing file and sends it to Eiscue by USB; you do not need to find or enter a device ID."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按终端提示选择这台设备并确认。工具会生成配对文件并通过 USB 发给 Eiscue，无需查找或填写设备编号。"
+          }
+        }
+      }
+    },
+    "setup.commandImport": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When it finishes, close this help page and choose Import from computer, then Connect device. The command does not import the identity or start a VPN automatically."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成后关闭帮助，点“导入电脑发送的配对”，再点“连接设备”。命令不会自动导入身份或开启 VPN。"
+          }
+        }
+      }
+    },
+    "setup.commandClipboardHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With Universal Clipboard enabled, paste directly on your Mac. Otherwise, enter the displayed command on your Mac."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已启用通用剪贴板时，可直接在 Mac 粘贴；否则在 Mac 输入上面的命令。"
           }
         }
       }
