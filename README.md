@@ -1,114 +1,189 @@
 # Eiscue
 
-运行在 iPhone / iPad 上的 Agent 设备助手。App 最低 **iOS / iPadOS 26.0**。任务编排和工具执行在手机上，模型通过用户配置的网络服务调用。
+**English** | [简体中文](README.zh-CN.md)
 
-内部方案和完整验收记录不随仓库发布；本页保留使用步骤和已验证范围，固件、工具与第三方来源说明保留在各目录的 README 中。
+An on-device agent assistant for **iPhone / iPad**, requiring **iOS / iPadOS 26.0** or later.
 
-**默认使用蓝牙开发板：** 已配置 Eiscue 蓝牙固件的 ESP32-C3 或 ESP32-S3 开发板接充电器或电脑供电，**不用插到 iPhone，也不用切换手机 Wi-Fi**。正常 App 已接入蓝牙连接、Apple ReplayKit 屏幕共享，以及四点点击和文字输入检查；这条路径不需要配对文件、DDI 或本地 VPN。检查通过后，AI 操作设备能力即可用于新任务；默认开启，可在右上角设备页关闭。升级安装会保留已有连接偏好，可在设备页改选“蓝牙开发板”。S3 也支持在同一页选择“USB 输入”：USB-C 手机用 C-to-C 数据线连接板的原生 USB／OTG 口；Lightning 手机需用带供电的 USB 相机／主机转接器，普通 Lightning 数据线不能替代。COM／UART 口用于电脑，不能提供手机键鼠输入。蓝牙发送指令，USB 提供键鼠输入；Agent 与 ReplayKit 仍在手机内运行。这与“USB 网卡中继”是两条不同路线，不使用 Eiscue VPN。
+Conversations, task orchestration and tool execution run on the phone. Models are accessed through a user-configured HTTPS service. Alongside chat, Eiscue can observe and operate the device when the user allows it.
 
-**代码接入与真机结果：** 新版蓝牙固件已完成构建、烧录读回及加密连接能力查询；在指定 iPhone 14 Pro / iOS 26.5.2 上，普通 App 已通过 ReplayKit 屏幕共享、四点实际点击和中文文字检查，显示已就绪。当前仍需验证蓝牙滑动、完整跨 App 的 Agent 任务和长时间后台行为；本次未重复“禁用蜂窝访问的 Wi-Fi HTTPS”检查，该联网结论来自旧版蓝牙基线。Wi-Fi 开发板的独立控制路径已于 2026-10-11 在指定样机上通过。
+> Development preview (`0.1.0`), installed through Xcode with development signing. No App Store or TestFlight release is available yet. Internal design documents and full acceptance records are not published with the repository; public build, firmware and provenance instructions are linked below.
 
-iCTRL 已完成源码调研，尚未集成。
+## Features
 
-## 已实现
+- **Chat and multiple models**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. Save multiple service/model configurations and switch from the conversation header. Each configuration keeps its own API key in Keychain.
+- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. The default route is a **Bluetooth board + system screen sharing**. The board only needs power and does not occupy the phone's Wi-Fi or VPN connection.
+- **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required.
+- **Conversation management**: streaming responses, Markdown, tool progress, copy and share. The sidebar supports pinning, reordering, renaming and bulk deletion; wide iPad windows can keep it visible.
+- **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. An iOS 26 system Live Activity shows the current task phase. Completion/interruption notifications are optional and off by default.
+- **Interface and extensions**: native Liquid Glass, light/dark appearance, English and Simplified Chinese, and imported UTF-8 Markdown skills. The supported C3 board with an ST7789 display can also show expressions, task phases and completed step counts.
 
-- 模型配置：OpenAI Chat Completions 兼容接口、OpenAI Responses、Anthropic Messages，支持保存多组地址、模型 ID 与名称，在对话顶部切换；每组 API Key 独立保存在系统 Keychain。
-- Agent：真实 PiDurableKit 运行时、流式回答、多轮对话、图片工具结果、串行工具调用、停止、超时与调用次数限制。
-- 会话与任务：发送后立即上屏并清空输入，流式回复、分开的真实工具记录、块级 Markdown、消息时间与选段复制；侧栏历史、长按置顶/排序/删除、恢复、脱敏报告导出，运行记录从对话菜单查看。
-- 设备代码：蓝牙 HID 输入与 ReplayKit 屏幕共享通过 `BluetoothDeviceController` 接入同一 DeviceKit / Agent 工具协议。设备页直接提供连接、共享和校验入口，四点触摸与实际文字检查通过前不开放 AI 操作。蓝牙当前公开截图、点击、滑动及经校验的文本输入；新版固件在完成检查后还可开放返回主屏幕和搜索／回车／退出快捷键；应用列表和按 bundle ID 启动未向蓝牙 Agent 开放。
-- 其他连接：保留本地 VPN、USB 开发板和 Wi-Fi 开发板的 RemotePairing / CoreDevice 路径。iOS 26 使用 App 内独立 XCTest 会话，已有 Wi-Fi 真机控制记录；这些路径才需要设备配对身份与开发者环境。ESP32-S3 的 [USB 固件](Firmware/NCM-Relay/README.md) 尚无实板 NCM 验证，ESP32-C3 不支持 USB NCM。同一 C3 样机的 [蓝牙固件](Firmware/Passport-BLE/README.md) 与 [Wi-Fi 固件](Firmware/Passport-Relay/README.md) 需要切换应用镜像，不能同时使用。
-- 执行边界：右上角设备页的“允许 AI 操作设备”默认开启，手动关闭后会记住选择；设备未就绪时新消息仅聊天，不注入设备工具。任务开始时固定范围，Kit 另保留只读观察范围。坐标操作绑定新截图，单次使用，过期或重连后失效；未知操作结果不自动重发。
-- 后台：iOS 26 的 BGContinuedProcessingTask 和系统实时活动，显示真实执行阶段；可选的完成／中断本地通知默认关闭，系统取消与过期统一停止。
-- Skill：内置导航、只读搜索和中断核查流程，导入与删除 UTF-8 Markdown；不执行导入文件里的脚本。
-- 原生界面：首次全屏入门引导，随浅色／深色模式切换的黑白灰控件与原生 Liquid Glass；对话主页面、左侧历史与设置、右上角设备状态，iPad 宽窗口支持常驻侧栏。使用用户提供的 Eiscue 图片作为图标。
-- 附件与语音：照片、拍摄、文本/代码文件和可提取文字的 PDF；Apple Speech 本机听写，切换语音模式后按住说话、松开结束、上滑取消，无需语音 API Key。普通聊天默认使用简短提示，不注入表情 Skill 或设备工具。
-- 多语言：Apple String Catalog 和 Swift Package 本地化资源，支持英文、简体中文，跟随系统／App 语言；新增语言无需修改业务逻辑。
+## Validation status
 
-**S3 本轮开发：** BLE／USB HID 固件和 App 输出选择已接入，命令与回复逐条认证；首次连接会自动保存本机 Keychain 密钥。首次登记仅在未绑定板上电后一分钟内开放，需在可信的近距离环境完成；已有密钥不能自动覆盖，丢失 App Keychain 时不能重新认领。该开发版的首次登记不提供抗中间人保证。S3 在指定 iPhone 14 Pro 上已通过认证命令、ReplayKit、四点真实触摸和随机中文粘贴校验。USB 曾在 Mac 完成枚举，但该轮手机收到 0 次点击，未通过；改线后确认使用普通 Lightning 数据线，手机没有 USB 主机连接。USB 手机验收等待合适转接器，不能计为通过。最新 USB 状态修复与该 BLE 已验收镜像的区别见固件 README。
+| Capability | Status |
+| --- | --- |
+| Chat, multiple models, streaming, Markdown, attachments, on-device dictation and English/Chinese UI | Implemented with simulator test coverage; known failures are listed in the test baseline below |
+| C3 / S3 Bluetooth connection, ReplayKit, four-point touch and Chinese text checks | Passed on the designated iPhone 14 Pro / iOS 26.5.2 |
+| Bluetooth swipe, complete cross-app agent tasks and long background runs | Integrated in code; **not yet accepted on real hardware** |
+| S3 USB input: commands over Bluetooth, keyboard/mouse output over USB | App and firmware integrated; phone-side USB input **has not passed acceptance** |
+| Wi-Fi board / local VPN / USB network adapter | Basic Wi-Fi board control passed on real hardware on 2026-10-11; other combinations await acceptance |
+| Other backends, including iCTRL | Source research only; not integrated |
 
-**源码接入与真机验收是两件事。** 模拟器可验证 Agent 与 App 流程，但不能代替真机 BLE HID 输入与系统屏幕共享。指定手机的蓝牙四点和文字校验已通过，滑动、跨 App 与后台控制仍需验收；其他连接路径还涉及 DDI、回环 VPN 和配对身份。不同设备与系统版本不能直接沿用样机结果。
+**Code integration, software tests and real-device acceptance are recorded separately.** Simulators cannot validate Bluetooth HID, system screen sharing or background duration. Results from one test device do not establish compatibility with other models or OS versions.
 
-## 运行 App
+## Quick start
 
-1. 使用 Apple Silicon Mac 和 Xcode 26 或更新版本，打开 `Eiscue.xcodeproj`。
-2. 选择 `Eiscue` scheme，在 iOS 26+ 模拟器运行。保留 Xcode 默认的本地签名，Keychain 需要正确的签名环境。
-3. 真机运行时，在 Signing & Capabilities 选择自己的开发团队。默认 Bundle ID 为 `org.eiscue.app`。
-4. 首次打开会显示全屏引导；在其中或「设置 → 模型配置」填入服务地址、模型 ID 和 API Key。其余参数有默认值，保存配置不会调用模型。
-5. 仅对话可直接使用。设备任务先给已刷好蓝牙固件的开发板接电源，并在 iPhone「设置 → 辅助功能 → 触控 → 辅助触控」开启辅助触控。接着打开 App 右上角设备页，选择“蓝牙开发板”，依次连接、通过系统面板开启屏幕共享、完成操作检查；回到对话即可让 AI 操作设备；只想聊天时，可在右上角设备页关闭“允许 AI 操作设备”。
+### Run and configure
 
-主 App 与 `EiscueBroadcast` 屏幕共享扩展需要匹配的 App Group 签名；仓库默认为 `group.org.eiscue.app`。随包保留的本地 VPN 扩展还需要 Network Extension capability。蓝牙使用过程不添加或启动 VPN。
+1. Use an Apple Silicon Mac, Xcode 26+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.45+. Run `xcodegen generate` at the repository root, open `Eiscue.xcodeproj` and select the `Eiscue` scheme.
+2. Keep the default local signing when running on an iOS 26+ simulator; Keychain is unavailable in unsigned builds. For a real device, set your development team and bundle IDs in `project.yml`, then regenerate the project. The app and broadcast extension share an App Group; the app and local-VPN extension require the Network Extension `packet-tunnel-provider` capability. The defaults are `org.eiscue.app` and `group.org.eiscue.app`. When changing them, update the suffixes, extensions and shared-group configuration together; see [AGENTS.md](AGENTS.md).
+3. Enter a service URL, model ID and API key during onboarding or under **Settings → Models**. You can save multiple configurations. Existing keys appear as saved; choose **Replace** to change one. Saving a configuration does not call the model.
 
-下面的电脑配对说明只适用于保留的 RemotePairing 路径，不适用于蓝牙：iOS 26 的开发者模式页没有该后端要求的系统配对入口。[USB 配对工具](Scripts/pair-device-usb.md)已在上述测试机上完成身份建立；后续独立 XCTest 会话通过系统自动化授权，并完成 Wi-Fi 开发板控制验证。无需为重试控制而重复生成已经有效的身份。该路径无需额外 UI Test Runner，但依赖设备 DDI 中的开发者框架和私有接口，目前不承诺 App Store 分发。
+Model service URLs must use HTTPS. OpenAI-compatible services usually include `/v1`; Anthropic uses `https://api.anthropic.com`. Device tasks also require image and tool-call support from the model. Plain chat requires neither a board nor screen sharing.
 
-App 当前仅接受 HTTPS 模型服务地址。OpenAI 兼容接口通常填写带 `/v1` 的地址；Anthropic 默认填写 `https://api.anthropic.com`。Kit 允许宿主自行配置本地 HTTP 服务。测试专用 loopback 配置只在 DEBUG 且显式 UI 测试模式下启用。
+### Let the AI operate the device
 
-## 两个独立 Kit
+Start with the Bluetooth route:
 
-`Package.swift` 对外提供两个 library product：
+1. Prepare the Bluetooth firmware using the [C3 / S3 firmware instructions](Firmware/Passport-BLE/README.md#build-and-flash-layout), then power the board.
+2. On iPhone, enable **Settings → Accessibility → Touch → AssistiveTouch**.
+3. Open the device page at the top right of Eiscue and select **Bluetooth board**. Connect, start screen sharing in the system panel, then start the check. Keep the check page visible without touching or rotating the phone; the app verifies four actual touches and one text entry.
+4. Once ready, return to the conversation and give it a task. **Allow AI to operate device** is on by default and can be turned off on the device page. When the device is not ready, new messages use plain chat.
 
-| 产品 | 负责 | 独立使用 |
-|---|---|---|
-| EiscueAgentKit | Eiscue 自有 Agent / 工具 / 事件协议、运行时适配、会话存储 | 注册自己的 Swift 工具，或注入 `AgentEngine` 替换引擎 |
-| EiscueDeviceKit | 配对、连接、观察、设备动作与状态 | 直接使用 `DeviceClient`，或注入自己的 `DeviceController` |
+The connection, screen sharing and calibration must all remain valid. Disconnection, rotation, a change of sharing session or screen dimensions invalidates calibration and requires another check. Routes never fall back to one another automatically.
 
-App 在 `Integrations/DeviceTools.swift` 组合两者，将模型工具调用转换为自有 `DeviceDecision`，交给 `DeviceTaskRunner` 检查权限、串行执行并自动截图核查。动作及核查共同计入预算，新截图随同一工具结果返回；未知送达停止，无法核查则暂停。没有单独的 Plugin 产品，公开 API 不暴露 Pi 类型。更换引擎使用 `AgentClient(engine:)`，更换设备后端使用 `DeviceClient(controller:)`。
+### Connection routes
 
-公开接口见 [AgentClient](Sources/EiscueAgentKit/AgentClient.swift) 和 [DeviceClient](Sources/EiscueDeviceKit/DeviceClient.swift)。
+| Route | Screen / input | Initial setup | Uses Eiscue's VPN connection |
+| --- | --- | --- | --- |
+| Bluetooth board (default, C3 / S3) | ReplayKit / BLE HID | Bluetooth pairing, AssistiveTouch, screen sharing and calibration; no computer-generated pairing file or DDI | No |
+| S3 USB input | ReplayKit / USB HID; control commands still use Bluetooth | As above, plus a USB connection with the phone acting as host | No |
+| Local VPN | In-app XCTest screenshots and input on iOS 26 | Initial USB identity setup on a computer, developer environment / DDI | Yes |
+| Wi-Fi board | As above, through a Wi-Fi relay | As above, with the phone joined to the board's Wi-Fi | No |
+| S3 USB network adapter | As above, through a USB NCM relay | As above, plus a USB host connection and network adapter configuration | No |
 
-## 构建和测试
+**USB input and the USB network adapter are separate routes.** S3 USB input uses the board's native USB / OTG port. USB-C phones use a C-to-C data cable; Lightning phones require a powered USB host (camera) adapter, not a regular Lightning data cable. The COM / UART port is for computer flashing and logs. Phone, cable and adapter combinations still need real-device validation.
 
-工程使用 XcodeGen；修改工程配置后重新生成：
+For developer-services setup, see the [USB pairing tool](Scripts/pair-device-usb.md). Routine tasks run on the phone, but these routes depend on DDI developer frameworks and private interfaces, with no App Store distribution commitment. Bluetooth and S3 USB input do not require this pairing workflow.
+
+The C3 companion display shows only fixed phases, expressions and step counts, not model-generated text. A short press of OK latches a stop. To unlock, release OK, hold it for about 1.5 seconds, then disconnect; reconnection and calibration are required afterward.
+
+## Architecture
+
+```text
+Eiscue App (SwiftUI, iOS 26+)
+├── Conversations, model settings, attachments, speech, skills, run journal, background execution
+├── DeviceToolSession: model tool calls → DeviceDecision
+├── DeviceTaskRunner: permissions, budgets, serialized execution, post-action observation
+├── EiscueAgentKit: agent / tool / event protocols, with an internal PiDurableKit adapter
+└── EiscueDeviceKit: DeviceController protocol
+    ├── BluetoothDeviceController: BLE / USB HID + ReplayKit
+    └── Developer services: RemotePairing → in-app XCTest screenshots and input on iOS 26
+
+Extensions: EiscueBroadcast (screen sharing), EiscueTunnel (local-VPN route only)
+Firmware: Passport-BLE (C3 / S3 HID), Passport-Relay (C3 Wi-Fi), NCM-Relay (S3 USB network adapter)
+```
+
+The two Kits are independent Swift package libraries with no dependency on one another. The app integration layer connects them; there is no separate Plugin product.
+
+| Kit | Responsibilities | Replacement interface |
+| --- | --- | --- |
+| [EiscueAgentKit](Sources/EiscueAgentKit/AgentClient.swift) | Agents, tools, events and conversation storage; internally runs PiDurableKit through JavaScriptCore, with one SQLite database per conversation | `AgentClient(engine:)`; custom Swift tools can also be registered |
+| [EiscueDeviceKit](Sources/EiscueDeviceKit/DeviceClient.swift) | Connection, observation, actions and capability status | `DeviceClient(controller:)` |
+
+Public APIs do not expose PiDurableKit or actell types. Contribution and maintenance rules are in [AGENTS.md](AGENTS.md).
+
+## Build and test
+
+**Preserve the lockfile's current state first.** SwiftPM may remove the Xcode-only swift-markdown / swift-cmark pins from `Package.resolved`. Record and preserve existing changes before running it, inspect the diff afterward and restore only changes caused by that run. Do not unconditionally restore the entire file.
+
+Run from the repository root:
 
 ```sh
 xcodegen generate
+
+# Kit tests: local model fixtures, no real model calls
 swift test
+
+# App build
 xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
   -destination 'generic/platform=iOS Simulator' ARCHS=arm64 build
+
+# App unit tests
+xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
+  -destination 'platform=iOS Simulator,id=<SIMULATOR_ID>' \
+  -only-testing:EiscueAppTests test
 ```
 
-完整 App 测试使用真实 Pi 运行时和一个确定性的本地模型响应服务，不需要 API Key、不消耗模型额度：
+For the full app + UI suite, first start the local model server in another terminal. No API key is needed:
 
 ```sh
-# 在另一个终端保持运行，仅监听 127.0.0.1
 python3 Scripts/test-model-server.py
+```
 
-# 选择本机已有的 iOS 26+ 模拟器
+```sh
 xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
   -destination 'platform=iOS Simulator,id=<SIMULATOR_ID>' test
 ```
 
-单独运行不依赖本地模型服务的 UI 用例：
+### Recorded test baseline
 
-```sh
-xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
-  -destination 'platform=iOS Simulator,id=<SIMULATOR_ID>' \
-  -only-testing:EiscueUITests/EiscueUITests test
-```
+2026-10-14, commit `efb7703`, Xcode 26.3, iPhone 16e / iOS 26.3 simulator:
 
-2026-10-13 本轮软件验证：App 单元测试 **131 项通过**，Swift Kit **101 项通过**；模拟器 `EiscueUITests` **8 项通过、1 项跳过**。跳过的设备操作验证页用例需要真实设备控制就绪，模拟器无法满足。另有两次指定手机的 XCTest Runner 在执行用例前断开（退出 74），未执行测试，不能算通过；上述 S3 BLE 输入结果来自 App 内实际 UIKit 校验。USB 与蓝牙握手、枚举或 ACK 都不能替代实际手机输入验证。
+| Suite | Result |
+| --- | --- |
+| Swift Kits | 149 tests / 19 suites; 4 failing tests (10 issues) |
+| App unit tests | 226 passed |
+| UI tests | 44 tests: 34 passed, 5 skipped, 5 failed |
+| Firmware host tests | Board authentication: 6 groups passed; C3 companion display: 5 groups passed. NCM relay host tests were not run in this round |
+| Device backend | 64 Rust library tests and 332 ObjC automation bridge checks passed |
 
-设备后端已经附带 arm64 真机、模拟器和 macOS XCFramework，可直接构建；目前不含 Intel / x86_64 slice。重新构建 Rust 后端：
+The 4 Kit failures and 2 UI failures were traced to outdated copy or view-hierarchy assertions. Another 3 sharing tests could not find the system panel identifier. Screenshots show that the panel opened, but **saving, dismissal and readback still need revalidation after the tests are fixed**; the screenshots do not establish that the complete sharing flow works. Skipped cases require real hardware or an iPad. The failing suites are not currently green gates. These tests were not rerun for this documentation update.
+
+### Backend and firmware
+
+The device backend ships an XCFramework for arm64 iOS, simulator and macOS, without x86_64 slices. Rebuild only when backend source changes, using the pinned Rust 1.96.0 toolchain:
 
 ```sh
 bash Scripts/build-device-backend.sh
+CARGO_TARGET_DIR=.build/device-rust rustup run 1.96.0 cargo test --locked \
+  --manifest-path Vendor/DeviceBackend/rust/Cargo.toml --lib
 ```
 
-脚本与源码版本说明见[Vendor/DeviceBackend](Vendor/DeviceBackend/README.md)。原始 Rust 测试在 `Vendor/DeviceBackend/rust` 中运行，使用脚本指定的工具链。
+Firmware builds require ESP-IDF **v5.5.3** with `IDF_PATH` set:
 
-## 数据
+```sh
+bash Scripts/build-passport-ble.sh esp32c3  # or esp32s3
+bash Scripts/test-board-auth.sh           # Host tests; no hardware needed
+bash Scripts/test-board-companion.sh
+```
 
-- 会话、运行时 SQLite、任务记录、导入 Skill：App 沙盒的 `Application Support/Eiscue/`。
-- API Key 和配对私钥：本机 Keychain，不写入 UserDefaults、聊天或报告。
-- 蓝牙屏幕共享由用户在 Apple 系统面板中启动。扩展仅接收视频，将最新一帧写入受文件保护的 App Group 本地缓存，不保留视频历史、不采集麦克风或 App 音频。停止、暂停或帧过期后旧画面不能继续授权操作。
-- 设备任务请求观察时，截图会发给所配置的模型服务；运行时的工具历史可能包含截图与输入结果，随会话删除。仅开启共享或手动截图预览不会自行上传模型。文字输入会覆盖系统剪贴板后请求粘贴。
-- 导出报告只包含允许的运行元信息与工具状态，不包含 API Key、配对信息、原始截图或完整输入参数。
-- 删除会话会清理对应的运行时文件与任务日志；删除 API Key 不会删除会话。
-- 选择的附件进入 App 私有存储，按发送后才提供给模型。语音只在本机识别，音频不写文件，识别文字先进入草稿。
+Builds do not open serial ports or flash hardware. Flashing depends on the firmware:
 
-## 后续验证与范围
+- **C3 BLE**: follow the [partition layout instructions](Firmware/Passport-BLE/README.md#build-and-flash-layout) to back up the full flash and verify the existing layout first. When switching between BLE / Wi-Fi firmware on a matching layout, write only the app partition at `0x20000` and preserve private configuration at `0xF000`. The general flashing tool currently has no C3 BLE profile.
+- **S3 HID / relay firmware**: `board-firmware.py` supports `s3-hid`, `ncm` and `passport`; `passport` means the **C3 Wi-Fi relay**. Generate and verify the corresponding firmware package first. `flash` requires `--port` and `--package`; it backs up the entire flash before writing and verifying, without erasing the whole chip or writing eFuses. See `python3 Scripts/board-firmware.py --help` for arguments and each firmware README for its layout. Do not reuse the C3 partition table on S3.
 
-App 随包包含屏幕共享扩展与保留的本地 VPN 扩展。蓝牙普通流程已接入代码。AX 界面树、PiP、Mac / Android / 鸿蒙控制后端属于后续扩展；它们不是当前可用功能。后台运行上限和本地回环兼容性需实测，系统可能随时终止执行。设备任务由用户在前台发起并申请 BGContinuedProcessingTask；蓝牙和屏幕共享本身不提供 Agent 后台执行许可。
+## Permissions, data and privacy
 
-保留的 RemotePairing 控制组件来自 actell 固定版本，保留其 GPL-3.0 和第三方声明；蓝牙固件和 ReplayKit 接入为本项目实现，PiDurableKit 固定到明确 commit。依赖版本见 [Package.swift](Package.swift)，设备后端来源与许可见 [后端说明](Vendor/DeviceBackend/README.md)。这里不替整个 Eiscue 项目作发行许可决定。
+- A task's permission scope is fixed when it starts; plain chat registers no tools. Device tools are exposed only for capabilities supported by the active backend. Actions are bound to the latest valid screenshot and consume it once. Commands are not automatically resent when delivery is uncertain.
+- Lack of progress or reaching the step limit pauses the task. Choosing **Continue** starts a new request and observes again. Recovery after interruption is read-only and never resumes automatically. Imported skills are Markdown instructions only; they cannot expand permissions or execute scripts.
+- Conversations, runtime SQLite databases, run journals, skills and attachments live in the app sandbox under `Application Support/Eiscue/`. API keys and pairing private keys stay in device-only Keychain items, never in UserDefaults, logs or exported reports.
+- The ReplayKit extension keeps only the latest JPEG frame (longest side ≤ 1600 px) in a file-protected App Group, with no recording history or audio capture. **Both observation tools and automatic post-action observation return screenshots to the model**; starting screen sharing or opening a manual preview does not upload frames. Tool history may persist screenshots in the conversation's SQLite database, which is removed when that conversation is deleted.
+- Text input overwrites the clipboard and pastes, without reading its previous contents. Attachments are copied to private storage; images are re-encoded to remove EXIF and sent to the model only when the message is sent. Speech is recognized on-device, and audio is not written to disk.
+- Exported reports contain only allowed metadata and tool status, excluding keys, pairing data, raw screenshots and full input arguments. Deleting an API key does not delete conversations.
 
-**本地连接扩展基于 LocalDevVPN / StosVPN 的 IPv4 反射实现**，归属 Stossy11、SideStore Team 和 jkcoxson，保留其自定义 StosVPN License。详见[来源与许可](Vendor/LocalTunnel/README.md)。
+Background device tasks request continued execution through `BGContinuedProcessingTask`; the system may cancel or end them. Bluetooth, ReplayKit, VPN and a visible Live Activity do not themselves guarantee background execution time. AX accessibility trees, PiP and Mac / Android / HarmonyOS backends remain future directions.
+
+## Licenses and provenance
+
+Eiscue as a whole does not yet have a unified distribution license. The table below records the licenses and provenance of individual components:
+
+| Component | Source / license |
+| --- | --- |
+| [DeviceBackend](Vendor/DeviceBackend/README.md) | Pinned actell commit, GPL-3.0-only; includes MIT-licensed idevice. The app always links this backend; choosing Bluetooth does not remove it from the binary |
+| [LocalTunnel](Vendor/LocalTunnel/README.md) | Derived from LocalDevVPN / StosVPN, under the custom StosVPN License; see attribution in the directory |
+| [Passport-BLE](Firmware/Passport-BLE/README.md#license-and-api-references) | Original firmware source is Apache-2.0; dependency notices are in the firmware directory. The firmware source license does not grant the same license to the [expression artwork](Firmware/Passport-BLE/Resources/README.md) |
+| [NCM-Relay](Firmware/NCM-Relay/README.md), [Passport-Relay](Firmware/Passport-Relay/README.md) | The upstream combined project declares GPL-3.0-only; local files have GPL-3.0-or-later headers. See each `SOURCE_MANIFEST.json` |
+| PiDurableKit | Pinned commit, CC0-1.0; embedded JS dependencies have separate notices |
+| swift-markdown / swift-cmark | Pinned to 0.9.0; full license texts are included in the [app resources](Apps/Eiscue/Resources/OpenSourceLicenses) |
+
+See [Package.swift](Package.swift) and [project.yml](project.yml) for dependency versions.
