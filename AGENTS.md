@@ -16,7 +16,7 @@ Main pieces:
 - **App extensions**: `Apps/EiscueBroadcast` (ReplayKit broadcast upload; caches only the latest JPEG frame in the App Group) and `Apps/EiscueTunnel` (Packet Tunnel loopback reflector, used only by the local-VPN route). `Apps/Shared` holds config shared by the app and tunnel.
 - **Vendor/DeviceBackend**: GPL-3.0 control backend copied from actell at a pinned commit (Swift `PhoneAgentNCM`, C `CNCMBackend`, ObjC `CEiscueAutomation`, Rust crate + vendored `idevice`), shipped as the prebuilt `NCMNativeBackend.xcframework` (arm64 iOS, arm64 simulator, arm64 macOS only; no x86_64).
 - **Vendor/LocalTunnel**: LocalDevVPN / StosVPN–derived reflector source and license, bundled as app resources.
-- **Firmware** (ESP-IDF v5.5.3): `Passport-BLE` (ESP32-C3 BLE HID), `Passport-Relay` (ESP32-C3 Wi-Fi AP relay), `NCM-Relay` (ESP32-S3 USB NCM relay, no real-board validation yet). `Passport-BLE` also builds explicitly for S3: BLE commands with selected BLE or USB HID output, independent ReplayKit observation, no VPN. Its 16 MB profile preserves the attached board's 24 KB NVS layout; do not reuse the C3 partition table. The C3 BLE and Wi-Fi images share a partition layout and cannot run at the same time.
+- **Firmware** (ESP-IDF v5.5.3): `Passport-BLE` (ESP32-C3 BLE HID), `NCM-Relay` (ESP32-S3 USB NCM relay, no real-board validation yet). `Passport-BLE` also builds explicitly for S3: BLE commands with selected BLE or USB HID output, independent ReplayKit observation, no VPN. Its 16 MB profile preserves the attached board's 24 KB NVS layout; do not reuse the C3 partition table. The Wi-Fi hotspot relay has been retired; its design is kept locally in `docs/wifi-hotspot-relay-retired.md`. Preserve the existing C3 partition layout and private configuration when updating BLE firmware.
 - **C3 companion display**: the existing board profile drives ST7789 with packed Eiscue expressions, localized fixed phases and observed tool-step counts. Optional encrypted AB8/AB9 GATT channels carry only status and the physical OK-stop latch; they are separate from HID commands. A released-then-held OK key unlocks only after disconnect, requiring fresh calibration. S3 has no display channel. Asset sources and generation instructions are in `Firmware/Passport-BLE/Resources/README.md`.
 
 ### Repository layout
@@ -38,7 +38,7 @@ Sources/EiscueDeviceKit/ public API at top level, Bluetooth/, ScreenBroadcast/; 
 Tests/                  EiscueAgentKitTests, EiscueDeviceKitTests (Swift Testing); EiscueAppTests (XCTest)
 UITests/EiscueUITests/  XCTest UI + real-runtime integration tests; BoardAcceptanceUITests is real-hardware opt-in
 Vendor/                 DeviceBackend (GPL, actell-derived; prebuilt xcframework), LocalTunnel (StosVPN license)
-Firmware/               Passport-BLE (C3/S3 HID), Passport-Relay (C3 Wi-Fi), NCM-Relay (S3 USB NCM)
+Firmware/               Passport-BLE (C3/S3 HID), NCM-Relay (S3 USB NCM)
 Scripts/                build/test/flash helpers, model fixture server, USB pairing bootstrap, asset generators
 ```
 
@@ -56,7 +56,7 @@ Scripts/                build/test/flash helpers, model fixture server, USB pair
 - Public Kit APIs must not expose PiDurableKit or actell types. `public` access control defines the API; directories are just organization. There is no separate "Plugin" product.
 - Engines are swappable via `AgentClient(engine:)`; device backends via `DeviceClient(controller:)`. New app preferences default to `localVPN` with the developer-services `DeviceClient()`; saved route choices are preserved. Selecting Bluetooth uses `BluetoothDeviceController` and retains the network client for switching back.
 - S3 HID commands and replies use per-connection HMAC and monotonic sequence numbers; every command, including STOP/INFO, is authenticated. First enrollment is restricted to an unclaimed board's first 60 s of power, with the candidate key saved in Keychain before enrollment. Never replace an existing board key automatically. Enrollment uses encrypted Just Works and is a trusted-nearby development flow, without a MITM guarantee.
-- Connection methods (`DeviceConnectionMethod`): `bluetoothBoard` (BLE HID + ReplayKit; no VPN, pairing file or DDI), `localVPN` (new-install default), `usbBoard`, `wirelessBoard` (RemotePairing / CoreDevice paths that need a pairing identity and developer environment). A route never silently falls back to another one.
+- Connection methods (`DeviceConnectionMethod`): `bluetoothBoard` (BLE HID + ReplayKit; no VPN, pairing file or DDI), `localVPN` (new-install default), `usbBoard` (RemotePairing / CoreDevice paths that need a pairing identity and developer environment). A route never silently falls back to another one. A retired `wirelessBoard` preference loads as disconnected `localVPN` without starting a connection.
 - `EiscueBroadcast` compiles `Sources/EiscueDeviceKit/ScreenBroadcast/ScreenBroadcastStore.swift` directly so the extension doesn't link the device backend. Keep that file Foundation-only.
 - Selecting Bluetooth at runtime does not remove the linked GPL backend from the binary; a pure-BLE distribution would need a target split.
 
@@ -140,7 +140,6 @@ bash Scripts/build-passport-ble.sh esp32c3 # C3 BLE -> .build/passport-ble-firmw
 bash Scripts/build-passport-ble.sh esp32s3 # S3 BLE / USB HID -> .build/s3-hid-firmware/
 bash Scripts/test-board-auth.sh           # real HMAC host fixture (OpenSSL), no hardware
 bash Scripts/test-board-companion.sh      # C3 status/stop/button/bitmap UBSan fixture, no hardware
-bash Scripts/build-passport-firmware.sh   # C3 Wi-Fi relay (builds + packages)
 bash Scripts/build-board-firmware.sh      # S3 USB NCM relay (builds + packages)
 bash Scripts/test-board-firmware.sh       # NCM-Relay host tests (UBSan, localhost) + Python tool tests
 python3 Scripts/board-firmware.py --help
@@ -152,12 +151,11 @@ Build scripts never open serial ports or flash hardware. The packaging/flashing 
 | CLI profile | Firmware | Board |
 | --- | --- | --- |
 | `s3-hid` | `Passport-BLE`, BLE commands with selected BLE / USB HID output | ESP32-S3, 16 MB profile |
-| `passport` | `Passport-Relay`, Wi-Fi relay | ESP32-C3, 8 MB profile |
 | `ncm` | `NCM-Relay`, USB NCM relay | ESP32-S3, 4 MB profile |
 
-There is **no C3 BLE CLI profile**; `passport` means the Wi-Fi relay, not BLE. C3 BLE build output is an app image. When switching BLE / Wi-Fi on a C3 with the already verified shared partition layout, retain a verified full-flash backup, write only the app partition at `0x20000`, preserve private configuration at `0xF000`, and verify readback. Do not apply this app-only procedure to an unknown layout or write the C3 partition table to S3. See [HID firmware setup](Firmware/Passport-BLE/README.md) for the layout requirements.
+There is **no C3 BLE CLI profile**; the retired `passport` profile is rejected. C3 BLE build output is an app image. When updating a C3 with the already verified matching partition layout, retain a verified full-flash backup, write only the app partition at `0x20000`, preserve private configuration at `0xF000`, and verify readback. Do not apply this app-only procedure to an unknown layout or write the C3 partition table to S3. See [HID firmware setup](Firmware/Passport-BLE/README.md) for the layout requirements.
 
-For a supported S3 HID or relay package, `board-firmware.py flash` requires both `--port` and `--package`. It checks the package and ROM, backs up and verifies the **entire** flash, then writes and verifies the package images. It never uses `erase_flash` or writes eFuses. This is a package installation path, not the app-only C3 BLE / Wi-Fi switch; the `passport` path also provisions private Wi-Fi configuration. Only flash a board, use a serial port, or run on a real device when the user explicitly asks for it.
+For a supported S3 HID or relay package, `board-firmware.py flash` requires both `--port` and `--package`. It checks the package and ROM, backs up and verifies the **entire** flash, then writes and verifies the package images. It never uses `erase_flash` or writes eFuses. This is a package installation path, not the app-only C3 BLE update procedure. Only flash a board, use a serial port, or run on a real device when the user explicitly asks for it.
 
 ## Code Style
 
@@ -166,7 +164,7 @@ There are no SwiftLint / SwiftFormat / clang-format configs. Match the surroundi
 - **Swift 6** language mode with strict concurrency for app and Kits. `PhoneAgentNCM` (vendored) stays in Swift 5 mode. UI state types are `@MainActor`. System/ObjC callbacks that fire on background queues (speech, audio, background tasks) must be non-isolated `@Sendable` closures that hop to `MainActor` explicitly; inheriting MainActor isolation has crashed the app on device before.
 - Kit types crossing boundaries are `Sendable`; public enums are `Codable, Sendable` where persisted. Tool parameters use `AgentJSONValue` JSON-schema literals with `"additionalProperties": false`. `mayHaveSideEffects` defaults to `true`; set `false` only for pure observation tools.
 - Code is dense: short helpers, several statements per line in places, and few comments. Comments explain *why* a constraint exists (security, race, platform quirk) rather than restating code.
-- Debug-only entry points (`--owned-device-check`, `--ble-device-check`, `--bluetooth-setup-check`, `--wireless-board-probe`, `--legacy-device-probe`, `--import-pairing-transfer`, `--device-connection-check`, `--resume-existing-local-tunnel`, UI fixtures) must stay inside `#if DEBUG`. Release builds must not contain automation or auto-import paths.
+- Debug-only entry points (`--owned-device-check`, `--ble-device-check`, `--bluetooth-setup-check`, `--legacy-device-probe`, `--import-pairing-transfer`, `--device-connection-check`, `--resume-existing-local-tunnel`, UI fixtures) must stay inside `#if DEBUG`. Release builds must not contain automation or auto-import paths.
 - UI elements that tests interact with get stable `accessibilityIdentifier`s (e.g. `sendMessageButton`, `modelSettingsButton`, `deviceNavigationLink`). When you add containers, keep child identifiers reachable; container identifiers have hidden children before.
 - UI follows native iOS 26 Liquid Glass (`.glass` / `.glassProminent` for standalone buttons, semantic backgrounds for content) with a monochrome adaptive accent. See `docs/chat-experience.md`.
 - **Localization**: English is the development language and Simplified Chinese (`zh-Hans`) is the translation. App and extensions use String Catalogs (`Apps/*/Resources/*.xcstrings`, split by area: `Runtime`, `Connections`, `TaskStatus`, `Composer`, `Speech`, `Navigation`, `Bluetooth`, etc.) with `String(localized: "key", table: "Table")`. Kits use `Resources/{en,zh-Hans}.lproj/*.strings` with `String(localized:defaultValue:bundle: .module)`. Use semantic keys, plural variations and Foundation formatting. Never branch on language in Swift. To add a language, update every catalog, add Kit `.lproj` files, add it to `CFBundleLocalizations` in `project.yml`, and regenerate. Model protocols, tool names, bundle IDs and system prompts are not translated. See `docs/localization.md`.
@@ -227,5 +225,5 @@ Fix and rerun the failing checks before treating their targets as a green gate. 
 - **Dependencies** are pinned. PiDurableKit uses revision `6e7f2671…` (SwiftPM) and swift-markdown is exactly 0.9.0 (Xcode project only). `Package.resolved`, `Cargo.lock` and firmware `dependencies.lock` are committed. See `docs/dependencies.md`.
 - **Environment variables**: `EISCUE_TEST_MODEL_URL` (UI-test model fixture), `EISCUE_RUST_TOOLCHAIN` (default `1.96.0`), `IDF_PATH` / `IDF_TOOLS_PATH` (ESP-IDF 5.5.3), `BOARD_SANITIZERS` and `CC` (firmware host tests).
 - **Runtime data**: Everything lives in the app sandbox under `Application Support/Eiscue/`: `conversations.json`, `Runtime/` (per-conversation Pi SQLite), `Runs/` (task journal), `Skills/` (imported), and `Attachments/`. Built-in skills are `Apps/Eiscue/Resources/Skills/*.md`. Deleting a conversation removes its runtime files and journal; deleting the API key keeps conversations. Preferences such as `deviceConnectionMethod`, `appearance`, `modelProfiles` (profile list and selection; no keys), the legacy `modelSettings` projection and `onboardingVersion` are stored in UserDefaults.
-- **Local tunnel** addresses are fixed: local `10.7.1.1/24`, peer `10.7.0.1/32`, host route only, no default route or DNS. The Wi-Fi board is `192.168.7.1/30` and the phone gets `.2`. The USB NCM board is `192.168.7.1/24` and the phone uses a manual `.2`.
+- **Local tunnel** addresses are fixed: local `10.7.1.1/24`, peer `10.7.0.1/32`, host route only, no default route or DNS. The USB NCM board is `192.168.7.1/24` and the phone uses a manual `.2`.
 - **Build artifacts**: `.build/` is gitignored and holds research checkouts, backend/firmware builds, test results, and private board backups.

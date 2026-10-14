@@ -264,8 +264,7 @@
     "Minimum flash layout changed from 16MB to 4MB; complete original flash is backed up by the explicit flash tool.",
     "USB manufacturer/product/version strings identify Eiscue NCM Relay 1.0.0.",
     "Python flash/inventory/package/link tools and safety guard tests are Eiscue additions.",
-    "Shared developer-service startup log no longer claims absence of radio; the Passport-Relay target uses Wi-Fi.",
-    "Developer diagnostic page uses transport-neutral text for shared USB and Wi-Fi targets; wire protocol fields are unchanged.",
+    "Developer-service startup log and diagnostic page use transport-neutral relay descriptions; wire protocol fields are unchanged.",
     "Discovery resends service PTR queries during existing bounded follow-ups and emits numeric-only firmware receive/record counters; deadlines and source filters are unchanged."
   ]
 }

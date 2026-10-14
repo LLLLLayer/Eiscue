@@ -921,23 +921,6 @@
         }
       }
     },
-    "device.connection.wifiTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ESP32-C3 Wi-Fi"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ESP32-C3 Wi-Fi"
-          }
-        }
-      }
-    },
     "device.connection.appSummary": {
       "extractionState": "manual",
       "localizations": {
@@ -985,23 +968,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "USB 网卡中继，需配对准备，不占用 VPN。"
-          }
-        }
-      }
-    },
-    "device.connection.wifiSummary": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uses a dedicated Wi-Fi hotspot; requires pairing setup, no VPN."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连接专用 Wi-Fi 热点，需配对准备，不占用 VPN。"
           }
         }
       }

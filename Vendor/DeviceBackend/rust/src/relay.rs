@@ -135,8 +135,8 @@ impl NcmConnector for RelayConnector {
 fn bind_interface(socket: &TcpSocket, index: u32) -> io::Result<()> {
     use std::os::fd::AsRawFd;
     // Explicit Darwin socket binding. Never fall back if permission/interface
-    // validation fails. Swift independently requires USB .2/24 or Wi-Fi .2/30
-    // on the caller's chosen IFT_ETHER interface; neither route uses a VPN.
+    // validation fails. Swift independently requires USB .2/24 on the caller's
+    // chosen IFT_ETHER interface; this route does not use a VPN.
     let mut head: *mut libc::ifaddrs = std::ptr::null_mut();
     if unsafe { libc::getifaddrs(&mut head) } != 0 {
         return Err(io::Error::last_os_error());
@@ -161,7 +161,7 @@ fn bind_interface(socket: &TcpSocket, index: u32) -> io::Result<()> {
             };
             let flags = row.ifa_flags as i32;
             if addr.sin_addr.s_addr.to_ne_bytes() == [192, 168, 7, 2]
-                && matches!(mask.to_ne_bytes(), [255, 255, 255, 0] | [255, 255, 255, 252])
+                && mask.to_ne_bytes() == [255, 255, 255, 0]
                 && flags & (libc::IFF_UP | libc::IFF_RUNNING) == (libc::IFF_UP | libc::IFF_RUNNING)
                 && flags & (libc::IFF_LOOPBACK | libc::IFF_POINTOPOINT) == 0
             {

@@ -315,11 +315,6 @@ struct DeviceView: View {
             Text("device.boardHardwareRequirement")
                 .font(.caption).foregroundStyle(.secondary)
                 .accessibilityIdentifier("boardHardwareRequirement")
-        } else if model.deviceConnectionMethod == .wirelessBoard {
-            Text("device.wirelessBoardConnectionDetail")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("device.wirelessBoardNetworkNote")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -392,7 +387,7 @@ struct DeviceConnectionMethodPicker: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsMethods = false
 
-    private let methods: [DeviceConnectionMethod] = [.localVPN, .bluetoothBoard, .usbBoard, .wirelessBoard]
+    private let methods: [DeviceConnectionMethod] = [.localVPN, .bluetoothBoard, .usbBoard]
     private var canChange: Bool {
         !model.isChangingDeviceConnectionMethod && !model.isSaving && !model.isStopping
             && !model.isManagingTunnel && !model.isStoppingTunnel && !model.isImportingAttachments
@@ -476,7 +471,6 @@ private extension DeviceConnectionMethod {
         case .localVPN: String(localized: "device.appConnectionMethod")
         case .bluetoothBoard: String(localized: "device.connection.bluetoothTitle", table: "Connections")
         case .usbBoard: String(localized: "device.connection.usbTitle", table: "Connections")
-        case .wirelessBoard: String(localized: "device.connection.wifiTitle", table: "Connections")
         }
     }
 
@@ -485,7 +479,6 @@ private extension DeviceConnectionMethod {
         case .localVPN: String(localized: "device.connection.appSummary", table: "Connections")
         case .bluetoothBoard: String(localized: "device.connection.bluetoothSummary", table: "Connections")
         case .usbBoard: String(localized: "device.connection.usbSummary", table: "Connections")
-        case .wirelessBoard: String(localized: "device.connection.wifiSummary", table: "Connections")
         }
     }
 
@@ -494,7 +487,6 @@ private extension DeviceConnectionMethod {
         case .localVPN: "iphone.gen3"
         case .bluetoothBoard: "keyboard"
         case .usbBoard: "cable.connector"
-        case .wirelessBoard: "wifi"
         }
     }
 }

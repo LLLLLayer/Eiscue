@@ -89,18 +89,15 @@ final class DevicePageUITests: XCTestCase {
         let appMethod = app.buttons["deviceConnectionChoice_localVPN"]
         let bluetooth = app.buttons["deviceConnectionChoice_bluetoothBoard"]
         let usb = app.buttons["deviceConnectionChoice_usbBoard"]
-        let wifi = app.buttons["deviceConnectionChoice_wirelessBoard"]
         XCTAssertTrue(appMethod.waitForExistence(timeout: 5))
         XCTAssertTrue(bluetooth.exists)
         XCTAssertTrue(usb.exists)
-        XCTAssertTrue(wifi.exists)
+        XCTAssertFalse(app.buttons["deviceConnectionChoice_wirelessBoard"].exists)
         XCTAssertLessThan(appMethod.frame.minY, bluetooth.frame.minY)
         XCTAssertLessThan(bluetooth.frame.minY, usb.frame.minY)
-        XCTAssertLessThan(usb.frame.minY, wifi.frame.minY)
         XCTAssertEqual(appMethod.value as? String, "已选用")
         XCTAssertNotEqual(bluetooth.value as? String, "已选用")
         XCTAssertEqual(usb.label, "ESP32-S3 USB 网卡")
-        XCTAssertEqual(wifi.label, "ESP32-C3 Wi-Fi")
         appMethod.tap()
         XCTAssertTrue(appMethod.waitForNonExistence(timeout: 5))
         XCTAssertEqual(picker.value as? String, "App 内连接")

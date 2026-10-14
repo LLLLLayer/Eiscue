@@ -142,7 +142,6 @@ extension AppModel {
             case .bluetoothBoard: String(localized: "bluetooth.connecting", table: "Bluetooth")
             case .localVPN: String(localized: "connection.discovering")
             case .usbBoard: String(localized: "connection.boardDiscovering")
-            case .wirelessBoard: String(localized: "connection.wirelessBoardDiscovering")
             }
         }
         let client = deviceClient
@@ -209,7 +208,6 @@ extension AppModel {
         case .bluetoothBoard: String(localized: "bluetooth.powerDetail", table: "Bluetooth")
         case .localVPN: String(localized: "connection.vpnSelected")
         case .usbBoard: String(localized: "connection.boardSelected")
-        case .wirelessBoard: String(localized: "connection.wirelessBoardSelected")
         }
     }
 

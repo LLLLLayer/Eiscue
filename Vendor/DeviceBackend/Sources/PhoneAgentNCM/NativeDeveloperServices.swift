@@ -122,7 +122,7 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         if old != 0 { ncm_backend_close(old) }
     }
     /// Caller must refresh discovery just before this call (candidate TTL).
-    /// Compatibility entry point for USB. Wi-Fi callers use scoped discovery.
+    /// Compatibility entry point for USB. Prefer the scoped discovery overload.
     public func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                         discovery: DiagnosticReply, endpoint: DiagnosticReply.Endpoint) async throws {
         try Task.checkCancellation()

@@ -257,11 +257,11 @@ extension AppModel {
         return geometry
     }
 
-    func runOwnedDeviceCheck(method: DeviceConnectionMethod = .localVPN) async {
+    func runOwnedDeviceCheck() async {
         let proof = OwnedDeviceCheckState.shared
         let destination = URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json")
         var report: [String: Any] = ["version": 4, "state": "started", "phase": "preparation",
-            "connectionMethod": method.rawValue, "localTunnelConnectedAtStart": localTunnel.isConnected]
+            "connectionMethod": DeviceConnectionMethod.localVPN.rawValue, "localTunnelConnectedAtStart": localTunnel.isConnected]
         var orientationToRestore: (scene: UIWindowScene, orientation: UIInterfaceOrientation)?
         var backgroundCheckID: UUID?
         defer { if let id = backgroundCheckID { background.end(taskID: id, success: false) } }
@@ -272,56 +272,25 @@ extension AppModel {
         }
         save("preparation")
         do {
-            // Use only an already saved identity. This route never imports,
-            // exports or replaces pairing credentials. Wireless never starts
-            // or resumes a local VPN.
+            // Use only an already saved identity. This check never imports,
+            // exports or replaces pairing credentials.
             let hasIdentity = try await deviceClient.hasPairingIdentity()
             report["identitySaved"] = hasIdentity
             guard hasIdentity else { throw DeviceControlError.noIdentity }
-            if method == .localVPN {
-                save("tunnel")
-                if !localTunnel.isConnected, ProcessInfo.processInfo.arguments.contains("--resume-existing-local-tunnel") {
-                    try await localTunnel.resumeExistingForDiagnostics()
-                }
-                guard localTunnel.isConnected else { throw DeviceControlError.notConnected }
-            } else {
-                save("select_connection")
-                try await localTunnel.refresh()
-                report["localTunnelConnectedAtStart"] = localTunnel.isConnected
-                // Reuse the production switch flow and retain the user's
-                // explicitly requested board method for subsequent manual use.
-                await selectDeviceConnectionMethod(method)
-                guard deviceConnectionMethod == method else { throw DeviceControlError.busy }
-                // A stale owned tunnel may exist even when the saved method was
-                // already wireless. Stop only Eiscue's provider configuration.
-                if localTunnel.isConnected || localTunnel.isTransitioning {
-                    save("stop_owned_tunnel")
-                    await stopLocalTunnel()
-                }
-                try await localTunnel.refresh()
-                guard !localTunnel.isConnected, !localTunnel.isTransitioning else {
-                    throw DeviceControlError.connection("Eiscue's local VPN has not stopped; wireless verification was not started")
-                }
-                report["selectedConnectionMethod"] = deviceConnectionMethod.rawValue
-                report["connectionSelectionRetained"] = true
+            save("tunnel")
+            if !localTunnel.isConnected, ProcessInfo.processInfo.arguments.contains("--resume-existing-local-tunnel") {
+                try await localTunnel.resumeExistingForDiagnostics()
             }
+            guard localTunnel.isConnected else { throw DeviceControlError.notConnected }
             // Require the native target's attached scene and settled view frames.
             save("geometry")
             _ = try await ownedGeometry(proof)
             for cycle in 1...2 {
-                if method != .localVPN {
-                    save("verify_board_route_\(cycle)")
-                    try await localTunnel.refresh()
-                    report["localTunnelConnectedAtConnect_\(cycle)"] = localTunnel.isConnected
-                    guard deviceConnectionMethod == method, !localTunnel.isConnected, !localTunnel.isTransitioning else {
-                        throw DeviceControlError.connection("The selected board route changed; wireless verification was stopped")
-                    }
-                }
                 save("connect_\(cycle)")
-                // The same entry point used by AppModel.connectDevice. Board
-                // discovery is not success: this returns only after production
-                // identity verification, developer readiness and media startup.
-                try await deviceClient.connect(method: method)
+                // The same entry point used by AppModel.connectDevice. This
+                // returns only after identity verification, developer readiness
+                // and media startup.
+                try await deviceClient.connect(method: .localVPN)
                 guard case .ready(let capabilities) = await deviceClient.status() else {
                     throw DeviceControlError.notConnected
                 }

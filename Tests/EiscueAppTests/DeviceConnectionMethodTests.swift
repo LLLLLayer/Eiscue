@@ -24,6 +24,26 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertEqual(fixture.model.deviceConnectionMethod, .localVPN)
     }
 
+    func testRemovedWirelessPreferenceLoadsDisconnectedWithoutConnectingOrPairing() async throws {
+        let fixture = try Fixture(savedMethod: "wirelessBoard")
+        let model = fixture.model
+        defer {
+            model.bluetoothMonitor?.cancel()
+            try? FileManager.default.removeItem(at: fixture.directory)
+        }
+        await model.load()
+        XCTAssertEqual(model.deviceConnectionMethod, .localVPN)
+        XCTAssertNil(model.networkDeviceClient)
+        XCTAssertNil(model.activeDeviceConnectionMethod)
+        XCTAssertNil(model.deviceConnectionTask)
+        XCTAssertNil(model.pairingTask)
+        XCTAssertFalse(model.isDeviceReady || model.isConnecting || model.isPairing)
+        XCTAssertFalse(model.localTunnel.isConnected || model.localTunnel.isTransitioning)
+        let calls = await fixture.controller.calls()
+        XCTAssertTrue(calls.methods.isEmpty)
+        XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
     func testSavedBluetoothSelectionKeepsItsController() throws {
         let fixture = try Fixture(savedMethod: "bluetoothBoard")
         XCTAssertEqual(fixture.model.deviceConnectionMethod, .bluetoothBoard)
@@ -401,7 +421,8 @@ final class DeviceConnectionMethodTests: XCTestCase {
         if let savedMethod { preferences.set(savedMethod, forKey: "deviceConnectionMethod") }
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
         controller = AppConnectionRecordingController(failure: failure, grantsControl: grantsControl, suspendsConnection: suspendsConnection)
-        model = AppModel(storageDirectory: directory, preferences: preferences)
+        model = AppModel(storageDirectory: directory, preferences: preferences,
+                         credentialStore: CredentialStore(service: suite))
         let client = DeviceClient(controller: controller)
         if model.deviceConnectionMethod == .bluetoothBoard { model.networkDeviceClient = client }
         else { model.deviceClient = client }
@@ -416,6 +437,7 @@ private actor AppConnectionRecordingController: DeviceController {
     var methods: [DeviceConnectionMethod] = []
     var disconnects = 0
     var cancelledConnections = 0
+    var pairingMutations = 0
     var connected = false
     var pending: CheckedContinuation<Void, Error>?
     init(failure: DeviceControlError?, grantsControl: Bool, suspendsConnection: Bool) {
@@ -424,6 +446,18 @@ private actor AppConnectionRecordingController: DeviceController {
     func status() async -> DeviceStatus {
         if connected && grantsControl { .ready(capabilities: [.screenshot, .tap]) }
         else { .unavailable(reason: "synthetic diagnostic only") }
+    }
+    func importPairingIdentity(_ data: Data) async throws {
+        pairingMutations += 1
+        throw DeviceControlError.unsupported
+    }
+    func removePairingIdentity() async throws {
+        pairingMutations += 1
+        throw DeviceControlError.unsupported
+    }
+    func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
+        pairingMutations += 1
+        return AsyncThrowingStream { $0.finish(throwing: DeviceControlError.unsupported) }
     }
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws { methods.append(.localVPN); connected = true }
     func connectUSBBoard() async throws {
@@ -450,7 +484,7 @@ private actor AppConnectionRecordingController: DeviceController {
         pending.resume(throwing: CancellationError())
     }
     func disconnect() async { disconnects += 1; connected = false; cancelPending() }
-    func calls() -> (methods: [DeviceConnectionMethod], disconnects: Int, cancelledConnections: Int) {
-        (methods, disconnects, cancelledConnections)
+    func calls() -> (methods: [DeviceConnectionMethod], disconnects: Int, cancelledConnections: Int, pairingMutations: Int) {
+        (methods, disconnects, cancelledConnections, pairingMutations)
     }
 }

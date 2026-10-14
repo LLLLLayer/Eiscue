@@ -1,6 +1,8 @@
 """Flash guard tests use fake ROM/serial objects, never a USB device."""
 import importlib.util
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
+import io
 import json
 from pathlib import Path
 import sys
@@ -55,6 +57,81 @@ class FakeChip:
 class BoardGuardTests(unittest.TestCase):
     def rom(self, chip):
         return patch.dict(sys.modules, {"esptool": types.SimpleNamespace(detect_chip=lambda *a, **k: chip)})
+
+    @patch.object(board.subprocess, "run")
+    @patch.object(board, "serial_ports")
+    def test_removed_profile_rejected_by_cli_before_io(self, ports, command):
+        for arguments in (["probe", "--port", "/dev/fake"],
+                          ["package", "--build-dir", "/nonexistent"],
+                          ["check-link", "--interface", "en0"]):
+            with self.subTest(command=arguments[0]), patch.object(sys, "argv", ["board-firmware.py", *arguments, "--target", "passport"]):
+                error = io.StringIO()
+                with redirect_stderr(error), self.assertRaises(SystemExit) as result:
+                    board.main()
+                self.assertEqual(result.exception.code, 2)
+                self.assertIn("invalid choice: 'passport'", error.getvalue())
+        ports.assert_not_called()
+        command.assert_not_called()
+
+    @patch.object(board, "selected_port")
+    def test_removed_package_rejected_before_serial_selection(self, port):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path / "manifest.json").write_text(json.dumps({
+                "format": 1, "profile": "passport", "chip": "esp32c3",
+                "version": "1.0.0", "minimum_flash_bytes": 8 * 1024 * 1024,
+            }))
+            with self.assertRaisesRegex(RuntimeError, "Unsupported firmware profile/chip"):
+                board.flash_package("/dev/fake", path)
+            self.assertEqual({file.name for file in path.iterdir()}, {"manifest.json"})
+        port.assert_not_called()
+
+    def test_supported_profiles_package_and_verify(self):
+        for target in ("ncm", "s3-hid"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp)
+                hid = target == "s3-hid"
+                app_name = "eiscue_passport_ble.bin" if hid else "eiscue_ncm_relay.bin"
+                files = {"0x0": "bootloader.bin", "0x8000": "partition-table.bin",
+                         "0x20000" if hid else "0x10000": app_name}
+                for name in files.values():
+                    (path / name).write_bytes(b"synthetic firmware fixture")
+                (path / "flasher_args.json").write_text(json.dumps({
+                    "extra_esptool_args": {"chip": "esp32s3"}, "flash_files": files,
+                    "flash_settings": {"flash_mode": "dio", "flash_freq": "80m",
+                                       "flash_size": "16MB" if hid else "4MB"},
+                }))
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    board.package_firmware(path, target)
+                manifest = board.check_package(Path(output.getvalue().strip()))
+                self.assertEqual(manifest["profile"], target)
+                self.assertEqual({image["file"] for image in manifest["images"]}, set(files.values()))
+
+    @patch.object(board.sys, "platform", "darwin")
+    @patch.object(board.socket, "socket")
+    @patch.object(board.socket, "if_nametoindex", return_value=5)
+    @patch.object(board.subprocess, "run")
+    def test_ncm_link_rejects_wifi_and_vpn_before_socket(self, command, index, stream):
+        config = "flags=8863<UP,BROADCAST,RUNNING>\n\tether 00:11:22:33:44:55\n\tinet 192.168.7.2 netmask 0xffffff00\n"
+        for hardware in ("Wi-Fi", "VPN"):
+            with self.subTest(hardware=hardware):
+                command.side_effect = [types.SimpleNamespace(stdout=config),
+                                       types.SimpleNamespace(stdout=f"Hardware Port: {hardware}\nDevice: en0\n")]
+                with self.assertRaisesRegex(RuntimeError, "not a USB NCM link"):
+                    board.check_link("en0")
+        stream.assert_not_called()
+
+    @patch.object(board.sys, "platform", "darwin")
+    @patch.object(board.socket, "socket")
+    @patch.object(board.socket, "if_nametoindex", return_value=5)
+    @patch.object(board.subprocess, "run")
+    def test_ncm_link_rejects_removed_subnet_before_socket(self, command, index, stream):
+        command.side_effect = [types.SimpleNamespace(stdout="flags=8863<UP,BROADCAST,RUNNING>\n\tether 00:11:22:33:44:55\n\tinet 192.168.7.2 netmask 0xfffffffc\n"),
+                               types.SimpleNamespace(stdout="Hardware Port: Eiscue NCM Relay\nDevice: en0\n")]
+        with self.assertRaisesRegex(RuntimeError, "exact .2 address and subnet mask"):
+            board.check_link("en0")
+        stream.assert_not_called()
 
     @patch.object(board, "selected_port")
     def test_c3_rejected_before_stub_or_flash_read(self, port):
@@ -134,7 +211,7 @@ class BoardGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Original NVS layout differs"):
                 board.check_s3_nvs_layout(path)
 
-    def test_s3_hid_package_cannot_write_nvs(self):
+    def test_s3_hid_package_cannot_write_private_partitions(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)
             image = path / "nvs.bin"
@@ -144,9 +221,12 @@ class BoardGuardTests(unittest.TestCase):
                         "minimum_flash_bytes": 16 * 1024 * 1024, "flash_size": "16MB",
                         "images": [{"file": image.name, "offset": 0x9000,
                                     "size": image.stat().st_size, "sha256": board.sha256(image)}]}
-            (path / "manifest.json").write_text(json.dumps(manifest))
-            with self.assertRaisesRegex(RuntimeError, "NVS is preserved"):
-                board.check_package(path)
+            for offset in (0x9000, 0xF000, 0x10000):
+                with self.subTest(offset=hex(offset)):
+                    manifest["images"][0]["offset"] = offset
+                    (path / "manifest.json").write_text(json.dumps(manifest))
+                    with self.assertRaisesRegex(RuntimeError, "NVS is preserved"):
+                        board.check_package(path)
 
     def test_ioreg_inventory_filters_identifiers_and_diagnostics(self):
         rows = list(board.walk_usb([{"IOKitDiagnostics": {"secret": "unused"},

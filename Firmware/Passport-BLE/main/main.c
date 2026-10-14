@@ -82,7 +82,7 @@ static void host_sync(void) {
 }
 static void host_task(void *arg) {(void)arg;nimble_port_run();nimble_port_freertos_deinit();}
 void app_main(void) {
-    // Existing Wi-Fi configuration and original NVS are preserved. Never erase
+    // Existing private configuration and original NVS are preserved. Never erase
     // NVS automatically if it is full or has an incompatible prior version.
     ESP_ERROR_CHECK(nvs_flash_init());
 #if BOARD_AUTH_REQUIRED

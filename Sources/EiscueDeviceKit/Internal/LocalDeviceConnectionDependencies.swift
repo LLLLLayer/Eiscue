@@ -44,18 +44,15 @@ struct LocalDeviceConnectionDependencies: Sendable {
     let makeSession: @MainActor @Sendable () -> any LocalDeviceSession
     let makeVPNDiscovery: @MainActor @Sendable () -> any LocalVPNDiscovering
     let makeBoardDiscovery: @MainActor @Sendable () -> any USBBoardDiscovering
-    let makeWirelessBoardDiscovery: @MainActor @Sendable () -> any USBBoardDiscovering
 
     init(supportsPhysicalDevice: Bool,
          makeSession: @escaping @MainActor @Sendable () -> any LocalDeviceSession,
          makeVPNDiscovery: @escaping @MainActor @Sendable () -> any LocalVPNDiscovering,
-         makeBoardDiscovery: @escaping @MainActor @Sendable () -> any USBBoardDiscovering,
-         makeWirelessBoardDiscovery: @escaping @MainActor @Sendable () -> any USBBoardDiscovering = { NCMProbeClient(transport: .wifi) }) {
+         makeBoardDiscovery: @escaping @MainActor @Sendable () -> any USBBoardDiscovering) {
         self.supportsPhysicalDevice = supportsPhysicalDevice
         self.makeSession = makeSession
         self.makeVPNDiscovery = makeVPNDiscovery
         self.makeBoardDiscovery = makeBoardDiscovery
-        self.makeWirelessBoardDiscovery = makeWirelessBoardDiscovery
     }
 
     static let live = Self(

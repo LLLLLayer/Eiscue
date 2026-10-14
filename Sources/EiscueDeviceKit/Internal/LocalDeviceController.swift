@@ -147,10 +147,6 @@ import OSLog
         try await connect(method: .usbBoard, vpn: nil)
     }
 
-    func connectWirelessBoard() async throws {
-        try await connect(method: .wirelessBoard, vpn: nil)
-    }
-
     private func connect(method: DeviceConnectionMethod, vpn: VPNLoopbackConfiguration?) async throws {
         guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
@@ -174,7 +170,6 @@ import OSLog
         case .bluetoothBoard: throw DeviceControlError.unsupported
         case .localVPN: String(localized: "device.status.discovering", defaultValue: "Finding the local VPN connection", bundle: .module)
         case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB network board", bundle: .module)
-        case .wirelessBoard: String(localized: "device.wireless.discovering", defaultValue: "Connecting to the Wi-Fi board", bundle: .module)
         }
         let service = dependencies.makeSession()
         services = service
@@ -197,10 +192,8 @@ import OSLog
                     try ensureCurrent(token)
                     try await service.connectLocalVPN(identity: identity, authorization: authorization,
                                                       pairingPort: port, configuration: vpn)
-                case .usbBoard, .wirelessBoard:
-                    let discovery = method == .usbBoard
-                        ? dependencies.makeBoardDiscovery()
-                        : dependencies.makeWirelessBoardDiscovery()
+                case .usbBoard:
+                    let discovery = dependencies.makeBoardDiscovery()
                     boardDiscovery = discovery
                     let candidate = try await discovery.discoverRemotePairing()
                     try ensureCurrent(token)
@@ -218,12 +211,7 @@ import OSLog
             }
         } catch {
             guard epoch == token else { throw CancellationError() }
-            let connectionError: Error
-            if method == .wirelessBoard, let boardError = error as? NCMError {
-                connectionError = DeviceControlError.connection(WirelessBoardErrorPresentation.message(boardError))
-            } else {
-                connectionError = Self.convert(error)
-            }
+            let connectionError = Self.convert(error)
             let release = disconnectNow(), stoppedEpoch = epoch
             if let release { _ = await release.value }
             if epoch == stoppedEpoch, !releaseUnconfirmed { failure = Self.message(connectionError) }
@@ -475,24 +463,6 @@ import OSLog
         if let error = error as? NativeBackendError { return NativeDeviceErrorPresentation.message(error) }
         if let error = error as? NCMError { return NCMDeviceErrorPresentation.message(error) }
         return String(localized: "device.operation.failed", defaultValue: "Device operation failed. Check Local Network permission, the connection method, and system pairing.", bundle: .module)
-    }
-}
-
-enum WirelessBoardErrorPresentation {
-    static func message(_ error: NCMError, bundle: Bundle = .module) -> String {
-        switch error {
-        case .interfaceUnavailable, .interfaceInvalid, .interfaceScopeUnsupported, .staleDiscovery:
-            return String(localized: "device.wireless.join-network", defaultValue: "Join the board’s Eiscue-xxxx Wi-Fi in Settings, then reconnect. Find its password in the local flashing configuration.", bundle: bundle)
-        case .interfaceAmbiguous:
-            return String(localized: "device.wireless.multiple-connections", defaultValue: "Multiple board networks found. Keep only the intended Eiscue Wi-Fi connection.", bundle: bundle)
-        case .network, .timeout, .disconnected:
-            return String(localized: "device.wireless.unreachable", defaultValue: "Wi-Fi board did not respond. Check its power, the Eiscue Wi-Fi connection, and Local Network permission. A company VPN may block local access.", bundle: bundle)
-        case .malformedReply, .unavailableBackend:
-            return String(localized: "device.wireless.firmware-required", defaultValue: "The board lacks the Wi-Fi connection service. Install Eiscue Wi-Fi firmware.", bundle: bundle)
-        case .pairingServiceUnavailable:
-            return String(localized: "device.wireless.pairing-unavailable", defaultValue: "Wi-Fi board connected, but device pairing is unavailable. Keep the device unlocked, enable Developer Mode, then reconnect.", bundle: bundle)
-        case .busy: return DeviceControlError.busy.localizedDescription
-        }
     }
 }
 

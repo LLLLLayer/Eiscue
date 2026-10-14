@@ -11,7 +11,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 ## Features
 
 - **Chat and multiple models**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. Save multiple service/model configurations and switch from the conversation header. Each configuration keeps its own API key in Keychain.
-- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations default to **In-app connection (local VPN)**, which needs initial computer pairing. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved route choices are retained.
+- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations default to **In-app connection (local VPN)**, which needs initial computer pairing. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved supported route choices are retained.
 - **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required.
 - **Conversation management**: streaming responses, Markdown, tool progress, copy and share. The sidebar supports pinning, reordering, renaming and bulk deletion; wide iPad windows can keep it visible.
 - **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. Task details show saved input/output, screenshots and tap/swipe positions when the matching image is available. An iOS 26 system Live Activity shows the current task phase. Completion/interruption notifications are optional and off by default.
@@ -25,7 +25,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 | C3 / S3 Bluetooth connection, ReplayKit, four-point touch and Chinese text checks | Passed on the designated iPhone 14 Pro / iOS 26.5.2 |
 | Bluetooth swipe, complete cross-app agent tasks and long background runs | Integrated in code; **not yet accepted on real hardware** |
 | S3 USB input: commands over Bluetooth, keyboard/mouse output over USB | App and firmware integrated; phone-side USB input **has not passed acceptance** |
-| Wi-Fi board / local VPN / USB network adapter | Basic Wi-Fi board control passed on real hardware on 2026-10-11; other combinations await acceptance |
+| Local VPN / USB network adapter | Integrated in code; route-specific real-device acceptance is still required |
 | Other backends, including iCTRL | Source research only; not integrated |
 
 **Code integration, software tests and real-device acceptance are recorded separately.** Simulators cannot validate Bluetooth HID, system screen sharing or background duration. Results from one test device do not establish compatibility with other models or OS versions.
@@ -60,8 +60,9 @@ The connection, screen sharing and calibration must all remain valid. Disconnect
 | Bluetooth board (C3 / S3) | ReplayKit / BLE HID | Bluetooth pairing, AssistiveTouch, screen sharing and calibration; no computer-generated pairing file or DDI | No |
 | S3 USB input | ReplayKit / USB HID; control commands still use Bluetooth | As above, plus a USB connection with the phone acting as host | No |
 | In-app connection (default, local VPN) | In-app XCTest screenshots and input on iOS 26 | Initial USB identity setup on a computer, developer environment / DDI | Yes |
-| Wi-Fi board | As above, through a Wi-Fi relay | As above, with the phone joined to the board's Wi-Fi | No |
 | S3 USB network adapter | As above, through a USB NCM relay | As above, plus a USB host connection and network adapter configuration | No |
+
+The former C3 Wi-Fi hotspot relay has been removed. An old saved selection resets to the default In-app connection without starting it; choose and connect a supported route explicitly.
 
 **USB input and the USB network adapter are separate routes.** S3 USB input uses the board's native USB / OTG port. USB-C phones use a C-to-C data cable; Lightning phones require a powered USB host (camera) adapter, not a regular Lightning data cable. The COM / UART port is for computer flashing and logs. Phone, cable and adapter combinations still need real-device validation.
 
@@ -96,7 +97,7 @@ Eiscue App (SwiftUI, iOS 26+)
     └── Developer services: RemotePairing → in-app XCTest screenshots and input on iOS 26
 
 Extensions: EiscueBroadcast (screen sharing), EiscueTunnel (local-VPN route only)
-Firmware: Passport-BLE (C3 / S3 HID), Passport-Relay (C3 Wi-Fi), NCM-Relay (S3 USB network adapter)
+Firmware: Passport-BLE (C3 / S3 HID), NCM-Relay (S3 USB network adapter)
 ```
 
 The two Kits are independent Swift package libraries with no dependency on one another. The app integration layer connects them; there is no separate Plugin product.
@@ -157,6 +158,8 @@ The 4 Kit failures and 2 UI failures were traced to outdated copy or view-hierar
 
 Later targeted checks on 2026-10-14 passed 4 Kit tests, 12 app tests and 10 UI cases (8 on iPhone, 2 on iPad). Coverage includes read-only tool-image recovery, screenshot details and previews, context menus, keyboard navigation, model parameter persistence and opening/dismissing/reopening native file sharing. Saving, readback and photo sharing were not rerun. These checks do not replace the full baseline or establish real-device control acceptance; failed intermediate runs are retained in the local validation record.
 
+Hotspot-relay removal on 2026-10-14 additionally passed 21 Kit tests, 34 app tests, 3 device-page UI tests, 14 offline firmware-tool tests and 64 Rust library tests. All three native backend slices were rebuilt. These targeted checks do not replace the full baseline or validate physical USB/Bluetooth behavior.
+
 ### Backend and firmware
 
 The device backend ships an XCFramework for arm64 iOS, simulator and macOS, without x86_64 slices. Rebuild only when backend source changes, using the pinned Rust 1.96.0 toolchain:
@@ -177,8 +180,8 @@ bash Scripts/test-board-companion.sh
 
 Builds do not open serial ports or flash hardware. Flashing depends on the firmware:
 
-- **C3 BLE**: follow the [partition layout instructions](Firmware/Passport-BLE/README.md#build-and-flash-layout) to back up the full flash and verify the existing layout first. When switching between BLE / Wi-Fi firmware on a matching layout, write only the app partition at `0x20000` and preserve private configuration at `0xF000`. The general flashing tool currently has no C3 BLE profile.
-- **S3 HID / relay firmware**: `board-firmware.py` supports `s3-hid`, `ncm` and `passport`; `passport` means the **C3 Wi-Fi relay**. Generate and verify the corresponding firmware package first. `flash` requires `--port` and `--package`; it backs up the entire flash before writing and verifying, without erasing the whole chip or writing eFuses. See `python3 Scripts/board-firmware.py --help` for arguments and each firmware README for its layout. Do not reuse the C3 partition table on S3.
+- **C3 BLE**: follow the [partition layout instructions](Firmware/Passport-BLE/README.md#build-and-flash-layout) to back up the full flash and verify the existing layout first. When updating a board with the verified matching layout, write only the app partition at `0x20000` and preserve private configuration at `0xF000`. The general flashing tool currently has no C3 BLE profile.
+- **S3 HID / relay firmware**: `board-firmware.py` supports `s3-hid` and `ncm`. Generate and verify the corresponding firmware package first. `flash` requires `--port` and `--package`; it backs up the entire flash before writing and verifying, without erasing the whole chip or writing eFuses. See `python3 Scripts/board-firmware.py --help` for arguments and each firmware README for its layout. Do not reuse the C3 partition table on S3.
 
 ## Permissions, data and privacy
 
@@ -200,7 +203,7 @@ Eiscue as a whole does not yet have a unified distribution license. The table be
 | [DeviceBackend](Vendor/DeviceBackend/README.md) | Pinned actell commit, GPL-3.0-only; includes MIT-licensed idevice. The app always links this backend; choosing Bluetooth does not remove it from the binary |
 | [LocalTunnel](Vendor/LocalTunnel/README.md) | Derived from LocalDevVPN / StosVPN, under the custom StosVPN License; see attribution in the directory |
 | [Passport-BLE](Firmware/Passport-BLE/README.md#license-and-api-references) | Original firmware source is Apache-2.0; dependency notices are in the firmware directory. The firmware source license does not grant the same license to the [expression artwork](Firmware/Passport-BLE/Resources/README.md) |
-| [NCM-Relay](Firmware/NCM-Relay/README.md), [Passport-Relay](Firmware/Passport-Relay/README.md) | The upstream combined project declares GPL-3.0-only; local files have GPL-3.0-or-later headers. See each `SOURCE_MANIFEST.json` |
+| [NCM-Relay](Firmware/NCM-Relay/README.md) | The upstream combined project declares GPL-3.0-only; local files have GPL-3.0-or-later headers. See its `SOURCE_MANIFEST.json` |
 | PiDurableKit | Pinned commit, CC0-1.0; embedded JS dependencies have separate notices |
 | swift-markdown / swift-cmark | Pinned to 0.9.0; full license texts are included in the [app resources](Apps/Eiscue/Resources/OpenSourceLicenses) |
 

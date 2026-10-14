@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package and safely provision relay or S3 HID firmware.
+"""Package and safely install USB NCM relay or S3 HID firmware.
 
 No phone operations. `inspect` never opens a port; `flash` requires an explicit
 USB serial port and ROM chip validation before reading or writing flash.
@@ -16,7 +16,6 @@ import os
 from pathlib import Path
 import plistlib
 import re
-import secrets
 import shutil
 import socket
 import subprocess
@@ -30,11 +29,7 @@ PROFILES = {
             "name": "eiscue-ncm-relay", "flash_bytes": 4 * 1024 * 1024},
     "s3-hid": {"project": ROOT / "Firmware/Passport-BLE", "chip": "esp32s3", "rom_chip": "ESP32-S3",
                "name": "eiscue-s3-hid", "flash_bytes": 16 * 1024 * 1024},
-    "passport": {"project": ROOT / "Firmware/Passport-Relay", "chip": "esp32c3", "rom_chip": "ESP32-C3",
-                 "name": "eiscue-passport-relay", "flash_bytes": 8 * 1024 * 1024},
 }
-PASSPORT_CONFIG_OFFSET = 0xF000
-PASSPORT_CONFIG_SIZE = 0x6000
 USB_SERIAL_VENDORS = {0x303A, 0x10C4, 0x1A86, 0x0403}
 
 
@@ -124,8 +119,6 @@ def check_package(package: Path):
             expected = allowed.get(offset)
             if expected is None or name != expected[0] or image["size"] > expected[1]:
                 raise RuntimeError("S3 HID images may only replace the bootloader, partition table and application; NVS is preserved.")
-        if manifest.get("profile") in {"passport", "s3-hid"} and offset < PASSPORT_CONFIG_OFFSET + PASSPORT_CONFIG_SIZE and offset + image["size"] > PASSPORT_CONFIG_OFFSET:
-            raise RuntimeError("Firmware image overlaps the private per-board configuration.")
         last_end = offset + image["size"]
     if last_end > manifest["minimum_flash_bytes"]:
         raise RuntimeError("Firmware exceeds its declared flash size.")
@@ -232,7 +225,6 @@ def flash_package(port: str, package: Path):
     identity = probe_rom(port, manifest["minimum_flash_bytes"], backup, target=target)
     if target == "s3-hid":
         check_s3_nvs_layout(backup / "original-flash.bin")
-    configuration = provision_passport(backup) if target == "passport" else None
     after = selected_port(port)
     if (before.vid, before.pid, before.serial_number, before.location) != \
        (after.vid, after.pid, after.serial_number, after.location):
@@ -253,16 +245,12 @@ def flash_package(port: str, package: Path):
     images = []
     for image in manifest["images"]:
         images += [hex(image["offset"]), str(snapshot / image["file"])]
-    if configuration is not None:
-        images += [hex(PASSPORT_CONFIG_OFFSET), str(configuration)]
     for action in ["write_flash", "verify_flash"]:
         result = subprocess.run(common + [action] + settings + images, capture_output=True)
         if result.returncode:
             raise RuntimeError(f"esptool {action} failed. The verified original backup remains at {backup}.")
         print(f"{action} passed.")
     print("Flash and readback verification passed. This does not prove network or iPhone control.")
-    if configuration is not None:
-        print(f'Private Wi-Fi setup: {backup / "wifi-setup.txt"}')
 
 
 def check_s3_nvs_layout(backup: Path):
@@ -282,44 +270,6 @@ def check_s3_nvs_layout(backup: Path):
     raise RuntimeError("Original NVS partition could not be verified. No firmware was written.")
 
 
-def provision_passport(directory: Path) -> Path:
-    """Generate fresh per-board credentials only inside the verified backup folder.
-
-    The firmware uses a dedicated NVS partition; no credentials are compiled
-    into a distributable image. Never log the password or original flash data.
-    """
-    idf_path = os.environ.get("IDF_PATH")
-    if not idf_path:
-        raise RuntimeError("Set IDF_PATH to provision the ESP32-C3 board configuration. No firmware was written.")
-    generator = Path(idf_path) / "components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"
-    if not generator.is_file():
-        raise RuntimeError("ESP-IDF NVS generator was not found. No firmware was written.")
-    ssid = "Eiscue-" + secrets.token_hex(3).upper()
-    password = secrets.token_urlsafe(18)
-    csv_path = directory / "wifi-config.csv"
-    binary_path = directory / "wifi-config.bin"
-    csv_data = f"key,type,encoding,value\nrelay,namespace,,\nssid,data,string,{ssid}\npassword,data,string,{password}\n"
-    private_file(csv_path, csv_data.encode())
-    # Pre-create the output privately; generator truncates it without widening
-    # permissions. The parent directory is also 0700.
-    private_file(binary_path, b"")
-    result = subprocess.run([sys.executable, str(generator), "generate", str(csv_path),
-                             str(binary_path), hex(PASSPORT_CONFIG_SIZE)], capture_output=True)
-    if result.returncode or binary_path.stat().st_size != PASSPORT_CONFIG_SIZE:
-        raise RuntimeError("Wi-Fi configuration image generation failed. No firmware was written.")
-    binary_path.chmod(0o600)
-    setup = ("Eiscue Wi-Fi development board\n\n"
-             f"Wi-Fi: {ssid}\nPassword: {password}\n\n"
-             "Connect the iPhone to this Wi-Fi, then select Wi-Fi board in Eiscue.\n"
-             "The board supplies a local connection, not internet access.\n"
-             "Keep cellular data enabled if needed. VPN local-network access depends on its policy.\n"
-             "These credentials are private. Do not commit or publish this file.\n")
-    private_file(directory / "wifi-setup.txt", setup.encode())
-    # QR payload is deliberately stored only in the protected local folder.
-    private_file(directory / "wifi-qr.txt", f"WIFI:T:WPA;S:{ssid};P:{password};;".encode())
-    return binary_path
-
-
 def check_link(interface: str, target="ncm"):
     if sys.platform != "darwin":
         raise RuntimeError("This link check currently supports macOS interface binding only.")
@@ -331,15 +281,14 @@ def check_link(interface: str, target="ncm"):
                               capture_output=True, text=True, check=True).stdout
     ports = [block for block in hardware.split("\n\n")
              if re.search(rf"^Device: {re.escape(interface)}$", block, re.MULTILINE)]
-    expected_port = r"^Hardware Port: Wi-Fi$" if target == "passport" else r"^Hardware Port: .*\b(?:USB|Eiscue NCM Relay)\b"
+    expected_port = r"^Hardware Port: .*\b(?:USB|Eiscue NCM Relay)\b"
     if len(ports) != 1 or not re.search(expected_port, ports[0], re.MULTILINE):
-        raise RuntimeError("Selected interface does not match the explicit USB/Wi-Fi transport; VPN interfaces are rejected.")
+        raise RuntimeError("Selected interface is not a USB NCM link; Wi-Fi and VPN interfaces are rejected.")
     flags = re.search(r"flags=[0-9a-f]+<([^>]+)>", config)
     flag_set = set(flags.group(1).split(",")) if flags else set()
     if not {"UP", "RUNNING", "BROADCAST"}.issubset(flag_set) or {"LOOPBACK", "POINTOPOINT"} & flag_set:
         raise RuntimeError("Selected interface is not an active Ethernet link.")
-    mask = "fffffffc" if target == "passport" else "ffffff00"
-    if not re.search(rf"\binet 192\.168\.7\.2 netmask 0x{mask}\b", config) or "ether " not in config:
+    if not re.search(r"\binet 192\.168\.7\.2 netmask 0xffffff00\b", config) or "ether " not in config:
         raise RuntimeError("Selected interface must have the firmware's exact .2 address and subnet mask.")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stream:
         stream.settimeout(4)

@@ -28,12 +28,13 @@ bash Scripts/build-passport-ble.sh esp32s3   # BLE command + explicitly selected
 Outputs are `.build/passport-ble-firmware/eiscue_passport_ble.bin` (C3) and
 `.build/s3-hid-firmware/eiscue_passport_ble.bin` (S3). Each target has its own
 build directory, defaults and dependency lock. TinyUSB is included only on S3.
-Build never opens serial or flashes. The C3 partition table matches the existing
-`Firmware/Passport-Relay/partitions.csv`: NVS at `0x9000`, PHY at `0xE000`, private
-configuration at `0xF000`, and the 2 MB application at **`0x20000`**. Switching
-these two experiment images should write **only the application** after reading
-and checking the actual board/partition layout. Do not write an unverified
-bootloader/table or erase private configuration.
+Build never opens serial or flashes. The C3 `partitions.csv` preserves the
+existing board layout: NVS at `0x9000`, PHY at `0xE000`, private configuration at
+`0xF000`, and the 2 MB application at **`0x20000`**. Updating a C3 with this
+verified layout should write **only the application**, after retaining a verified
+full-Flash backup and checking the actual board/partition layout, then verify
+readback. Do not write an unverified bootloader/table or erase private
+configuration. There is no C3 CLI packaging/flashing profile.
 
 S3 uses its own `partitions.esp32s3.csv`, matching the attached board's original
 24 KB NVS at `0x9000` and PHY at `0xF000`, with reserved configuration at
@@ -42,7 +43,7 @@ the probed board. Installing it on a differently laid-out board requires its
 own full backup and explicit layout checks; the existing C3 table must not be
 written over S3's longer NVS range. Build success does not authorize Flash writes.
 
-The original full-Flash backup and the existing Wi-Fi firmware must be retained.
+The original full-Flash backup and any retained recovery images must be kept.
 BLE bonds are stored in NimBLE's NVS namespace; startup does not erase NVS on an
 error. C3 initializes the board-specific display and OK key described below.
 S3 has no display or key driver. Neither target starts Wi-Fi or the microphone.
@@ -169,7 +170,7 @@ Only one AUTH write is accepted per connection. Invalid MACs, repeated AUTH,
 unsigned commands or replayed sequences release input and disconnect.
 
 Board ID and root key are persisted in the default NVS namespace `eiscue_auth`,
-separate from private Wi-Fi configuration. Startup never erases or replaces
+separate from the reserved private configuration partition. Startup never erases or replaces
 existing identity. An unclaimed board permits first enrollment only during its
 first 60 seconds after boot; an existing key closes enrollment permanently.
 This is **trusted-nearby development enrollment**, not passkey/MITM-protected
@@ -474,7 +475,7 @@ result applies only to its recorded image.
 - Small local UBSan parser smoke: all 95 printable US ASCII mappings, Enter /
   keyboard Home, relative bounds, reserved-byte rejection, STOP and fixed response
   shape passed. This does not exercise BLE or a phone.
-- Existing Wi-Fi image remains intact (SHA-256
+- Historical recovery image was retained privately (SHA-256
   `f9b5d78afdc66ff09bc938c8d1f74a23c9c250d302f229dd1d4f98db5545244b`).
 - Physical app-only Flash switching was verified. On iPhone 14 Pro / iOS 26.5.2,
   actual UIKit callbacks confirmed three 12-digit keyboard inputs and one

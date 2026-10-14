@@ -11,22 +11,10 @@ network origin. It does not implement an Agent or store pairing keys.
 block cannot become a network device.
 An ESP32-S3 build is not evidence of physical USB compatibility.
 
-The current sample was identified by ROM as ESP32-C3 with 8 MB Flash. Its
-separate [Wi-Fi firmware](../Passport-Relay/README.md) uses WPA2, one client and
-`.1/.2` on a `/30` subnet; this S3 USB firmware keeps `/24`. The C3 Wi-Fi route
-passed actual iPhone 14 Pro / iOS 26.5.2 control on 2026-10-11, including screen
-capture, touch, swipe, Unicode input, Home/App return, reconnect and rotation
-checks. The same board's [BLE firmware](../Passport-BLE/README.md) is now
-integrated with normal App connection selection, ReplayKit sharing and Agent
-tools. On 2026-10-12, version 0.2 passed ordinary App connection, screen sharing,
-four actual calibration touches and Chinese text checks on that phone. BLE
-swiping, complete cross-App Agent tasks and sustained background sharing remain
-unverified.
-The earlier version 0.1 Debug baseline on the same date passed three 12-digit
-inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access disabled
-for each request. That Internet check was not repeated in the version 0.2 run.
-These independent C3 results do not validate USB NCM on an S3.
-Company VPN coexistence remains unverified for all routes.
+The separate [HID firmware](../Passport-BLE/README.md) supports C3 BLE and S3
+BLE / USB HID, with ReplayKit observation. Its recorded phone input results do
+not validate USB NCM on an S3. USB NCM hardware behavior and company VPN
+coexistence remain unverified.
 
 ## Source and license
 
@@ -73,6 +61,14 @@ The build script only builds/packages; it never opens serial or flashes. Output:
 flash images and a versioned SHA-256 manifest. `board-firmware.py verify-package`
 checks sizes, hashes, chip, version and non-overlapping flash regions.
 
+The CLI supports only `ncm` and `s3-hid` packages. The removed `passport` Wi-Fi
+relay profile and its old packages are rejected before opening a serial port;
+the tool no longer generates Wi-Fi credentials. Existing private backups and
+configuration files must be retained. `flash` requires explicit `--port` and
+`--package` arguments, verifies a full-Flash backup, then writes and verifies the
+selected package. `check-link --target ncm --interface <interface>` accepts only
+an active USB interface with `192.168.7.2/24`; it never uses Wi-Fi or VPN.
+
 Host tests use UBSan by default. `BOARD_SANITIZERS=address,undefined` enables both
 sanitizers where the host ASan runtime supports its macOS version. The bundled
 localhost tests currently target macOS (`lo0` / `SO_NOSIGPIPE`). Neither test mode
@@ -108,11 +104,7 @@ or screenshot succeeded.
 | --- | --- |
 | ESP32-S3 cross build | PASS: ESP-IDF 5.5.3, app `0x5f600` bytes within 1 MB partition |
 | Protocol/localhost tests | PASS: DNS truncation/TTL, greeting/schema/EOF, auth boundaries, browser gates, source binding, deadlines, two-way 1 MiB relay/backpressure/cancel |
-| Python flash-tool guards | Historical PASS for the USB S3 profile: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory. Wi-Fi now has a separate C3 profile; no new unit-test result is claimed. |
-| Separate C3 sample identification and backup | PASS: ROM reports ESP32-C3 / 8 MB; full Flash saved privately and checked against ROM MD5 |
-| Separate C3 Wi-Fi write/readback and phone control | PASS: firmware readback, AP/DHCP, discovery/authorization, capture, touch, swipe, Unicode input, Home/App return, reconnect and rotation checks; local VPN stayed disconnected. |
-| Separate C3 BLE 0.1 Debug baseline (2026-10-12) | Historical PASS for three 12-digit inputs, one test-button click and Wi-Fi HTTPS 200 with cellular access disabled for each request. This earlier experiment did not validate the later absolute-coordinate path. |
-| Separate C3 BLE 0.2 ordinary App flow (2026-10-12) | PASS: firmware build/write/readback, encrypted capability query, ordinary App connection, ReplayKit sharing, four actual calibration touches and Chinese text checks. Normal App/Agent integration is implemented; BLE swiping, complete cross-App Agent tasks and sustained background sharing remain unverified. Wi-Fi HTTPS was not repeated in this run. |
+| Python flash-tool guards | Historical PASS for the USB S3 profile: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory. |
 | Flash/readback on physical S3 | NOT RUN: the current sample is C3, not an S3 board |
 | USB NCM enumeration and ND1 on Mac/phone | NOT RUN |
 | Company VPN coexistence | NOT RUN |
@@ -120,3 +112,10 @@ or screenshot succeeded.
 The local Xcode 26.3 ASan runtime deadlocked during initialization on the current
 macOS; a process sample located the deadlock before test `main`. UBSan tests
 passed; ASan is not counted as a pass.
+
+On **2026-10-14**, `python3 -m unittest discover -s Firmware/NCM-Relay/tests -p
+'test_*.py' -v` passed **14 tests, 0 failures** after removing the Wi-Fi profile.
+These offline tests cover rejected legacy CLI targets/packages before serial
+access, retained NCM/S3 HID packaging, USB-only link selection, private backup
+verification and protected S3 partitions. No firmware build or hardware checks
+were run for this removal; the historical results above remain separate.

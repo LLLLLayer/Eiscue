@@ -680,5 +680,29 @@
     "source": "Rust/DeviceHubFFI/src/png.rs",
     "source_sha256": "8618abf65ddfbf0e904d583e244e8fb9d79c88d6283f2f9d5c06291cba3bb5c9",
     "change": "MIT attribution header only"
+  },
+  "eiscue_backend_changes": {
+    "actell_revision": "032864e2339da19ee13025c471f4cf1dfdf4c5cd",
+    "note": "Paths are relative to this manifest. These entries record hotspot relay removal from the actell-derived backend; the Device Hub snapshot entries above retain their original scope.",
+    "files": {
+      "../Sources/PhoneAgentNCM/InterfaceBinding.swift": {
+        "sha256": "fa16add1d46ea9257517c0d2896bb3f7da7715555169500d91f8049483399256",
+        "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/InterfaceBinding.swift",
+        "modified": true,
+        "change": "Remove the Wi-Fi hotspot board transport and /30 subnet selection; retain USB /24 interface validation."
+      },
+      "../Sources/PhoneAgentNCM/NativeDeveloperServices.swift": {
+        "sha256": "b305ecdbf3d1ea441cc0d82dc5fc79b24961e8f7be61c8637ae35acb386f73f1",
+        "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/NativeDeveloperServices.swift",
+        "modified": true,
+        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport."
+      },
+      "src/relay.rs": {
+        "sha256": "94fe98b4d2cda66eed0a48eced9346d7d00e89f171c0e62256fb619dc14e29e0",
+        "source": "ncm-dev/rust/src/relay.rs",
+        "modified": true,
+        "change": "Remove the Wi-Fi hotspot /30 subnet allowance from the Darwin relay socket binding guard; retain USB /24 binding."
+      }
+    }
   }
 }

@@ -1,4 +1,4 @@
-# Same layout as the existing Passport-Relay experiment; app-only switching.
+# Preserve the existing C3 board layout and private configuration; app-only updates.
 # Name, Type, SubType, Offset, Size, Flags
 nvs, data, nvs, 0x9000, 0x5000,
 phy_init, data, phy, 0xE000, 0x1000,

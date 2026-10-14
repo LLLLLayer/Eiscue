@@ -59,9 +59,3 @@
 "device.backend.automation-geometry" = "无法确认屏幕尺寸和方向，请保持设备解锁、方向不变，再重新连接。";
 "device.backend.automation-delivery-unknown" = "设备未确认此次操作，不会重复执行。请先查看屏幕，再重新连接。";
 "device.backend.automation-authorization-timed-out" = "系统授权超时，请保持设备解锁后重新连接。若“启用 UI 自动化”要求密码，请只在系统页面输入。";
-"device.wireless.discovering" = "正在连接 Wi-Fi 开发板";
-"device.wireless.join-network" = "请在系统设置中连接开发板的 Eiscue-xxxx Wi-Fi，再重新连接。密码见本机烧录配置。";
-"device.wireless.multiple-connections" = "发现多个开发板网络，请仅保留要用的 Eiscue Wi-Fi 连接。";
-"device.wireless.unreachable" = "Wi-Fi 开发板未响应。请检查供电、Eiscue Wi-Fi 和本地网络权限；公司 VPN 可能限制本地访问。";
-"device.wireless.firmware-required" = "开发板缺少 Wi-Fi 连接服务，请安装 Eiscue Wi-Fi 固件。";
-"device.wireless.pairing-unavailable" = "Wi-Fi 开发板已连接，但设备配对服务不可用。请保持设备解锁、开启开发者模式，再重新连接。";

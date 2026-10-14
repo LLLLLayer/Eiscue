@@ -59,9 +59,3 @@
 "device.backend.automation-geometry" = "Could not confirm the screen size and orientation. Keep the device unlocked and steady, then reconnect.";
 "device.backend.automation-delivery-unknown" = "The device did not confirm this action; it will not be repeated. Check the screen before reconnecting.";
 "device.backend.automation-authorization-timed-out" = "System authorization timed out. Keep the device unlocked and reconnect. Enter your passcode only on the system’s Enable UI Automation screen if asked.";
-"device.wireless.discovering" = "Connecting to the Wi-Fi board";
-"device.wireless.join-network" = "Join the board’s Eiscue-xxxx Wi-Fi in Settings, then reconnect. Find its password in the local flashing configuration.";
-"device.wireless.multiple-connections" = "Multiple board networks found. Keep only the intended Eiscue Wi-Fi connection.";
-"device.wireless.unreachable" = "Wi-Fi board did not respond. Check its power, the Eiscue Wi-Fi connection, and Local Network permission. A company VPN may block local access.";
-"device.wireless.firmware-required" = "The board lacks the Wi-Fi connection service. Install Eiscue Wi-Fi firmware.";
-"device.wireless.pairing-unavailable" = "Wi-Fi board connected, but device pairing is unavailable. Keep the device unlocked, enable Developer Mode, then reconnect.";

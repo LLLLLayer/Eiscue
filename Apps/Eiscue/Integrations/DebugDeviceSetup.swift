@@ -1,36 +1,21 @@
 #if DEBUG
 import EiscueDeviceKit
 import Foundation
-import PhoneAgentNCM
 
 extension AppModel {
     /// Explicit developer launch arguments only. Release builds have no automatic
     /// import or connection. Diagnostics never contain credentials or screen data.
     func runRequestedDeviceSetupCheck() async {
         let arguments = ProcessInfo.processInfo.arguments
+        // Retired route flags must not turn an old diagnostic command into a
+        // local-VPN check or allow another setup action to run instead.
+        guard !arguments.contains("--wireless-board-probe"),
+              !arguments.contains("--owned-device-check-wireless") else { return }
         // The BLE fixture owns its own transport and diagnostics. Never start
         // any network/XCTest device path alongside this independent check.
         if arguments.contains("--ble-device-check") { return }
-        // This read-only mode takes precedence over every other debug action.
-        // It never enters pairing, VPN, native service or owned-input setup.
-        if arguments.contains("--wireless-board-probe") {
-            guard !arguments.contains("--ui-testing"), !isBusy else { return }
-            await runWirelessBoardProbe()
-            return
-        }
-        // The wireless modifier also requires the existing owned-check gate so
-        // its target view, lifecycle and opt-in input capabilities stay aligned.
-        if arguments.contains("--owned-device-check-wireless"), !arguments.contains("--owned-device-check") {
-            let report: [String: Any] = ["version": 3, "state": "failed", "phase": "configuration",
-                "connectionMethod": DeviceConnectionMethod.wirelessBoard.rawValue,
-                "reason": "owned_device_check_flag_required"]
-            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) {
-                try? data.write(to: URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json"), options: [.atomic, .completeFileProtection])
-            }
-            return
-        }
         if arguments.contains("--owned-device-check"), !arguments.contains("--ui-testing"), !isBusy {
-            await runOwnedDeviceCheck(method: arguments.contains("--owned-device-check-wireless") ? .wirelessBoard : .localVPN)
+            await runOwnedDeviceCheck()
             return
         }
         if arguments.contains("--legacy-device-probe"), !arguments.contains("--ui-testing"), !isBusy {
@@ -84,73 +69,6 @@ extension AppModel {
             await disconnectDevice()
         } else { report["state"] = "passed" }
         report["phase"] = "finished"; writeReport()
-    }
-
-    /// Board diagnostics only: no identity access, authentication, capture or
-    /// input. Copy only allowlisted protocol labels, never complete peer replies.
-    private func runWirelessBoardProbe() async {
-        let destination = URL.cachesDirectory.appendingPathComponent("EiscueWirelessBoardProbe.json")
-        let client = NCMProbeClient(transport: .wifi)
-        defer { client.cancel() }
-        var report: [String: Any] = ["state": "started", "phase": "status", "transport": "wifi"]
-        func save() throws {
-            let data = try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys])
-            let temporary = destination.deletingLastPathComponent().appendingPathComponent(".wireless-probe-\(UUID().uuidString).json")
-            let files = FileManager.default
-            guard files.createFile(atPath: temporary.path, contents: data,
-                attributes: [.posixPermissions: 0o600, .protectionKey: FileProtectionType.complete]) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-            defer { try? files.removeItem(at: temporary) }
-            if files.fileExists(atPath: destination.path) {
-                _ = try files.replaceItemAt(destination, withItemAt: temporary, options: .usingNewMetadataOnly)
-            } else {
-                try files.moveItem(at: temporary, to: destination)
-            }
-        }
-        do {
-            try save()
-            let status = try await client.request(.status)
-            report["statusLayer"] = status.layer
-            report["statusResult"] = status.result
-            for (key, command) in [("discoveryIPv6", DiagnosticCommand.discoverIPv6),
-                                   ("discoveryIPv4", DiagnosticCommand.discoverIPv4)] {
-                report["phase"] = key
-                try save()
-                let reply = try await client.request(command)
-                var summary: [String: Any] = ["layer": reply.layer, "result": reply.result,
-                    "endpoints": (reply.endpoints ?? []).map { endpoint -> [String: Any] in
-                        ["service": endpoint.service, "family": endpoint.family]
-                    }]
-                if let osError = reply.osError { summary["osError"] = osError }
-                report[key] = summary
-                try save()
-            }
-            report["phase"] = "discovery"
-            try save()
-            let candidate = try await client.discoverRemotePairing()
-            report["transport"] = candidate.transport.rawValue
-            report["candidatePresent"] = true
-            report["state"] = "finished"
-            report["phase"] = "finished"
-            try save()
-        } catch {
-            report["state"] = "failed"
-            if let error = error as? NCMError {
-                report["errorCategory"] = "NCMError"
-                report["reason"] = error.rawValue
-            } else if error is CancellationError {
-                report["errorCategory"] = "CancellationError"
-                report["reason"] = "cancelled"
-            } else if error is NativeBackendError {
-                report["errorCategory"] = "NativeBackendError"
-                report["reason"] = "invalid_diagnostic_candidate"
-            } else {
-                report["errorCategory"] = "ProbeError"
-                report["reason"] = "probe_or_report_failed"
-            }
-            try? save()
-        }
     }
 
     /// Read-only iOS 26 compatibility check, opt-in through a developer launch

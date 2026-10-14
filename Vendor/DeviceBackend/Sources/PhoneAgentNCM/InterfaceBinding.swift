@@ -6,14 +6,13 @@ import Darwin
 
 /// The board link is chosen by the caller; it never falls back to another route.
 public enum NCMBoardTransport: String, Sendable, Equatable {
-    case usb, wifi
+    case usb
 }
 
 struct NCMInterfaceBinding {
     static let localIP = "192.168.7.2"
     static let remoteIP = "192.168.7.1"
     static let netmask = "255.255.255.0"
-    static let wifiNetmask = "255.255.255.252"
     struct Row: Equatable, Sendable {
         let name: String
         let index: UInt32
@@ -31,16 +30,13 @@ struct NCMInterfaceBinding {
     static func select(_ rows: [Row], transport: NCMBoardTransport = .usb) throws -> Row {
         let addressed = rows.filter { $0.address == localIP }
         guard !addressed.isEmpty else { throw NCMError.interfaceUnavailable }
-        // Both links use .2, but USB is /24 and Wi-Fi is /30. Only the
-        // selected transport's subnet participates in ambiguity detection.
-        let expectedMask = transport == .usb ? netmask : wifiNetmask
-        let matches = addressed.filter { $0.mask == expectedMask }
+        let matches = addressed.filter { $0.mask == netmask }
         guard matches.count == 1, let row = matches.first else {
             throw matches.isEmpty ? NCMError.interfaceInvalid : NCMError.interfaceAmbiguous
         }
         let required = UInt32(IFF_UP | IFF_RUNNING | IFF_BROADCAST)
         let forbidden = UInt32(IFF_LOOPBACK | IFF_POINTOPOINT)
-        guard row.index > 0, row.mask == expectedMask, row.flags & required == required,
+        guard row.index > 0, row.mask == netmask, row.flags & required == required,
               row.flags & forbidden == 0, row.linkType == UInt8(IFT_ETHER) else {
             throw NCMError.interfaceInvalid
         }
@@ -49,7 +45,6 @@ struct NCMInterfaceBinding {
     static func validateType(_ type: NWInterface.InterfaceType, transport: NCMBoardTransport = .usb) throws {
         switch (transport, type) {
         case (.usb, .wiredEthernet), (.usb, .other): break // .other additionally requires IFT_ETHER and no POINTOPOINT above.
-        case (.wifi, .wifi): break
         default: throw NCMError.interfaceInvalid
         }
     }

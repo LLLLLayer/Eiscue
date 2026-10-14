@@ -11,7 +11,7 @@
 ## 主要功能
 
 - **聊天与多模型**：支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages；保存多组服务和模型，在对话顶部切换。每组 API Key 独立保存在 Keychain。
-- **设备操作**：模型根据截图决定点击、滑动或输入；每次动作后自动截图供模型核对。首次使用默认选择 **App 内连接（本地 VPN）**，需要先在电脑完成配对。也可选 **蓝牙开发板 + 系统屏幕共享**，开发板只需供电，不占手机 Wi-Fi 或 VPN 通道。已保存的连接方式会保留。
+- **设备操作**：模型根据截图决定点击、滑动或输入；每次动作后自动截图供模型核对。首次使用默认选择 **App 内连接（本地 VPN）**，需要先在电脑完成配对。也可选 **蓝牙开发板 + 系统屏幕共享**，开发板只需供电，不占手机 Wi-Fi 或 VPN 通道。已保存且仍支持的连接方式会保留。
 - **附件与语音**：支持照片、拍摄、文本 / 代码文件、可提取文字的 PDF，以及 Apple Speech 本机听写，无需语音 API Key。
 - **对话管理**：流式回答、Markdown、工具进展、复制与分享；侧栏支持置顶、排序、重命名和批量删除，iPad 宽窗口支持常驻侧栏。
 - **任务与后台**：支持停止、暂停后显式继续和脱敏报告；任务详情可查看已保存的输入输出、截图，以及原图可用时的点击和滑动位置。使用 iOS 26 系统实时活动显示任务阶段，可选完成 / 中断通知，默认关闭。
@@ -25,7 +25,7 @@
 | C3 / S3 蓝牙连接、ReplayKit、四点触摸与中文输入检查 | 已在指定 iPhone 14 Pro / iOS 26.5.2 真机通过 |
 | 蓝牙滑动、完整跨 App Agent 任务、长时间后台 | 代码已接入，**尚未真机验收** |
 | S3 USB 输入：命令走蓝牙，键鼠经 USB | 代码与固件已接入；手机端 USB 输入**尚未通过验收** |
-| Wi-Fi 开发板 / 本地 VPN / USB 网卡 | Wi-Fi 开发板基础控制已于 2026-10-11 真机通过；其余组合待验收 |
+| 本地 VPN / USB 网卡 | 代码已接入；各路线仍需分别完成真机验收 |
 | iCTRL 等其他后端 | 仅完成源码调研，未集成 |
 
 **源码接入、软件测试和真机验收分别记录。** 模拟器无法验证蓝牙 HID、系统屏幕共享或后台时长；单台样机的结果不能外推到其他机型和系统版本。
@@ -60,8 +60,9 @@
 | 蓝牙开发板（C3 / S3） | ReplayKit / BLE HID | 蓝牙配对、辅助触控、共享与校准；不需要电脑配对文件或 DDI | 否 |
 | S3 USB 输入 | ReplayKit / USB HID，控制命令仍走蓝牙 | 同上，另需手机作为 USB 主机连接开发板 | 否 |
 | App 内连接（默认，本地 VPN） | iOS 26 App 内 XCTest 截图与输入 | 电脑首次 USB 身份建立、开发者环境 / DDI | 是 |
-| Wi-Fi 开发板 | 同上，经 Wi-Fi 中继 | 同上，手机加入开发板 Wi-Fi | 否 |
 | S3 USB 网卡 | 同上，经 USB NCM 中继 | 同上，另需 USB 主机连接与网卡配置 | 否 |
+
+原 C3 Wi-Fi 热点中继已移除。旧的已保存选项会回到默认的 App 内连接，但不会自动启动；请手动选择并连接仍支持的路线。
 
 **USB 输入与 USB 网卡是两条不同路线。** S3 USB 输入使用板子的原生 USB / OTG 口；USB-C 手机使用 C-to-C 数据线，Lightning 手机需要带供电的 USB 主机（相机）转接器，普通 Lightning 数据线不适用。COM / UART 口用于电脑烧录与日志。手机、线材和转接器组合仍需实际验证。
 
@@ -96,7 +97,7 @@ Eiscue App（SwiftUI，iOS 26+）
     └── 开发者服务：RemotePairing → iOS 26 App 内 XCTest 截图与输入
 
 扩展：EiscueBroadcast（屏幕共享）、EiscueTunnel（仅本地 VPN 路线）
-固件：Passport-BLE（C3 / S3 HID）、Passport-Relay（C3 Wi-Fi）、NCM-Relay（S3 USB 网卡）
+固件：Passport-BLE（C3 / S3 HID）、NCM-Relay（S3 USB 网卡）
 ```
 
 两个 Kit 是独立、互不依赖的 Swift Package library，由 App 集成层连接，没有单独的 Plugin 产品：
@@ -157,6 +158,8 @@ Kit 的 4 项失败和 UI 的 2 项失败已定位为文案或界面层级断言
 
 2026-10-14 后续定向检查通过了 4 项 Kit、12 项 App 和 10 项 UI 用例（iPhone 8 项、iPad 2 项）。覆盖工具图片只读恢复、截图详情与预览、长按菜单、键盘导航、模型参数持久化，以及系统文件分享的打开、关闭和再次打开；保存、读回和照片分享未复跑。这些检查不替代全量基线，也不代表真机控制验收；中间失败记录保留在本地验证文档中。
 
+2026-10-14 移除热点中继后，另通过 21 个 Kit 测试、34 个 App 测试、3 个设备页 UI 测试、14 个离线固件工具测试和 64 个 Rust 库测试，并重建三个原生后端切片。这些定向检查不替代完整基线，也不证明实际 USB／蓝牙行为。
+
 ### 后端与固件
 
 设备后端附带 arm64 iOS、模拟器和 macOS XCFramework，不含 x86_64。仅在修改后端源码时重建；使用固定 Rust 1.96.0 工具链：
@@ -177,8 +180,8 @@ bash Scripts/test-board-companion.sh
 
 构建不会打开串口或烧录。烧录流程按固件区分：
 
-- **C3 BLE**：按 [分区说明](Firmware/Passport-BLE/README.md#build-and-flash-layout) 先完整备份并核对已有布局；在匹配布局上切换 BLE / Wi-Fi 固件时，只写 `0x20000` 应用分区，保留 `0xF000` 私有配置。当前通用烧录工具没有 C3 BLE profile。
-- **S3 HID / 中继固件**：`board-firmware.py` 支持 `s3-hid`、`ncm` 和 `passport`；其中 `passport` 是 **C3 Wi-Fi 中继**。需先生成并验证对应固件包，`flash` 必须指定 `--port` 和 `--package`，会完整备份 Flash 再写入和校验，不擦整片、不写 eFuse。参数见 `python3 Scripts/board-firmware.py --help`，布局见各固件 README；S3 不可复用 C3 分区表。
+- **C3 BLE**：按 [分区说明](Firmware/Passport-BLE/README.md#build-and-flash-layout) 先完整备份并核对已有布局；在已经核验匹配布局的开发板上更新固件时，只写 `0x20000` 应用分区，保留 `0xF000` 私有配置。当前通用烧录工具没有 C3 BLE profile。
+- **S3 HID / 中继固件**：`board-firmware.py` 支持 `s3-hid` 和 `ncm`。需先生成并验证对应固件包，`flash` 必须指定 `--port` 和 `--package`，会完整备份 Flash 再写入和校验，不擦整片、不写 eFuse。参数见 `python3 Scripts/board-firmware.py --help`，布局见各固件 README；S3 不可复用 C3 分区表。
 
 ## 权限、数据与隐私
 
@@ -200,7 +203,7 @@ bash Scripts/test-board-companion.sh
 | [DeviceBackend](Vendor/DeviceBackend/README.md) | actell 固定提交，GPL-3.0-only；内含 MIT 的 idevice。App 始终链接此后端，选择蓝牙路线不会将其从二进制中移除 |
 | [LocalTunnel](Vendor/LocalTunnel/README.md) | LocalDevVPN / StosVPN 衍生实现，自定义 StosVPN License；来源作者见目录内声明 |
 | [Passport-BLE](Firmware/Passport-BLE/README.md#license-and-api-references) | 原创固件代码为 Apache-2.0；依赖声明见固件目录。[表情资源](Firmware/Passport-BLE/Resources/README.md)不因固件代码许可而被授予同样许可 |
-| [NCM-Relay](Firmware/NCM-Relay/README.md)、[Passport-Relay](Firmware/Passport-Relay/README.md) | 上游组合项目声明 GPL-3.0-only，本地文件带 GPL-3.0-or-later 头；详见各自 `SOURCE_MANIFEST.json` |
+| [NCM-Relay](Firmware/NCM-Relay/README.md) | 上游组合项目声明 GPL-3.0-only，本地文件带 GPL-3.0-or-later 头；详见其 `SOURCE_MANIFEST.json` |
 | PiDurableKit | 固定 commit，CC0-1.0；嵌入的 JS 依赖另有声明 |
 | swift-markdown / swift-cmark | 固定 0.9.0；许可全文随 [App 资源](Apps/Eiscue/Resources/OpenSourceLicenses) 提供 |
 

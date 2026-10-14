@@ -170,12 +170,8 @@ private struct DeveloperConnectionSetupView: View {
                     }
                 }
             }
-            if model.deviceConnectionMethod != .localVPN {
-                Text(text(model.deviceConnectionMethod == .usbBoard ? "setup.boardConnectionDetail" : "setup.wirelessBoardConnectionDetail"))
-                    .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
-            }
-            if model.deviceConnectionMethod == .wirelessBoard {
-                Text(text("setup.wirelessBoardNetworkNote"))
+            if model.deviceConnectionMethod == .usbBoard {
+                Text(text("setup.boardConnectionDetail"))
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
             }
         }

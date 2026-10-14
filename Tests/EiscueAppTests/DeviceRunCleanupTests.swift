@@ -43,7 +43,7 @@ final class DeviceRunCleanupTests: XCTestCase {
 
     func testUnsafeOrUnconfirmedFailuresAlwaysDisconnect() async throws {
         enum Reason: CaseIterable {
-            case userStop, localVPN, usbBoard, wirelessBoard, pendingSubmission
+            case userStop, localVPN, usbBoard, pendingSubmission
             case runtimeOrStorageFailure, toolStarted, missingSession
         }
         for reason in Reason.allCases {
@@ -57,7 +57,6 @@ final class DeviceRunCleanupTests: XCTestCase {
             case .userStop: stopRequested = true
             case .localVPN: method = .localVPN
             case .usbBoard: method = .usbBoard
-            case .wirelessBoard: method = .wirelessBoard
             case .pendingSubmission: run.submission = .pending
             case .runtimeOrStorageFailure: modelRequestFailed = false
             case .toolStarted:
