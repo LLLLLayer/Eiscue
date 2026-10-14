@@ -8,9 +8,35 @@ enum DebugDevicePageFixture {
         let arguments = ProcessInfo.processInfo.arguments
         return arguments.contains("--ui-testing") && arguments.contains("--local-device-ready-fixture")
     }
+
+    static var isOnboardingEnabled: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("--ui-testing") &&
+            (arguments.contains("--onboarding-pairing-fixture") || arguments.contains("--onboarding-saved-pairing-fixture"))
+    }
 }
 
 extension AppModel {
+    func installOnboardingPairingFixture() {
+        guard DebugDevicePageFixture.isOnboardingEnabled else { return }
+        bluetoothMonitor?.cancel(); bluetoothMonitor = nil
+        localTunnel.onDisconnect = nil
+        let saved = ProcessInfo.processInfo.arguments.contains("--onboarding-saved-pairing-fixture")
+        let client = DeviceClient(controller: OnboardingPairingFixtureController(hasIdentity: saved))
+        // Both sides of the route switch remain in memory; this fixture must not
+        // read a pairing Keychain item or connect to any device.
+        deviceClient = client
+        networkDeviceClient = client
+        deviceConnectionMethod = .bluetoothBoard
+        activeDeviceConnectionMethod = nil
+        hasPairingIdentity = saved
+        deviceStatus = .unavailable(reason: String(localized: "connection.disconnected"))
+        deviceConnectionError = nil
+        showsOnboarding = true
+        isLoading = false
+        didLoad = true
+    }
+
     func installLocalDevicePageFixture() {
         guard DebugDevicePageFixture.isEnabled else { return }
         // This view fixture never starts a real connection or reads a device screen.
@@ -43,6 +69,16 @@ extension AppModel {
         isLoading = false
         didLoad = true
     }
+}
+
+private actor OnboardingPairingFixtureController: DeviceController {
+    private var hasIdentity: Bool
+
+    init(hasIdentity: Bool) { self.hasIdentity = hasIdentity }
+
+    func status() async -> DeviceStatus { .unavailable(reason: String(localized: "connection.disconnected")) }
+    func hasPairingIdentity() async throws -> Bool { hasIdentity }
+    func removePairingIdentity() async throws { hasIdentity = false }
 }
 
 private actor DevicePageFixtureController: DeviceController {

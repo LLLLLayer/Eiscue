@@ -65,6 +65,8 @@ The connection, screen sharing and calibration must all remain valid. Disconnect
 
 For developer-services setup, see the [USB pairing tool](Scripts/pair-device-usb.md). Routine tasks run on the phone, but these routes depend on DDI developer frameworks and private interfaces, with no App Store distribution commitment. Bluetooth and S3 USB input do not require this pairing workflow.
 
+Onboarding keeps setup help inside the app. A saved pairing identity is checked when connecting; it does not by itself mean device control is ready. Uninstalling may leave the identity in Keychain and the system VPN configuration in place. **Pair again** removes only Eiscue's pairing identity, retaining model settings and keys; removing Eiscue's VPN configuration is a separate action in iOS Settings.
+
 The C3 companion display shows only fixed phases, expressions and step counts, not model-generated text. A short press of OK latches a stop. To unlock, release OK, hold it for about 1.5 seconds, then disconnect; reconnection and calibration are required afterward.
 
 ## Architecture

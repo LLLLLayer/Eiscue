@@ -279,13 +279,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn it on in Settings → Privacy & Security → Developer Mode. Restart and confirm when prompted."
+            "value": "Turn it on in Settings → Privacy & Security → Developer Mode. Restart and confirm when prompted. Before first use, prepare the device with Xcode or compatible developer tools on a computer."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启「设置 → 隐私与安全性 → 开发者模式」，按提示重启并确认。"
+            "value": "开启「设置 → 隐私与安全性 → 开发者模式」，按提示重启并确认。首次使用前，还需用电脑上的 Xcode 或兼容开发工具完成设备准备。"
           }
         }
       }
@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After this guide, tap the device button to start pairing. Select Eiscue in system pairing settings and enter the code shown in the App."
+            "value": "Tap Start pairing in the guide. Choose Eiscue in the system pairing settings and enter the code shown in the app."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成引导后，点设备按钮开始配对。在系统配对设置中选择 Eiscue，输入 App 显示的配对码。"
+            "value": "在引导中点“开始配对”，然后在系统配对设置中选择 Eiscue，输入 App 显示的配对码。"
           }
         }
       }
@@ -483,13 +483,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You can finish device setup later using the top-right device button."
+            "value": "You can finish device setup later from the device page."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "也可稍后点右上角设备按钮，完成连接设置。"
+            "value": "也可以稍后到设备页继续设置。"
           }
         }
       }
@@ -677,6 +677,380 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wi-Fi 开发板设置说明"
+          }
+        }
+      }
+    },
+    "setup.startChat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start chatting"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先开始对话"
+          }
+        }
+      }
+    },
+    "setup.savedPairing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing saved"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对已保存"
+          }
+        }
+      }
+    },
+    "setup.firstPairing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair this device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首次配对"
+          }
+        }
+      }
+    },
+    "setup.savedPairingDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A pairing identity is already saved. Connect to check whether it still works."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测到已保存的配对授权，连接后会检查是否仍然有效。"
+          }
+        }
+      }
+    },
+    "setup.computerPairingIntro": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First-time setup needs a computer. Import the pairing file when it is ready."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首次配对需要电脑协助，准备好后导入配对文件。"
+          }
+        }
+      }
+    },
+    "setup.systemPairingIntro": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start pairing, then follow the instructions in Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始配对后，按系统设置中的提示完成授权。"
+          }
+        }
+      }
+    },
+    "setup.pairAgain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair again"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新配对"
+          }
+        }
+      }
+    },
+    "setup.pairAgainConfirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove the saved pairing?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除已保存的配对？"
+          }
+        }
+      }
+    },
+    "setup.pairAgainDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This removes only Eiscue’s pairing identity. You will need to pair again or import a new pairing file. Model settings and the system VPN configuration are kept."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅移除 Eiscue 保存的配对身份，之后需重新配对或导入文件。模型设置和系统 VPN 配置会保留。"
+          }
+        }
+      }
+    },
+    "setup.connectDevice": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接设备"
+          }
+        }
+      }
+    },
+    "setup.connectionHelp": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup help"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置帮助"
+          }
+        }
+      }
+    },
+    "setup.preparationTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First-time preparation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "首次设置需要什么"
+          }
+        }
+      }
+    },
+    "setup.computerTrustTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to a computer"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接电脑"
+          }
+        }
+      }
+    },
+    "setup.computerTrustDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect this iPhone or iPad to a computer with a USB data cable. Unlock the device and trust the computer when prompted. An already trusted computer may not show the prompt again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 USB 数据线连接这台 iPhone 或 iPad 与电脑，解锁并按提示信任电脑。已经信任过的电脑可能不会再次弹窗。"
+          }
+        }
+      }
+    },
+    "setup.transferTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prepare and import the pairing file"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "准备并导入配对文件"
+          }
+        }
+      }
+    },
+    "setup.transferDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the Eiscue pairing tool on the computer to generate EiscuePairingTransfer.json. Transfer it to this device, then return here and choose Import pairing file. Keep the file private."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在电脑上用 Eiscue 配对工具生成 EiscuePairingTransfer.json。把文件传到这台设备，再回到这里选择“导入配对文件”。请勿公开分享该文件。"
+          }
+        }
+      }
+    },
+    "setup.computerRequiredNote": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This version cannot complete first-time pairing on the phone alone. After preparation, the local VPN route runs without a computer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前版本还不能只用手机完成首次配对。准备完成后，App 内连接的日常使用无需电脑。"
+          }
+        }
+      }
+    },
+    "setup.vpnPermissionTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow the local VPN"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许本地 VPN"
+          }
+        }
+      }
+    },
+    "setup.vpnPermissionDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When starting pairing or connecting, allow Eiscue to add its VPN configuration if iOS asks. Eiscue checks device control after connecting; enabling the VPN alone does not complete setup."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始配对或连接时，如果系统询问是否添加 VPN 配置，请点“允许”。连接后 App 会检查设备控制，VPN 开启本身不代表连接成功。"
+          }
+        }
+      }
+    },
+    "setup.savedSettingsTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Why are settings still saved?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为什么重装后还有配置？"
+          }
+        }
+      }
+    },
+    "setup.savedSettingsDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstalling the app may leave its pairing identity in the iPhone Keychain. Choose Pair again on the setup page if you want to remove that identity. This does not revoke the device’s system trust."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载 App 后，iPhone 钥匙串可能仍保留配对身份。要清除它，可在引导页选择“重新配对”。这不会撤销设备的系统信任。"
+          }
+        }
+      }
+    },
+    "setup.savedVPNDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS stores VPN configurations separately. To test the VPN permission prompt again, remove only Eiscue’s VPN configuration in iPhone Settings, then reconnect."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPN 配置由 iOS 单独保存。若要重新测试 VPN 授权弹窗，请先在 iPhone 设置中移除 Eiscue 的 VPN 配置，再回来连接。"
           }
         }
       }

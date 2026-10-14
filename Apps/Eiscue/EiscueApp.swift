@@ -35,6 +35,10 @@ struct EiscueApp: App {
                         model.installLocalDevicePageFixture()
                         return
                     }
+                    if DebugDevicePageFixture.isOnboardingEnabled {
+                        model.installOnboardingPairingFixture()
+                        return
+                    }
                     #endif
                     await model.load()
                     #if DEBUG
@@ -63,6 +67,7 @@ struct EiscueApp: App {
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ble-device-check") { return }
                     if DebugDevicePageFixture.isEnabled { return }
+                    if DebugDevicePageFixture.isOnboardingEnabled { return }
                     #endif
                     model.sceneChanged(phase)
                 }
