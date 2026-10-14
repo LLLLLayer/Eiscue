@@ -58,10 +58,9 @@ final class EiscueUITests: XCTestCase {
 
     @MainActor
     private func expandDeviceOptions(in app: XCUIApplication) {
-        let options = app.buttons["deviceConnectionOptionsMenu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
-        options.tap()
-        app.buttons["deviceConnectionHelpButton"].tap()
+        let help = app.buttons["deviceConnectionHelpButton"]
+        reveal(help, in: app)
+        help.tap()
     }
 
     /// New installs default to the Bluetooth board, whose page has no tunnel,
@@ -71,11 +70,10 @@ final class EiscueUITests: XCTestCase {
         let picker = app.buttons["deviceConnectionMethodPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         picker.tap()
-        let option = app.buttons["App 内连接"]
+        let option = app.buttons["deviceConnectionChoice_localVPN"]
         XCTAssertTrue(option.waitForExistence(timeout: 5))
         option.tap()
-        let options = app.buttons["deviceConnectionOptionsMenu"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["deviceConnectionHelpButton"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -100,13 +98,12 @@ final class EiscueUITests: XCTestCase {
     func testAdvancedOptionsAreHiddenUntilRequested() throws {
         let app = launch()
         openModelSettings(in: app)
-        let outputLimit = app.descendants(matching: .any).matching(identifier: "maxOutputTokensStepper").firstMatch
+        let outputLimit = app.textFields["maxOutputTokensInput"]
         XCTAssertFalse(outputLimit.exists)
         let advanced = app.descendants(matching: .any).matching(identifier: "modelAdvancedOptions").firstMatch
         reveal(advanced, in: app)
         advanced.tap()
-        // SwiftUI may expose the labeled Stepper as a container around its
-        // increment/decrement controls. Form rows also appear lazily on scroll.
+        // Form rows appear lazily on scroll.
         reveal(outputLimit, in: app)
         XCTAssertTrue(outputLimit.exists)
         app.navigationBars.buttons["取消"].tap()
@@ -278,7 +275,6 @@ final class EiscueUITests: XCTestCase {
         let app = launch()
         openDevice(in: app)
         selectInAppConnection(in: app)
-        app.buttons["deviceConnectionOptionsMenu"].tap()
         let openProbe = app.buttons["检查点击和输入"]
         guard openProbe.waitForExistence(timeout: 2) else {
             throw XCTSkip("The probe entry is shown only when device control is ready, which a simulator cannot reach.")

@@ -38,7 +38,7 @@ final class DevicePageUITests: XCTestCase {
     @MainActor
     func testConnectionOptionsKeepManualInputCheckAvailable() {
         let app = launch()
-        app.buttons["deviceConnectionOptionsMenu"].tap()
+        XCTAssertFalse(app.buttons["deviceConnectionOptionsMenu"].exists)
         XCTAssertTrue(app.buttons["deviceConnectionHelpButton"].waitForExistence(timeout: 5))
         app.buttons["deviceProbeButton"].tap()
         let increment = app.buttons["probeIncrement"]
@@ -51,5 +51,39 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["probeEcho"].label, "Eiscue UI")
         app.navigationBars.buttons["完成"].tap()
         XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testConnectionChoicesShowChipsetSummariesWithoutChangingDefaultRoute() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--reset-state", "--skip-onboarding", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
+        openDevice(in: app)
+        let picker = app.buttons["deviceConnectionMethodPicker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertEqual(picker.value as? String, "ESP32-C3 / S3 键鼠")
+        picker.tap()
+        let appMethod = app.buttons["deviceConnectionChoice_localVPN"]
+        let bluetooth = app.buttons["deviceConnectionChoice_bluetoothBoard"]
+        let usb = app.buttons["deviceConnectionChoice_usbBoard"]
+        let wifi = app.buttons["deviceConnectionChoice_wirelessBoard"]
+        XCTAssertTrue(appMethod.waitForExistence(timeout: 5))
+        XCTAssertTrue(bluetooth.exists)
+        XCTAssertTrue(usb.exists)
+        XCTAssertTrue(wifi.exists)
+        XCTAssertLessThan(appMethod.frame.minY, bluetooth.frame.minY)
+        XCTAssertLessThan(bluetooth.frame.minY, usb.frame.minY)
+        XCTAssertLessThan(usb.frame.minY, wifi.frame.minY)
+        XCTAssertEqual(bluetooth.value as? String, "已选用")
+        XCTAssertEqual(usb.label, "ESP32-S3 USB 网卡")
+        XCTAssertEqual(wifi.label, "ESP32-C3 Wi-Fi")
+        appMethod.tap()
+        XCTAssertTrue(appMethod.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(picker.value as? String, "App 内连接")
+        XCTAssertTrue(app.buttons["deviceConnectionHelpButton"].exists)
+        XCTAssertFalse(app.buttons["deviceProbeButton"].exists, "An unready route must not expose the input check.")
+        XCTAssertFalse(app.buttons["deviceConnectionOptionsMenu"].exists)
     }
 }

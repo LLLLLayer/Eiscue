@@ -5,6 +5,106 @@ import PiDurableKit
 
 @Suite("Agent runtime")
 struct AgentRuntimeTests {
+    @Test func toolHistoryRestoresExactRequestAndConversationAfterResetWithoutRunningAnything() async throws {
+        let evidence = RuntimeEvidence()
+        let capture = AgentTool(name: "capture", description: "Observe", parameters: emptySchema, mayHaveSideEffects: false) { _ in
+            await evidence.record("capture")
+            return .image(Data([UInt8(await evidence.values.count)]), mimeType: "image/png")
+        }
+        let fixture = try await RuntimeFixture(tools: [capture])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { _, count in
+            count.isMultiple(of: 2) ? .text("Done") : FauxResponse(.toolCall("capture", [:], id: "reused-call"))
+        }
+        let conversationID = UUID()
+        let requests = [AgentRequest(conversationID: conversationID, prompt: "Observe"),
+                        AgentRequest(conversationID: conversationID, prompt: "Observe"),
+                        AgentRequest(conversationID: UUID(), prompt: "Observe")]
+        for request in requests { try await collect(fixture.client.run(request: request)) }
+        let harness = try await Harness.open(.sqlite(at: fixture.fileURL(conversationID)), models: fixture.models, resume: false)
+        let root = try await harness.root()
+        try await root.reset()
+        try await harness.close()
+        let before = try Data(contentsOf: fixture.fileURL(conversationID))
+        let reader = AgentClient(storageDirectory: fixture.directory)
+        for (index, request) in requests.enumerated() {
+            let restored = try await reader.toolResult(conversationID: request.conversationID,
+                requestID: request.requestID, toolCallID: "reused-call")
+            #expect(restored?.call.name == "capture")
+            #expect(restored?.result.content == [.image(data: Data([UInt8(index + 1)]), mimeType: "image/png")])
+        }
+        #expect(try await reader.toolResult(conversationID: conversationID, requestID: requests[2].requestID, toolCallID: "reused-call") == nil)
+        #expect(try await reader.toolResult(conversationID: conversationID, requestID: requests[0].requestID, toolCallID: "unknown") == nil)
+        #expect(try Data(contentsOf: fixture.fileURL(conversationID)) == before)
+        #expect(await evidence.values == ["capture", "capture", "capture"])
+    }
+
+    @Test func toolHistoryReadsCommittedImageWhileTheRuntimeIsStillGenerating() async throws {
+        let evidence = RuntimeEvidence()
+        let capture = AgentTool(name: "capture", description: "Observe", parameters: emptySchema, mayHaveSideEffects: false) { _ in
+            await evidence.record("capture")
+            return .image(Data([7]), mimeType: "image/png")
+        }
+        let fixture = try await RuntimeFixture(tools: [capture])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { _, count in
+            if count == 1 { return FauxResponse(.toolCall("capture", [:], id: "call")) }
+            try await Task.sleep(for: .milliseconds(500))
+            return .text("Done")
+        }
+        let request = AgentRequest(conversationID: UUID(), prompt: "Observe")
+        var restored = false
+        for try await event in try await fixture.client.run(request: request) {
+            if case .toolFinished = event {
+                let separateReader = AgentClient(storageDirectory: fixture.directory)
+                for reader in [fixture.client, separateReader] {
+                    let result = try await reader.toolResult(conversationID: request.conversationID, requestID: request.requestID, toolCallID: "call")
+                    #expect(result?.result.content == [.image(data: Data([7]), mimeType: "image/png")])
+                }
+                restored = true
+            }
+        }
+        #expect(restored)
+        #expect(await evidence.values == ["capture"])
+    }
+
+    @Test func toolHistoryDoesNotCreateMissingStorageOrResumeQueuedWork() async throws {
+        let fixture = try await RuntimeFixture()
+        defer { fixture.remove() }
+        let request = AgentRequest(conversationID: UUID(), prompt: "Queued")
+        let reader = AgentClient(storageDirectory: fixture.directory)
+        #expect(try await reader.toolResult(conversationID: request.conversationID, requestID: request.requestID, toolCallID: "call") == nil)
+        #expect(!FileManager.default.fileExists(atPath: fixture.fileURL(request.conversationID).path))
+        let harness = try await Harness.open(.sqlite(at: fixture.fileURL(request.conversationID)), models: fixture.models, resume: false)
+        let root = try await harness.root(agent: AgentChange(model: fixture.faux.model))
+        try await root.submit(request.prompt, requestId: request.requestID.uuidString)
+        try await harness.close()
+        try await fixture.faux.append(.text("Not yet"))
+        let before = try Data(contentsOf: fixture.fileURL(request.conversationID))
+        #expect(try await reader.toolResult(conversationID: request.conversationID, requestID: request.requestID, toolCallID: "call") == nil)
+        #expect(try Data(contentsOf: fixture.fileURL(request.conversationID)) == before)
+        #expect(try await fixture.faux.pendingResponseCount() == 1)
+        #expect(try await reader.recover(conversationID: request.conversationID).hasInterruptedRun)
+    }
+
+    @Test func toolHistoryRejectsAmbiguousCallReuseWithinOneRequest() async throws {
+        let capture = AgentTool(name: "capture", description: "Observe", parameters: emptySchema, mayHaveSideEffects: false) { _ in
+            .image(Data([1]), mimeType: "image/png")
+        }
+        let fixture = try await RuntimeFixture(tools: [capture])
+        defer { fixture.remove() }
+        try await fixture.faux.append(.toolCall("capture", [:], id: "duplicate"))
+        try await fixture.faux.append(.text("Done"))
+        let request = AgentRequest(conversationID: UUID(), prompt: "Observe")
+        try await collect(fixture.client.run(request: request))
+        let harness = try await Harness.open(.sqlite(at: fixture.fileURL(request.conversationID)), models: fixture.models, resume: false)
+        let root = try await harness.root()
+        let entry = try #require(try await root.entries().items.first { $0.toolResult != nil })
+        try await root.write(EntryDraft(kind: entry.kind, model: entry.model))
+        try await harness.close()
+        #expect(try await fixture.client.toolResult(conversationID: request.conversationID, requestID: request.requestID, toolCallID: "duplicate") == nil)
+    }
+
     @Test func configurationIsValidatedBeforeAnyWork() async throws {
         let client = AgentClient()
         #expect(await client.availability == .unconfigured)

@@ -46,26 +46,27 @@ struct AssistantView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .gesture(SidebarRevealGesture(isEnabled: !speech.isBusy) {
-                isComposerFocused = false
-                speech.cancel()
+                endComposerInput()
                 revealSidebar()
             })
             .scrollDismissesKeyboard(.interactively)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(model.isHoldingDeviceTranscript ? nil : .bottom, for: .sizeChanges)
             .onChange(of: model.displayedConversationFeed.count) {
                 guard !model.isHoldingDeviceTranscript else { return }
-                if model.isShowingDeviceControlRun { proxy.scrollTo("bottom", anchor: .bottom) }
-                else { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
         }
+        .id(model.selectedConversationID)
         .background(EiscueStyle.background)
         .navigationTitle("Eiscue")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("assistant.history", systemImage: "sidebar.left") {
-                    isComposerFocused = false
-                    speech.cancel()
+                    endComposerInput()
                     openSidebar()
                 }
                 .labelStyle(.iconOnly)
@@ -73,7 +74,9 @@ struct AssistantView: View {
             }
             ToolbarItem(placement: .principal) {
                 Menu {
-                    Button("runs.conversationTitle", systemImage: "clock.arrow.circlepath") { showsRunHistory = true }
+                    Button("runs.conversationTitle", systemImage: "clock.arrow.circlepath") {
+                        endComposerInput(); showsRunHistory = true
+                    }
                         .accessibilityIdentifier("conversationRunHistoryButton")
                     Divider()
                     ForEach(model.modelProfiles) { profile in
@@ -89,7 +92,7 @@ struct AssistantView: View {
                         .accessibilityIdentifier("switchModelProfile_\(profile.id.uuidString)")
                     }
                     Button(String(localized: "models.manage", table: "Models"), systemImage: "slider.horizontal.3") {
-                        isComposerFocused = false
+                        endComposerInput()
                         model.showsModelSettings = true
                     }
                     .disabled(!model.canManageModelProfiles)
@@ -110,6 +113,7 @@ struct AssistantView: View {
                 .accessibilityLabel("common.device")
                 .accessibilityValue(model.connectionIndicator.title)
                 .accessibilityIdentifier("deviceNavigationLink")
+                .simultaneousGesture(TapGesture().onEnded { endComposerInput() })
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
@@ -133,16 +137,28 @@ struct AssistantView: View {
             }, onCancel: { showsCamera = false }).ignoresSafeArea()
         }
         .onChange(of: model.composerSessionID) {
-            speech.cancel()
+            endComposerInput()
             showsPhotoPicker = false; showsFiles = false; showsCamera = false
         }
         .sheet(isPresented: $showsRunHistory) {
             NavigationStack {
                 RunHistoryView(conversationID: model.selectedConversationID)
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("common.done") { showsRunHistory = false } } }
-            }
+            }.toolImagePreviewHost()
         }
-        .onDisappear { speech.cancel() }
+        .onChange(of: model.showsModelSettings) { _, shown in if shown { endComposerInput() } }
+        .onDisappear { endComposerInput() }
+        .onAppear { if !isComposerFocused { dismissKeyboard() } }
+    }
+
+    private func endComposerInput() {
+        isComposerFocused = false
+        speech.cancel()
+        dismissKeyboard()
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private var welcome: some View {

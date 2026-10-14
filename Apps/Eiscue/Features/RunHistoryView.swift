@@ -90,6 +90,31 @@ private struct RunDetailView: View {
                 }
             }
 
+            if let activities = record.activities, !activities.isEmpty {
+                Section {
+                    ForEach(activities) { activity in
+                        NavigationLink {
+                            RunToolDetailView(activityID: activity.id, initialRecord: record)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: activity.isRunning ? "circle.dotted.circle" : activity.isError ? "exclamationmark.circle" : "checkmark.circle")
+                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(DeviceToolPresentation.activityTitle(for: activity))
+                                        .font(.subheadline.weight(.medium))
+                                    Text(activity.startedAt, format: .dateTime.hour().minute().second())
+                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 3)
+                        }
+                        .accessibilityIdentifier("runToolDetail_\(activity.id)")
+                    }
+                } header: {
+                    Text(String(localized: "runDetails.steps", table: "RunDetails"))
+                }
+            }
+
             Section {
                 if record.events.isEmpty {
                     Text("runs.noEvents")
@@ -141,7 +166,7 @@ private struct RunDetailView: View {
 
 /// Reports deliberately format an allowlist of metadata, never raw errors,
 /// prompts, tool arguments or credentials stored elsewhere in the application.
-private enum RunReport {
+enum RunReport {
     static func eventTitle(_ event: RunLogEntry) -> String {
         switch event.kind {
         case "run.started": String(localized: "event.runStarted")

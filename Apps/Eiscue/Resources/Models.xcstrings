@@ -188,23 +188,6 @@
         }
       }
     },
-    "models.switchHint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tap to switch. You can also switch from the menu at the top of a conversation."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点选即可切换，也可以从对话顶部菜单切换。"
-          }
-        }
-      }
-    },
     "models.name": {
       "extractionState": "manual",
       "localizations": {
@@ -371,6 +354,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法保存模型设置，请重试。"
+          }
+        }
+      }
+    },
+    "models.timeoutSeconds": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time limit (seconds)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务时限（秒）"
+          }
+        }
+      }
+    },
+    "models.integerRange": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter an integer between %@ and %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入 %@–%@ 之间的整数。"
           }
         }
       }

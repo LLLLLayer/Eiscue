@@ -26,6 +26,9 @@ struct DeviceView: View {
                     if model.deviceConnectionMethod != .bluetoothBoard && model.isDeviceReady {
                         screenPreview
                     }
+                    if model.deviceConnectionMethod != .bluetoothBoard {
+                        connectionSupport
+                    }
                 }
                 .frame(maxWidth: 600)
                 .padding(.horizontal, 20)
@@ -36,18 +39,10 @@ struct DeviceView: View {
             .navigationTitle("common.device")
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("devicePage")
-            .toolbar {
-                if model.deviceConnectionMethod != .bluetoothBoard {
-                    ToolbarItem(placement: .topBarTrailing) { connectionOptions }
-                }
-            }
             .onAppear { model.refreshPairingTransfer() }
             .fileImporter(isPresented: $importsIdentity, allowedContentTypes: [.json, .data]) { result in
                 if case .success(let url) = result { Task { await model.importPairingIdentity(url) } }
                 if case .failure(let error) = result { model.errorMessage = error.localizedDescription }
-            }
-            .confirmationDialog("device.removePairingWarning", isPresented: $confirmsForget, titleVisibility: .visible) {
-                Button("device.removeIdentity", role: .destructive) { Task { await model.forgetPairingIdentity() } }
             }
             .sheet(isPresented: $showsProbe) { ControlProbeView() }
             .sheet(isPresented: $showsConnectionHelp) { connectionHelpSheet }
@@ -227,31 +222,33 @@ struct DeviceView: View {
         .accessibilityIdentifier("disconnectDeviceButton")
     }
 
-    private var connectionOptions: some View {
-        Menu {
-            if model.isDeviceReady {
-                Button { showsProbe = true } label: { Label("device.openProbe", systemImage: "hand.tap") }
-                    .disabled(model.isBusy)
-                    .accessibilityIdentifier("deviceProbeButton")
-                Divider()
+    private var connectionSupport: some View {
+        SurfaceCard {
+            VStack(spacing: 12) {
+                if model.isDeviceReady {
+                    Button { showsProbe = true } label: {
+                        connectionSupportLabel(String(localized: "device.openProbe"), symbol: "hand.tap")
+                    }
+                    .disabled(model.isBusy).accessibilityIdentifier("deviceProbeButton")
+                    Divider()
+                }
+                Button { showsConnectionHelp = true } label: {
+                    connectionSupportLabel(String(localized: "device.connection.help", table: "Connections"), symbol: "questionmark.circle")
+                }
+                .accessibilityIdentifier("deviceConnectionHelpButton")
             }
-            Button { showsConnectionHelp = true } label: {
-                Label(String(localized: "device.connection.help", table: "Connections"), systemImage: "questionmark.circle")
-            }
-            .accessibilityIdentifier("deviceConnectionHelpButton")
-            if model.deviceConnectionMethod == .localVPN && (model.localTunnel.isConnected || model.localTunnel.isTransitioning || model.isManagingTunnel) {
-                Button("device.stopLocalConnection") { Task { await model.stopLocalTunnel() } }
-                    .disabled(model.isStoppingTunnel)
-            }
-            if model.hasPairingIdentity {
-                Button("device.removePairing", role: .destructive) { confirmsForget = true }
-                    .disabled(model.isBusy)
-            }
-        } label: {
-            Image(systemName: "ellipsis")
+            .buttonStyle(.plain)
         }
-        .accessibilityLabel(String(localized: "device.connection.options", table: "Connections"))
-        .accessibilityIdentifier("deviceConnectionOptionsMenu")
+    }
+
+    private func connectionSupportLabel(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).frame(width: 24)
+            Text(title).font(.subheadline.weight(.medium))
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        .frame(minHeight: 32).contentShape(Rectangle())
     }
 
     private var connectionHelpSheet: some View {
@@ -270,6 +267,11 @@ struct DeviceView: View {
                         }
                         .font(.subheadline).foregroundStyle(.secondary)
                     }
+                    if model.hasPairingIdentity {
+                        Button("device.removePairing", role: .destructive) { confirmsForget = true }
+                            .buttonStyle(.glass).disabled(model.isBusy)
+                            .accessibilityIdentifier("removePairingButton")
+                    }
                 }
                 .frame(maxWidth: 600).padding(20).frame(maxWidth: .infinity)
             }
@@ -280,6 +282,9 @@ struct DeviceView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("common.done") { showsConnectionHelp = false }
                 }
+            }
+            .confirmationDialog("device.removePairingWarning", isPresented: $confirmsForget, titleVisibility: .visible) {
+                Button("device.removeIdentity", role: .destructive) { Task { await model.forgetPairingIdentity() } }
             }
             .alert("common.unableToComplete", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
                 Button("common.understood") { model.errorMessage = nil }
@@ -412,6 +417,13 @@ private struct DeviceScreenPreview: View {
 struct DeviceConnectionMethodPicker: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showsMethods = false
+
+    private let methods: [DeviceConnectionMethod] = [.localVPN, .bluetoothBoard, .usbBoard, .wirelessBoard]
+    private var canChange: Bool {
+        !model.isChangingDeviceConnectionMethod && !model.isSaving && !model.isStopping
+            && !model.isManagingTunnel && !model.isStoppingTunnel && !model.isImportingAttachments
+    }
 
     var body: some View {
         Group {
@@ -430,22 +442,86 @@ struct DeviceConnectionMethodPicker: View {
         }
         .font(.subheadline)
         .padding(.horizontal, 4)
+        .sheet(isPresented: $showsMethods) {
+            NavigationStack {
+                List(methods, id: \.self) { method in
+                    Button {
+                        Task {
+                            await model.selectDeviceConnectionMethod(method)
+                            if model.deviceConnectionMethod == method { showsMethods = false }
+                        }
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: method.selectionSymbol).font(.title3).frame(width: 28)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(method.selectionTitle).font(.body.weight(.medium))
+                                Text(method.selectionDetail).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            if model.deviceConnectionMethod == method {
+                                Image(systemName: "checkmark").font(.body.weight(.semibold)).accessibilityHidden(true)
+                            }
+                        }
+                        .foregroundStyle(.primary).padding(.vertical, 8).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).disabled(!canChange)
+                    .accessibilityLabel(method.selectionTitle).accessibilityHint(method.selectionDetail)
+                    .accessibilityValue(model.deviceConnectionMethod == method ? String(localized: "device.connection.selected", table: "Connections") : "")
+                    .accessibilityIdentifier("deviceConnectionChoice_\(method.rawValue)")
+                    .listRowBackground(EiscueStyle.surface)
+                }
+                .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(EiscueStyle.background)
+                .navigationTitle("device.connectionMethod").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("common.done") { showsMethods = false }
+                    }
+                }
+            }
+            .presentationDetents([.fraction(0.65), .large]).presentationDragIndicator(.visible)
+        }
     }
 
     private var picker: some View {
-        Picker("device.connectionMethod", selection: Binding(
-            get: { model.deviceConnectionMethod },
-            set: { method in Task { await model.selectDeviceConnectionMethod(method) } }
-        )) {
-            Text(String(localized: "bluetooth.method", table: "Bluetooth")).tag(DeviceConnectionMethod.bluetoothBoard)
-            Text("device.appConnectionMethod").tag(DeviceConnectionMethod.localVPN)
-            Text("device.boardConnectionMethod").tag(DeviceConnectionMethod.usbBoard)
-            Text("device.wirelessBoardConnectionMethod").tag(DeviceConnectionMethod.wirelessBoard)
+        Button { showsMethods = true } label: {
+            HStack(spacing: 6) {
+                Text(model.deviceConnectionMethod.selectionTitle).multilineTextAlignment(.trailing)
+                Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .frame(minHeight: 44).contentShape(Rectangle())
         }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .disabled(model.isChangingDeviceConnectionMethod || model.isSaving || model.isStopping || model.isManagingTunnel || model.isStoppingTunnel || model.isImportingAttachments)
+        .buttonStyle(.plain).disabled(!canChange)
+        .accessibilityLabel(Text("device.connectionMethod")).accessibilityValue(model.deviceConnectionMethod.selectionTitle)
         .accessibilityIdentifier("deviceConnectionMethodPicker")
+    }
+}
+
+private extension DeviceConnectionMethod {
+    var selectionTitle: String {
+        switch self {
+        case .localVPN: String(localized: "device.appConnectionMethod")
+        case .bluetoothBoard: String(localized: "device.connection.bluetoothTitle", table: "Connections")
+        case .usbBoard: String(localized: "device.connection.usbTitle", table: "Connections")
+        case .wirelessBoard: String(localized: "device.connection.wifiTitle", table: "Connections")
+        }
+    }
+
+    var selectionDetail: String {
+        switch self {
+        case .localVPN: String(localized: "device.connection.appSummary", table: "Connections")
+        case .bluetoothBoard: String(localized: "device.connection.bluetoothSummary", table: "Connections")
+        case .usbBoard: String(localized: "device.connection.usbSummary", table: "Connections")
+        case .wirelessBoard: String(localized: "device.connection.wifiSummary", table: "Connections")
+        }
+    }
+
+    var selectionSymbol: String {
+        switch self {
+        case .localVPN: "iphone.gen3"
+        case .bluetoothBoard: "keyboard"
+        case .usbBoard: "cable.connector"
+        case .wirelessBoard: "wifi"
+        }
     }
 }
 

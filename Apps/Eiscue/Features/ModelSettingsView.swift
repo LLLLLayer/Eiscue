@@ -60,8 +60,6 @@ struct ModelSettingsView: View {
                                 Button(modelsText("models.delete"), systemImage: "trash", role: .destructive) { pendingDeletion = profile }
                             }
                         }
-                    } footer: {
-                        Text(modelsText("models.switchHint"))
                     }
                     .listRowBackground(EiscueStyle.surface)
                 }
@@ -135,11 +133,20 @@ private struct ModelProfileEditor: View {
     @State private var errorMessage: String?
     @State private var confirmsKeyRemoval = false
     @State private var showsAdvanced = false
+    @State private var outputTokens: String
+    @State private var toolCalls: String
+    @State private var timeoutSeconds: String
+    @State private var validatesLimits = false
+    @FocusState private var focusedLimit: ModelLimitField?
 
     init(profile: ModelProfile?, cancel: @escaping () -> Void, saved: @escaping () -> Void) {
         self.profile = profile; self.cancel = cancel; self.saved = saved
-        _settings = State(initialValue: profile?.settings ?? ModelSettings())
+        let settings = profile?.settings ?? ModelSettings()
+        _settings = State(initialValue: settings)
         _name = State(initialValue: profile?.name ?? "")
+        _outputTokens = State(initialValue: String(settings.maxOutputTokens))
+        _toolCalls = State(initialValue: String(settings.maxToolCalls))
+        _timeoutSeconds = State(initialValue: String(settings.timeoutSeconds))
     }
 
     private var hasSavedKey: Bool { profile.map { model.hasAPIKey(for: $0.id) } ?? false }
@@ -202,18 +209,9 @@ private struct ModelProfileEditor: View {
                 DisclosureGroup(isExpanded: $showsAdvanced) {
                     Toggle("model.supportsImages", isOn: $settings.supportsImages)
                         .tint(EiscueStyle.switchTint).accessibilityIdentifier("modelSupportsImages")
-                    Stepper(value: $settings.maxOutputTokens, in: 256...32_768, step: 256) {
-                        LabeledContent("model.maxOutputTokens", value: settings.maxOutputTokens.formatted())
-                    }.accessibilityIdentifier("maxOutputTokensStepper")
-                    Stepper(value: $settings.maxToolCalls, in: 1...100) {
-                        LabeledContent("model.maxToolCalls", value: String(localized: "model.toolCallCount \(settings.maxToolCalls)"))
-                    }.accessibilityIdentifier("maxToolCallsStepper")
-                    Stepper(value: $settings.timeoutSeconds, in: 30...1_800, step: 30) {
-                        LabeledContent("model.taskTimeout", value: durationLabel)
-                    }.accessibilityIdentifier("taskTimeoutStepper")
-                    Text(endpointHint).font(.caption).foregroundStyle(.secondary)
-                    Text("model.serviceRequirements").font(.caption).foregroundStyle(.secondary)
-                    Text("model.limitsDetail").font(.caption).foregroundStyle(.secondary)
+                    limitField(.outputTokens, value: $outputTokens)
+                    limitField(.toolCalls, value: $toolCalls)
+                    limitField(.timeout, value: $timeoutSeconds)
                 } label: {
                     Text("model.advanced").accessibilityIdentifier("modelAdvancedOptions")
                 }
@@ -228,6 +226,13 @@ private struct ModelProfileEditor: View {
             ToolbarItem(placement: .cancellationAction) { Button("common.cancel", action: cancel) }
             ToolbarItem(placement: .confirmationAction) {
                 Button("common.done", action: save).disabled(!canSave).accessibilityIdentifier("saveModelSettingsButton")
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                if focusedLimit != nil {
+                    Spacer()
+                    Button("common.done") { focusedLimit = nil }
+                        .accessibilityIdentifier("modelLimitsKeyboardDoneButton")
+                }
             }
         }
         .onChange(of: settings.api) { _, api in
@@ -274,19 +279,41 @@ private struct ModelProfileEditor: View {
         .accessibilityLabel(modelsText("models.clear")).accessibilityIdentifier(identifier)
     }
 
-    private var durationLabel: String {
-        Duration.seconds(settings.timeoutSeconds).formatted(.units(allowed: [.minutes, .seconds], width: .wide))
-    }
-    private var endpointHint: String {
-        switch settings.api {
-        case .anthropicMessages: String(localized: "model.anthropicEndpointHint")
-        case .openAICompletions: String(localized: "model.completionsEndpointHint")
-        case .openAIResponses: String(localized: "model.responsesEndpointHint")
+    private func limitField(_ field: ModelLimitField, value: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Text(field.title)
+                Spacer(minLength: 0)
+                TextField(field.rangeLabel, text: value)
+                    .keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .frame(minWidth: 72, maxWidth: 120).fixedSize(horizontal: false, vertical: true)
+                    .focused($focusedLimit, equals: field)
+                    .accessibilityLabel(field.title).accessibilityIdentifier(field.identifier)
+                clearButton(value, identifier: "clear\(field.identifier)Button")
+            }
+            if validatesLimits, field.parse(value.wrappedValue) == nil {
+                Text(String(format: modelsText("models.integerRange"), field.range.lowerBound.formatted(), field.range.upperBound.formatted()))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("\(field.identifier)Error")
+            }
         }
     }
+
     private func save() {
         guard canSave else { return }
+        validatesLimits = true
+        for (field, value) in [(ModelLimitField.outputTokens, outputTokens), (.toolCalls, toolCalls), (.timeout, timeoutSeconds)] {
+            if field.parse(value) == nil {
+                showsAdvanced = true; focusedLimit = field
+                return
+            }
+        }
+        guard let outputTokens = ModelLimitField.outputTokens.parse(outputTokens),
+              let toolCalls = ModelLimitField.toolCalls.parse(toolCalls),
+              let timeoutSeconds = ModelLimitField.timeout.parse(timeoutSeconds) else { return }
         do {
+            settings.maxOutputTokens = outputTokens; settings.maxToolCalls = toolCalls; settings.timeoutSeconds = timeoutSeconds
             settings.baseURL = settings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             settings.model = settings.model.trimmingCharacters(in: .whitespacesAndNewlines)
             _ = try model.saveModelProfile(id: profile?.id, name: name, settings: settings,
@@ -299,6 +326,38 @@ private struct ModelProfileEditor: View {
             }
             errorMessage = message
         }
+    }
+}
+
+private enum ModelLimitField: Hashable {
+    case outputTokens, toolCalls, timeout
+
+    var range: ClosedRange<Int> {
+        switch self {
+        case .outputTokens: 256...32_768
+        case .toolCalls: 1...100
+        case .timeout: 30...1_800
+        }
+    }
+    var title: String {
+        switch self {
+        case .outputTokens: String(localized: "model.maxOutputTokens")
+        case .toolCalls: String(localized: "model.maxToolCalls")
+        case .timeout: modelsText("models.timeoutSeconds")
+        }
+    }
+    var identifier: String {
+        switch self {
+        case .outputTokens: "maxOutputTokensInput"
+        case .toolCalls: "maxToolCallsInput"
+        case .timeout: "taskTimeoutInput"
+        }
+    }
+    var rangeLabel: String { "\(range.lowerBound.formatted())–\(range.upperBound.formatted())" }
+
+    func parse(_ text: String) -> Int? {
+        guard let value = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)), range.contains(value) else { return nil }
+        return value
     }
 }
 

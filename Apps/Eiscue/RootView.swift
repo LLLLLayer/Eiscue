@@ -79,6 +79,7 @@ struct RootView: View {
                 if isWide { wideSidebarIsExpanded = true }
             }
         }
+        .toolImagePreviewHost()
         .fullScreenCover(isPresented: Binding(
             get: { model.showsOnboarding && !model.isLoading },
             set: { if !$0 { model.showsOnboarding = false } }

@@ -19,7 +19,7 @@ extension AppModel {
                                state: .completed, endedAt: time.addingTimeInterval(10), detail: "", events: [])
         record.activities = [
             ToolActivity(id: "preview:image", name: "device_screenshot", startedAt: time.addingTimeInterval(1), endedAt: time.addingTimeInterval(2),
-                         output: "frameId=fixture-image; width=390; height=844;", precedingMessageID: user.id),
+                         output: "frameId=11111111-1111-1111-1111-111111111111; width=390; height=844;", precedingMessageID: user.id),
             ToolActivity(id: "preview:text", name: "device_list_apps", startedAt: time.addingTimeInterval(3), endedAt: time.addingTimeInterval(4),
                          output: "INTERNAL_TEXT_OUTPUT", precedingMessageID: user.id),
             ToolActivity(id: "preview:error", name: "device_screenshot", startedAt: time.addingTimeInterval(5), endedAt: time.addingTimeInterval(6),
@@ -35,6 +35,17 @@ extension AppModel {
         toolImagePreviews.record(AgentToolCompletion(call: .init(id: "error", name: "device_screenshot", arguments: [:]),
                                                     result: .init(content: [.image(data: image, mimeType: "image/png")], isError: true)),
                                  activityID: "preview:error", conversationID: conversation.id)
+        toolImagePreviews.markUnavailable(activityID: "preview:old", conversationID: conversation.id)
+        if ProcessInfo.processInfo.arguments.contains("--run-tool-detail-fixture") {
+            record.activities?.append(ToolActivity(id: "preview:tap", name: "device_tap", startedAt: time.addingTimeInterval(8),
+                                                  endedAt: time.addingTimeInterval(9),
+                                                  arguments: #"{"frameId":"11111111-1111-1111-1111-111111111111","x":284,"y":525}"#,
+                                                  output: "frameId=22222222-2222-2222-2222-222222222222; width=390; height=844;",
+                                                  precedingMessageID: user.id))
+            toolImagePreviews.record(AgentToolCompletion(call: .init(id: "tap", name: "device_tap", arguments: [:]),
+                                                        result: .image(image, mimeType: "image/png")),
+                                     activityID: "preview:tap", conversationID: conversation.id)
+        }
         conversations = [conversation]; runs = [record]; selectedConversationID = conversation.id
     }
 

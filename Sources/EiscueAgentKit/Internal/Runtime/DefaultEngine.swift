@@ -134,6 +134,12 @@ actor DefaultEngine: AgentEngine {
         }
     }
 
+    func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? {
+        guard !toolCallID.isEmpty else { return nil }
+        try validateStorage()
+        return try RuntimeToolHistory.result(at: fileURL(conversationID), requestID: requestID, toolCallID: toolCallID)
+    }
+
     private func execute(_ request: AgentRequest, id: UUID, budget: RunBudget,
                          continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation) async {
         var session: Session?

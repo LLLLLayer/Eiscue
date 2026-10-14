@@ -212,7 +212,7 @@ struct ConversationSidebarView: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
             .background((isSelecting ? checked : selected) ? EiscueStyle.accent.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 12))
-            .contentShape(Rectangle())
+            .contentShape(.interaction, RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
         .disabled(model.isBusy)
@@ -220,6 +220,7 @@ struct ConversationSidebarView: View {
         .accessibilityLabel(Text(conversation.title))
         .accessibilityValue(pinned ? String(localized: "sidebar.pinned", table: "Navigation") : "")
         .accessibilityAddTraits((isSelecting ? checked : selected) ? .isSelected : [])
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12))
         .contextMenu {
             if !isSelecting {
                 Button {

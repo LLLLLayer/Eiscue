@@ -31,7 +31,7 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["holdToTalkButton"].exists)
     }
 
-    @MainActor func testMarkdownMessageHasTimeActionsAndNativeRangeSelection() {
+    @MainActor func testMarkdownMessageHasTimeContextActionsAndNativeRangeSelection() {
         let app = launch()
         let input = input(in: app)
         input.tap(); input.typeText("markdown rendering fixture")
@@ -49,8 +49,8 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(app.staticTexts.matching(identifier: "messageTime").count, 2)
         XCTAssertFalse(app.buttons["messageMoreButton"].exists)
         XCTAssertFalse(app.buttons["userMessageMoreButton"].exists)
-        XCTAssertTrue(app.buttons["copyMessageButton"].exists)
-        XCTAssertTrue(app.buttons["shareMessageButton"].exists)
+        XCTAssertFalse(app.buttons["copyMessageButton"].exists)
+        XCTAssertFalse(app.buttons["shareMessageButton"].exists)
         for appearance in ["Light", "Dark"] {
             openSettings(in: app)
             let picker = app.buttons["appearancePicker"]
@@ -60,7 +60,7 @@ final class ChatPresentationUITests: XCTestCase {
             XCTAssertTrue((picker.label + (picker.value as? String ?? "")).contains(appearance))
             attachScreenshot(app, name: "Settings — \(appearance)")
             returnToAssistant(in: app)
-            attachScreenshot(app, name: "Markdown message and compact actions — \(appearance)")
+            attachScreenshot(app, name: "Markdown message and time footer — \(appearance)")
         }
         let heading = rows["markdownHeading"].firstMatch
         for _ in 0..<4 where !heading.isHittable { app.swipeDown() }
@@ -74,6 +74,8 @@ final class ChatPresentationUITests: XCTestCase {
             dx: message.frame.maxX - 8, dy: heading.frame.midY)).press(forDuration: 1)
         let selectText = app.buttons["selectMessageTextButton"]
         XCTAssertTrue(selectText.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["copyMessageButton"].exists)
+        XCTAssertTrue(app.buttons["shareMessageButton"].exists)
         selectText.tap()
         let selectable = app.textViews["selectableMessageText"]
         XCTAssertTrue(selectable.waitForExistence(timeout: 5))
@@ -96,7 +98,7 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertTrue(completeText.contains(pasted), "The pasted selection must be part of the message")
     }
 
-    @MainActor func testOnlyLatestSenderMessagesShowActionsAndOlderMessageStillShares() {
+    @MainActor func testOnlyLatestSenderMessagesShowTimeAndOlderMessageStillShares() {
         let app = launch()
         for prompt in ["First message", "Second message"] {
             let editor = input(in: app)
@@ -107,16 +109,21 @@ final class ChatPresentationUITests: XCTestCase {
             XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed)
         }
         for identifier in ["userCopyMessageButton", "copyMessageButton", "userShareMessageButton", "shareMessageButton"] {
-            XCTAssertEqual(app.buttons.matching(identifier: identifier).count, 1, identifier)
+            XCTAssertFalse(app.buttons[identifier].exists, "\(identifier) belongs in the long-press menu, not the footer.")
         }
+        XCTAssertEqual(app.staticTexts.matching(identifier: "messageTime").count, 2)
         XCTAssertFalse(app.buttons["userMessageMoreButton"].exists)
         XCTAssertFalse(app.buttons["messageMoreButton"].exists)
         let oldMessage = app.descendants(matching: .any).matching(identifier: "messageBubble")
-            .containing(.staticText, identifier: "First message").firstMatch.staticTexts["First message"]
+            .containing(.staticText, identifier: "First message").firstMatch
         if !oldMessage.isHittable { app.swipeDown() }
         XCTAssertTrue(oldMessage.isHittable)
-        oldMessage.press(forDuration: 1)
-        tapEditMenu("Share", in: app)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+            dx: oldMessage.frame.maxX - 8, dy: oldMessage.frame.midY)).press(forDuration: 1)
+        let share = app.buttons["userShareMessageButton"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["userCopyMessageButton"].exists)
+        share.tap()
         // iOS may replace the controller's root accessibility identifier when
         // its system-hosted share surface attaches. Verify the actual sheet,
         // original payload and completed Copy action, not only our marker.

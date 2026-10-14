@@ -34,6 +34,11 @@ public struct AgentClient: Sendable {
         try await engine.recover(conversationID: conversationID)
     }
 
+    /// Reads the exact request's committed result. Does not call the model or replay tools.
+    public func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? {
+        try await engine.toolResult(conversationID: conversationID, requestID: requestID, toolCallID: toolCallID)
+    }
+
     public func cancel() async throws {
         try await engine.cancel()
     }

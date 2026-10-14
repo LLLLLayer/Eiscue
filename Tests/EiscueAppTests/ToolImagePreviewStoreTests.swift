@@ -5,6 +5,79 @@ import XCTest
 
 @MainActor
 final class ToolImagePreviewStoreTests: XCTestCase {
+    func testEvictedPreviewCanReloadAndUnavailableResultsDoNotLoop() throws {
+        let store = ToolImagePreviewStore(maximumImageCount: 1)
+        let conversationID = UUID()
+        let result = completion(.image(image(), mimeType: "image/png"))
+        store.record(result, activityID: "first", conversationID: conversationID)
+        store.record(result, activityID: "second", conversationID: conversationID)
+        XCTAssertEqual(store.state(for: "first"), .idle)
+        let token = try XCTUnwrap(store.beginLoading(activityID: "first", conversationID: conversationID))
+        XCTAssertEqual(store.state(for: "first"), .loading)
+        XCTAssertNil(store.beginLoading(activityID: "first", conversationID: conversationID))
+        store.finishLoading(result, activityID: "first", token: token)
+        XCTAssertEqual(store.state(for: "first"), .available)
+        XCTAssertEqual(store.previews(for: "first").count, 1)
+        let missing = try XCTUnwrap(store.beginLoading(activityID: "missing", conversationID: conversationID))
+        store.finishLoading(nil, activityID: "missing", token: missing)
+        XCTAssertEqual(store.state(for: "missing"), .unavailable)
+        XCTAssertNil(store.beginLoading(activityID: "missing", conversationID: conversationID))
+    }
+
+    func testLateRecoveryCannotRestoreDeletedConversationOrOverwriteANewerResult() throws {
+        let store = ToolImagePreviewStore()
+        let conversationID = UUID()
+        let old = completion(.image(image(width: 40), mimeType: "image/png"))
+        let deleted = try XCTUnwrap(store.beginLoading(activityID: "deleted", conversationID: conversationID))
+        store.remove(conversationID: conversationID)
+        store.finishLoading(old, activityID: "deleted", token: deleted)
+        XCTAssertEqual(store.state(for: "deleted"), .idle)
+        XCTAssertTrue(store.previews(for: "deleted").isEmpty)
+        let stale = try XCTUnwrap(store.beginLoading(activityID: "updated", conversationID: conversationID))
+        store.record(completion(.image(image(width: 80), mimeType: "image/png")), activityID: "updated", conversationID: conversationID)
+        store.finishLoading(old, activityID: "updated", token: stale)
+        XCTAssertEqual(store.previews(for: "updated").first?.image.size.width, 80)
+        let retry = try XCTUnwrap(store.beginLoading(activityID: "retry", conversationID: conversationID))
+        store.cancelLoading(activityID: "retry", token: retry)
+        XCTAssertEqual(store.state(for: "retry"), .idle)
+    }
+
+    func testAppRecoveryUsesExactRunRequestAndKeepsCallIDColons() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "ToolImageRecovery.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { preferences.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(storageDirectory: directory, preferences: preferences)
+        let conversation = Conversation(title: "Images")
+        model.conversations = [conversation]
+        let requests = [UUID(), UUID()]
+        model.runs = requests.map { request in
+            let runID = UUID()
+            return RunRecord(id: runID, conversationID: conversation.id, requestID: request, startedAt: Date(),
+                             scope: .observe, model: "fixture", skill: nil, state: .completed, detail: "", events: [],
+                             activities: [ToolActivity(id: "\(runID.uuidString):call:with:colons", name: "device_screenshot", endedAt: Date())])
+        }
+        let engine = ToolImageRecoveryEngine(conversationID: conversation.id, images: [requests[0]: image(width: 40), requests[1]: image(width: 80)])
+        model.agent = AgentClient(engine: engine)
+        let first = try XCTUnwrap(model.runs[0].activities?.first)
+        let second = try XCTUnwrap(model.runs[1].activities?.first)
+        await model.loadToolImagePreviews(for: first)
+        await model.loadToolImagePreviews(for: second)
+        await model.loadToolImagePreviews(for: first)
+        XCTAssertEqual(model.toolImagePreviews.previews(for: first.id).first?.image.size.width, 40)
+        XCTAssertEqual(model.toolImagePreviews.previews(for: second.id).first?.image.size.width, 80)
+        let count = await engine.readCount
+        XCTAssertEqual(count, 2)
+        let orphan = ToolActivity(id: "no-run:call", name: "device_screenshot", endedAt: Date())
+        await model.loadToolImagePreviews(for: orphan)
+        XCTAssertEqual(model.toolImagePreviews.state(for: orphan.id), .unavailable)
+        let legacy = ToolActivity(id: "legacy-call", name: "device_screenshot", endedAt: Date())
+        model.runs[0].activities?.append(legacy)
+        await model.loadToolImagePreviews(for: legacy)
+        XCTAssertEqual(model.toolImagePreviews.state(for: legacy.id), .unavailable)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
     func testEachActivityKeepsItsOwnReturnedImageAcrossCallsAndRuns() throws {
         let store = ToolImagePreviewStore()
         let conversationID = UUID()
@@ -110,4 +183,22 @@ final class ToolImagePreviewStoreTests: XCTestCase {
             UIColor.gray.setFill(); context.fill(CGRect(origin: .zero, size: size))
         }
     }
+}
+
+private actor ToolImageRecoveryEngine: AgentEngine {
+    let conversationID: UUID
+    let images: [UUID: Data]
+    private(set) var readCount = 0
+    var availability: AgentAvailability { .unconfigured }
+    init(conversationID: UUID, images: [UUID: Data]) { self.conversationID = conversationID; self.images = images }
+    func run(request: AgentRequest) throws -> AsyncThrowingStream<AgentEvent, Error> { throw AgentError.unconfigured }
+    func recover(conversationID: UUID) -> AgentRecovery { .init(messages: [], hasInterruptedRun: false) }
+    func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) -> AgentToolCompletion? {
+        readCount += 1
+        guard conversationID == self.conversationID, toolCallID == "call:with:colons", let image = images[requestID] else { return nil }
+        return .init(call: .init(id: toolCallID, name: "device_screenshot", arguments: [:]), result: .image(image, mimeType: "image/png"))
+    }
+    func cancel() {}
+    func cancel(conversationID: UUID) {}
+    func removeConversation(id: UUID) {}
 }

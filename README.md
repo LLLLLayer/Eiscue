@@ -14,7 +14,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 - **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. The default route is a **Bluetooth board + system screen sharing**. The board only needs power and does not occupy the phone's Wi-Fi or VPN connection.
 - **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required.
 - **Conversation management**: streaming responses, Markdown, tool progress, copy and share. The sidebar supports pinning, reordering, renaming and bulk deletion; wide iPad windows can keep it visible.
-- **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. An iOS 26 system Live Activity shows the current task phase. Completion/interruption notifications are optional and off by default.
+- **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. Task details show saved input/output, screenshots and tap/swipe positions when the matching image is available. An iOS 26 system Live Activity shows the current task phase. Completion/interruption notifications are optional and off by default.
 - **Interface and extensions**: native Liquid Glass, light/dark appearance, English and Simplified Chinese, and imported UTF-8 Markdown skills. The supported C3 board with an ST7789 display can also show expressions, task phases and completed step counts.
 
 ## Validation status
@@ -46,7 +46,7 @@ Start with the Bluetooth route:
 
 1. Prepare the Bluetooth firmware using the [C3 / S3 firmware instructions](Firmware/Passport-BLE/README.md#build-and-flash-layout), then power the board.
 2. On iPhone, enable **Settings → Accessibility → Touch → AssistiveTouch**.
-3. Open the device page at the top right of Eiscue and select **Bluetooth board**. Connect, start screen sharing in the system panel, then start the check. Keep the check page visible without touching or rotating the phone; the app verifies four actual touches and one text entry.
+3. Open the device page at the top right of Eiscue and select **ESP32-C3 / S3 input**. Connect, start screen sharing in the system panel, then start the check. Keep the check page visible without touching or rotating the phone; the app verifies four actual touches and one text entry.
 4. Once ready, return to the conversation and give it a task. **Allow AI to operate device** is on by default and can be turned off on the device page. When the device is not ready, new messages use plain chat.
 
 The connection, screen sharing and calibration must all remain valid. Disconnection, rotation, a change of sharing session or screen dimensions invalidates calibration and requires another check. Routes never fall back to one another automatically.
@@ -138,6 +138,8 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 | Device backend | 64 Rust library tests and 332 ObjC automation bridge checks passed |
 
 The 4 Kit failures and 2 UI failures were traced to outdated copy or view-hierarchy assertions. Another 3 sharing tests could not find the system panel identifier. Screenshots show that the panel opened, but **saving, dismissal and readback still need revalidation after the tests are fixed**; the screenshots do not establish that the complete sharing flow works. Skipped cases require real hardware or an iPad. The failing suites are not currently green gates. These tests were not rerun for this documentation update.
+
+Later targeted checks on 2026-10-14 passed 4 Kit tests, 12 app tests and 10 UI cases (8 on iPhone, 2 on iPad). Coverage includes read-only tool-image recovery, screenshot details and previews, context menus, keyboard navigation, model parameter persistence and opening/dismissing/reopening native file sharing. Saving, readback and photo sharing were not rerun. These checks do not replace the full baseline or establish real-device control acceptance; failed intermediate runs are retained in the local validation record.
 
 ### Backend and firmware
 

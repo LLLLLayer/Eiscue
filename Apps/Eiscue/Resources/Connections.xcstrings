@@ -852,6 +852,142 @@
           }
         }
       }
+    },
+    "device.connection.selected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选用"
+          }
+        }
+      }
+    },
+    "device.connection.bluetoothTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ESP32-C3 / S3 input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ESP32-C3 / S3 键鼠"
+          }
+        }
+      }
+    },
+    "device.connection.usbTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ESP32-S3 USB network"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ESP32-S3 USB 网卡"
+          }
+        }
+      }
+    },
+    "device.connection.wifiTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ESP32-C3 Wi-Fi"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ESP32-C3 Wi-Fi"
+          }
+        }
+      }
+    },
+    "device.connection.appSummary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No extra hardware; uses the system VPN connection."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无需额外硬件，占用系统 VPN 通道。"
+          }
+        }
+      }
+    },
+    "device.connection.bluetoothSummary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth keeps Wi-Fi and VPN free; S3 also offers USB input."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "蓝牙通信，不占 Wi-Fi 或 VPN；S3 可选 USB 输入。"
+          }
+        }
+      }
+    },
+    "device.connection.usbSummary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB network relay; requires pairing setup, uses no VPN."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB 网卡中继，需配对准备，不占用 VPN。"
+          }
+        }
+      }
+    },
+    "device.connection.wifiSummary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uses a dedicated Wi-Fi hotspot; requires pairing setup, no VPN."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接专用 Wi-Fi 热点，需配对准备，不占用 VPN。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

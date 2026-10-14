@@ -18,20 +18,20 @@ final class MessageSharingUITests: XCTestCase {
 
     @MainActor func testAttachmentOnlyFileShowsRealFilenameAndNativeSharingActions() {
         let app = launch()
+        let filename = app.staticTexts["fixtureSharedFilename"].label
         let row = app.descendants(matching: .any)["fixtureFileShareRow"]
         XCTAssertFalse(row.buttons["userCopyMessageButton"].exists, "No empty-text Copy action")
-        let share = row.buttons["userShareMessageButton"]
-        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: share)
-        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
-        share.tap()
+        shareAttachment(in: row, app: app)
         assertNativeController(in: app)
-        let nativeShare = app.descendants(matching: .any)["messageActivityController"]
-        XCTAssertTrue(nativeShare.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Shared notes")).firstMatch.waitForExistence(timeout: 5), "The system preview must show the actual document name")
+        let nativeShare = nativeController(in: app)
+        let caption = nativeShare.descendants(matching: .any)["LP.CaptionBar.TopCaption"]
+        XCTAssertTrue(caption.waitForExistence(timeout: 5), "The system preview must show the actual document name")
+        XCTAssertTrue([filename, (filename as NSString).deletingPathExtension].contains(caption.label), "The native preview must name this run's exported document")
         record(app, name: "Attachment-only native file share")
         dismissNativeController(in: app)
-        XCTAssertTrue(share.isEnabled)
+        XCTAssertTrue(row.isHittable)
         // A second presentation needs a new, live export after cleanup.
-        share.tap()
+        shareAttachment(in: row, app: app)
         assertNativeController(in: app)
         dismissNativeController(in: app)
     }
@@ -40,15 +40,15 @@ final class MessageSharingUITests: XCTestCase {
         let app = launch()
         let row = app.descendants(matching: .any)["fixturePhotoShareRow"]
         XCTAssertFalse(row.buttons["userCopyMessageButton"].exists)
-        let share = row.buttons["userShareMessageButton"]
-        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: share)
-        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
-        share.tap()
+        shareAttachment(in: row, app: app)
         assertNativeController(in: app)
         record(app, name: "Attachment-only native photo share")
         dismissNativeController(in: app)
-        XCTAssertTrue(share.isEnabled)
+        XCTAssertTrue(row.isHittable)
         XCTAssertFalse(app.staticTexts["messageShareUnavailable"].exists)
+        shareAttachment(in: row, app: app)
+        assertNativeController(in: app)
+        dismissNativeController(in: app)
     }
 
     @MainActor func testAttachmentOnlyFileSavesToLocalFilesAndReadsBackExactBytes() {
@@ -61,10 +61,8 @@ final class MessageSharingUITests: XCTestCase {
         let nonce = String(filename.dropFirst("Shared notes-".count).dropLast(".txt".count))
         XCTAssertNotNil(UUID(uuidString: nonce), "Read-back must belong to this run, never an existing user file")
         let folderName = "Eiscue ShareCheck-" + nonce
-        let share = app.descendants(matching: .any)["fixtureFileShareRow"].buttons["userShareMessageButton"]
-        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: share)
-        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
-        share.tap()
+        let row = app.descendants(matching: .any)["fixtureFileShareRow"]
+        shareAttachment(in: row, app: app)
         assertNativeController(in: app)
         guard openNativeSaveToFiles(in: app) else { return }
         guard let save = waitForVisibleButton(saveLabels, in: app) else {
@@ -74,7 +72,7 @@ final class MessageSharingUITests: XCTestCase {
         let canSave = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: save)
         XCTAssertEqual(XCTWaiter.wait(for: [canSave], timeout: 5), .completed)
         save.tap()
-        let shareClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.descendants(matching: .any)["messageActivityController"])
+        let shareClosed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: nativeController(in: app))
         XCTAssertEqual(XCTWaiter.wait(for: [shareClosed], timeout: 8), .completed)
 
         app.buttons["verifySavedShareButton"].tap()
@@ -205,10 +203,32 @@ final class MessageSharingUITests: XCTestCase {
         return query.allElementsBoundByIndex.first(where: \.isHittable)
     }
 
+    @MainActor private func shareAttachment(in row: XCUIElement, app: XCUIApplication) {
+        XCTAssertFalse(row.buttons["userShareMessageButton"].exists, "Sharing should not add a permanent footer button.")
+        let bubble = row.descendants(matching: .any).matching(identifier: "messageBubble").firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 5))
+        XCTAssertTrue(bubble.isHittable)
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+            dx: bubble.frame.maxX - 8, dy: bubble.frame.midY)).press(forDuration: 1)
+        let share = app.buttons["userShareMessageButton"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["userCopyMessageButton"].exists, "Attachment-only messages must not offer an empty-text Copy action.")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: share)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+        share.tap()
+    }
+
+    @MainActor private func nativeController(in app: XCUIApplication) -> XCUIElement {
+        // iOS can replace the root controller identifier when its share surface
+        // attaches; both identify the actual system UI, never fixture content.
+        app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier IN %@", ["ActivityListView", "messageActivityController"])).firstMatch
+    }
+
     @MainActor private func assertNativeController(in app: XCUIApplication) {
-        XCTAssertTrue(app.descendants(matching: .any)["messageActivityController"].waitForExistence(timeout: 8))
+        XCTAssertTrue(nativeController(in: app).waitForExistence(timeout: 8))
         // These belong to Apple's share controller, rather than the fixture.
-        let nativeShare = app.descendants(matching: .any)["messageActivityController"]
+        let nativeShare = nativeController(in: app)
         let actions = ["Copy", "拷贝", "复制", "Print", "打印", "Assign to Contact", "指定给联系人", "分配给联系人"] + saveToFilesLabels
         let action = nativeShare.descendants(matching: .any).matching(NSPredicate(format: "label IN %@", actions as NSArray)).firstMatch
         XCTAssertTrue(action.waitForExistence(timeout: 5), "The real native file/photo sharing actions must be present")
@@ -217,12 +237,27 @@ final class MessageSharingUITests: XCTestCase {
     @MainActor private func dismissNativeController(in app: XCUIApplication) {
         if let close = app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭"] as NSArray)).allElementsBoundByIndex.first(where: \.isHittable) {
             close.tap()
-        } else if app.popovers.firstMatch.exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.03)).tap()
+        } else if app.otherElements["PopoverDismissRegion"].exists {
+            // The system share popover exposes this region even when XCTest's
+            // popovers query is empty. Tap real content outside its bounds,
+            // keeping clear of the status bar rather than swiping the popover.
+            let region = app.otherElements["PopoverDismissRegion"].frame
+            let share = nativeController(in: app).frame
+            let bounds = region.insetBy(dx: 16, dy: 16)
+            let candidates = [
+                CGRect(x: bounds.minX, y: bounds.minY + 48, width: bounds.width, height: share.minY - bounds.minY - 48),
+                CGRect(x: bounds.minX, y: share.maxY, width: bounds.width, height: bounds.maxY - share.maxY),
+                CGRect(x: bounds.minX, y: bounds.minY + 48, width: share.minX - bounds.minX, height: bounds.height - 48),
+                CGRect(x: share.maxX, y: bounds.minY + 48, width: bounds.maxX - share.maxX, height: bounds.height - 48)
+            ].filter { $0.size.width > 0 && $0.size.height > 0 }
+            guard let target = candidates.max(by: { $0.width * $0.height < $1.width * $1.height }) else {
+                XCTFail("The native share popover has no reachable dismissal region"); return
+            }
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: target.midX, dy: target.midY)).tap()
         } else {
-            app.descendants(matching: .any)["messageActivityController"].swipeDown()
+            nativeController(in: app).swipeDown()
         }
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.descendants(matching: .any)["messageActivityController"])
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: nativeController(in: app))
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
     }
 

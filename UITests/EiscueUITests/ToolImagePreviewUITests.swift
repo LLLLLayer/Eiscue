@@ -19,6 +19,7 @@ final class ToolImagePreviewUITests: XCTestCase {
             XCTAssertTrue(viewer.waitForExistence(timeout: 5))
             let close = app.buttons["closeToolImagePreviewButton"]
             XCTAssertTrue(close.waitForExistence(timeout: 5))
+            XCTAssertFalse(app.sheets.firstMatch.exists, "Chat images use an in-place zoom overlay.")
             attach(app, name: "Tool image viewer — \(dark ? "Dark" : "Light")")
             close.tap()
             XCTAssertTrue(viewer.waitForNonExistence(timeout: 5))
@@ -29,7 +30,7 @@ final class ToolImagePreviewUITests: XCTestCase {
         }
     }
 
-    @MainActor func testMetadataAndErrorsStayCollapsedAndMessageActionsAreCompact() {
+    @MainActor func testMetadataAndErrorsStayCollapsedAndFootersOnlyShowTime() {
         let app = launch()
         let rows = app.descendants(matching: .any).matching(identifier: "toolActivityRow")
         XCTAssertEqual(rows.count, 4)
@@ -45,27 +46,59 @@ final class ToolImagePreviewUITests: XCTestCase {
         }
         let times = app.staticTexts.matching(identifier: "messageTime").allElementsBoundByIndex
         XCTAssertEqual(times.count, 2)
-        for (copyID, shareID) in [("copyMessageButton", "shareMessageButton"), ("userCopyMessageButton", "userShareMessageButton")] {
-            let copy = app.buttons[copyID]; let share = app.buttons[shareID]
-            XCTAssertTrue(copy.exists); XCTAssertTrue(share.exists)
-            guard let time = times.min(by: { abs($0.frame.midY - copy.frame.midY) < abs($1.frame.midY - copy.frame.midY) }) else {
-                XCTFail("Missing message time"); continue
-            }
-            let gap = copy.frame.minX - time.frame.maxX
-            XCTAssertGreaterThanOrEqual(gap, 0)
-            XCTAssertLessThanOrEqual(gap, 12, "Time should sit next to the copy/share actions.")
-            for button in [copy, share] {
-                XCTAssertEqual(button.frame.width, 24, accuracy: 1)
-                XCTAssertEqual(button.frame.height, 32, accuracy: 1)
-            }
+        for identifier in ["copyMessageButton", "shareMessageButton", "userCopyMessageButton", "userShareMessageButton"] {
+            XCTAssertFalse(app.buttons[identifier].exists)
         }
-        attach(app, name: "Non-expandable activity metadata and compact message actions")
+        attach(app, name: "Non-expandable metadata and timestamp-only footers")
     }
 
-    @MainActor private func launch(dark: Bool = false) -> XCUIApplication {
+    @MainActor func testContextMenusMatchBubbleAndConversationInBothAppearances() {
+        for dark in [false, true] {
+            let app = launch(dark: dark)
+            let bubble = app.descendants(matching: .any).matching(identifier: "messageBubble").firstMatch
+            bubble.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).press(forDuration: 1)
+            XCTAssertTrue(app.buttons["userCopyMessageButton"].waitForExistence(timeout: 3))
+            attach(app, name: "User bubble context menu — \(dark ? "Dark" : "Light")")
+            app.buttons["userCopyMessageButton"].tap()
+            openSidebar(in: app)
+            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "conversationRow_")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 3))
+            row.press(forDuration: 1)
+            XCTAssertTrue(app.buttons["renameConversationButton"].waitForExistence(timeout: 3))
+            attach(app, name: "Conversation context menu — \(dark ? "Dark" : "Light")")
+            app.terminate()
+        }
+    }
+
+    @MainActor func testRunToolDetailShowsSourceMarkerAndResultImage() {
+        let app = launch(extra: ["--run-tool-detail-fixture"])
+        app.buttons["conversationMenuButton"].tap()
+        app.buttons["conversationRunHistoryButton"].tap()
+        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI fixture")).firstMatch
+        XCTAssertTrue(record.waitForExistence(timeout: 5))
+        record.tap()
+        let step = app.buttons["runToolDetail_preview:tap"]
+        for _ in 0..<4 where !step.isHittable { app.swipeUp() }
+        XCTAssertTrue(step.isHittable); step.tap()
+        let images = app.buttons.matching(identifier: "runToolImageThumbnail")
+        XCTAssertTrue(images.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["runToolCoordinates"].label.contains("284"))
+        attach(app, name: "Run detail — input screenshot with tap marker")
+        images.firstMatch.tap()
+        XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].waitForExistence(timeout: 3))
+        attach(app, name: "Run detail — fullscreen marked screenshot")
+        app.buttons["closeToolImagePreviewButton"].tap()
+        XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].waitForNonExistence(timeout: 3))
+        for _ in 0..<4 where !app.descendants(matching: .any)["runToolOutput"].firstMatch.isHittable { app.swipeUp() }
+        XCTAssertTrue(app.descendants(matching: .any)["runToolInput"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["runToolOutput"].firstMatch.label.contains("22222222"))
+    }
+
+    @MainActor private func launch(dark: Bool = false, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--tool-image-preview-fixture",
                                "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments += extra
         if dark { app.launchArguments.append("--tool-image-preview-dark") }
         app.launch()
         XCTAssertTrue(app.buttons["toolActivityDisclosureButton"].waitForExistence(timeout: 10))

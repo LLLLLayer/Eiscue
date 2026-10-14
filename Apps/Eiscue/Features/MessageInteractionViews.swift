@@ -4,10 +4,10 @@ import UIKit
 
 struct ChatMessageRow: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var colorScheme
     let message: AgentMessage
     var showsActions = true
     @State private var showsSelection = false
-    @State private var didCopy = false
     @State private var canShareAttachments = false
     @State private var checkedAttachments = false
     @State private var isPreparingShare = false
@@ -29,37 +29,22 @@ struct ChatMessageRow: View {
                         Text("assistant.unsubmittedMessage").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
-                .padding(.horizontal, message.role == .user ? 16 : 0)
+                .padding(.horizontal, message.role == .user ? 16 : 8)
                 .padding(.vertical, message.role == .user ? 12 : 2)
-                .background(message.role == .user ? Color.primary.opacity(0.07) : .clear,
+                .foregroundStyle(message.role == .user ? (colorScheme == .dark ? Color.black : Color.white) : Color.primary)
+                .background(message.role == .user ? (colorScheme == .dark ? Color.white : Color.black) : .clear,
                             in: RoundedRectangle(cornerRadius: 22))
-                .contentShape(Rectangle())
+                .contentShape(.interaction, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
+                .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contextMenu { messageMenu }
                 .accessibilityElement(children: .contain).accessibilityIdentifier("messageBubble")
+                .padding(.horizontal, message.role == .user ? 0 : -8)
                 if showsActions {
-                    HStack(spacing: 2) {
-                        Text(message.createdAt, format: .dateTime.hour().minute())
-                            .font(.caption2.monospacedDigit()).accessibilityIdentifier("messageTime")
-                        if hasText {
-                            Button { copy() } label: {
-                                Image(systemName: didCopy ? "checkmark" : "doc.on.doc").frame(width: 24, height: 32).contentShape(Rectangle())
-                            }
-                            .accessibilityLabel(chatText(didCopy ? "chat.copied" : "chat.copy"))
-                            .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
-                        }
-                        Button { share() } label: {
-                            Group {
-                                if isPreparingShare { ProgressView().controlSize(.mini) }
-                                else { Image(systemName: "square.and.arrow.up") }
-                            }.frame(width: 24, height: 32).contentShape(Rectangle())
-                        }
-                        .disabled(!canShare || isPreparingShare || sharePayload != nil)
-                        .accessibilityLabel(chatText("chat.share"))
-                        .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
-                    }
-                    .font(.caption).foregroundStyle(.secondary).buttonStyle(.plain)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, message.role == .user ? 8 : 0)
+                    Text(message.createdAt, format: .dateTime.hour().minute())
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("messageTime")
+                        .padding(.horizontal, message.role == .user ? 8 : 0)
+                        .padding(.top, 4)
                 }
                 if !message.attachments.isEmpty, checkedAttachments, !canShareAttachments {
                     Text(String(localized: "messageSharing.unavailable", table: "MessageSharing"))
@@ -99,11 +84,13 @@ struct ChatMessageRow: View {
     @ViewBuilder private var messageMenu: some View {
         if hasText {
             Button(chatText("chat.copy"), systemImage: "doc.on.doc") { copy() }
+                .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
             Button(chatText("chat.selectText"), systemImage: "selection.pin.in.out") { showsSelection = true }
                 .accessibilityIdentifier("selectMessageTextButton")
         }
         Button(chatText("chat.share"), systemImage: "square.and.arrow.up") { share() }
             .disabled(!canShare || isPreparingShare || sharePayload != nil)
+            .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
         if message.role == .user, hasText {
             Button(chatText("chat.useAsDraft"), systemImage: "pencil") { model.draft = message.text }
                 .disabled(model.isBusy)
@@ -116,11 +103,6 @@ struct ChatMessageRow: View {
     private func copy() {
         guard hasText else { return }
         UIPasteboard.general.string = message.text
-        didCopy = true
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            didCopy = false
-        }
     }
 
     private func share() {
@@ -168,7 +150,7 @@ struct ChatAttachmentView: View {
             Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 240)
                 .clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel(attachment.name)
         } else {
-            Label(attachment.name, systemImage: "doc.text").font(.subheadline).foregroundStyle(.primary)
+            Label(attachment.name, systemImage: "doc.text").font(.subheadline)
         }
     }
 }
@@ -179,38 +161,37 @@ struct ToolActivityRow: View {
     let activity: ToolActivity
     var showsProgress = true
     @State private var isExpanded = false
-    @State private var selectedImageID: String?
 
     private var previews: [ToolImagePreview] {
         guard !activity.isRunning, !activity.isError else { return [] }
         return model.toolImagePreviews.previews(for: activity.id)
     }
 
+    private var canExpand: Bool {
+        !activity.isRunning && !activity.isError && ToolImagePreviewStore.returnsDeviceImage(activity.name)
+            && model.toolImagePreviews.state(for: activity.id) != .unavailable
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if previews.isEmpty {
+            if !canExpand {
                 titleRow.accessibilityElement(children: .combine)
             } else {
                 Button {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { isExpanded.toggle() }
+                    if isExpanded { Task { await model.loadToolImagePreviews(for: activity) } }
                 } label: { titleRow.contentShape(Rectangle()) }
                     .buttonStyle(.plain)
                     .accessibilityValue(chatText(isExpanded ? "chat.activity.expanded" : "chat.activity.collapsed"))
                     .accessibilityIdentifier("toolActivityDisclosureButton")
                 if isExpanded {
+                    if model.toolImagePreviews.state(for: activity.id) == .loading {
+                        ProgressView().controlSize(.small).padding(.leading, 29)
+                    }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(previews) { preview in
-                                Button { selectedImageID = preview.id } label: {
-                                    Image(uiImage: preview.image).resizable().scaledToFit()
-                                        .frame(width: 104, height: 112)
-                                        .background(Color(uiColor: .secondarySystemBackground))
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.primary.opacity(0.08)))
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(chatText("chat.activity.openImage"))
-                                .accessibilityIdentifier("toolActivityImageThumbnail")
+                                ToolImageThumbnail(preview: preview)
                             }
                         }
                     }
@@ -221,14 +202,8 @@ struct ToolActivityRow: View {
         .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("toolActivityRow")
-        .sheet(isPresented: Binding(get: { selectedImageID != nil }, set: { if !$0 { selectedImageID = nil } })) {
-            if let preview = previews.first(where: { $0.id == selectedImageID }) {
-                ToolImageViewer(image: preview.image)
-            }
-        }
-        .onChange(of: previews.map(\.id)) { _, ids in
-            if ids.isEmpty { isExpanded = false }
-            if let selectedImageID, !ids.contains(selectedImageID) { self.selectedImageID = nil }
+        .onChange(of: canExpand) { _, canExpand in
+            if !canExpand { isExpanded = false }
         }
     }
 
@@ -242,7 +217,7 @@ struct ToolActivityRow: View {
             }
             Text(DeviceToolPresentation.activityTitle(for: activity))
                 .fixedSize(horizontal: false, vertical: true)
-            if !previews.isEmpty {
+            if canExpand {
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption2.weight(.medium)).accessibilityHidden(true)
             }

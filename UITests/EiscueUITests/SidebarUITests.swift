@@ -109,6 +109,26 @@ final class SidebarUITests: XCTestCase {
         }
     }
 
+    @MainActor func testNavigationDismissesKeyboardAndKeepsDraft() {
+        let app = launch()
+        let input = app.textFields["messageInput"].exists ? app.textFields["messageInput"] : app.textViews["messageInput"]
+        input.tap(); input.typeText("Keep navigation draft")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
+        app.buttons["deviceNavigationLink"].tap()
+        XCTAssertTrue(app.navigationBars["Device"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        returnToAssistant(in: app)
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        XCTAssertEqual(input.value as? String, "Keep navigation draft")
+        input.tap()
+        app.buttons["conversationMenuButton"].tap()
+        app.buttons["conversationRunHistoryButton"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        app.buttons["Done"].tap()
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        XCTAssertEqual(input.value as? String, "Keep navigation draft")
+    }
+
     @MainActor private func hideWideSidebar(in app: XCUIApplication) {
         let settings = app.buttons["sidebarSettingsButton"]
         if settings.isHittable { app.buttons["historyButton"].tap() }

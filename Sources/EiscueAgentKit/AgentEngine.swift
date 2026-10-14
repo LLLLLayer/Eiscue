@@ -41,7 +41,14 @@ public protocol AgentEngine: Sendable {
     var availability: AgentAvailability { get async }
     func run(request: AgentRequest) async throws -> AsyncThrowingStream<AgentEvent, Error>
     func recover(conversationID: UUID) async throws -> AgentRecovery
+    /// Reads one committed tool result without submitting, resuming, or executing a task.
+    /// Results can contain sensitive screen data; callers must not put them in logs or reports.
+    func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion?
     func cancel() async throws
     func cancel(conversationID: UUID) async throws
     func removeConversation(id: UUID) async throws
+}
+
+public extension AgentEngine {
+    func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? { nil }
 }
