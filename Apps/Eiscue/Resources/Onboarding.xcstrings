@@ -477,23 +477,6 @@
         }
       }
     },
-    "setup.deviceLater": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can finish device setup later from the device page."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "也可以稍后到设备页继续设置。"
-          }
-        }
-      }
-    },
     "setup.finish": {
       "extractionState": "manual",
       "localizations": {

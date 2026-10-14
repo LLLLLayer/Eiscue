@@ -48,7 +48,6 @@ struct OnboardingView: View {
                         } else {
                             DeveloperConnectionSetupView()
                         }
-                        Text(text("setup.deviceLater")).font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: 520, alignment: .leading)
@@ -119,7 +118,16 @@ private struct DeveloperConnectionSetupView: View {
                             .font(.headline)
                             .accessibilityIdentifier("onboardingPairingStatus")
                         Spacer(minLength: 0)
-                        if model.hasPairingIdentity {
+                        if model.deviceConnectionMethod == .localVPN && !isConnecting
+                            && (model.localTunnel.isConnected || model.localTunnel.isTransitioning) {
+                            Button(String(localized: "device.connection.disconnect", table: "Connections")) {
+                                Task { await model.stopLocalTunnel() }
+                            }
+                            .buttonStyle(.glass).controlSize(.small)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .disabled(model.isStoppingTunnel || model.isStopping)
+                            .accessibilityIdentifier("onboardingDisconnectDeviceButton")
+                        } else if model.hasPairingIdentity {
                             Button(text("setup.pairAgain")) { confirmsNewPairing = true }
                                 .font(.caption).buttonStyle(.glass).controlSize(.small)
                                 .disabled(model.isBusy)
@@ -162,23 +170,7 @@ private struct DeveloperConnectionSetupView: View {
                     }
                 }
             }
-            if model.deviceConnectionMethod == .localVPN {
-                HStack(spacing: 12) {
-                    Text(String(localized: "device.connection.vpnUsage", table: "Connections"))
-                        .font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    if !isConnecting && (model.localTunnel.isConnected || model.localTunnel.isTransitioning) {
-                        Button(String(localized: "device.connection.disconnect", table: "Connections")) {
-                            Task { await model.stopLocalTunnel() }
-                        }
-                        .buttonStyle(.glass).controlSize(.small)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .disabled(model.isStoppingTunnel || model.isStopping)
-                        .accessibilityIdentifier("onboardingDisconnectDeviceButton")
-                    }
-                }
-                .padding(.horizontal, 4)
-            } else {
+            if model.deviceConnectionMethod != .localVPN {
                 Text(text(model.deviceConnectionMethod == .usbBoard ? "setup.boardConnectionDetail" : "setup.wirelessBoardConnectionDetail"))
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
             }
