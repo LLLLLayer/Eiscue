@@ -819,6 +819,23 @@
         }
       }
     },
+    "device.debug.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调试"
+          }
+        }
+      }
+    },
     "device.connection.help": {
       "extractionState": "manual",
       "localizations": {

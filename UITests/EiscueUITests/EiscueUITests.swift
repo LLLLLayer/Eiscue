@@ -275,7 +275,7 @@ final class EiscueUITests: XCTestCase {
         let app = launch()
         openDevice(in: app)
         selectInAppConnection(in: app)
-        let openProbe = app.buttons["检查点击和输入"]
+        let openProbe = app.buttons["deviceProbeButton"]
         guard openProbe.waitForExistence(timeout: 2) else {
             throw XCTSkip("The probe entry is shown only when device control is ready, which a simulator cannot reach.")
         }

@@ -15,7 +15,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 - **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required.
 - **Conversation management**: streaming responses, Markdown, tool progress, copy and share. The sidebar supports pinning, reordering, renaming and bulk deletion; wide iPad windows can keep it visible.
 - **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. Task details show saved input/output, screenshots and tap/swipe positions when the matching image is available. An iOS 26 system Live Activity shows the current task phase. Completion/interruption notifications are optional and off by default.
-- **Interface and extensions**: native Liquid Glass, light/dark appearance, English and Simplified Chinese, and imported UTF-8 Markdown skills. The supported C3 board with an ST7789 display can also show expressions, task phases and completed step counts.
+- **Interface and extensions**: native Liquid Glass, light/dark appearance, English and Simplified Chinese, and imported UTF-8 Markdown skills. Manual input diagnostics appear in a Debug-only section; required HID calibration remains available in every build. The supported C3 board with an ST7789 display can also show expressions, task phases and completed step counts.
 
 ## Validation status
 

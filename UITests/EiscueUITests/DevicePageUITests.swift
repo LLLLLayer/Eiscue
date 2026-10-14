@@ -36,11 +36,19 @@ final class DevicePageUITests: XCTestCase {
     }
 
     @MainActor
-    func testConnectionOptionsKeepManualInputCheckAvailable() {
+    func testDebugSectionKeepsManualInputCheckSeparateFromConnectionHelp() {
         let app = launch()
         XCTAssertFalse(app.buttons["deviceConnectionOptionsMenu"].exists)
         XCTAssertTrue(app.buttons["deviceConnectionHelpButton"].waitForExistence(timeout: 5))
-        app.buttons["deviceProbeButton"].tap()
+        let debugTitle = app.staticTexts["deviceDebugSectionTitle"]
+        let probe = app.buttons["deviceProbeButton"]
+        for _ in 0..<3 where !probe.isHittable { app.swipeUp() }
+        XCTAssertTrue(debugTitle.exists)
+        XCTAssertEqual(debugTitle.label, "调试")
+        XCTAssertGreaterThan(debugTitle.frame.minY, app.buttons["deviceConnectionHelpButton"].frame.maxY)
+        XCTAssertGreaterThan(probe.frame.minY, debugTitle.frame.maxY)
+        XCTAssertTrue(probe.isHittable)
+        probe.tap()
         let increment = app.buttons["probeIncrement"]
         XCTAssertTrue(increment.waitForExistence(timeout: 5))
         increment.tap()

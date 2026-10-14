@@ -6,7 +6,9 @@ struct DeviceView: View {
     @Environment(AppModel.self) private var model
     @State private var importsIdentity = false
     @State private var confirmsForget = false
+    #if DEBUG
     @State private var showsProbe = false
+    #endif
     @State private var showsConnectionHelp = false
     @State private var previewImage: UIImage?
     @State private var showsPreview = false
@@ -28,6 +30,9 @@ struct DeviceView: View {
                     }
                     if model.deviceConnectionMethod != .bluetoothBoard {
                         connectionSupport
+                        #if DEBUG
+                        if model.isDeviceReady { debugSection }
+                        #endif
                     }
                 }
                 .frame(maxWidth: 600)
@@ -44,7 +49,9 @@ struct DeviceView: View {
                 if case .success(let url) = result { Task { await model.importPairingIdentity(url) } }
                 if case .failure(let error) = result { model.errorMessage = error.localizedDescription }
             }
+            #if DEBUG
             .sheet(isPresented: $showsProbe) { ControlProbeView() }
+            #endif
             .sheet(isPresented: $showsConnectionHelp) { connectionHelpSheet }
             .sheet(isPresented: $showsPreview) {
                 if let previewImage { DeviceScreenPreview(image: previewImage) }
@@ -224,22 +231,32 @@ struct DeviceView: View {
 
     private var connectionSupport: some View {
         SurfaceCard {
-            VStack(spacing: 12) {
-                if model.isDeviceReady {
-                    Button { showsProbe = true } label: {
-                        connectionSupportLabel(String(localized: "device.openProbe"), symbol: "hand.tap")
-                    }
-                    .disabled(model.isBusy).accessibilityIdentifier("deviceProbeButton")
-                    Divider()
-                }
-                Button { showsConnectionHelp = true } label: {
-                    connectionSupportLabel(String(localized: "device.connection.help", table: "Connections"), symbol: "questionmark.circle")
-                }
-                .accessibilityIdentifier("deviceConnectionHelpButton")
+            Button { showsConnectionHelp = true } label: {
+                connectionSupportLabel(String(localized: "device.connection.help", table: "Connections"), symbol: "questionmark.circle")
             }
+            .accessibilityIdentifier("deviceConnectionHelpButton")
             .buttonStyle(.plain)
         }
     }
+
+    #if DEBUG
+    private var debugSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(localized: "device.debug.title", table: "Connections"))
+                .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("deviceDebugSectionTitle")
+            SurfaceCard {
+                Button { showsProbe = true } label: {
+                    connectionSupportLabel(String(localized: "device.openProbe"), symbol: "hand.tap")
+                }
+                .buttonStyle(.plain).disabled(model.isBusy)
+                .accessibilityIdentifier("deviceProbeButton")
+            }
+        }
+    }
+    #endif
 
     private func connectionSupportLabel(_ title: String, symbol: String) -> some View {
         HStack(spacing: 12) {
@@ -426,22 +443,7 @@ struct DeviceConnectionMethodPicker: View {
     }
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("device.connectionMethod").foregroundStyle(.secondary)
-                    picker
-                }
-            } else {
-                HStack(spacing: 8) {
-                    Text("device.connectionMethod").foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    picker
-                }
-            }
-        }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
+        picker
         .sheet(isPresented: $showsMethods) {
             NavigationStack {
                 List(methods, id: \.self) { method in
@@ -484,11 +486,27 @@ struct DeviceConnectionMethodPicker: View {
 
     private var picker: some View {
         Button { showsMethods = true } label: {
-            HStack(spacing: 6) {
-                Text(model.deviceConnectionMethod.selectionTitle).multilineTextAlignment(.trailing)
-                Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            SurfaceCard {
+                HStack(spacing: 12) {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("device.connectionMethod").fontWeight(.medium)
+                            Text(model.deviceConnectionMethod.selectionTitle).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text("device.connectionMethod").fontWeight(.medium)
+                        Spacer(minLength: 8)
+                        Text(model.deviceConnectionMethod.selectionTitle)
+                            .foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .font(.subheadline).foregroundStyle(.primary).frame(minHeight: 24)
             }
-            .frame(minHeight: 44).contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain).disabled(!canChange)
         .accessibilityLabel(Text("device.connectionMethod")).accessibilityValue(model.deviceConnectionMethod.selectionTitle)
@@ -525,6 +543,7 @@ private extension DeviceConnectionMethod {
     }
 }
 
+#if DEBUG
 /// A local, reversible target for independent screenshot and input validation.
 private struct ControlProbeView: View {
     @Environment(\.dismiss) private var dismiss
@@ -597,3 +616,4 @@ private struct ControlProbeView: View {
         Button("probe.reset") { count = 0 }.buttonStyle(.glass)
     }
 }
+#endif
