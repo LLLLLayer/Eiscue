@@ -23,6 +23,9 @@ final class LocalTunnelManager {
     // System authorization can outlive cancellation. Do not create a second
     // configuration while the first save still has a pending completion.
     @ObservationIgnored private var preferenceSavePending = false
+    #if DEBUG
+    @ObservationIgnored private var pairingDiagnosticSequence: UInt64 = 0
+    #endif
 
     private enum Operation {
         case starting, stopping
@@ -170,6 +173,40 @@ final class LocalTunnelManager {
     }
 
     #if DEBUG
+    /// Explicit numeric-only debug query; it never starts or changes the tunnel.
+    func requestPairingDiagnostics(shouldSave: @escaping @MainActor @Sendable () -> Bool = { true }) {
+        guard ProcessInfo.processInfo.arguments.contains("--pairing-diagnostics") else { return }
+        pairingDiagnosticSequence &+= 1
+        let sample = pairingDiagnosticSequence
+        let requestedAt = UInt64(Date().timeIntervalSince1970 * 1000)
+        let token = generation, observation = observationID
+        let request = PairingDiagnosticRequest { [weak self] response in
+            guard let self, self.generation == token, self.observationID == observation, shouldSave() else { return }
+            var report: [String: UInt64] = ["status": response.status, "sample": sample, "requestedAtMilliseconds": requestedAt]
+            if case .snapshot(let snapshot) = response {
+                report["version"] = UInt64(snapshot.version)
+                report["generation"] = snapshot.generation
+                report["running"] = UInt64(snapshot.running)
+                for (prefix, counts) in [("received", snapshot.received), ("matched", snapshot.matched), ("injected", snapshot.injected)] {
+                    report[prefix + "Syn"] = counts.syn
+                    report[prefix + "SynAck"] = counts.synAck
+                    report[prefix + "Ack"] = counts.ack
+                }
+            }
+            guard let data = try? JSONEncoder().encode(report) else { return }
+            try? data.write(to: URL.cachesDirectory.appendingPathComponent("EiscueTunnelDiagnostic.json"), options: [.atomic, .completeFileProtection])
+        }
+        guard operation == nil, let manager,
+              let providerID = try? providerBundleIdentifier(), Self.isOwned(manager, providerID: providerID),
+              manager.connection.status == .connected,
+              let session = manager.connection as? NETunnelProviderSession else {
+            request.finish(.unavailable); return
+        }
+        request.startTimeout()
+        do { try session.sendProviderMessage(Data([1]), responseHandler: PairingDiagnosticRequest.handler(for: request)) }
+        catch { request.finish(.sendError) }
+    }
+
     /// Explicit developer recovery after replacing the extension during install.
     /// Only restarts an enabled, previously authorized, owned configuration.
     /// Never creates/saves/enables a configuration or requests new permission.
@@ -415,6 +452,69 @@ final class LocalTunnelManager {
         return Failure.system(String(format: String(localized: "tunnel.error.operation_failed", table: "Connections"), native.localizedDescription))
     }
 }
+
+#if DEBUG
+private struct PairingDiagnosticCounts: Decodable, Sendable {
+    let syn: UInt64
+    let synAck: UInt64
+    let ack: UInt64
+}
+
+private struct PairingDiagnosticSnapshot: Decodable, Sendable {
+    let version: UInt8
+    let generation: UInt64
+    let running: UInt8
+    let received: PairingDiagnosticCounts
+    let matched: PairingDiagnosticCounts
+    let injected: PairingDiagnosticCounts
+}
+
+private enum PairingDiagnosticResponse: Sendable {
+    case snapshot(PairingDiagnosticSnapshot), unavailable, emptyResponse, sendError, timeout, invalidResponse
+    var status: UInt64 {
+        switch self {
+        case .snapshot: 0
+        case .unavailable: 1
+        case .emptyResponse: 2
+        case .sendError: 3
+        case .timeout: 4
+        case .invalidResponse: 5
+        }
+    }
+    static func decode(_ data: Data?) -> Self {
+        guard let data else { return .emptyResponse }
+        guard data.count <= 4096,
+              let snapshot = try? JSONDecoder().decode(PairingDiagnosticSnapshot.self, from: data),
+              snapshot.version == 1, snapshot.running <= 1 else { return .invalidResponse }
+        return .snapshot(snapshot)
+    }
+}
+
+@MainActor private final class PairingDiagnosticRequest {
+    private var completion: (@MainActor @Sendable (PairingDiagnosticResponse) -> Void)?
+    private var timeout: Task<Void, Never>?
+    init(_ completion: @escaping @MainActor @Sendable (PairingDiagnosticResponse) -> Void) { self.completion = completion }
+    func startTimeout() {
+        timeout = Task { @MainActor [self] in
+            do { try await Task.sleep(for: .seconds(1)) }
+            catch { return }
+            finish(.timeout)
+        }
+    }
+    func finish(_ response: PairingDiagnosticResponse) {
+        guard let completion else { return }
+        self.completion = nil
+        timeout?.cancel(); timeout = nil
+        completion(response)
+    }
+    nonisolated static func handler(for request: PairingDiagnosticRequest) -> @Sendable (Data?) -> Void {
+        { data in
+            let response = PairingDiagnosticResponse.decode(data)
+            Task { @MainActor in request.finish(response) }
+        }
+    }
+}
+#endif
 
 /// Releasing the manager also releases its observer without retaining the App.
 private final class TunnelStatusObservation {

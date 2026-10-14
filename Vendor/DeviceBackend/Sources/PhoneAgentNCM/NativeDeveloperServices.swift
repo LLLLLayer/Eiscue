@@ -331,13 +331,16 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         repeat {
             try Task.checkCancellation()
             guard token == handle, ready, videoDecoder === decoder else { throw NativeBackendError.closed }
-            var before = ncm_video_snapshot()
-            guard ncm_backend_video_get_snapshot(token, &before) == 0 else { throw NativeBackendError.closed }
+            // RTCP confirmation is for fresh pixels on a static display. It is
+            // cleared by every new RTP packet, so requiring it here makes an
+            // animated Home screen reject every tap despite unchanged geometry.
+            var before = ncm_video_decode_cursor()
+            guard ncm_backend_video_get_decode_cursor(token, &before) == 0 else { throw NativeBackendError.closed }
             let state = await decoder.currentGeometry()
             try Task.checkCancellation()
             guard token == handle, ready, videoDecoder === decoder else { throw NativeBackendError.closed }
-            var after = ncm_video_snapshot()
-            guard ncm_backend_video_get_snapshot(token, &after) == 0 else { throw NativeBackendError.closed }
+            var after = ncm_video_decode_cursor()
+            guard ncm_backend_video_get_decode_cursor(token, &after) == 0 else { throw NativeBackendError.closed }
             if let state,
                before.epoch == after.epoch, state.geometry.epoch == after.epoch,
                before.serial > 0, after.serial > 0,

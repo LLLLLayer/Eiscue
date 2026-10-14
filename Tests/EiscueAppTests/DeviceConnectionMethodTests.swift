@@ -5,6 +5,35 @@ import XCTest
 
 @MainActor
 final class DeviceConnectionMethodTests: XCTestCase {
+    func testDictationIsBlockedOnlyByConnectedRemoteMediaOnIOS27() {
+        let oldOS = OperatingSystemVersion(majorVersion: 26, minorVersion: 5, patchVersion: 0)
+        let newOS = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)
+        for method in [DeviceConnectionMethod.localVPN, .usbBoard] {
+            XCTAssertTrue(DeviceMicrophonePolicy.blocksDictation(method: method, isConnected: true, on: newOS))
+            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, isConnected: false, on: newOS))
+            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, isConnected: true, on: oldOS))
+        }
+        XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: .bluetoothBoard, isConnected: true, on: newOS))
+        XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: nil, isConnected: true, on: newOS))
+    }
+
+    func testBothHIDOutputsKeepDictationAvailableAfterRestoringPreferences() throws {
+        let fixture = try Fixture(savedMethod: "bluetoothBoard")
+        let version = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)
+        for route in BluetoothBoardInputRoute.allCases {
+            fixture.preferences.set(route.rawValue, forKey: "bluetoothInputRoute")
+            let model = AppModel(storageDirectory: fixture.directory, preferences: fixture.preferences,
+                                 credentialStore: CredentialStore(service: fixture.suite))
+            XCTAssertEqual(model.bluetoothInputRoute, route)
+            XCTAssertEqual(model.deviceConnectionMethod, .bluetoothBoard)
+            // Simulate readiness without contacting a board or starting ReplayKit.
+            model.activeDeviceConnectionMethod = model.deviceConnectionMethod
+            model.deviceStatus = .ready(capabilities: [.screenshot, .tap, .textInput])
+            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: model.activeDeviceConnectionMethod,
+                isConnected: model.isDeviceReady, on: version), "HID output \(route) must not inherit the USB network restriction.")
+        }
+    }
+
     func testNewPreferencesDefaultToLocalVPNAndSelectionPersists() async throws {
         let fixture = try Fixture(savedMethod: nil)
         let model = fixture.model
@@ -22,6 +51,16 @@ final class DeviceConnectionMethodTests: XCTestCase {
     func testUnknownSavedMethodSafelyDefaultsToLocalVPN() throws {
         let fixture = try Fixture(savedMethod: "future-unsupported-method")
         XCTAssertEqual(fixture.model.deviceConnectionMethod, .localVPN)
+    }
+
+    func testConnectionRetentionIsDefaultAndAutomaticDisconnectPreferencePersists() throws {
+        let fixture = try Fixture(savedMethod: nil)
+        XCTAssertFalse(fixture.model.disconnectAfterTask)
+        fixture.model.disconnectAfterTask = true
+        let restored = AppModel(storageDirectory: fixture.directory, preferences: fixture.preferences)
+        XCTAssertTrue(restored.disconnectAfterTask)
+        restored.disconnectAfterTask = false
+        XCTAssertFalse(fixture.preferences.bool(forKey: "disconnectAfterTask"))
     }
 
     func testRemovedWirelessPreferenceLoadsDisconnectedWithoutConnectingOrPairing() async throws {
@@ -233,7 +272,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
         await model.disconnectDevice()
     }
 
-    func testCompletingConnectionInBackgroundReleasesItAfterTheDismissalGrace() async throws {
+    func testCompletingConnectionInBackgroundKeepsItUntilExplicitDisconnect() async throws {
         let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
         let model = fixture.model
         let pending = Task { await model.connectDevice() }
@@ -244,15 +283,19 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertFalse(model.isConnecting)
         XCTAssertTrue(model.isDeviceReady)
         let initial = await fixture.controller.calls()
-        XCTAssertEqual(initial.disconnects, 0, "System dismissal gets a brief chance to reactivate the app.")
-        try await waitUntil { await fixture.controller.calls().disconnects == 1 && !model.isConnecting }
+        XCTAssertEqual(initial.disconnects, 0)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(model.isDeviceReady)
+        XCTAssertEqual(model.activeDeviceConnectionMethod, .usbBoard)
+        let completed = await fixture.controller.calls()
+        XCTAssertEqual(completed.disconnects, 0)
+        XCTAssertEqual(completed.cancelledConnections, 0)
+        await model.disconnectDevice()
         XCTAssertFalse(model.isDeviceReady)
         XCTAssertNil(model.activeDeviceConnectionMethod)
-        let completed = await fixture.controller.calls()
-        XCTAssertEqual(completed.cancelledConnections, 0)
     }
 
-    func testReturningFromSystemAuthorizationDuringGraceKeepsTheCompletedConnection() async throws {
+    func testReturningFromSystemAuthorizationKeepsTheCompletedConnection() async throws {
         let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
         let model = fixture.model
         let pending = Task { await model.connectDevice() }
@@ -293,7 +336,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
         await model.disconnectDevice()
     }
 
-    func testDeviceRunStartedDuringDismissalGraceKeepsItsConnection() async throws {
+    func testDeviceRunStartedAfterBackgroundConnectionKeepsItsConnection() async throws {
         let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
         let model = fixture.model
         let pending = Task { await model.connectDevice() }
@@ -312,16 +355,24 @@ final class DeviceConnectionMethodTests: XCTestCase {
         await model.disconnectDevice()
     }
 
-    func testDeferredBackgroundTaskRechecksTheConnectingFlag() async throws {
-        let fixture = try Fixture(savedMethod: "usbBoard")
-        let model = fixture.model
-        model.sceneChanged(.background)
-        model.isConnecting = true
-        try await Task.sleep(for: .milliseconds(30))
-        let calls = await fixture.controller.calls()
-        XCTAssertEqual(calls.disconnects, 0)
-        model.isConnecting = false
-        model.sceneChanged(.active)
+    func testIdleAndChatBackgroundTransitionsKeepTheConnectionWhileChatStillStops() async throws {
+        for hasChat in [false, true] {
+            let fixture = try Fixture(savedMethod: "usbBoard")
+            let model = fixture.model
+            await model.connectDevice()
+            if hasChat {
+                model.activeRun = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: .now,
+                                            scope: .chat, model: "fixture", skill: nil, state: .running, detail: "", events: [])
+            }
+            model.sceneChanged(.background)
+            try await Task.sleep(for: .milliseconds(30))
+            let calls = await fixture.controller.calls()
+            XCTAssertEqual(calls.disconnects, 0)
+            XCTAssertTrue(model.isDeviceReady)
+            XCTAssertEqual(model.stopRequested, hasChat)
+            model.activeRun = nil
+            await model.disconnectDevice()
+        }
     }
 
     func testAutomationAuthorizationGuidanceIsLocalizedAndUsesTheSystemScreen() throws {

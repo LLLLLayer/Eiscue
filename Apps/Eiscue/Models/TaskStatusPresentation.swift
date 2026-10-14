@@ -1,9 +1,11 @@
 import Foundation
 
 /// Privacy-safe presentation for the system's continued-processing activity.
-/// Counts reflect observed execution stages, not progress toward the user's
-/// goal. The denominator can grow as new tool calls are actually discovered.
+/// A fixed large scale keeps the ring visually quiet while phase text changes.
+/// Real step counts still advance; this is not a goal-completion estimate.
 struct TaskStatusPresentation: Equatable, Sendable {
+    static let progressTotalUnitCount: Int64 = 1_000_000
+
     let title: String
     let subtitle: String
     let completedToolCalls: Int
@@ -18,7 +20,6 @@ struct TaskStatusPresentation: Equatable, Sendable {
         devicePhase: DeviceTaskPhase? = nil
     ) -> Self {
         var seen = Set<UUID>()
-        var startedCalls = 0
         var endedCalls = 0
         var hasStarted = run.state == .running || run.state == .completed
 
@@ -26,20 +27,15 @@ struct TaskStatusPresentation: Equatable, Sendable {
         // Do not read summaries: they can contain private or untrusted text.
         for event in run.events where seen.insert(event.id).inserted {
             switch event.kind {
-            case "run.started": hasStarted = true
-            case "tool.started": startedCalls += 1
-            case "tool.finished", "tool.failed": endedCalls += 1
+            case "run.started", "tool.started": hasStarted = true
+            case "tool.finished", "tool.failed":
+                endedCalls += 1
+                // A recovered call can finish without a new start event.
+                hasStarted = true
             default: break
             }
         }
-        // A recovered call can return without a new start event in this run.
-        // Its result is itself evidence that this unit of work existed.
-        let discoveredCalls = max(startedCalls, endedCalls)
-        hasStarted = hasStarted || discoveredCalls > 0
         let preparationUnits: Int64 = hasStarted ? 1 : 0
-        // The host sets .completed only after cleanup and durable finalization.
-        // Merely entering the finishing phase cannot complete this last unit.
-        let finishingUnits: Int64 = run.state == .completed ? 1 : 0
 
         let stage: Stage
         let phase: String
@@ -97,8 +93,11 @@ struct TaskStatusPresentation: Equatable, Sendable {
             title: stage.title,
             subtitle: phase,
             completedToolCalls: endedCalls,
-            completedWorkUnits: preparationUnits + Int64(endedCalls) + finishingUnits,
-            totalWorkUnits: Int64(discoveredCalls) + 2
+            // The host exposes .completed only after cleanup and journal save.
+            // Neither an unfinished task nor a failed task may fill the ring.
+            completedWorkUnits: run.state == .completed ? progressTotalUnitCount
+                : min(preparationUnits + Int64(endedCalls), progressTotalUnitCount - 1),
+            totalWorkUnits: progressTotalUnitCount
         )
     }
 
@@ -117,7 +116,7 @@ struct TaskStatusPresentation: Equatable, Sendable {
             case .executing: String(localized: "task.status.title.executing", defaultValue: "Running a step", table: "TaskStatus")
             case .verifying: String(localized: "task.status.title.verifying", defaultValue: "Checking result", table: "TaskStatus")
             case .finishing: String(localized: "task.status.title.finishing", defaultValue: "Finishing up", table: "TaskStatus")
-            case .completed: String(localized: "task.status.title.completed", defaultValue: "Turn ended", table: "TaskStatus")
+            case .completed: String(localized: "task.status.title.completed", defaultValue: "Task complete", table: "TaskStatus")
             case .paused: String(localized: "task.status.title.paused", defaultValue: "Task paused", table: "TaskStatus")
             case .interrupted: String(localized: "task.status.title.interrupted", defaultValue: "Task stopped", table: "TaskStatus")
             case .failed: String(localized: "task.status.title.failed", defaultValue: "Task failed", table: "TaskStatus")

@@ -3,7 +3,11 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
-    @State private var showsAdvanced = false
+
+    private var currentLanguage: String {
+        let code = Bundle.main.preferredLocalizations.first ?? Bundle.main.developmentLocalization ?? "en"
+        return Locale.current.localizedString(forIdentifier: code) ?? code
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -60,13 +64,17 @@ struct SettingsView: View {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 } label: {
                     LabeledContent {
-                        Text(String(localized: "settings.system_language", table: "Runtime"))
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 8) {
+                            Text(currentLanguage).foregroundStyle(.secondary)
+                            Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
                     } label: {
                         SettingsRowLabel(String(localized: "settings.language", table: "Runtime"), systemImage: "globe")
                     }
                 }
                 .foregroundStyle(.primary)
+                .disabled(model.isBusy)
+                .accessibilityHint(String(localized: "settings.language_footer", table: "Runtime"))
                 .accessibilityIdentifier("appLanguageSettingsButton")
                 NavigationLink {
                     TaskSettingsView()
@@ -74,43 +82,51 @@ struct SettingsView: View {
                     SettingsRowLabel(String(localized: "settings.taskStatus"), systemImage: "bell")
                 }
                 .accessibilityIdentifier("taskStatusSettingsButton")
+                Toggle(isOn: $model.disconnectAfterTask) {
+                    SettingsRowLabel(String(localized: "settings.disconnectAfterTask", table: "Connections"), systemImage: "powerplug")
+                }
+                .tint(EiscueStyle.switchTint)
+                .disabled(model.isBusy)
+                .accessibilityIdentifier("disconnectAfterTaskToggle")
             }
             .listRowBackground(EiscueStyle.surface)
 
             Section {
-                Button {
-                    model.showsOnboarding = true
-                } label: {
-                    SettingsRowLabel(String(localized: "settings.showGuide"), systemImage: "book.closed")
+                Toggle(isOn: $model.hapticsEnabled) {
+                    SettingsRowLabel(String(localized: "settings.haptics", table: "Runtime"), systemImage: "hand.tap")
                 }
-                .foregroundStyle(.primary)
+                .tint(EiscueStyle.switchTint)
                 .disabled(model.isBusy)
-                .accessibilityIdentifier("showOnboardingButton")
-                NavigationLink {
-                    AboutView()
+                .accessibilityIdentifier("hapticsToggle")
+                LabeledContent {
+                    Text(String.localizedStringWithFormat(String(localized: "settings.conversation_count", table: "Runtime"), model.conversations.count))
                 } label: {
-                    SettingsRowLabel(String(localized: "settings.about", table: "Runtime"), systemImage: "info.circle")
+                    SettingsRowLabel(String(localized: "settings.conversations", table: "Runtime"), systemImage: "bubble.left.and.bubble.right")
                 }
-                DisclosureGroup(isExpanded: $showsAdvanced) {
-                    Toggle(isOn: $model.hapticsEnabled) {
-                        SettingsRowLabel(String(localized: "settings.haptics", table: "Runtime"), systemImage: "hand.tap")
-                    }
-                    .tint(EiscueStyle.switchTint)
-                    .disabled(model.isBusy)
-                    .accessibilityIdentifier("hapticsToggle")
-                    LabeledContent {
-                        Text(String.localizedStringWithFormat(String(localized: "settings.conversation_count", table: "Runtime"), model.conversations.count))
-                    } label: {
-                        SettingsRowLabel(String(localized: "settings.conversations", table: "Runtime"), systemImage: "bubble.left.and.bubble.right")
-                    }
-                    Text(String(localized: "settings.data_footer", table: "Runtime"))
-                        .font(.caption).foregroundStyle(.secondary)
-                } label: {
-                    SettingsRowLabel(String(localized: "settings.advanced"), systemImage: "slider.horizontal.3")
-                        .accessibilityIdentifier("settingsAdvancedOptions")
-                }
+            } header: {
+                Text("settings.advanced")
+            } footer: {
+                Text(String(localized: "settings.data_footer", table: "Runtime"))
             }
             .listRowBackground(EiscueStyle.surface)
+
+            Section {
+                NavigationLink { AboutView() } label: {
+                    SettingsRowLabel(String(localized: "settings.about", table: "Runtime"), systemImage: "info.circle")
+                }
+                .accessibilityIdentifier("aboutNavigationLink")
+            }
+            .listRowBackground(EiscueStyle.surface)
+            #if DEBUG
+            Section {
+                Toggle(isOn: $model.showsDebugTools) {
+                    SettingsRowLabel(String(localized: "settings.debugTools", table: "Connections"), systemImage: "ladybug")
+                }
+                .tint(EiscueStyle.switchTint)
+                .accessibilityIdentifier("debugToolsToggle")
+            }
+            .listRowBackground(EiscueStyle.surface)
+            #endif
         }
         .listStyle(.insetGrouped)
         .listSectionSpacing(.compact)

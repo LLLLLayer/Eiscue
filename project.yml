@@ -43,6 +43,7 @@ targets:
         NSSpeechRecognitionUsageDescription: "Transcribe speech on this device. Messages are sent only when you tap Send."
         NSLocalNetworkUsageDescription: "Connect to this device for control through the local VPN or a development board."
         CFBundleLocalizations: [en, zh-Hans]
+        UIPrefersShowingLanguageSettings: true
         UIBackgroundModes: [bluetooth-central]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

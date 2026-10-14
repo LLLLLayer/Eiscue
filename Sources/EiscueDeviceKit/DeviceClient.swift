@@ -22,6 +22,9 @@ public struct DeviceClient: Sendable {
     public func importPairingIdentity(_ data: Data) async throws { try await controller.importPairingIdentity(data) }
     public func removePairingIdentity() async throws { try await controller.removePairingIdentity() }
     public func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> { await controller.beginPairing() }
+    public func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> {
+        await controller.beginPairing(configuration: configuration)
+    }
     public func connect(method: DeviceConnectionMethod, configuration: LocalVPNConfiguration = .defaults) async throws {
         switch method {
         case .bluetoothBoard: try await controller.connectBluetoothBoard()
@@ -39,6 +42,7 @@ public struct DeviceClient: Sendable {
         return try await local.probeLegacyDeveloperServices(configuration: configuration)
     }
     #endif
+    public func finishTask() async throws { try await controller.finishTask() }
     public func disconnect() async { await controller.disconnect() }
     public func captureScreenshot() async throws -> DeviceScreenshot { try await controller.captureScreenshot() }
     public func tap(at point: DevicePoint, frameID: UUID) async throws { try await controller.tap(at: point, frameID: frameID) }

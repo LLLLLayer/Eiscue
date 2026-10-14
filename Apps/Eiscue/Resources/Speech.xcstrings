@@ -7,13 +7,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold to talk. Release to finish, or slide up to cancel."
+            "value": "Tap to talk, or hold and release."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按住说话，松开结束，上滑取消。"
+            "value": "点击说话，或按住说完后松开。"
           }
         }
       }
@@ -211,13 +211,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Microphone unavailable. Check your microphone or headset and try again."
+            "value": "Can't start voice input. The microphone is unavailable."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "麦克风不可用，请检查麦克风或耳机后重试。"
+            "value": "无法启动语音输入，麦克风暂不可用"
           }
         }
       }
@@ -296,13 +296,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hold to talk, then release. Slide up to cancel. With VoiceOver, double-tap to start or stop."
+            "value": "Tap to start or finish. You can also hold to talk and slide up to cancel."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按住说话，松开结束，上滑取消。使用旁白时，轻点两下开始或停止。"
+            "value": "点击开始或结束，也可按住说话，上滑取消。"
           }
         }
       }
@@ -337,6 +337,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "切换语音输入"
+          }
+        }
+      }
+    },
+    "speech.tapToTalk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to talk"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击说话"
+          }
+        }
+      }
+    },
+    "speech.tapToFinish": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish dictation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束录音"
+          }
+        }
+      }
+    },
+    "speech.releaseToFinish": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release to finish"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开结束"
+          }
+        }
+      }
+    },
+    "speech.error.remoteControl": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't start voice input during device control."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备控制期间无法启动语音输入"
           }
         }
       }

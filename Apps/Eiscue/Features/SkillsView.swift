@@ -62,7 +62,7 @@ struct SkillsView: View {
     }
 
     @ViewBuilder
-    private func skillSection(_ title: String, skills: [AgentSkill]) -> some View {
+    private func skillSection(_ title: LocalizedStringKey, skills: [AgentSkill]) -> some View {
         if !skills.isEmpty {
             Section(title) {
                 ForEach(skills) { skill in

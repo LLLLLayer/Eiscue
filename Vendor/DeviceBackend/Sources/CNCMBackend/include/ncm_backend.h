@@ -28,7 +28,8 @@ typedef struct { uint64_t request_id; uint32_t kind,stage,cause,reserved; size_t
  * 5 buffer too small (event retained), 6 not ready. Errors contain no payloads.
  * Events: 1 ready (JSON service names), 2 operation written/completed,
  * 3 stage/cause failure, 4 PNG (memory only). Input event 2 never proves visible effect.
- * 10 touch video preparation failure (stage/cause, no payload): no touch has
+ * On ordinary control handles, 10 is touch video preparation failure
+ * (stage/cause, no payload): no touch has
  * been sent; scoped preparation resources closed, existing session retained.
  * At most 2 process sessions, 1 queued request and 1 pending event per session.
  * Tokens are monotonically allocated handles, never C pointers. */
@@ -48,12 +49,21 @@ int32_t ncm_backend_video_get_status(uint64_t handle, ncm_video_status *status);
  * the screen is static. serial=0 means incomplete, unsynchronized or unconfirmed. */
 typedef struct { uint64_t report, epoch, serial; } ncm_video_snapshot;
 int32_t ncm_backend_video_get_snapshot(uint64_t handle, ncm_video_snapshot *snapshot);
+/* Input geometry uses the latest assembled picture, not RTCP idle confirmation.
+ * serial=0 means no valid reference chain. Decoder must match epoch and reach
+ * serial before accepting its geometry. New RTP packets alone do not revoke it.
+ * Separate additive ABI; existing snapshot/statistics layouts are unchanged. */
+typedef struct { uint64_t epoch, serial; } ncm_video_decode_cursor;
+int32_t ncm_backend_video_get_decode_cursor(uint64_t handle, ncm_video_decode_cursor *cursor);
 int32_t ncm_backend_video_refresh(uint64_t handle);
 int32_t ncm_backend_video_poll(uint64_t handle, ncm_event *event, uint8_t *buffer, size_t capacity);
 uint32_t ncm_backend_abi(void);
 /* Explicit new RemotePairing only. consent must be 1. No filesystem access.
  * Pairing events (request 0): 5 listener JSON {port,identifier,txt}, 6 PIN UTF8,
  * 7 provisional identity JSON, 8 committed identity JSON, 9 success.
+ * On pairing handles only, kind 10 / request 0 / stage 1 means TCP accepted;
+ * cause/reserved/size are zero and payload is empty. It is not the ordinary
+ * control handle's kind 10 touch preparation failure. Poll(NULL, 0) consumes it.
  * 7/8 contain SECRET controller seed and authenticated peer binding. Caller must
  * durably save with file protection BEFORE ack(state 1/2); never log payloads.
  * Uses backend poll/close; failure stage 201. 180s total, 10s persistence gate.

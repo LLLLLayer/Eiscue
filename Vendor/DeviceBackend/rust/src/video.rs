@@ -54,9 +54,23 @@ pub struct VideoSnapshot {
     pub epoch: u64,
     pub serial: u64,
 }
+/// Latest assembled picture, independent of RTCP confirmation of an idle image.
+/// A decoder must catch up to this cursor before reusing its coordinate space.
+#[repr(C)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
+pub struct VideoDecodeCursor {
+    pub epoch: u64,
+    pub serial: u64,
+}
 impl VideoMailbox {
     pub fn snapshot(&self) -> VideoSnapshot {
         self.0.lock().map(|q| VideoSnapshot { report: q.report, epoch: q.epoch, serial: q.confirmed_serial }).unwrap_or_default()
+    }
+    pub fn decode_cursor(&self) -> VideoDecodeCursor {
+        self.0.lock().map(|q| VideoDecodeCursor {
+            epoch: q.epoch,
+            serial: if q.have_sync { q.serial } else { 0 },
+        }).unwrap_or_default()
     }
     pub fn packet_pending(&self) {
         if let Ok(mut q) = self.0.lock() { q.confirmed_serial = 0; }
@@ -78,6 +92,18 @@ impl VideoMailbox {
     }
     pub fn set_visible_size(&self, size: Option<(u32, u32)>) {
         if let Ok(mut q) = self.0.lock() {
+            if q.visible != size && q.have_sync {
+                // Display metadata can announce a rotation before its first
+                // video picture arrives. Revoke old geometry immediately.
+                q.samples.clear();
+                q.bytes = 0;
+                q.have_sync = false;
+                q.revision = None;
+                q.epoch += 1;
+                q.reset = true;
+                q.confirmed_serial = 0;
+                self.request_refresh();
+            }
             q.visible = size;
         }
     }
@@ -282,6 +308,53 @@ mod tests {
         assert_eq!(q.snapshot().serial, 0); assert_ne!(q.snapshot().epoch, confirmed.epoch);
     }
     #[test]
+    fn input_geometry_cursor_does_not_require_an_idle_sender_report() {
+        let q = VideoMailbox::default(); q.begin_stream(); q.poll(0);
+        assert_eq!(q.decode_cursor().serial, 0);
+        for _ in 0..100 {
+            q.packet_pending();
+            let (u, p) = sample(true); assert!(q.push(u, p));
+            let cursor = q.decode_cursor();
+            assert!(cursor.serial > 0, "Complete animation pictures remain available to the decoder");
+            q.packet_pending();
+            assert_eq!(q.snapshot().serial, 0, "An incomplete next picture cannot confirm fresh screenshot pixels");
+            assert_eq!(q.decode_cursor(), cursor, "Receiving new pixels alone must not invalidate input geometry");
+            q.sender_report(false);
+            assert_eq!(q.decode_cursor(), cursor);
+        }
+        let old = q.decode_cursor(); q.reset();
+        assert_eq!(q.decode_cursor().serial, 0);
+        assert_ne!(q.decode_cursor().epoch, old.epoch);
+    }
+    #[test]
+    fn input_geometry_cursor_advances_before_queued_layout_is_decoded() {
+        let q = VideoMailbox::default(); q.begin_stream(); q.poll(0);
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        let old = q.decode_cursor();
+        let (u, p) = sample(false); assert!(q.push(u, p));
+        assert_eq!(q.decode_cursor().epoch, old.epoch);
+        assert!(q.decode_cursor().serial > old.serial, "Do not validate a decoder behind queued pictures");
+        let (u, mut p) = sample(true); p.revision = 2; assert!(q.push(u, p));
+        assert_ne!(q.decode_cursor().epoch, old.epoch, "A configuration change revokes old geometry before polling");
+    }
+    #[test]
+    fn display_metadata_revokes_geometry_before_new_pixels_and_when_rotating_back() {
+        let q = VideoMailbox::default(); q.begin_stream(); q.poll(0);
+        q.set_visible_size(Some((9, 18)));
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        let old = q.decode_cursor();
+        q.set_visible_size(Some((9, 18)));
+        assert_eq!(q.decode_cursor(), old);
+        q.set_visible_size(Some((18, 9)));
+        assert_eq!(q.decode_cursor().serial, 0);
+        assert_ne!(q.decode_cursor().epoch, old.epoch);
+        assert_eq!(q.poll(0).0, 14);
+        assert!(q.take_refresh());
+        q.set_visible_size(Some((9, 18)));
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        assert_ne!(q.decode_cursor().epoch, old.epoch, "Returning to old dimensions must not revive an observation");
+    }
+    #[test]
     fn display_geometry_is_snapshotted_and_checked_against_each_picture() {
         let q = VideoMailbox::default();
         q.begin_stream();
@@ -289,13 +362,14 @@ mod tests {
         q.set_visible_size(Some((9, 18)));
         let (u, p) = sample(true);
         assert!(q.push(u, p));
-        q.set_visible_size(Some((18, 9))); // orientation changed after enqueue
         let (_, size, data) = q.poll(1024);
         let data = data.unwrap();
         assert_eq!(size, 81);
         assert_eq!(data[36], 3);
         assert_eq!(u32::from_le_bytes(data[64..68].try_into().unwrap()), 9);
         assert_eq!(u32::from_le_bytes(data[68..72].try_into().unwrap()), 18);
+        q.set_visible_size(Some((18, 9))); // orientation changed before the next picture
+        assert_eq!(q.poll(0).0, 14, "Revoke the previously decoded coordinate space immediately");
         let (u, p) = sample(true);
         assert!(q.push(u, p));
         let (_, size, data) = q.poll(1024);

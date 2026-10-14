@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
+    let sidebarDragID: Int
     let openSidebar: () -> Void
-    let revealSidebar: () -> Void
     @FocusState private var isComposerFocused: Bool
     @State private var showsPhotoPicker = false
     @State private var selectedPhotos: [PhotosPickerItem] = []
@@ -15,50 +15,12 @@ struct AssistantView: View {
     @State private var showsCamera = false
     @State private var speech = SpeechInputController()
     @State private var isVoiceMode = false
+    @State private var speechNotice: String?
+    @State private var speechNoticeID: UUID?
     @State private var showsRunHistory = false
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if let conversation = model.selectedConversation, !model.displayedConversationFeed.isEmpty {
-                        transcript(conversation)
-                    } else { welcome }
-                    if !model.displayedStreamingText.isEmpty {
-                        AssistantMessageContent(text: model.displayedStreamingText)
-                            .equatable()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityIdentifier("streamingResponse")
-                    }
-                    if model.isShowingDeviceControlRun {
-                        Label(chatText("chat.operatingDevice"), systemImage: "hand.tap")
-                            .font(.caption).foregroundStyle(.secondary).padding(.vertical, 8)
-                            .accessibilityIdentifier("deviceControlRunStatus")
-                    } else if model.activeRun != nil || model.isSubmittingMessage { AssistantReplyIndicator() }
-                    runStatus
-                    Color.clear.frame(height: 1).id("bottom")
-                }
-                .frame(maxWidth: 720)
-                .padding(.horizontal, 24).padding(.top, 20)
-                .frame(maxWidth: .infinity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .gesture(SidebarRevealGesture(isEnabled: !speech.isBusy) {
-                endComposerInput()
-                revealSidebar()
-            })
-            .scrollDismissesKeyboard(.interactively)
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor(model.isHoldingDeviceTranscript ? nil : .bottom, for: .sizeChanges)
-            .onChange(of: model.displayedConversationFeed.count) {
-                guard !model.isHoldingDeviceTranscript else { return }
-                var transaction = Transaction(animation: nil)
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-        }
+        AssistantTranscriptView { welcome }
         .id(model.selectedConversationID)
         .background(EiscueStyle.background)
         .navigationTitle("Eiscue")
@@ -136,6 +98,7 @@ struct AssistantView: View {
                 Task { await model.addCameraImage(image) }
             }, onCancel: { showsCamera = false }).ignoresSafeArea()
         }
+        .onChange(of: sidebarDragID) { endComposerInput() }
         .onChange(of: model.composerSessionID) {
             endComposerInput()
             showsPhotoPicker = false; showsFiles = false; showsCamera = false
@@ -147,14 +110,56 @@ struct AssistantView: View {
             }.toolImagePreviewHost()
         }
         .onChange(of: model.showsModelSettings) { _, shown in if shown { endComposerInput() } }
+        .onChange(of: speech.errorMessage) { _, message in
+            guard let message else { return }
+            isVoiceMode = false
+            showSpeechNotice(message)
+            speech.clearError()
+        }
+        .onChange(of: model.isDictationBlockedByDeviceConnection) { _, blocked in
+            if blocked && isVoiceMode {
+                speech.cancel(); isVoiceMode = false
+                showSpeechNotice(String(localized: "speech.error.remoteControl", table: "Speech"))
+            }
+        }
+        .overlay(alignment: .top) {
+            if let speechNotice {
+                Text(speechNotice).font(.subheadline).multilineTextAlignment(.center)
+                    .foregroundStyle(.primary).padding(.horizontal, 18).padding(.vertical, 12)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                    .frame(maxWidth: 360).padding(.horizontal, 24).padding(.top, 8)
+                    .allowsHitTesting(false).accessibilityIdentifier("speechNotice")
+            }
+        }
+        .task(id: speechNoticeID) {
+            guard speechNoticeID != nil else { return }
+            do { try await Task.sleep(for: .seconds(4)) } catch { return }
+            speechNotice = nil
+        }
         .onDisappear { endComposerInput() }
         .onAppear { if !isComposerFocused { dismissKeyboard() } }
+        #if DEBUG
+        .task {
+            let arguments = ProcessInfo.processInfo.arguments
+            guard arguments.contains("--speech-diagnostics"), arguments.contains("--speech-capture-check") else { return }
+            isVoiceMode = true
+            speech.toggle(onTranscript: { _ in })
+            do { try await Task.sleep(for: .seconds(10)) } catch { }
+            speech.cancel()
+        }
+        #endif
     }
 
     private func endComposerInput() {
         isComposerFocused = false
         speech.cancel()
+        speechNotice = nil; speechNoticeID = nil
         dismissKeyboard()
+    }
+
+    private func showSpeechNotice(_ message: String) {
+        speechNotice = message; speechNoticeID = UUID()
+        UIAccessibility.post(notification: .announcement, argument: message)
     }
 
     private func dismissKeyboard() {
@@ -191,52 +196,6 @@ struct AssistantView: View {
         }.buttonStyle(.plain).disabled(model.isBusy || speech.isBusy)
     }
 
-    private func transcript(_ conversation: Conversation) -> some View {
-        let feed = model.displayedConversationFeed
-        let actionMessageIDs = ConversationFeedItem.latestActionMessageIDs(in: feed, isAssistantStreaming: !model.displayedStreamingText.isEmpty)
-        return VStack(alignment: .leading, spacing: 16) {
-            Text(conversation.createdAt, format: .dateTime.month().day())
-                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            ForEach(feed) { item in
-                switch item {
-                case .message(let message): ChatMessageRow(message: message, showsActions: actionMessageIDs.contains(message.id))
-                case .activity(let activity): ToolActivityRow(activity: activity, showsProgress: !model.isShowingDeviceControlRun)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private var runStatus: some View {
-        if model.activeRun == nil, model.needsRecovery {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("assistant.interrupted", systemImage: "pause.circle").font(.subheadline.weight(.medium))
-                Text("assistant.recoveryDetail").font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button("assistant.resume") { Task { await model.continueInterruptedRun() } }
-                        .buttonStyle(.glassProminent).accessibilityIdentifier("resumeRunButton")
-                        .foregroundStyle(EiscueStyle.onAccent)
-                    Button("assistant.endTask") { Task { await model.abandonInterruptedRun() } }
-                        .buttonStyle(.glass)
-                }
-            }.padding(.vertical, 8)
-        } else if model.activeRun == nil, let run = model.pausedRun {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("run.paused", systemImage: "pause.circle").font(.subheadline.weight(.medium))
-                Text(run.pauseReason?.detail ?? run.detail).font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button(String(localized: "run.paused.continue", table: "Runtime")) { Task { await model.continueInterruptedRun() } }
-                        .buttonStyle(.glassProminent).accessibilityIdentifier("continuePausedRunButton")
-                        .foregroundStyle(EiscueStyle.onAccent)
-                    Button(String(localized: "run.paused.end", table: "Runtime")) { Task { await model.abandonInterruptedRun() } }
-                        .buttonStyle(.glass).accessibilityIdentifier("endPausedRunButton")
-                }.disabled(model.isBusy)
-            }.padding(.vertical, 8).accessibilityElement(children: .contain).accessibilityIdentifier("pausedRunStatus")
-        } else if model.activeRun == nil, let run = model.selectedRuns.first, run.state == .failed {
-            Label(run.detail, systemImage: "exclamationmark.circle")
-                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-        }
-    }
-
     private var composer: some View {
         @Bindable var model = model
         let dictationSessionID = model.composerSessionID
@@ -246,6 +205,11 @@ struct AssistantView: View {
             isVoiceMode = false
             isComposerFocused = true
         }
+        let editor = TextField("assistant.composerPlaceholder", text: $model.draft, axis: .vertical)
+            .lineLimit(1...5).font(.body).padding(.vertical, 11).padding(.horizontal, 4)
+            .frame(minHeight: 44).contentShape(Rectangle())
+            .focused($isComposerFocused).disabled(model.isSaving)
+            .accessibilityIdentifier("messageInput")
         return VStack(spacing: 10) {
             if !model.draftAttachments.isEmpty {
                 ScrollView(.horizontal) {
@@ -273,62 +237,57 @@ struct AssistantView: View {
                 HStack { ProgressView(); Text(text("composer.importing")).font(.caption); Spacer() }
                     .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
             }
-            if speech.isBusy {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "waveform").foregroundStyle(EiscueStyle.accent)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(speech.statusText).font(.caption).foregroundStyle(.secondary)
-                        if !speech.transcript.isEmpty { Text(speech.transcript).font(.subheadline).lineLimit(3) }
-                    }
-                    Spacer()
-                    Button { speech.cancel() } label: { Image(systemName: "xmark.circle.fill") }
-                        .accessibilityLabel(text("composer.cancelVoice"))
-                }
-                .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
-                .accessibilityIdentifier("speechPreview")
-            }
-            if let error = speech.errorMessage {
-                Label(error, systemImage: "exclamationmark.circle")
-                    .font(.caption).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
-            }
             HStack(alignment: .bottom, spacing: 2) {
-                Menu {
-                    Button(text("composer.photos"), systemImage: "photo.on.rectangle") { isComposerFocused = false; showsPhotoPicker = true }
-                        .disabled(!model.canAddAttachments)
-                    Button(text("composer.camera"), systemImage: "camera") {
-                        isComposerFocused = false
-                        let sessionID = model.composerSessionID
-                        Task {
-                            do {
-                                try await AttachmentCamera.requestAccess()
-                                guard model.composerSessionID == sessionID, !model.isBusy else { return }
-                                showsCamera = true
-                            }
-                            catch { model.errorMessage = error.localizedDescription }
-                        }
-                    }.disabled(!model.canAddAttachments)
-                    Button(text("composer.files"), systemImage: "doc") { isComposerFocused = false; showsFiles = true }
-                        .disabled(!model.canAddAttachments)
-                } label: {
-                    Image(systemName: "plus").font(.system(size: 20, weight: .medium))
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(model.isBusy || speech.isBusy)
-                .accessibilityLabel(text("composer.add")).accessibilityIdentifier("composerAddButton")
-                if isVoiceMode {
-                    SpeechInputButton(controller: speech, isDisabled: model.isBusy, onTranscript: receiveDictation)
-                        .frame(maxWidth: .infinity)
+                if speech.isBusy {
+                    Button { speech.cancel() } label: {
+                        Image(systemName: "xmark").font(.system(size: 18, weight: .medium))
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(text("composer.cancelVoice"))
+                    .accessibilityIdentifier("cancelDictationButton")
                 } else {
-                    TextField("assistant.composerPlaceholder", text: $model.draft, axis: .vertical)
-                        .lineLimit(1...5).font(.body).padding(.vertical, 11).padding(.horizontal, 4)
-                        .frame(minHeight: 44).contentShape(Rectangle())
-                        .focused($isComposerFocused).disabled(model.isSaving)
-                        .accessibilityIdentifier("messageInput")
+                    Menu {
+                        Button(text("composer.photos"), systemImage: "photo.on.rectangle") { isComposerFocused = false; showsPhotoPicker = true }
+                            .disabled(!model.canAddAttachments)
+                        Button(text("composer.camera"), systemImage: "camera") {
+                            isComposerFocused = false
+                            let sessionID = model.composerSessionID
+                            Task {
+                                do {
+                                    try await AttachmentCamera.requestAccess()
+                                    guard model.composerSessionID == sessionID, !model.isBusy else { return }
+                                    showsCamera = true
+                                }
+                                catch { model.errorMessage = error.localizedDescription }
+                            }
+                        }.disabled(!model.canAddAttachments)
+                        Button(text("composer.files"), systemImage: "doc") { isComposerFocused = false; showsFiles = true }
+                            .disabled(!model.canAddAttachments)
+                    } label: {
+                        Image(systemName: "plus").font(.system(size: 20, weight: .medium))
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isBusy || speech.isBusy)
+                    .accessibilityLabel(text("composer.add")).accessibilityIdentifier("composerAddButton")
+                }
+                ZStack(alignment: .bottom) {
+                    // The same editor measures both modes, including a multiline draft.
+                    if isVoiceMode {
+                        editor.hidden()
+                        SpeechInputButton(controller: speech, isDisabled: model.isBusy, hapticsEnabled: model.hapticsEnabled, onTranscript: receiveDictation)
+                            .frame(maxWidth: .infinity)
+                    } else { editor }
                 }
                 Button {
-                    speech.cancel()
+                    if !isVoiceMode && model.isDictationBlockedByDeviceConnection {
+                        showSpeechNotice(String(localized: "speech.error.remoteControl", table: "Speech"))
+                        return
+                    }
+                    speechNotice = nil; speechNoticeID = nil
+                    if speech.isBusy { speech.stop() }
+                    else { speech.clearError() }
                     isVoiceMode.toggle()
                     isComposerFocused = !isVoiceMode
                 } label: {
@@ -347,7 +306,7 @@ struct AssistantView: View {
                     .buttonStyle(.glassProminent).buttonBorderShape(.capsule)
                     .foregroundStyle(EiscueStyle.onAccent)
                     .accessibilityIdentifier("stopRunButton")
-                } else if !isVoiceMode {
+                } else {
                     Button {
                         isComposerFocused = false
                         Task { await model.sendMessage() }
@@ -359,12 +318,15 @@ struct AssistantView: View {
                         .frame(width: 22, height: 22)
                     }
                     .buttonStyle(ComposerSendButtonStyle())
-                    .disabled(!model.canSend || speech.isBusy)
+                    .disabled(!model.canSend || isVoiceMode || speech.isBusy)
                     .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
                 }
             }
             .padding(6)
             .glassEffect(.regular, in: .rect(cornerRadius: 28))
+            .accessibilityElement(children: .contain)
+            .contentShape(.accessibility, .rect(cornerRadius: 28))
+            .accessibilityIdentifier("messageComposer")
         }
         .frame(maxWidth: 720).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 9)
         .frame(maxWidth: .infinity)
@@ -392,58 +354,5 @@ private struct ComposerSendButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
-    }
-}
-
-private struct SidebarRevealGesture: UIGestureRecognizerRepresentable {
-    let isEnabled: Bool
-    let reveal: () -> Void
-
-    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
-        let recognizer = UIPanGestureRecognizer()
-        recognizer.maximumNumberOfTouches = 1
-        recognizer.cancelsTouchesInView = false
-        recognizer.delegate = context.coordinator
-        return recognizer
-    }
-
-    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        recognizer.isEnabled = isEnabled
-    }
-
-    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        guard recognizer.state == .ended else { return }
-        let translation = recognizer.translation(in: recognizer.view)
-        guard translation.x < -60, abs(translation.x) > abs(translation.y) * 2 else { return }
-        reveal()
-    }
-
-    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
-
-    @MainActor final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
-            let velocity = pan.velocity(in: pan.view)
-            return velocity.x < 0 && abs(velocity.x) > abs(velocity.y) * 2
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            guard touch.location(in: gestureRecognizer.view).x > 24 else { return false }
-            var view = touch.view
-            while let current = view, current !== gestureRecognizer.view {
-                if current is UIControl || (current as? UITextView)?.isEditable == true { return false }
-                // Horizontal code/image scrollers keep their own navigation gesture.
-                if let scroll = current as? UIScrollView,
-                   scroll.contentSize.width > scroll.bounds.width + 1 { return false }
-                view = current.superview
-            }
-            return true
-        }
-
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            guard let scroll = other.view as? UIScrollView else { return false }
-            return other === scroll.panGestureRecognizer
-        }
     }
 }

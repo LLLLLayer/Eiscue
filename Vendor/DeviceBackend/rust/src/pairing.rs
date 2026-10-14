@@ -34,6 +34,9 @@ async fn run(
 ) -> Result<(), idevice::IdeviceError> {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, 0)).await?;
     let mut controller = RpPairingFile::generate("Eiscue");
+    // Each explicit new pairing has a fresh key. Reusing the name-derived ID
+    // would make devices recognize a different installation or discarded key.
+    controller.identifier = uuid::Uuid::new_v4().to_string();
     let mut info = PairableHostInfo::generate("Eiscue", "Mac17,7");
     info.identifier = controller.identifier.clone();
     info.udid = uuid::Uuid::new_v4().to_string();
@@ -50,6 +53,14 @@ async fn run(
         .await
         .map_err(|_| protocol_error())?;
     let (stream, _) = listener.accept().await?;
+    events
+        .send(Event {
+            header: EventHeader { kind: 10, stage: 1, ..Default::default() },
+            data: Vec::new(),
+            credit: None,
+        })
+        .await
+        .map_err(|_| protocol_error())?;
     drop(listener); // one user-selected connection; no retry/accept loop
     let seed = Arc::new(Zeroizing::new(controller.e_private_key.to_bytes()));
     let controller_id = controller.identifier.clone();

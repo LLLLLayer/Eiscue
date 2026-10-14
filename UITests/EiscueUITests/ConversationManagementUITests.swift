@@ -13,7 +13,7 @@ final class ConversationManagementUITests: XCTestCase {
 
         let input = app.textFields["messageInput"].exists ? app.textFields["messageInput"] : app.textViews["messageInput"]
         input.tap(); input.typeText("Keep this draft")
-        swipeLeftInMessages(in: app)
+        swipeRightInMessages(in: app)
         XCTAssertTrue(app.buttons["sidebarSettingsButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sidebarSettingsButton"].isHittable)
         closeSidebar(in: app)
@@ -71,9 +71,9 @@ final class ConversationManagementUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [idle], timeout: 10), .completed)
     }
 
-    @MainActor private func swipeLeftInMessages(in app: XCUIApplication) {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.86, dy: 0.45))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.45))
+    @MainActor private func swipeRightInMessages(in app: XCUIApplication) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.45))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45))
         start.press(forDuration: 0.05, thenDragTo: end)
     }
 

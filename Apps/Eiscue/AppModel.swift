@@ -20,7 +20,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
 @MainActor @Observable
 final class AppModel {
-    var conversations: [Conversation] = []
+    var conversations: [Conversation] = [] { didSet { conversationFeedRevision &+= 1 } }
     var conversationOrderRevision = 0
     var selectedConversationID: UUID?
     var draft = ""
@@ -50,14 +50,24 @@ final class AppModel {
     }
     var selectedSkillID: String?
     var skills: [AgentSkill] = []
-    var runs: [RunRecord] = []
+    var runs: [RunRecord] = [] { didSet { conversationFeedRevision &+= 1 } }
     var activeRun: RunRecord? {
         didSet {
             if oldValue?.id != activeRun?.id { controlTranscriptSnapshot = nil }
+            if oldValue?.id != activeRun?.id || oldValue?.activities != activeRun?.activities {
+                conversationFeedRevision &+= 1
+            }
         }
     }
+    private var conversationFeedRevision = 0
+    @ObservationIgnored private var cachedConversationFeed: (revision: Int, conversationID: UUID?, items: [ConversationFeedItem])?
     private var controlTranscriptSnapshot: (runID: UUID, conversationID: UUID, feed: [ConversationFeedItem], text: String)?
-    var streamingText = ""
+    var streamingText = "" {
+        didSet {
+            if streamingText.isEmpty != oldValue.isEmpty { hasStreamingText = !streamingText.isEmpty }
+        }
+    }
+    private var hasStreamingText = false
     var currentTool = ""
     let toolImagePreviews = ToolImagePreviewStore()
     var interruptedConversationIDs = Set<UUID>()
@@ -81,6 +91,10 @@ final class AppModel {
     var screenshot: DeviceScreenshot?
     var appearance: AppAppearance { didSet { preferences.set(appearance.rawValue, forKey: "appearance") } }
     var hapticsEnabled: Bool { didSet { preferences.set(hapticsEnabled, forKey: "hapticsEnabled") } }
+    var disconnectAfterTask: Bool { didSet { preferences.set(disconnectAfterTask, forKey: "disconnectAfterTask") } }
+    #if DEBUG
+    var showsDebugTools: Bool { didSet { preferences.set(showsDebugTools, forKey: "showsDebugTools") } }
+    #endif
 
     let device: DeviceDescriptor
     let storageDirectory: URL
@@ -150,6 +164,10 @@ final class AppModel {
         credentials = suppliedCredentials ?? CredentialStore(service: keychainService)
         appearance = AppAppearance(rawValue: defaults.string(forKey: "appearance") ?? "system") ?? .system
         hapticsEnabled = defaults.object(forKey: "hapticsEnabled") as? Bool ?? true
+        disconnectAfterTask = defaults.bool(forKey: "disconnectAfterTask")
+        #if DEBUG
+        showsDebugTools = defaults.object(forKey: "showsDebugTools") as? Bool ?? true
+        #endif
         do {
             let state = try ModelProfileState.load(from: defaults)
             let selectedID = state.selectedID ?? state.profiles.first?.id
@@ -230,13 +248,19 @@ final class AppModel {
     var selectedRuns: [RunRecord] { runs.filter { $0.conversationID == selectedConversationID } }
     var conversationFeed: [ConversationFeedItem] { conversationFeed(for: selectedConversationID) }
     private func conversationFeed(for conversationID: UUID?) -> [ConversationFeedItem] {
+        let revision = conversationFeedRevision
+        if let cached = cachedConversationFeed, cached.revision == revision, cached.conversationID == conversationID {
+            return cached.items
+        }
         var records = runs.filter { $0.conversationID == conversationID }
         if let activeRun, activeRun.conversationID == conversationID {
             records.removeAll { $0.id == activeRun.id }
             records.append(activeRun)
         }
-        return ConversationFeedItem.merge(messages: conversations.first { $0.id == conversationID }?.messages ?? [],
-                                          activities: records.flatMap { $0.activities ?? [] })
+        let items = ConversationFeedItem.merge(messages: conversations.first { $0.id == conversationID }?.messages ?? [],
+                                              activities: records.flatMap { $0.activities ?? [] })
+        cachedConversationFeed = (revision, conversationID, items)
+        return items
     }
     var isHoldingDeviceTranscript: Bool {
         guard let snapshot = controlTranscriptSnapshot, let activeRun else { return false }
@@ -247,6 +271,7 @@ final class AppModel {
         return conversationFeed
     }
     var displayedStreamingText: String { isHoldingDeviceTranscript ? controlTranscriptSnapshot?.text ?? "" : streamingText }
+    var hasDisplayedStreamingText: Bool { isHoldingDeviceTranscript ? !(controlTranscriptSnapshot?.text.isEmpty ?? true) : hasStreamingText }
     var isShowingDeviceControlRun: Bool { activeRun?.scope == .control && activeRun?.conversationID == selectedConversationID }
 
     func holdDeviceTranscript(for runID: UUID) {
@@ -586,7 +611,8 @@ final class AppModel {
             agent = AgentClient(configuration: config, storageDirectory: runtimeDirectory, tools: availableTools)
             runningAgent = agent
             if runScope != .chat {
-                try await background.begin(taskID: runID, title: String(localized: "run.activity_title", table: "Runtime"), subtitle: String(localized: "run.preparing_device", table: "Runtime"), onExpiration: { [weak self] in
+                try await background.begin(taskID: runID, title: String(localized: "run.activity_title", table: "Runtime"), subtitle: String(localized: "run.preparing_device", table: "Runtime"),
+                                           totalUnitCount: TaskStatusPresentation.progressTotalUnitCount, onExpiration: { [weak self] in
                     Task { await self?.stop(expectedRunID: runID, reason: String(localized: "run.background_ended", table: "Runtime")) }
                 })
             }
@@ -719,9 +745,13 @@ final class AppModel {
         updateTaskStatus(isFinishing: true)
         if let run = activeRun {
             do {
-                try await DeviceRunCleanup.finish(run: run, method: deviceConnectionMethod,
+                try await DeviceRunCleanup.finish(run: run, disconnectAfterTask: disconnectAfterTask,
                     modelRequestFailed: modelRequestFailed, deviceTools: deviceTools, stopRequested: stopRequested,
-                    finishBluetooth: { try await self.bluetoothController.finishTask() },
+                    finishConnection: {
+                        try await self.deviceClient.finishTask()
+                        self.screenshot = nil
+                        await self.refreshDeviceStatus()
+                    },
                     disconnect: { await self.releaseDeviceConnection() })
             } catch {
                 activeRun?.state = .interrupted
@@ -743,10 +773,11 @@ final class AppModel {
         }
         companionFinalizingRunID = nil
         updateTaskStatus()
+        let systemActivityUpdated = background.end(taskID: runID, success: activeRun?.state == .completed)
         if let completed = activeRun, currentScenePhase == .background {
-            await taskNotifications.notify(runID: completed.id, state: completed.state)
+            await taskNotifications.notify(runID: completed.id, state: completed.state,
+                                           systemActivityUpdated: systemActivityUpdated)
         }
-        background.end(taskID: runID, success: activeRun?.state == .completed)
         if let completed = activeRun { runs.removeAll { $0.id == completed.id }; runs.insert(completed, at: 0) }
         let succeeded = activeRun?.state == .completed
         activeRun = nil; streamingText = ""; currentTool = ""; deviceTools = nil
@@ -778,37 +809,17 @@ final class AppModel {
 
     func sceneChanged(_ phase: ScenePhase) {
         currentScenePhase = phase
-        #if DEBUG
-        // The opt-in device proof performs Home/return through the owned session,
-        // with its own bounded teardown. Match a running device task's lifecycle.
-        if ProcessInfo.processInfo.arguments.contains("--owned-device-check") { return }
-        #endif
         if phase == .active {
             refreshPairingTransfer()
             Task { await taskNotifications.refreshAuthorization() }
         }
-        // System automation authorization temporarily backgrounds the app.
-        // The in-flight connection owns its bounded wait and cancellation.
-        guard phase == .background, !isPairing, !isConnecting,
-              activeRun == nil || activeRun?.scope == .chat else { return }
-        scheduleIdleDeviceBackgroundRelease(operationID: deviceOperationID)
-    }
-
-    func scheduleIdleDeviceBackgroundRelease(operationID: UUID, delay: Duration = .zero) {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--owned-device-check") { return }
-        #endif
-        guard deviceConnectionMethod != .bluetoothBoard else { return }
-        let runID = activeRun?.id
-        Task { [weak self] in
-            if delay > .zero {
-                do { try await Task.sleep(for: delay) }
-                catch { return }
+        // Connection lifetime is user-controlled. A scene transition alone
+        // does not end it or create a background execution lease.
+        if phase == .background, let run = activeRun, run.scope == .chat {
+            Task { [weak self] in
+                guard let self, self.currentScenePhase == .background else { return }
+                await self.stop(expectedRunID: run.id, reason: String(localized: "run.chat_backgrounded", table: "Runtime"))
             }
-            guard let self, self.currentScenePhase == .background, !self.isPairing, !self.isConnecting,
-                  self.activeRun == nil || (self.activeRun?.scope == .chat && self.activeRun?.id == runID),
-                  self.deviceOperationID == operationID else { return }
-            await self.disconnectDevice(stopReason: String(localized: "run.chat_backgrounded", table: "Runtime"))
         }
     }
 

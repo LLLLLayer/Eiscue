@@ -1,11 +1,31 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var holdsChatRendering = false
+}
+
 struct ChatMarkdownView: View, Equatable {
+    @Environment(\.holdsChatRendering) private var holdsRendering
     let source: String
+    @State private var blocks: [ChatMarkdownBlock]?
+    private struct ParseRequest: Equatable { let source: String; let isHeld: Bool }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.source == rhs.source }
+
     var body: some View {
-        ChatMarkdownBlocks(blocks: ChatMarkdownParser.parse(source))
-            .tint(.primary)
-            .transaction { $0.animation = nil }
+        Group {
+            if let blocks { ChatMarkdownBlocks(blocks: blocks) }
+            else { Text(verbatim: source).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+        }
+        .tint(.primary)
+        .transaction { $0.animation = nil }
+        .task(id: ParseRequest(source: source, isHeld: holdsRendering)) {
+            // A late parse must not relayout the screen between an Agent's
+            // observation and its input. Reparse when that boundary is released.
+            guard !holdsRendering else { return }
+            guard let parsed = try? await ChatMarkdownCache.shared.blocks(for: source), !Task.isCancelled else { return }
+            blocks = parsed
+        }
     }
 }
 

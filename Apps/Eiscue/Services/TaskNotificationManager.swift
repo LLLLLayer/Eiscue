@@ -3,8 +3,8 @@ import Observation
 import UIKit
 import UserNotifications
 
-/// Optional, local terminal-state notifications. Live task progress remains the
-/// responsibility of BGContinuedProcessingTask and its system UI.
+/// Optional, local terminal-state notifications when no system activity received
+/// the result. Live task progress belongs to BGContinuedProcessingTask.
 @MainActor
 @Observable
 final class TaskNotificationManager {
@@ -101,9 +101,10 @@ final class TaskNotificationManager {
     }
 
     /// Deduplicates recent runs across App launches. Nonterminal states and
-    /// foreground calls are ignored. Payloads contain fixed status text only.
-    func notify(runID: UUID, state: RunState) async {
-        guard isEnabled, !isApplicationForeground(), !Task.isCancelled,
+    /// foreground calls are ignored. A system activity already presenting the
+    /// result needs no duplicate alert. Payloads contain fixed status text only.
+    func notify(runID: UUID, state: RunState, systemActivityUpdated: Bool = false) async {
+        guard !systemActivityUpdated, isEnabled, !isApplicationForeground(), !Task.isCancelled,
               let body = Self.body(for: state) else { return }
         let id = runID.uuidString.lowercased()
         guard !scheduledRunIDs.contains(id), !inFlightRunIDs.contains(id) else { return }

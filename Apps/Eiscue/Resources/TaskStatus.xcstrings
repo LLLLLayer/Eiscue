@@ -466,13 +466,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn ended"
+            "value": "Task complete"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本轮已结束"
+            "value": "任务已完成"
           }
         }
       }

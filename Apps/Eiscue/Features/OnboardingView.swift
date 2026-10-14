@@ -143,6 +143,9 @@ private struct DeveloperConnectionSetupView: View {
                             Text(text("setup.inlineSystemPreparation")).font(.subheadline).foregroundStyle(.secondary)
                             Text(text("setup.systemPairingDetail")).font(.caption).foregroundStyle(.secondary)
                         } else {
+                            if model.deviceConnectionMethod == .localVPN {
+                                Text(text("setup.systemPairingAvailability")).font(.caption).foregroundStyle(.secondary)
+                            }
                             ComputerPairingHelpView()
                         }
                     }
@@ -225,26 +228,29 @@ private struct DeveloperConnectionSetupView: View {
             }
             .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
             .disabled(model.isBusy).accessibilityIdentifier("onboardingConnectDeviceButton")
-        } else if model.hasTransferredPairingIdentity {
-            Button(text("setup.importTransfer")) {
-                Task { showsFeedback = true; await model.importTransferredPairingIdentity() }
-            }
-            .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
-            .disabled(model.isBusy).accessibilityIdentifier("onboardingImportPairingButton")
-        } else if usesSystemPairing {
-            Button(String(localized: "device.startPairing")) {
-                Task {
-                    showsFeedback = true
-                    if !model.localTunnel.isConnected { await model.startLocalTunnel() }
-                    if model.localTunnel.isConnected { model.startPairing() }
-                }
-            }
-            .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
-            .disabled(model.isBusy).accessibilityIdentifier("startPairingButton")
         } else {
-            Button(text("setup.chooseExistingFile")) { importsIdentity = true }
-                .buttonStyle(.glass)
+            if usesSystemPairing {
+                Button(String(localized: "device.startPairing")) {
+                    Task {
+                        showsFeedback = true
+                        if !model.localTunnel.isConnected { await model.startLocalTunnel() }
+                        if model.localTunnel.isConnected { model.startPairing() }
+                    }
+                }
+                .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
+                .disabled(model.isBusy).accessibilityIdentifier("startPairingButton")
+            }
+            if model.hasTransferredPairingIdentity {
+                Button(text("setup.importTransfer")) {
+                    Task { showsFeedback = true; await model.importTransferredPairingIdentity() }
+                }
+                .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
                 .disabled(model.isBusy).accessibilityIdentifier("onboardingImportPairingButton")
+            } else {
+                Button(text("setup.chooseExistingFile")) { importsIdentity = true }
+                    .buttonStyle(.glass)
+                .disabled(model.isBusy).accessibilityIdentifier("onboardingImportPairingButton")
+            }
         }
     }
 

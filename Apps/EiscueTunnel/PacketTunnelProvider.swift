@@ -17,6 +17,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private var state: State = .idle
     private var pendingStart: StartReply?
     private var outstandingRead: ReadRequest?
+    #if DEBUG
+    private var tcpDiagnostics = TCPDiagnostics()
+    #endif
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let reply = StartReply(completionHandler)
@@ -41,6 +44,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
             generation &+= 1
             let startingGeneration = generation
+            #if DEBUG
+            tcpDiagnostics = TCPDiagnostics(generation: startingGeneration)
+            #endif
             activeGeneration = startingGeneration
             state = .starting
             pendingStart = reply
@@ -66,6 +72,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         return
                     }
                     self.state = .running
+                    #if DEBUG
+                    self.tcpDiagnostics.running = 1
+                    #endif
                     self.finishStart(error: nil)
                     self.enqueueRead()
                 }
@@ -83,6 +92,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             reply.call()
         }
     }
+
+    #if DEBUG
+    // Single-byte query; the response contains only aggregate numeric counters.
+    override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)? = nil) {
+        guard let completionHandler else { return }
+        let reply = MessageReply(completionHandler)
+        queue.async { [self] in
+            guard messageData == Data([1]) else { reply.call(nil); return }
+            reply.call(try? JSONEncoder().encode(tcpDiagnostics))
+        }
+    }
+    #endif
 
     private func enqueueRead() {
         queue.async { [weak self] in self?.beginReadIfNeeded() }
@@ -113,10 +134,20 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         }
 
         var reflected: [Data] = []
+        #if DEBUG
+        var reflectedKinds: [TCPKind] = []
+        #endif
         for index in packets.indices {
+            #if DEBUG
+            let kind = Self.tcpKind(packets[index], protocolFamily: protocols[index].int32Value)
+            if let kind { tcpDiagnostics.received.record(kind) }
+            #endif
             guard protocols[index] == NSNumber(value: AF_INET),
                   let packet = reflector.reflect(packets[index], protocolFamily: AF_INET) else { continue }
             reflected.append(packet)
+            #if DEBUG
+            if let kind { tcpDiagnostics.matched.record(kind); reflectedKinds.append(kind) }
+            #endif
         }
         if !reflected.isEmpty,
            !packetFlow.writePackets(reflected, withProtocols: Array(repeating: NSNumber(value: AF_INET), count: reflected.count)) {
@@ -124,6 +155,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             cancelTunnelWithError(TunnelError.packetWriteFailed)
             return
         }
+        #if DEBUG
+        // Successful submission to packetFlow is not proof of TCP delivery.
+        for kind in reflectedKinds { tcpDiagnostics.injected.record(kind) }
+        #endif
         enqueueRead()
     }
 
@@ -137,8 +172,61 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         generation &+= 1
         activeGeneration = nil
         state = .idle
+        #if DEBUG
+        tcpDiagnostics.running = 0
+        #endif
         finishStart(error: startError)
     }
+
+    #if DEBUG
+    private enum TCPKind { case syn, synAck, ack }
+
+    private struct TCPCounts: Encodable {
+        var syn: UInt64 = 0
+        var synAck: UInt64 = 0
+        var ack: UInt64 = 0
+        mutating func record(_ kind: TCPKind) {
+            switch kind {
+            case .syn: syn &+= 1
+            case .synAck: synAck &+= 1
+            case .ack: ack &+= 1
+            }
+        }
+    }
+
+    private struct TCPDiagnostics: Encodable {
+        let version: UInt8 = 1
+        var generation: UInt64 = 0
+        var running: UInt8 = 0
+        var received = TCPCounts()
+        var matched = TCPCounts()
+        var injected = TCPCounts()
+    }
+
+    private static func tcpKind(_ packet: Data, protocolFamily: Int32) -> TCPKind? {
+        guard protocolFamily == AF_INET, packet.count >= 40 else { return nil }
+        return packet.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> TCPKind? in
+            guard bytes[0] >> 4 == 4, bytes[9] == 6 else { return nil }
+            let ipLength = Int(bytes[0] & 0x0F) * 4
+            let totalLength = Int(bytes[2]) * 256 + Int(bytes[3])
+            let fragmentOffset = (Int(bytes[6]) * 256 + Int(bytes[7])) & 0x1FFF
+            guard ipLength >= 20, totalLength == bytes.count, ipLength + 20 <= totalLength,
+                  fragmentOffset == 0 else { return nil }
+            let tcpLength = Int(bytes[ipLength + 12] >> 4) * 4
+            guard tcpLength >= 20, ipLength + tcpLength <= totalLength else { return nil }
+            let flags = bytes[ipLength + 13]
+            if flags & 0x02 != 0 { return flags & 0x10 != 0 ? .synAck : .syn }
+            // This includes ACKs carrying data; it does not assert handshake completion.
+            return flags & 0x10 != 0 ? .ack : nil
+        }
+    }
+
+    private final class MessageReply: @unchecked Sendable {
+        private let handler: (Data?) -> Void
+        init(_ handler: @escaping (Data?) -> Void) { self.handler = handler }
+        func call(_ data: Data?) { handler(data) }
+    }
+    #endif
 
     private enum State { case idle, starting, running }
 

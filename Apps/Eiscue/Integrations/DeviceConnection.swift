@@ -7,7 +7,30 @@ enum DevicePairingSupport {
     }
 }
 
+enum DeviceMicrophonePolicy {
+    static func blocksDictation(method: DeviceConnectionMethod?, isConnected: Bool,
+                                on version: OperatingSystemVersion) -> Bool {
+        guard isConnected, version.majorVersion >= 27 else { return false }
+        switch method {
+        case .localVPN, .usbBoard:
+            // Both routes start the same DisplayService session on iOS 27.
+            // Remote-muted input was observed on the local-VPN test phone;
+            // the USB network relay shares that backend, but is not mic-tested.
+            return true
+        case .bluetoothBoard, nil:
+            // Both BLE and USB HID use this route with ReplayKit. USB HID is
+            // not usbBoard (the network relay); neither uses DisplayService.
+            return false
+        }
+    }
+}
+
 extension AppModel {
+    var isDictationBlockedByDeviceConnection: Bool {
+        DeviceMicrophonePolicy.blocksDictation(method: activeDeviceConnectionMethod, isConnected: isDeviceReady,
+                                               on: ProcessInfo.processInfo.operatingSystemVersion)
+    }
+
     var supportsSystemPairing: Bool {
         DevicePairingSupport.supportsSystemPairing(on: ProcessInfo.processInfo.operatingSystemVersion)
     }
@@ -151,9 +174,6 @@ extension AppModel {
             if deviceOperationID == operationID {
                 isConnecting = false; deviceConnectionTask = nil
                 if !isDeviceReady { activeDeviceConnectionMethod = nil }
-                // Give the system authorization screen time to dismiss. An idle
-                // connection must still be released if the app stays in background.
-                scheduleIdleDeviceBackgroundRelease(operationID: operationID, delay: .milliseconds(200))
             }
         }
         do {
@@ -265,7 +285,7 @@ extension AppModel {
                     Task { await self?.disconnectDevice(expectedPairingID: id) }
                 })
                 guard pairingLeaseID == id else { return }
-                for try await event in await deviceClient.beginPairing() {
+                for try await event in await deviceClient.beginPairing(configuration: .defaults) {
                     try Task.checkCancellation()
                     guard pairingLeaseID == id else { return }
                     let phase: PairingStatusPresentation
@@ -334,6 +354,7 @@ extension AppModel {
         await refreshDeviceStatus()
     }
 
+    #if DEBUG
     func previewScreenshot() async {
         guard !isBusy, isDeviceReady else { return }
         let operationID = UUID(); deviceOperationID = operationID
@@ -346,4 +367,5 @@ extension AppModel {
             screenshot = frame; connectionMessage = String(localized: "connection.previewCaptured")
         } catch { if deviceOperationID == operationID { screenshot = nil; deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
     }
+    #endif
 }

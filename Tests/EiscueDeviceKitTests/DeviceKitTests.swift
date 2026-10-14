@@ -105,6 +105,21 @@ import Testing
         #expect(await controller.disconnected)
     }
 
+    @Test func localVPNPairingNeverFallsBackToGenericPairing() async throws {
+        let controller = RecordingController(frame: screenshot())
+        let client = DeviceClient(controller: controller)
+        let local = await client.beginPairing(configuration: .defaults)
+        await #expect(throws: DeviceControlError.unsupported) {
+            for try await _ in local { Issue.record("Unsupported local pairing must not yield events") }
+        }
+        #expect(await controller.genericPairingCalls == 0)
+        let generic = await client.beginPairing()
+        var completed = false
+        for try await event in generic { if case .completed = event { completed = true } }
+        #expect(completed)
+        #expect(await controller.genericPairingCalls == 1)
+    }
+
     @Test func unknownDeliveryIsMachineReadable() {
         #expect(DeviceControlError.deliveryUnknown("transport").isDeliveryUnknown)
         #expect(!DeviceControlError.staleFrame.isDeliveryUnknown)
@@ -158,6 +173,13 @@ private final class MemoryIdentityStore: PairingIdentityStore, @unchecked Sendab
 }
 
 private actor RecordingController: DeviceController {
+    var genericPairingCalls = 0
+    func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
+        genericPairingCalls += 1
+        return AsyncThrowingStream { continuation in
+            continuation.yield(.completed); continuation.finish()
+        }
+    }
     let frame: DeviceScreenshot
     var tappedFrame: UUID?
     var disconnected = false

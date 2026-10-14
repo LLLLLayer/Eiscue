@@ -683,7 +683,7 @@
   },
   "eiscue_backend_changes": {
     "actell_revision": "032864e2339da19ee13025c471f4cf1dfdf4c5cd",
-    "note": "Paths are relative to this manifest. These entries record hotspot relay removal from the actell-derived backend; the Device Hub snapshot entries above retain their original scope.",
+    "note": "Paths are relative to this manifest. These entries record local changes to the actell-derived backend; the Device Hub snapshot entries above retain their original scope.",
     "files": {
       "../Sources/PhoneAgentNCM/InterfaceBinding.swift": {
         "sha256": "fa16add1d46ea9257517c0d2896bb3f7da7715555169500d91f8049483399256",
@@ -692,16 +692,46 @@
         "change": "Remove the Wi-Fi hotspot board transport and /30 subnet selection; retain USB /24 interface validation."
       },
       "../Sources/PhoneAgentNCM/NativeDeveloperServices.swift": {
-        "sha256": "b305ecdbf3d1ea441cc0d82dc5fc79b24961e8f7be61c8637ae35acb386f73f1",
+        "sha256": "fc7f4ec761d75ee46c910892fd9db7551141c22681f95eb17eecb102520aac7d",
         "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/NativeDeveloperServices.swift",
         "modified": true,
-        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport."
+        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport. Validate DisplayService input geometry against the latest assembled-picture decode cursor instead of the RTCP-confirmed screenshot cursor, so incoming animation packets alone do not reject input; retain decoder catch-up and generation checks."
       },
       "src/relay.rs": {
         "sha256": "94fe98b4d2cda66eed0a48eced9346d7d00e89f171c0e62256fb619dc14e29e0",
         "source": "ncm-dev/rust/src/relay.rs",
         "modified": true,
         "change": "Remove the Wi-Fi hotspot /30 subnet allowance from the Darwin relay socket binding guard; retain USB /24 binding."
+      },
+      "src/pairing.rs": {
+        "sha256": "ec33d3887726936954aad44049ef24b987cabcc854db074558c9c6642e4625c7",
+        "source": "ncm-dev/rust/src/pairing.rs",
+        "modified": true,
+        "change": "Use Eiscue as the advertised controller/host display name and a fresh UUIDv4 identifier for each explicit new pairing, consistently across discovery, protocol identity and persistence. Emit an empty kind 10 / stage 1 diagnostic event after TCP accept without changing listener family or wire protocol."
+      },
+      "../Sources/PhoneAgentNCM/RemotePairingSession.swift": {
+        "sha256": "bd6a577c0d2fd3e5950dcabf82c7e7b4f3d346de5170d6899aa4ff88f2057420",
+        "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/RemotePairingSession.swift",
+        "modified": true,
+        "change": "Validate the empty TCP-accepted diagnostic event and log numeric pairing phases at notice level; explicit Debug-only --pairing-diagnostics writes only stage, previousStage and elapsedSeconds to a file-protected cache report. No PINs, endpoints, identifiers, packets, identities or raw errors are logged or included in that report."
+      },
+      "../Sources/CNCMBackend/include/ncm_backend.h": {
+        "sha256": "fb20491ec1259b54a466d3f0d1c98286a51b3aea905425964bd6c9a507177823",
+        "source": "ncm-dev/PhoneAgentNCM/Sources/CNCMBackend/include/ncm_backend.h",
+        "modified": true,
+        "change": "Document kind 10 as empty TCP-accepted stage 1 only on pairing handles, distinguished from ordinary control-handle touch preparation failures. Add a separate numeric video decode-cursor struct and getter; existing ABI layouts remain unchanged."
+      },
+      "src/ffi.rs": {
+        "sha256": "de60520b4305140d374cdf87f4592a8ac7ec82fa59d4f589e462bcf47a2b9818",
+        "source": "ncm-dev/rust/src/ffi.rs",
+        "modified": true,
+        "change": "Extend the consent/listener-close fixture to validate the empty TCP-accepted event, handle revocation, connection closure and port release. Add two-attempt C ABI coverage requiring distinct UUIDv4 identifiers with matching advertisement TXT identifiers. Export the screen-authorized video decode cursor with invalid/closed handle and null-pointer coverage."
+      },
+      "src/video.rs": {
+        "sha256": "f7c9006ef92f4e5b486f35c738eb4154a63d0997866b739015906158915ec06d",
+        "source": "ncm-dev/rust/src/video.rs",
+        "modified": true,
+        "change": "Separate the latest assembled-picture decode cursor from RTCP screenshot confirmation. Receiving new RTP packets alone leaves input geometry valid; reference-chain resets, codec changes and display-size metadata changes revoke it. Cover continuous incoming pictures, queued layout changes and rotation back to the original dimensions."
       }
     }
   }

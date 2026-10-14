@@ -1,5 +1,5 @@
-# 只读搜索检查
+# Read-only search check
 
-根据用户明确指定的 App 和关键词执行搜索。在首次操作前观察屏幕，找到搜索入口，输入关键词，然后观察结果。用户没有指定 App 或关键词时先询问。
+Search using the app and keywords explicitly specified by the user. Observe the screen before the first action, find the search field, enter the keywords, and then observe the results. Ask first if the user has not specified the app or keywords.
 
-只读取搜索结果；不发送消息、不购买、不删除、不修改账号设置。说明观察到的结果、未通过的步骤和不确定项。没有读到结果时不要声称搜索成功。
+Read search results only. Do not send messages, make purchases, delete anything, or change account settings. Explain the observed results, unsuccessful steps, and uncertainties. Do not claim the search succeeded without reading the results.

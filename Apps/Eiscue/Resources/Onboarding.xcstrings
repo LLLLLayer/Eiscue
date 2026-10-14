@@ -313,13 +313,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tap Start pairing in the guide. Choose Eiscue in the system pairing settings and enter the code shown in the app."
+            "value": "Tap Start pairing. In Settings → Privacy & Security → Developer Mode, select Eiscue, then tap Pair. Return to Eiscue for the code and enter it in Settings. Return to Eiscue when done."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在引导中点“开始配对”，然后在系统配对设置中选择 Eiscue，输入 App 显示的配对码。"
+            "value": "点“开始配对”，前往「设置 → 隐私与安全性 → 开发者模式」，选择 Eiscue，再点“配对”。返回 App 查看验证码，回到系统输入；完成后返回 App。"
           }
         }
       }
@@ -1357,6 +1357,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "导入后点“连接设备”，按系统提示完成授权。"
+          }
+        }
+      }
+    },
+    "setup.systemPairingAvailability": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing directly in Settings requires iOS 27 or later. On iOS 26, pair using a computer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统直接配对需 iOS 27 或更新版本；iOS 26 请通过电脑配对。"
           }
         }
       }

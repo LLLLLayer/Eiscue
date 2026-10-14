@@ -62,6 +62,16 @@ final class RunToolDetailsTests: XCTestCase {
         XCTAssertTrue(report.contains("fixture-model"))
     }
 
+    func testTimelineInterleavesStepsAndLogsWithoutDroppingEither() {
+        let event = RunLogEntry(kind: "tool.finished", summary: "device_tap")
+        let before = ToolActivity(id: "before", name: "device_tap", startedAt: event.date.addingTimeInterval(-1))
+        let after = ToolActivity(id: "after", name: "device_screenshot", startedAt: event.date.addingTimeInterval(1))
+        let run = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: event.date,
+                            scope: .control, model: "fixture", skill: nil, state: .completed, detail: "",
+                            events: [event], activities: [after, before])
+        XCTAssertEqual(run.timeline.map(\.id), ["activity:before", "event:\(event.id)", "activity:after"])
+    }
+
     private func result(id: String, name: String = "device_screenshot", frame: UUID) -> ToolActivity {
         ToolActivity(id: id, name: name, endedAt: Date(),
                      output: "Action submitted. frameId=\(frame.uuidString); width=100; height=200; capturedAt=2026-10-14T10:00:00Z.")

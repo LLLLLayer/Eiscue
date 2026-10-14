@@ -70,6 +70,26 @@ final class TaskNotificationManagerTests: XCTestCase {
         XCTAssertEqual(client.added.count, 4)
     }
 
+    func testSystemActivityResultSuppressesDuplicateAlertAndMissingActivityUsesNotification() async {
+        let client = RecordingNotificationClient()
+        client.status = .authorized
+        let manager = makeManager(client: client)
+        await manager.setEnabled(true)
+        let reads = client.statusReads
+
+        for state in [RunState.completed, .paused, .failed, .interrupted] {
+            await manager.notify(runID: UUID(), state: state, systemActivityUpdated: true)
+        }
+        XCTAssertTrue(client.added.isEmpty)
+        XCTAssertEqual(client.statusReads, reads, "An existing system result should not start another notification flow.")
+
+        let runID = UUID()
+        await manager.notify(runID: runID, state: .completed, systemActivityUpdated: false)
+        await manager.notify(runID: runID, state: .completed, systemActivityUpdated: false)
+        XCTAssertEqual(client.added.count, 1)
+        XCTAssertEqual(client.added.first?.body, localized("notifications.task.completed"))
+    }
+
     func testRevokedSystemPermissionDisablesDeliveryAndPersistsOptOut() async {
         let client = RecordingNotificationClient()
         client.status = .authorized

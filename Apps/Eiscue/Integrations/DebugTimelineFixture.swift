@@ -4,6 +4,18 @@ import Foundation
 import UIKit
 
 extension AppModel {
+    func installLongConversationFixture() {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+              ProcessInfo.processInfo.arguments.contains("--long-conversation-fixture") else { return }
+        let messages = (0..<300).map { index in
+            AgentMessage(role: index.isMultiple(of: 2) ? .user : .assistant,
+                         text: index == 299 ? "LATEST_HISTORY_MESSAGE" : "History entry \(index)\n\nA paragraph for scrolling through a long conversation.",
+                         createdAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(index)))
+        }
+        let conversation = Conversation(title: "Long history fixture", messages: messages)
+        conversations = [conversation]; runs = []; selectedConversationID = conversation.id
+    }
+
     /// Exercises the real transcript with deterministic tool output, without
     /// connecting a device, requesting a model or persisting screenshot bytes.
     func installToolImagePreviewFixture() {

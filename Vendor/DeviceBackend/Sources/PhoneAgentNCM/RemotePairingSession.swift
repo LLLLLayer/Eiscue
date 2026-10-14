@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
 import CNCMBackend
+import OSLog
+
+private let pairingLogger = Logger(subsystem: "org.eiscue.device", category: "connection")
 
 /// Versioned app-owned record. Never interpolated into logs or user messages.
 public struct RemotePairRecord: Codable {
@@ -35,6 +38,30 @@ public enum PairingUpdate {
     /// Storage is caller-owned. Persistence errors cancel before protocol acknowledgement.
     public func pair(authorized: Bool, persist: (RemotePairRecord) throws -> Void,
                      update: (PairingUpdate) throws -> Void) async throws {
+        var diagnosticStage = 0, diagnosticFinished = false
+        let diagnosticStart = ContinuousClock.now
+        defer {
+            if !diagnosticFinished {
+                pairingLogger.error("pairing stage=7 previous=\(diagnosticStage, privacy: .public)")
+                logStage(7)
+            }
+        }
+        func logStage(_ stage: Int) {
+            let previousStage = diagnosticStage
+            diagnosticStage = stage
+            pairingLogger.notice("pairing stage=\(stage, privacy: .public)")
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--pairing-diagnostics") {
+                let elapsed = diagnosticStart.duration(to: .now).components
+                let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+                let report: [String: Any] = ["stage": stage, "previousStage": previousStage, "elapsedSeconds": seconds]
+                if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) {
+                    try? data.write(to: URL.cachesDirectory.appendingPathComponent("EiscuePairingDiagnostic.json"), options: [.atomic, .completeFileProtection])
+                }
+            }
+            #endif
+        }
+        logStage(-1)
         guard authorized else { throw NativeBackendError.authorizationRequired }
         guard handle == 0 else { throw NativeBackendError.busy }
         try Task.checkCancellation()
@@ -64,10 +91,15 @@ public enum PairingUpdate {
             case 5:
                 let advertisement = try JSONDecoder().decode(PairingAdvertisement.self, from: data)
                 guard advertisement.port != 0, !advertisement.identifier.isEmpty, advertisement.txt["identifier"] == advertisement.identifier else { throw NativeBackendError.malformedEvent }
+                logStage(0)
                 try update(.listening(advertisement))
+            case 10:
+                guard event.stage == 1, event.cause == 0, event.size == 0, data.isEmpty else { throw NativeBackendError.malformedEvent }
+                logStage(1)
             case 6:
                 guard let pin = String(data: data, encoding: .utf8), !pin.isEmpty, pin.count <= 12,
                       pin.allSatisfy({ $0.isNumber || $0 == "-" }) else { throw NativeBackendError.malformedEvent }
+                logStage(2)
                 try update(.code(pin))
             case 7, 8:
                 let record = try JSONDecoder().decode(RemotePairRecord.self, from: data)
@@ -76,11 +108,16 @@ public enum PairingUpdate {
                 try persist(record)
                 let ack = ncm_pairing_ack(token, event.kind == 8 ? 2 : 1)
                 guard ack == 0 else { throw NativeBackendError.transport(code: ack) }
+                logStage(record.committed ? 4 : 3)
                 try update(.persisted(committed: record.committed))
-            case 9: try update(.completed); return
+            case 9:
+                try update(.completed)
+                logStage(5); diagnosticFinished = true
+                return
             default: throw NativeBackendError.malformedEvent
             }
         }
+        logStage(6); diagnosticFinished = true
         throw NCMError.timeout
     }
 }

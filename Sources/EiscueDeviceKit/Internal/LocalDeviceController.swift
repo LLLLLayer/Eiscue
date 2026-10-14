@@ -11,6 +11,8 @@ import OSLog
     private var boardDiscovery: (any USBBoardDiscovering)?
     private var pairing: RemotePairingSession?
     private var advertisement: NetService?
+    private var loopbackAdvertisement: LoopbackPairingPublisher?
+    private var loopbackAdvertisementID: UUID?
     private var pairingTask: Task<Void, Never>?
     private var pairingContinuation: AsyncThrowingStream<DevicePairingEvent, Error>.Continuation?
     private var epoch = UUID()
@@ -58,12 +60,22 @@ import OSLog
     }
 
     func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
+        await beginPairing(localVPNConfiguration: nil)
+    }
+
+    func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> {
+        await beginPairing(localVPNConfiguration: configuration)
+    }
+
+    private func beginPairing(localVPNConfiguration: LocalVPNConfiguration?) async -> AsyncThrowingStream<DevicePairingEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<DevicePairingEvent, Error>.makeStream(bufferingPolicy: .bufferingNewest(16))
+        let vpn: VPNLoopbackConfiguration?
         do {
             guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
             // Reject before starting the listener or reading an identity. The
             // responder protocol cannot make a missing iOS 26 Settings UI appear.
             try LocalPairingRequirements.validateSystemPairing(on: ProcessInfo.processInfo.operatingSystemVersion)
+            vpn = try localVPNConfiguration.map { try VPNLoopbackConfiguration(localAddress: $0.localAddress, peerAddress: $0.peerAddress) }
             guard !busy, pairingTask == nil, mediaReleaseTask == nil else { throw DeviceControlError.busy }
             guard try identityStore.load() == nil else { throw DeviceControlError.pairingAlreadyExists }
         } catch { continuation.finish(throwing: error); return stream }
@@ -79,6 +91,7 @@ import OSLog
                 session.close()
                 if epoch == token {
                     advertisement?.stop(); advertisement = nil
+                    loopbackAdvertisement?.stop(); loopbackAdvertisement = nil; loopbackAdvertisementID = nil
                     pairing = nil; pairingTask = nil; pairingContinuation = nil; busy = false
                 }
             }
@@ -95,6 +108,24 @@ import OSLog
                     guard self.epoch == token else { throw CancellationError() }
                     switch update {
                     case .listening(let info):
+                        if let vpn {
+                            let publicationID = UUID()
+                            self.loopbackAdvertisement?.stop()
+                            self.loopbackAdvertisementID = publicationID
+                            self.loopbackAdvertisement = try LoopbackPairingPublisher(advertisement: info, configuration: vpn) { [weak self] event in
+                                Task { @MainActor in
+                                    guard let self, self.epoch == token, self.loopbackAdvertisementID == publicationID else { return }
+                                    switch event {
+                                    case .published: self.pairingContinuation?.yield(.waitingForDevice)
+                                    case .failed(let error):
+                                        self.pairingContinuation?.finish(throwing: error)
+                                        self.disconnectNow()
+                                        self.failure = error.localizedDescription
+                                    }
+                                }
+                            }
+                            break
+                        }
                         let service = NetService(domain: "local.", type: "_remotepairing-pairable-host._tcp.", name: info.identifier, port: Int32(info.port))
                         service.delegate = self
                         guard service.setTXTRecord(NetService.data(fromTXTRecord: info.txt.mapValues { Data($0.utf8) })) else {
@@ -257,6 +288,13 @@ import OSLog
     }
     #endif
 
+    func finishTask() async throws {
+        guard !busy else { throw DeviceControlError.busy }
+        // Native actions finish their press/release sequence before returning.
+        // Drop the task's coordinates without closing the user's connection.
+        frames.invalidate()
+    }
+
     func disconnect() async {
         if let release = disconnectNow() { _ = await release.value }
     }
@@ -266,6 +304,7 @@ import OSLog
         pairing?.close(); pairing = nil
         pairingContinuation?.finish(throwing: CancellationError()); pairingContinuation = nil
         advertisement?.stop(); advertisement = nil
+        loopbackAdvertisement?.stop(); loopbackAdvertisement = nil; loopbackAdvertisementID = nil
         discovery?.cancel(); discovery = nil
         boardDiscovery?.cancel(); boardDiscovery = nil
         let previous = services; services = nil

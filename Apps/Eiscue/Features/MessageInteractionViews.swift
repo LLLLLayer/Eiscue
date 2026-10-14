@@ -2,11 +2,16 @@ import EiscueAgentKit
 import SwiftUI
 import UIKit
 
-struct ChatMessageRow: View {
+struct ChatMessageRow: View, Equatable {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
     let message: AgentMessage
     var showsActions = true
+    var isUnsubmitted = false
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.message == rhs.message && lhs.showsActions == rhs.showsActions && lhs.isUnsubmitted == rhs.isUnsubmitted
+    }
     @State private var showsSelection = false
     @State private var canShareAttachments = false
     @State private var checkedAttachments = false
@@ -25,7 +30,7 @@ struct ChatMessageRow: View {
                     if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
                     else if !message.text.isEmpty { Text(verbatim: message.text).textSelection(.enabled) }
                     ForEach(message.attachments) { attachment in ChatAttachmentView(attachment: attachment) }
-                    if model.unsubmittedMessageIDs.contains(message.id) {
+                    if isUnsubmitted {
                         Text("assistant.unsubmittedMessage").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
@@ -155,11 +160,14 @@ struct ChatAttachmentView: View {
     }
 }
 
-struct ToolActivityRow: View {
+struct ToolActivityRow: View, Equatable {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let activity: ToolActivity
     var showsProgress = true
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.activity == rhs.activity && lhs.showsProgress == rhs.showsProgress
+    }
     @State private var isExpanded = false
 
     private var previews: [ToolImagePreview] {

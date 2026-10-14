@@ -54,22 +54,27 @@ final class SidebarUITests: XCTestCase {
     }
 
     @MainActor
-    func testLeftSwipeAcrossBlankChatAreaOpensSidebar() {
+    func testRightSwipeAcrossBlankChatAreaOpensSidebar() {
         let app = launch()
         hideWideSidebar(in: app)
         let origin = app.coordinate(withNormalizedOffset: .zero)
         let y = app.buttons["sendMessageButton"].frame.minY - 60
-        let start = origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: y))
-        let end = origin.withOffset(CGVector(dx: app.frame.width * 0.32, dy: y))
+        let start = origin.withOffset(CGVector(dx: app.frame.width * 0.25, dy: y))
+        let end = origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: y))
         start.press(forDuration: 0.05, thenDragTo: end)
         let settings = app.buttons["sidebarSettingsButton"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         XCTAssertTrue(settings.isHittable)
         XCTAssertTrue(app.buttons["newConversationButton"].isHittable)
+        let closeStart = origin.withOffset(CGVector(dx: min(280, app.frame.width * 0.7), dy: y))
+        let closeEnd = origin.withOffset(CGVector(dx: 12, dy: y))
+        closeStart.press(forDuration: 0.05, thenDragTo: closeEnd)
+        XCTAssertTrue(settings.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["sendMessageButton"].isHittable)
     }
 
     @MainActor
-    func testLeftSwipeWithKeyboardPreservesDraftAndSendAppearance() {
+    func testRightSwipeWithKeyboardPreservesDraftAndSendAppearance() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
@@ -97,8 +102,8 @@ final class SidebarUITests: XCTestCase {
 
             let origin = app.coordinate(withNormalizedOffset: .zero)
             let y = input.frame.minY - 35
-            let start = origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: y))
-            let end = origin.withOffset(CGVector(dx: app.frame.width * 0.32, dy: y))
+            let start = origin.withOffset(CGVector(dx: app.frame.width * 0.25, dy: y))
+            let end = origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: y))
             start.press(forDuration: 0.05, thenDragTo: end)
             let settings = app.buttons["sidebarSettingsButton"]
             XCTAssertTrue(settings.waitForExistence(timeout: 5))

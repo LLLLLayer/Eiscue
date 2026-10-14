@@ -62,10 +62,9 @@ private struct ToolImagePreviewHost: ViewModifier {
                     self.selection = nil
                 }
                 .id(selection.id)
-                .ignoresSafeArea()
                 .zIndex(100)
             }
-        }.statusBarHidden(selection != nil)
+        }
     }
 }
 
@@ -79,49 +78,52 @@ private struct ToolImageViewer: View {
     @State private var closing = false
 
     var body: some View {
-        GeometryReader { geometry in
-            let bounds = CGRect(origin: .zero, size: geometry.size)
-            let origin = geometry.frame(in: .global).origin
-            let source = sourceFrame.offsetBy(dx: -origin.x, dy: -origin.y)
-            let target = fittedRect(in: bounds.insetBy(dx: 0, dy: max(16, geometry.safeAreaInsets.top)))
-            let start = source.isEmpty || reduceMotion ? target : fittedRect(in: source)
-            let frame = expanded ? target : start
-            ZStack(alignment: .topTrailing) {
-                Color.black.opacity(expanded ? 1 : 0).accessibilityHidden(true)
-                Image(uiImage: image).resizable().scaledToFit()
-                    .frame(width: frame.width, height: frame.height)
-                    .clipShape(RoundedRectangle(cornerRadius: expanded ? 0 : 12))
-                    .position(x: frame.midX, y: frame.midY)
-                    .opacity(interactive ? 0 : 1)
-                    .accessibilityHidden(true)
-                ZoomableToolImage(image: image)
-                    .padding(.vertical, max(16, geometry.safeAreaInsets.top))
-                    .opacity(interactive ? 1 : 0)
-                    .allowsHitTesting(interactive && !closing)
-                    .accessibilityLabel(chatText("chat.activity.imagePreview"))
-                    .accessibilityIdentifier("toolActivityImageViewer")
-                Button(action: close) {
-                    Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 44, height: 44)
+        NavigationStack {
+            GeometryReader { geometry in
+                let bounds = CGRect(origin: .zero, size: geometry.size)
+                let origin = geometry.frame(in: .global).origin
+                let source = sourceFrame.offsetBy(dx: -origin.x, dy: -origin.y)
+                let target = fittedRect(in: bounds.insetBy(dx: 0, dy: 16))
+                let start = source.isEmpty || reduceMotion ? target : fittedRect(in: source)
+                let frame = expanded ? target : start
+                ZStack(alignment: .topTrailing) {
+                    Color.black.opacity(expanded ? 1 : 0).ignoresSafeArea().accessibilityHidden(true)
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .frame(width: frame.width, height: frame.height)
+                        .clipShape(RoundedRectangle(cornerRadius: expanded ? 0 : 12))
+                        .position(x: frame.midX, y: frame.midY)
+                        .opacity(interactive ? 0 : 1)
+                        .accessibilityHidden(true)
+                    ZoomableToolImage(image: image)
+                        .padding(.vertical, 16)
+                        .opacity(interactive ? 1 : 0)
+                        .allowsHitTesting(interactive && !closing)
+                        .accessibilityLabel(chatText("chat.activity.imagePreview"))
+                        .accessibilityIdentifier("toolActivityImageViewer")
                 }
-                .buttonStyle(.glass).buttonBorderShape(.circle)
-                .tint(.black).foregroundStyle(.white)
-                .environment(\.colorScheme, .dark)
-                .accessibilityLabel(String(localized: "common.done"))
-                .accessibilityIdentifier("closeToolImagePreviewButton")
-                .padding(.top, geometry.safeAreaInsets.top + 12).padding(.trailing, 16)
-                .opacity(expanded ? 1 : 0)
-                .disabled(closing)
+                .accessibilityElement(children: .contain)
+                .accessibilityAddTraits(.isModal)
+                .accessibilityAction(.escape, close)
+                .task {
+                    await Task.yield()
+                    withAnimation(animation, completionCriteria: .logicallyComplete) {
+                        expanded = true
+                    } completion: { if !closing { interactive = true } }
+                }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityAddTraits(.isModal)
-            .accessibilityAction(.escape, close)
-            .task {
-                await Task.yield()
-                withAnimation(animation, completionCriteria: .logicallyComplete) {
-                    expanded = true
-                } completion: { if !closing { interactive = true } }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: close) { Image(systemName: "xmark") }
+                        .foregroundStyle(.white)
+                        .accessibilityLabel(String(localized: "common.done"))
+                        .accessibilityIdentifier("closeToolImagePreviewButton")
+                        .opacity(expanded ? 1 : 0).disabled(closing)
+                }
             }
-        }
+        }.background(Color.black.opacity(expanded ? 1 : 0))
     }
 
     private var animation: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.9) }

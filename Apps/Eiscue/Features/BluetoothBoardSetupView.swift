@@ -80,18 +80,20 @@ struct BluetoothBoardSetupView: View {
                     }
                 }
             }
-            SurfaceCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    step("3", "bluetooth.verifyTitle", complete: model.isBluetoothPointerVerified)
-                    Text(text(model.isBluetoothPointerVerified ? "bluetooth.readyDetail" : "bluetooth.verifyDetail"))
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Button(text(model.isBluetoothPointerVerified ? "bluetooth.verifyAgain" : "bluetooth.verifyButton")) {
-                        if model.bluetoothInputRoute == .usb { confirmsUSBPhone = true }
-                        else { showsValidation = true }
+            if !model.isBluetoothPointerVerified {
+                SurfaceCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        step("3", "bluetooth.verifyTitle", complete: false)
+                        Text(text("bluetooth.verifyDetail"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Button(text("bluetooth.verifyButton")) {
+                            if model.bluetoothInputRoute == .usb { confirmsUSBPhone = true }
+                            else { showsValidation = true }
+                        }
+                            .buttonStyle(.glass)
+                            .disabled(!model.isBluetoothConnected || !model.isBluetoothScreenShared || model.isBoardHardwareStopped || model.isBusy)
+                            .accessibilityIdentifier("bluetoothVerifyButton")
                     }
-                        .buttonStyle(.glass)
-                        .disabled(!model.isBluetoothConnected || !model.isBluetoothScreenShared || model.isBoardHardwareStopped || model.isBusy)
-                        .accessibilityIdentifier("bluetoothVerifyButton")
                 }
             }
             if let error = model.deviceConnectionError,
@@ -104,16 +106,7 @@ struct BluetoothBoardSetupView: View {
                     .accessibilityIdentifier("bluetoothReadinessHint")
             }
         }
-        .alert(text("bluetooth.usbConfirmTitle"), isPresented: $confirmsUSBPhone) {
-            Button(text("bluetooth.usbConfirmButton")) { showsValidation = true }
-            Button(String(localized: "common.cancel"), role: .cancel) {}
-        } message: { Text(text("bluetooth.usbConfirmDetail")) }
-        .fullScreenCover(isPresented: $showsValidation, onDismiss: {
-            Task { await model.refreshDeviceStatus(); model.bluetoothRevision += 1 }
-        }) {
-            BluetoothPointerValidation(controller: model.bluetoothController) { showsValidation = false }
-                .ignoresSafeArea().interactiveDismissDisabled()
-        }
+        .modifier(BluetoothInputCheckPresentation(showsValidation: $showsValidation, confirmsUSBPhone: $confirmsUSBPhone))
     }
 
     private var connectionLabel: String {
@@ -136,6 +129,26 @@ struct BluetoothBoardSetupView: View {
         }.foregroundStyle(.primary)
     }
     private func text(_ key: String) -> String { NSLocalizedString(key, tableName: "Bluetooth", comment: "") }
+}
+
+struct BluetoothInputCheckPresentation: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Binding var showsValidation: Bool
+    @Binding var confirmsUSBPhone: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert(String(localized: "bluetooth.usbConfirmTitle", table: "Bluetooth"), isPresented: $confirmsUSBPhone) {
+                Button(String(localized: "bluetooth.usbConfirmButton", table: "Bluetooth")) { showsValidation = true }
+                Button(String(localized: "common.cancel"), role: .cancel) {}
+            } message: { Text(String(localized: "bluetooth.usbConfirmDetail", table: "Bluetooth")) }
+            .fullScreenCover(isPresented: $showsValidation, onDismiss: {
+                Task { await model.refreshDeviceStatus(); model.bluetoothRevision += 1 }
+            }) {
+                BluetoothPointerValidation(controller: model.bluetoothController) { showsValidation = false }
+                    .ignoresSafeArea().interactiveDismissDisabled()
+            }
+    }
 }
 
 struct BoardHardwareStopNotice: View {

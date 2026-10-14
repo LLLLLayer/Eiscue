@@ -14,8 +14,18 @@ final class SpeechInputController {
     private(set) var state: State = .idle
     private(set) var transcript = ""
     private(set) var errorMessage: String?
+    private(set) var capture = SpeechAudioPipe.Snapshot()
+    var accessibilityStatus: String {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--speech-diagnostics") {
+            return "state=\(state) buffers=\(capture.buffers) frames=\(capture.frames) signal=\(capture.hasInput) recognized=\(!transcript.isEmpty)"
+        }
+        #endif
+        return statusText
+    }
     var isBusy: Bool { state != .idle }
     var isRecording: Bool { state == .recording }
+    var isHoldSession: Bool { isBusy && gate.mode == .hold }
     var statusText: String {
         switch state {
         case .idle: String(localized: "speech.hint", table: "Speech")
@@ -32,6 +42,7 @@ final class SpeechInputController {
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var finishTimeout: Task<Void, Never>?
     @ObservationIgnored private var recordingTimeout: Task<Void, Never>?
+    @ObservationIgnored private var captureMonitor: Task<Void, Never>?
     @ObservationIgnored private var recognizer: SFSpeechRecognizer?
     @ObservationIgnored private var recognitionTask: SFSpeechRecognitionTask?
     @ObservationIgnored private var engine: AVAudioEngine?
@@ -39,6 +50,9 @@ final class SpeechInputController {
     @ObservationIgnored private var hasTap = false
     @ObservationIgnored private var ownsAudioSession = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    #if DEBUG
+    @ObservationIgnored private var captureDiagnostics: [[String: Any]] = []
+    #endif
 
     init() {
         let center = NotificationCenter.default
@@ -68,6 +82,7 @@ final class SpeechInputController {
         startTask?.cancel()
         finishTimeout?.cancel()
         recordingTimeout?.cancel()
+        captureMonitor?.cancel()
         engine?.stop()
         if hasTap { engine?.inputNode.removeTap(onBus: 0) }
         pipe?.endAudio()
@@ -91,11 +106,13 @@ final class SpeechInputController {
     /// completes can never start the microphone later.
     func endHold() {
         guard gate.mode == .hold else { return }
+        recordCaptureDiagnostic("hold-released")
         stop()
     }
 
     func stop() {
         guard let token = gate.token else { return }
+        recordCaptureDiagnostic("stop")
         guard state == .recording else {
             if state != .finishing { cancel() }
             return
@@ -111,9 +128,11 @@ final class SpeechInputController {
 
     /// Explicit cancellation discards only this utterance, never the typed draft.
     func cancel() {
+        recordCaptureDiagnostic("cancel")
         clearSession()
         transcript = ""
         errorMessage = nil
+        capture = .init()
     }
 
     func clearError() { errorMessage = nil }
@@ -124,13 +143,19 @@ final class SpeechInputController {
               let token = gate.begin(mode: mode) else { return }
         self.onTranscript = onTranscript
         transcriptBuffer = SpeechTranscriptBuffer()
+        capture = .init()
         transcript = ""
         errorMessage = nil
         state = .requestingPermission
+        #if DEBUG
+        captureDiagnostics.removeAll()
+        #endif
+        recordCaptureDiagnostic("begin")
         startTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 try await self.authorize()
+                self.recordCaptureDiagnostic("authorized")
                 try Task.checkCancellation()
                 guard self.gate.accepts(token), UIApplication.shared.applicationState != .background else { return }
                 self.state = .preparing
@@ -139,6 +164,7 @@ final class SpeechInputController {
                 // Stop/cancel already invalidated the session and cleared state.
             } catch {
                 guard self.gate.accepts(token) else { return }
+                self.recordCaptureDiagnostic("startup-error", error: error as NSError)
                 self.fail(error as? Failure ?? .unavailable)
             }
         }
@@ -186,21 +212,45 @@ final class SpeechInputController {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw Failure.microphoneUnavailable }
-        input.installTap(onBus: 0, bufferSize: 1024, format: nil, block: SpeechInputCallbacks.audioTap(pipe: pipe))
+        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: SpeechInputCallbacks.audioTap(pipe: pipe))
         hasTap = true
         recognitionTask = recognizer.recognitionTask(with: request, resultHandler: SpeechInputCallbacks.recognition { [weak self] update in
             guard let self, self.gate.accepts(token) else { return }
+            guard pipe.snapshot.hasInput else {
+                if update.hasError || update.isFinal { self.fail(.microphoneUnavailable) }
+                return
+            }
             self.transcriptBuffer.receive(update)
             self.transcript = self.transcriptBuffer.text
             if update.isFinal { self.complete(token: token) }
             else if update.hasError {
+                self.recordCaptureDiagnostic("recognition-error", error: NSError(
+                    domain: update.errorDomain ?? "Speech", code: update.errorCode ?? 0))
                 if self.state == .finishing || !self.transcript.isEmpty { self.complete(token: token) }
                 else { self.fail(.unavailable) }
             }
         })
         engine.prepare()
         try engine.start()
-        state = .recording
+        recordCaptureDiagnostic("engine-started")
+        captureMonitor = Task { @MainActor [weak self] in
+            var tick = 0
+            let deadline = ContinuousClock.now + .seconds(4)
+            while !Task.isCancelled {
+                guard let self, self.gate.accepts(token) else { return }
+                self.capture = pipe.snapshot
+                // Remote-control policy can deliver valid buffers containing
+                // only zeroes. Buffer arrival alone doesn't mean the mic works.
+                if self.capture.hasInput, self.state == .preparing { self.state = .recording }
+                if self.state == .preparing, ContinuousClock.now >= deadline {
+                    self.fail(.microphoneUnavailable)
+                    return
+                }
+                if tick % 5 == 0 { self.recordCaptureDiagnostic("capture") }
+                tick += 1
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            }
+        }
         // Apple's short-dictation API has a per-request duration limit.
         recordingTimeout = Task { @MainActor [weak self] in
             do { try await Task.sleep(for: .seconds(55)) } catch { return }
@@ -211,6 +261,7 @@ final class SpeechInputController {
 
     private func stopForInterruption() {
         guard let token = gate.token else { return }
+        recordCaptureDiagnostic("interrupted")
         // Release the microphone synchronously; never keep recording while
         // backgrounded, interrupted, or after an audio route reconfiguration.
         if state == .recording || state == .finishing { complete(token: token) }
@@ -219,6 +270,7 @@ final class SpeechInputController {
 
     private func complete(token: UUID) {
         guard gate.accepts(token) else { return }
+        recordCaptureDiagnostic("completed")
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let deliver = onTranscript
         clearSession()
@@ -227,11 +279,14 @@ final class SpeechInputController {
     }
 
     private func fail(_ failure: Failure) {
+        recordCaptureDiagnostic("failed-\(failure)")
         clearSession()
         errorMessage = failure.localizedDescription
     }
 
     private func stopAudio() {
+        captureMonitor?.cancel(); captureMonitor = nil
+        if let pipe { capture = pipe.snapshot }
         recordingTimeout?.cancel(); recordingTimeout = nil
         engine?.stop()
         if hasTap { engine?.inputNode.removeTap(onBus: 0); hasTap = false }
@@ -252,6 +307,36 @@ final class SpeechInputController {
         recognizer = nil; pipe = nil; onTranscript = nil
         transcriptBuffer = SpeechTranscriptBuffer()
         state = .idle
+    }
+
+    private func recordCaptureDiagnostic(_ stage: String, error: NSError? = nil) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("--speech-diagnostics") else { return }
+        let session = AVAudioSession.sharedInstance()
+        let sample = pipe?.snapshot ?? capture
+        var row: [String: Any] = [
+            "stage": stage, "state": String(describing: state), "time": Date().timeIntervalSince1970,
+            "speechPermission": SFSpeechRecognizer.authorizationStatus().rawValue,
+            "microphonePermission": AVAudioApplication.shared.recordPermission.rawValue,
+            "inputMuted": AVAudioApplication.shared.isInputMuted,
+            "engineRunning": engine?.isRunning == true,
+            "appState": UIApplication.shared.applicationState.rawValue,
+            "inputPorts": session.currentRoute.inputs.map { $0.portType.rawValue },
+            "sampleRate": session.sampleRate, "channels": session.inputNumberOfChannels,
+            "buffers": sample.buffers, "frames": sample.frames,
+            "signal": sample.hasInput, "peak": sample.peak.isFinite ? sample.peak : 0,
+            "bufferFormat": sample.format, "readableSamples": sample.readableSamples,
+            "recognized": !transcript.isEmpty,
+            "locale": recognizer?.locale.identifier ?? Locale.current.identifier
+        ]
+        if let error { row["errorDomain"] = error.domain; row["errorCode"] = error.code }
+        captureDiagnostics.append(row)
+        if captureDiagnostics.count > 64 { captureDiagnostics.removeFirst() }
+        guard let data = try? JSONSerialization.data(withJSONObject: captureDiagnostics, options: .sortedKeys) else { return }
+        let url = URL.documentsDirectory.appendingPathComponent("SpeechCaptureDiagnostic.json")
+        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        #endif
     }
 
     private enum Failure: LocalizedError {
@@ -280,6 +365,8 @@ enum SpeechInputCallbacks {
         let isFinal: Bool
         let hasError: Bool
         var completedRange: SpeechTranscriptBuffer.AudioRange? = nil
+        var errorDomain: String? = nil
+        var errorCode: Int? = nil
     }
 
     nonisolated static func authorization(
@@ -302,7 +389,9 @@ enum SpeechInputCallbacks {
             }
             let update = RecognitionUpdate(text: result?.bestTranscription.formattedString,
                                            isFinal: result?.isFinal == true, hasError: error != nil,
-                                           completedRange: range)
+                                           completedRange: range,
+                                           errorDomain: (error as NSError?)?.domain,
+                                           errorCode: (error as NSError?)?.code)
             Task { @MainActor in onUpdate(update) }
         }
     }
@@ -381,12 +470,44 @@ struct SpeechInputSessionGate {
 /// The audio callback is outside MainActor. Serialize append/end so a late
 /// buffer after a stop cannot reopen or extend a recognition request.
 final class SpeechAudioPipe: @unchecked Sendable {
+    struct Snapshot: Sendable, Equatable {
+        var buffers = 0
+        var frames: UInt64 = 0
+        var peak: Float = 0
+        var format: UInt = 0
+        var readableSamples = false
+        var hasInput: Bool { readableSamples && peak > 0 }
+    }
     private let lock = NSLock()
     private let request: SFSpeechAudioBufferRecognitionRequest
     private var ended = false
+    private var captured = Snapshot()
+    var snapshot: Snapshot { lock.withLock { captured } }
     init(request: SFSpeechAudioBufferRecognitionRequest) { self.request = request }
     func append(_ buffer: AVAudioPCMBuffer) {
-        lock.withLock { if !ended { request.append(buffer) } }
+        lock.withLock {
+            guard !ended else { return }
+            captured.buffers += 1
+            captured.frames += UInt64(buffer.frameLength)
+            captured.format = buffer.format.commonFormat.rawValue
+            if let samples = buffer.floatChannelData?[0] {
+                captured.readableSamples = true
+                for index in 0..<Int(buffer.frameLength) {
+                    captured.peak = max(captured.peak, abs(samples[index * buffer.stride]))
+                }
+            } else if let samples = buffer.int16ChannelData?[0] {
+                captured.readableSamples = true
+                for index in 0..<Int(buffer.frameLength) {
+                    captured.peak = max(captured.peak, abs(Float(samples[index * buffer.stride])) / 32_768)
+                }
+            } else if let samples = buffer.int32ChannelData?[0] {
+                captured.readableSamples = true
+                for index in 0..<Int(buffer.frameLength) {
+                    captured.peak = max(captured.peak, abs(Float(samples[index * buffer.stride])) / 2_147_483_648)
+                }
+            }
+            request.append(buffer)
+        }
     }
     func endAudio() {
         lock.withLock {

@@ -9,10 +9,12 @@ struct DeviceView: View {
     @State private var confirmsForget = false
     #if DEBUG
     @State private var showsProbe = false
-    #endif
-    @State private var showsConnectionFeedback = false
     @State private var previewImage: UIImage?
     @State private var showsPreview = false
+    @State private var showsBluetoothValidation = false
+    @State private var confirmsUSBPhone = false
+    #endif
+    @State private var showsConnectionFeedback = false
 
     var body: some View {
         Group {
@@ -26,14 +28,9 @@ struct DeviceView: View {
                     } else {
                         connectionCard
                     }
-                    if model.deviceConnectionMethod != .bluetoothBoard && model.isDeviceReady {
-                        screenPreview
-                    }
-                    if model.deviceConnectionMethod != .bluetoothBoard {
-                        #if DEBUG
-                        if model.isDeviceReady { debugSection }
-                        #endif
-                    }
+                    #if DEBUG
+                    if model.showsDebugTools && model.isDeviceReady { debugSection }
+                    #endif
                 }
                 .frame(maxWidth: 600)
                 .padding(.horizontal, 20)
@@ -59,6 +56,10 @@ struct DeviceView: View {
             }
             #if DEBUG
             .sheet(isPresented: $showsProbe) { ControlProbeView() }
+            .sheet(isPresented: $showsPreview) {
+                if let previewImage { DeviceScreenPreview(image: previewImage) }
+            }
+            .modifier(BluetoothInputCheckPresentation(showsValidation: $showsBluetoothValidation, confirmsUSBPhone: $confirmsUSBPhone))
             #endif
             .confirmationDialog(String(localized: "setup.pairAgainConfirm", table: "Onboarding"), isPresented: $confirmsForget, titleVisibility: .visible) {
                 Button("device.removeIdentity", role: .destructive) {
@@ -67,9 +68,6 @@ struct DeviceView: View {
                 }
             } message: {
                 Text(String(localized: "setup.pairAgainDetail", table: "Onboarding"))
-            }
-            .sheet(isPresented: $showsPreview) {
-                if let previewImage { DeviceScreenPreview(image: previewImage) }
             }
         }
     }
@@ -174,6 +172,10 @@ struct DeviceView: View {
                                 Text(String(localized: "setup.systemPairingDetail", table: "Onboarding"))
                                     .font(.caption).foregroundStyle(.secondary)
                             } else {
+                                if model.deviceConnectionMethod == .localVPN {
+                                    Text(String(localized: "setup.systemPairingAvailability", table: "Onboarding"))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
                                 ComputerPairingHelpView()
                             }
                         }
@@ -224,21 +226,7 @@ struct DeviceView: View {
         if model.isPairing || model.isConnecting || model.isManagingTunnel {
             disconnectButton
         } else {
-            if !model.hasPairingIdentity && model.hasTransferredPairingIdentity {
-                Button("device.importTransferredPairing") {
-                    showsConnectionFeedback = true
-                    Task { await model.importTransferredPairingIdentity() }
-                }
-                .buttonStyle(.glassProminent)
-                .foregroundStyle(EiscueStyle.onAccent)
-                .disabled(model.isBusy)
-                .accessibilityIdentifier("importTransferredPairingButton")
-            } else if !model.hasPairingIdentity && (!model.supportsSystemPairing || model.deviceConnectionMethod != .localVPN) {
-                Button(String(localized: "setup.chooseExistingFile", table: "Onboarding")) { importsIdentity = true }
-                    .buttonStyle(.glass)
-                    .disabled(model.isBusy)
-                    .accessibilityIdentifier("importPairingIdentityButton")
-            } else if !model.hasPairingIdentity {
+            if !model.hasPairingIdentity && usesSystemPairing {
                 Button("device.startPairing") {
                     showsConnectionFeedback = true
                     Task {
@@ -250,6 +238,21 @@ struct DeviceView: View {
                 .foregroundStyle(EiscueStyle.onAccent)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("startPairingButton")
+            }
+            if !model.hasPairingIdentity && model.hasTransferredPairingIdentity {
+                Button("device.importTransferredPairing") {
+                    showsConnectionFeedback = true
+                    Task { await model.importTransferredPairingIdentity() }
+                }
+                .buttonStyle(.glassProminent)
+                .foregroundStyle(EiscueStyle.onAccent)
+                .disabled(model.isBusy)
+                .accessibilityIdentifier("importTransferredPairingButton")
+            } else if !model.hasPairingIdentity {
+                Button(String(localized: "setup.chooseExistingFile", table: "Onboarding")) { importsIdentity = true }
+                    .buttonStyle(.glass)
+                    .disabled(model.isBusy)
+                    .accessibilityIdentifier("importPairingIdentityButton")
             }
             if model.hasPairingIdentity {
                 Button(model.deviceConnectionError == nil ? String(localized: "device.enableControl") : String(localized: "device.retryControl")) {
@@ -287,16 +290,27 @@ struct DeviceView: View {
                 .padding(.horizontal, 4)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("deviceDebugSectionTitle")
+            screenPreview
             SurfaceCard {
-                Button { showsProbe = true } label: {
-                    connectionSupportLabel(String(localized: "device.openProbe"), symbol: "hand.tap")
+                if model.deviceConnectionMethod == .bluetoothBoard {
+                    Button {
+                        if model.bluetoothInputRoute == .usb { confirmsUSBPhone = true }
+                        else { showsBluetoothValidation = true }
+                    } label: {
+                        connectionSupportLabel(String(localized: "device.openProbe"), symbol: "hand.tap")
+                    }
+                    .buttonStyle(.plain).disabled(model.isBusy || model.isBoardHardwareStopped)
+                    .accessibilityIdentifier("bluetoothVerifyButton")
+                } else {
+                    Button { showsProbe = true } label: {
+                        connectionSupportLabel(String(localized: "device.openProbe"), symbol: "hand.tap")
+                    }
+                    .buttonStyle(.plain).disabled(model.isBusy)
+                    .accessibilityIdentifier("deviceProbeButton")
                 }
-                .buttonStyle(.plain).disabled(model.isBusy)
-                .accessibilityIdentifier("deviceProbeButton")
             }
         }
     }
-    #endif
 
     private func connectionSupportLabel(_ title: String, symbol: String) -> some View {
         HStack(spacing: 12) {
@@ -307,6 +321,7 @@ struct DeviceView: View {
         }
         .frame(minHeight: 32).contentShape(Rectangle())
     }
+    #endif
 
     @ViewBuilder private var routeRequirements: some View {
         if model.deviceConnectionMethod == .usbBoard {
@@ -333,6 +348,7 @@ struct DeviceView: View {
             .accessibilityIdentifier("deviceConnectionMessage")
     }
 
+    #if DEBUG
     private var screenPreview: some View {
         Button {
             Task {
@@ -359,8 +375,10 @@ struct DeviceView: View {
         .disabled(model.isBusy)
         .accessibilityIdentifier("deviceScreenPreviewButton")
     }
+    #endif
 }
 
+#if DEBUG
 private struct DeviceScreenPreview: View {
     @Environment(\.dismiss) private var dismiss
     let image: UIImage
@@ -381,6 +399,7 @@ private struct DeviceScreenPreview: View {
         }
     }
 }
+#endif
 
 struct DeviceConnectionMethodPicker: View {
     @Environment(AppModel.self) private var model

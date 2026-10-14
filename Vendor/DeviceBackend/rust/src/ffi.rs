@@ -608,6 +608,22 @@ pub unsafe extern "C" fn ncm_backend_video_get_snapshot(
         0
     })
 }
+/// # Safety
+/// `cursor` must be writable. A SCREEN-gated decode watermark, not image bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ncm_backend_video_get_decode_cursor(
+    handle: u64,
+    cursor: *mut crate::video::VideoDecodeCursor,
+) -> i32 {
+    protect(|| {
+        if cursor.is_null() { return INVALID; }
+        let Some(entry) = get(handle) else { return CLOSED; };
+        if !entry.screen_allowed { return NOT_READY; }
+        if entry.done.load(Ordering::SeqCst) { return CLOSED; }
+        unsafe { *cursor = entry.video.decode_cursor(); }
+        0
+    })
+}
 /// Request one fresh keyframe on the already authorized video channel.
 #[unsafe(no_mangle)]
 pub extern "C" fn ncm_backend_video_refresh(handle: u64) -> i32 {
@@ -1329,6 +1345,8 @@ mod tests {
         assert_eq!(ncm_backend_video_refresh(id), NOT_READY);
         let mut snapshot = crate::video::VideoSnapshot::default();
         assert_eq!(unsafe { ncm_backend_video_get_snapshot(id, &mut snapshot) }, NOT_READY);
+        let mut cursor = crate::video::VideoDecodeCursor::default();
+        assert_eq!(unsafe { ncm_backend_video_get_decode_cursor(id, &mut cursor) }, NOT_READY);
         let mut status = crate::video::VideoStatus::default();
         assert_eq!(
             unsafe { ncm_backend_video_get_status(id, &mut status) },
@@ -1347,6 +1365,45 @@ mod tests {
         assert_eq!(rx.try_recv().unwrap().id, 2);
         ncm_backend_close(id);
         assert_eq!(pairing::ncm_pairing_ack(id, 2), CLOSED);
+    }
+
+    #[tokio::test]
+    async fn explicit_pairing_attempts_advertise_distinct_v4_identifiers() {
+        let _test = TEST_LOCK.lock().await;
+        struct PairingHandle(u64);
+        impl Drop for PairingHandle {
+            fn drop(&mut self) { ncm_backend_close(self.0); }
+        }
+        let mut identifiers = Vec::new();
+        for _ in 0..2 {
+            let mut id = 0;
+            assert_eq!(unsafe { pairing::ncm_pairing_start(1, &mut id) }, 0);
+            let handle = PairingHandle(id);
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+            let mut header = EventHeader::default();
+            loop {
+                let code = unsafe { ncm_backend_poll(id, &mut header, std::ptr::null_mut(), 0) };
+                if code == SMALL { break; }
+                assert_eq!(code, EMPTY);
+                assert!(tokio::time::Instant::now() < deadline);
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+            assert_eq!(header.kind, 5);
+            let mut payload = vec![0; header.size];
+            assert_eq!(unsafe { ncm_backend_poll(id, &mut header, payload.as_mut_ptr(), payload.len()) }, 0);
+            let advertisement: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+            let identifier = advertisement["identifier"].as_str().unwrap();
+            let parsed = uuid::Uuid::parse_str(identifier).unwrap();
+            assert_eq!(parsed.get_version_num(), 4);
+            assert_eq!(advertisement["txt"]["identifier"], identifier);
+            identifiers.push(parsed);
+            drop(handle);
+            while WORKERS.load(Ordering::SeqCst) != 0 {
+                assert!(tokio::time::Instant::now() < deadline);
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        }
+        assert_ne!(identifiers[0], identifiers[1]);
     }
 
     #[tokio::test]
@@ -1379,8 +1436,37 @@ mod tests {
         assert_eq!(pairing::ncm_pairing_ack(id, 1), NOT_READY);
         assert_eq!(ncm_backend_submit(id, 1, 1, 0, 0), INVALID);
         let port = value["port"].as_u64().unwrap() as u16;
+        let mut peer = tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
+            .await
+            .expect("connect pairing fixture");
+        loop {
+            let code = unsafe { ncm_backend_poll(id, &mut header, std::ptr::null_mut(), 0) };
+            if code == 0 {
+                break;
+            }
+            assert_eq!(code, EMPTY);
+            assert!(tokio::time::Instant::now() < deadline);
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            (header.request_id, header.kind, header.stage, header.cause, header.reserved, header.size),
+            (0, 10, 1, 0, 0, 0)
+        );
+        // A nil/zero poll consumes the empty diagnostic; it is not retained as
+        // a buffer-size query or mistaken for a command failure.
+        assert_eq!(unsafe { ncm_backend_poll(id, &mut header, std::ptr::null_mut(), 0) }, EMPTY);
         ncm_backend_close(id);
         ncm_backend_close(id);
+        assert_eq!(unsafe { ncm_backend_poll(id, &mut header, std::ptr::null_mut(), 0) }, CLOSED);
+        let mut remaining = Vec::new();
+        match tokio::time::timeout_at(deadline, peer.read_to_end(&mut remaining))
+            .await
+            .expect("close did not release accepted TCP connection")
+        {
+            Ok(_) => {},
+            Err(error) => assert!(matches!(error.kind(),
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted)),
+        }
         loop {
             if tokio::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
                 .await
@@ -1437,6 +1523,11 @@ mod tests {
         assert_eq!(snapshot.serial, 0);
         assert_eq!(unsafe { ncm_backend_video_get_snapshot(id, std::ptr::null_mut()) }, INVALID);
         assert_eq!(unsafe { ncm_backend_video_get_snapshot(u64::MAX, &mut snapshot) }, CLOSED);
+        let mut cursor = crate::video::VideoDecodeCursor::default();
+        assert_eq!(unsafe { ncm_backend_video_get_decode_cursor(id, &mut cursor) }, 0);
+        assert_eq!(cursor.serial, 0);
+        assert_eq!(unsafe { ncm_backend_video_get_decode_cursor(id, std::ptr::null_mut()) }, INVALID);
+        assert_eq!(unsafe { ncm_backend_video_get_decode_cursor(u64::MAX, &mut cursor) }, CLOSED);
         assert_eq!(
             unsafe { ncm_backend_video_get_status(id, std::ptr::null_mut()) },
             INVALID
@@ -1454,6 +1545,7 @@ mod tests {
         );
         assert_eq!(output, [1, 2, 3]);
         ncm_backend_close(id);
+        assert_eq!(unsafe { ncm_backend_video_get_decode_cursor(id, &mut cursor) }, CLOSED);
         assert_eq!(
             unsafe { ncm_backend_poll(id, &mut h, std::ptr::null_mut(), 0) },
             CLOSED

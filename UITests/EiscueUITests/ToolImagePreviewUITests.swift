@@ -14,11 +14,14 @@ final class ToolImagePreviewUITests: XCTestCase {
             XCTAssertEqual(thumbnail.frame.width, 104, accuracy: 1)
             XCTAssertEqual(thumbnail.frame.height, 112, accuracy: 1)
             attach(app, name: "Tool image thumbnail and compact footer — \(dark ? "Dark" : "Light")")
+            let previousToolbarFrame = app.buttons["deviceNavigationLink"].frame
             thumbnail.tap()
             let viewer = app.descendants(matching: .any)["toolActivityImageViewer"].firstMatch
             XCTAssertTrue(viewer.waitForExistence(timeout: 5))
             let close = app.buttons["closeToolImagePreviewButton"]
             XCTAssertTrue(close.waitForExistence(timeout: 5))
+            XCTAssertEqual(close.frame.midX, previousToolbarFrame.midX, accuracy: 2)
+            XCTAssertEqual(close.frame.midY, previousToolbarFrame.midY, accuracy: 2)
             XCTAssertFalse(app.sheets.firstMatch.exists, "Chat images use an in-place zoom overlay.")
             attach(app, name: "Tool image viewer — \(dark ? "Dark" : "Light")")
             close.tap()
@@ -77,6 +80,7 @@ final class ToolImagePreviewUITests: XCTestCase {
         let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI fixture")).firstMatch
         XCTAssertTrue(record.waitForExistence(timeout: 5))
         record.tap()
+        XCTAssertTrue(app.staticTexts["runTimelineHeader"].waitForExistence(timeout: 5))
         let step = app.buttons["runToolDetail_preview:tap"]
         for _ in 0..<4 where !step.isHittable { app.swipeUp() }
         XCTAssertTrue(step.isHittable); step.tap()

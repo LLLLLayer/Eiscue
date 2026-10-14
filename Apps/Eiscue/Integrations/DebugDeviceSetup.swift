@@ -1,6 +1,7 @@
 #if DEBUG
 import EiscueDeviceKit
 import Foundation
+import UIKit
 
 extension AppModel {
     /// Explicit developer launch arguments only. Release builds have no automatic
@@ -14,6 +15,30 @@ extension AppModel {
         // The BLE fixture owns its own transport and diagnostics. Never start
         // any network/XCTest device path alongside this independent check.
         if arguments.contains("--ble-device-check") { return }
+        if arguments.contains("--system-pairing-check"), !arguments.contains("--ui-testing"), !isBusy {
+            guard supportsSystemPairing, deviceConnectionMethod == .localVPN, !hasPairingIdentity else { return }
+            do {
+                let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+                while UIApplication.shared.applicationState != .active, ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                guard UIApplication.shared.applicationState == .active else { throw BackgroundExecution.Failure.foregroundRequired }
+                guard !isBusy, deviceConnectionMethod == .localVPN, !hasPairingIdentity else { return }
+                if arguments.contains("--restart-existing-local-tunnel") { try await localTunnel.stop() }
+                if !localTunnel.isConnected { try await localTunnel.resumeExistingForDiagnostics() }
+                guard localTunnel.isConnected else { return }
+                if arguments.contains("--loopback-reflector-check") {
+                    let result = await DebugLoopbackProbe.run()
+                    let data = try JSONEncoder().encode(result)
+                    try data.write(to: URL.cachesDirectory.appendingPathComponent("EiscueLoopbackProbe.json"),
+                                   options: [.atomic, .completeFileProtection])
+                    try Task.checkCancellation()
+                }
+                startPairing()
+                if arguments.contains("--pairing-diagnostics") { await pollPairingDiagnostics() }
+            } catch { deviceConnectionError = error.localizedDescription }
+            return
+        }
         if arguments.contains("--owned-device-check"), !arguments.contains("--ui-testing"), !isBusy {
             await runOwnedDeviceCheck()
             return
@@ -71,6 +96,21 @@ extension AppModel {
         report["phase"] = "finished"; writeReport()
     }
 
+    private func pollPairingDiagnostics() async {
+        guard isPairing, let pairingID = pairingLeaseID else { return }
+        let lifetime = PairingDiagnosticPollingLifetime()
+        defer { lifetime.active = false }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(190))
+        while !Task.isCancelled, isPairing, pairingLeaseID == pairingID, ContinuousClock.now < deadline {
+            localTunnel.requestPairingDiagnostics { [weak self] in
+                lifetime.active && ContinuousClock.now < deadline && self?.isPairing == true && self?.pairingLeaseID == pairingID
+            }
+            let next = min(deadline, ContinuousClock.now.advanced(by: .seconds(2)))
+            do { try await Task.sleep(until: next, clock: .continuous) }
+            catch { return }
+        }
+    }
+
     /// Read-only iOS 26 compatibility check, opt-in through a developer launch
     /// argument. Saved diagnostics contain dimensions/stages, never pixels/keys.
     private func runLegacyDeviceProbe() async {
@@ -99,5 +139,9 @@ extension AppModel {
         report["phase"] = "finished"
         save()
     }
+}
+
+@MainActor private final class PairingDiagnosticPollingLifetime {
+    var active = true
 }
 #endif

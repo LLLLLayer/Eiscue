@@ -87,7 +87,7 @@ final class BackgroundTaskStatusTests: XCTestCase {
         model.deviceTools?.stop()
         let completed = try XCTUnwrap(callbacks.last)
         XCTAssertEqual(callbacks.count, 3)
-        XCTAssertEqual(completed.title, String(localized: "task.status.title.completed", defaultValue: "Turn ended", table: "TaskStatus"))
+        XCTAssertEqual(completed.title, String(localized: "task.status.title.completed", defaultValue: "Task complete", table: "TaskStatus"))
         XCTAssertEqual(completed.completedWorkUnits, completed.totalWorkUnits)
     }
 }

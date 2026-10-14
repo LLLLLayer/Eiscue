@@ -551,13 +551,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This turn has ended. Open Eiscue to view the result."
+            "value": "Task complete. Open Eiscue to view the result."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本轮处理已结束。打开 Eiscue 查看结果。"
+            "value": "任务已完成。打开 Eiscue 查看结果。"
           }
         }
       },
@@ -968,6 +968,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "USB 网卡中继，需配对准备，不占用 VPN。"
+          }
+        }
+      }
+    },
+    "settings.disconnectAfterTask": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect after tasks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务结束后断开"
+          }
+        }
+      }
+    },
+    "settings.debugTools": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调试"
           }
         }
       }

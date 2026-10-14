@@ -12,23 +12,115 @@ final class ChatPresentationUITests: XCTestCase {
         return app
     }
 
+    @MainActor func testLongHistoryStartsAtLatestAndKeepsReadingPositionWhileTyping() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--long-conversation-fixture", "-AppleLanguages", "(en)"]
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launch()
+        let latest = app.staticTexts["LATEST_HISTORY_MESSAGE"]
+        XCTAssertTrue(latest.waitForExistence(timeout: 10))
+        XCTAssertTrue(latest.isHittable)
+        let scroll = app.scrollViews["conversationScrollView"]
+        XCTAssertLessThan(app.descendants(matching: .any).matching(identifier: "messageBubble").count, 60,
+                          "Offscreen history must not create hundreds of message rows.")
+        scroll.swipeDown(); scroll.swipeDown()
+        XCTAssertFalse(latest.isHittable)
+        let input = input(in: app)
+        input.tap(); input.typeText("Draft while reading history")
+        XCTAssertFalse(latest.isHittable, "Typing must not force the reader back to the newest message.")
+        attachScreenshot(app, name: "Long history stays at reading position")
+        app.buttons["sendMessageButton"].tap()
+        let reply = app.staticTexts["Fixture response: Draft while reading history"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 20))
+        XCTAssertTrue(reply.isHittable, "Sending a new message resumes following the conversation.")
+    }
+
     @MainActor func testVoiceModeIsSeparateFromTextSelectionAndPreservesDraft() {
         let app = launch()
-        let input = input(in: app)
-        input.tap(); input.typeText("Keep my typed draft")
+        let composer = app.otherElements["messageComposer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        let restingBottom = composer.frame.maxY
+        let singleLineHeight = composer.frame.height
+        var draft = ""
+        for addition in ["", "Keep my typed draft", "\nSecond line\nThird line\nFourth line"] {
+            if !addition.isEmpty {
+                let input = input(in: app)
+                input.tap(); input.typeText(addition)
+                draft += addition
+            }
+            let textFrame = composer.frame
+            let switchFrame = app.buttons["speechInputButton"].frame
+            if draft.contains("\n") { XCTAssertGreaterThan(textFrame.height, singleLineHeight + 30) }
+            app.buttons["speechInputButton"].tap()
+            let hold = app.buttons["holdToTalkButton"]
+            XCTAssertTrue(hold.waitForExistence(timeout: 5))
+            XCTAssertEqual(composer.frame.height, textFrame.height, accuracy: 1,
+                           "Switching input mode must preserve the editor's height, including a multiline draft.")
+            XCTAssertEqual(composer.frame.maxY, restingBottom, accuracy: 1,
+                           "Voice guidance must not add space beneath the input bar.")
+            XCTAssertEqual(app.buttons["speechInputButton"].frame.midX, switchFrame.midX, accuracy: 1)
+            XCTAssertEqual(hold.frame.height, 44, accuracy: 1)
+            XCTAssertGreaterThan(hold.frame.width, 180)
+            XCTAssertEqual(hold.label, "Tap to talk")
+            XCTAssertEqual(hold.frame.midY, app.buttons["speechInputButton"].frame.midY, accuracy: 1)
+            XCTAssertEqual(app.buttons["composerAddButton"].frame.midY, hold.frame.midY, accuracy: 1)
+            XCTAssertFalse(app.descendants(matching: .any)["messageInput"].exists)
+            XCTAssertFalse(app.descendants(matching: .any)["speechPreview"].exists)
+            XCTAssertTrue(app.buttons["sendMessageButton"].exists)
+            XCTAssertFalse(app.buttons["sendMessageButton"].isEnabled)
+            attachScreenshot(app, name: "Stable voice composer — \(draft.isEmpty ? "empty" : draft.contains("\n") ? "multiline" : "single line")")
+            app.buttons["speechInputButton"].tap()
+            let editor = self.input(in: app)
+            if !draft.isEmpty { XCTAssertEqual(editor.value as? String, draft) }
+            XCTAssertEqual(composer.frame.height, textFrame.height, accuracy: 1)
+            XCTAssertFalse(app.buttons["holdToTalkButton"].exists)
+        }
+    }
+
+    @MainActor func testRemoteControlShowsVoiceNoticeWithoutChangingComposer() throws {
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
+            throw XCTSkip("The remote-media microphone restriction applies to iOS 27.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--local-device-ready-fixture",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
+        returnToAssistant(in: app)
+        let editor = input(in: app)
+        editor.tap(); editor.typeText("Keep this draft")
+        let composer = app.otherElements["messageComposer"]
+        let originalFrame = composer.frame
+        let keyboardVisible = app.keyboards.firstMatch.isHittable
         app.buttons["speechInputButton"].tap()
-        XCTAssertTrue(app.buttons["holdToTalkButton"].waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(app.buttons["holdToTalkButton"].frame.height, 64)
-        XCTAssertGreaterThan(app.buttons["holdToTalkButton"].frame.width, 180)
-        XCTAssertFalse(app.descendants(matching: .any)["messageInput"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["speechPreview"].exists)
-        let voiceScreenshot = XCTAttachment(screenshot: app.screenshot())
-        voiceScreenshot.name = "Dedicated hold-to-talk mode"
-        voiceScreenshot.lifetime = .keepAlways
-        add(voiceScreenshot)
-        app.buttons["speechInputButton"].tap()
-        XCTAssertEqual(self.input(in: app).value as? String, "Keep my typed draft")
+        let notice = app.staticTexts["speechNotice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 3))
+        XCTAssertEqual(notice.label, "Can't start voice input during device control.")
         XCTAssertFalse(app.buttons["holdToTalkButton"].exists)
+        XCTAssertEqual(editor.value as? String, "Keep this draft")
+        XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
+        XCTAssertEqual(composer.frame.maxY, originalFrame.maxY, accuracy: 1)
+        XCTAssertEqual(app.keyboards.firstMatch.isHittable, keyboardVisible)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        attachScreenshot(app, name: "Remote control voice notice preserves text input")
+        XCTAssertTrue(notice.waitForNonExistence(timeout: 6))
+        openDevice(in: app)
+        XCTAssertTrue(app.buttons["disconnectDeviceButton"].waitForExistence(timeout: 5),
+                      "A blocked voice entry must not disconnect the device.")
+        app.buttons["disconnectDeviceButton"].tap()
+        XCTAssertTrue(app.buttons["disconnectDeviceButton"].waitForNonExistence(timeout: 5))
+        #if targetEnvironment(simulator)
+        // The in-memory controller has disconnected; the real VPN manager
+        // separately reports that Network Extension isn't available here.
+        let tunnelAlert = app.alerts.firstMatch
+        XCTAssertTrue(tunnelAlert.waitForExistence(timeout: 3))
+        XCTAssertTrue(tunnelAlert.staticTexts["Local VPN needs an iPhone or iPad. It is unavailable in Simulator."].exists)
+        tunnelAlert.buttons["OK"].tap()
+        #endif
+        returnToAssistant(in: app)
+        app.buttons["speechInputButton"].tap()
+        XCTAssertTrue(app.buttons["holdToTalkButton"].waitForExistence(timeout: 5),
+                      "The voice-entry block ends when the control connection ends.")
     }
 
     @MainActor func testMarkdownMessageHasTimeContextActionsAndNativeRangeSelection() {
@@ -169,5 +261,42 @@ final class ChatPresentationUITests: XCTestCase {
             return XCTFail("No visible edit-menu action: \(title)")
         }
         button.tap()
+    }
+}
+
+/// Explicit opt-in: captures briefly on a real phone, never sends a message,
+/// saves audio, records recognized text in the report, or overrides language.
+final class SpeechCaptureAcceptanceUITests: XCTestCase {
+    override func setUpWithError() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Microphone capture requires a physical iPhone.")
+        #else
+        guard ProcessInfo.processInfo.environment["EISCUE_REAL_SPEECH_TEST"] == "1" else {
+            throw XCTSkip("Run explicitly with TEST_RUNNER_EISCUE_REAL_SPEECH_TEST=1.")
+        }
+        #endif
+    }
+
+    @MainActor func testTapStartsActualMicrophoneCapture() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--speech-diagnostics"]
+        app.launch()
+        let mode = app.buttons["speechInputButton"]
+        guard mode.waitForExistence(timeout: 10) else {
+            app.terminate(); XCTFail("The composer did not open."); return
+        }
+        mode.tap()
+        let record = app.buttons["holdToTalkButton"]
+        guard record.waitForExistence(timeout: 5) else {
+            app.terminate(); XCTFail("The dictation control did not open."); return
+        }
+        record.tap()
+        let hasAudio = NSPredicate(format: "value CONTAINS %@", "signal=true")
+        let captured = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hasAudio, object: record)], timeout: 12)
+        let metadata = record.value as? String ?? "no state"
+        app.terminate()
+        XCTAssertEqual(captured, .completed, "Actual microphone capture: \(metadata)")
+        let attachment = XCTAttachment(string: metadata)
+        attachment.name = "Microphone capture metadata only"; attachment.lifetime = .keepAlways; add(attachment)
     }
 }

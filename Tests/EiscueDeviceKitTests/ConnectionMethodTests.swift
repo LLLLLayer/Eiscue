@@ -95,6 +95,35 @@ import Testing
         await fixture.client().disconnect()
     }
 
+    @Test(arguments: [DeviceConnectionMethod.localVPN, .usbBoard])
+    func taskCompletionRetainsSessionAndRequiresNewObservationForTheNextTask(method: DeviceConnectionMethod) async throws {
+        let fixture = try ConnectionFixture()
+        let client = fixture.client()
+        try await client.connect(method: method)
+        let oldFrame = try await client.captureScreenshot()
+
+        try await client.finishTask()
+
+        #expect(!fixture.session.closed)
+        #expect(fixture.session.mediaStops == 0)
+        guard case .ready = await client.status() else { Issue.record("Finishing a task must keep its connection ready"); return }
+        await #expect(throws: DeviceControlError.staleFrame) {
+            try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: oldFrame.frameID)
+        }
+        #expect(fixture.session.taps == 0)
+        let newFrame = try await client.captureScreenshot()
+        try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: newFrame.frameID)
+        try await client.finishTask()
+        #expect(fixture.session.taps == 1)
+        #expect(fixture.session.vpnConnections + fixture.session.boardConnections == 1)
+        #expect(fixture.session.mediaStarts == 1)
+
+        await client.disconnect()
+        #expect(fixture.session.closed)
+        #expect(fixture.session.mediaStops == 1)
+        guard case .unavailable = await client.status() else { Issue.record("Explicit disconnect must still end the connection"); return }
+    }
+
     @Test(arguments: [UInt32(1), 2, 4])
     func isolatedAppListFailurePreservesScreenSessionButRequiresFreshObservation(cause: UInt32) async throws {
         let fixture = try ConnectionFixture()

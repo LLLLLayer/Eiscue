@@ -43,20 +43,17 @@ final class DeviceRunCleanupTests: XCTestCase {
 
     func testUnsafeOrUnconfirmedFailuresAlwaysDisconnect() async throws {
         enum Reason: CaseIterable {
-            case userStop, localVPN, usbBoard, pendingSubmission
+            case userStop, pendingSubmission
             case runtimeOrStorageFailure, toolStarted, missingSession
         }
         for reason in Reason.allCases {
             let controller = CleanupDeviceController()
             var session: DeviceToolSession? = makeSession(controller)
             var run = makeRun()
-            var method = DeviceConnectionMethod.bluetoothBoard
             var modelRequestFailed = true
             var stopRequested = false
             switch reason {
             case .userStop: stopRequested = true
-            case .localVPN: method = .localVPN
-            case .usbBoard: method = .usbBoard
             case .pendingSubmission: run.submission = .pending
             case .runtimeOrStorageFailure: modelRequestFailed = false
             case .toolStarted:
@@ -64,11 +61,23 @@ final class DeviceRunCleanupTests: XCTestCase {
             case .missingSession: session = nil
             }
 
-            try await finish(run, method: method, modelRequestFailed: modelRequestFailed,
+            try await finish(run, modelRequestFailed: modelRequestFailed,
                              session: session, stopRequested: stopRequested, controller: controller)
 
             let events = await controller.events
             XCTAssertEqual(events, ["disconnect"], "Unexpected retention for \(reason)")
+        }
+    }
+
+    func testNormalCompletionKeepsConnectionUnlessAutomaticDisconnectIsSelected() async throws {
+        for disconnectAfterTask in [false, true] {
+            let controller = CleanupDeviceController()
+            var run = makeRun()
+            run.state = .completed
+            try await finish(run, disconnectAfterTask: disconnectAfterTask, modelRequestFailed: false,
+                             session: makeSession(controller), controller: controller)
+            let events = await controller.events
+            XCTAssertEqual(events, disconnectAfterTask ? ["disconnect"] : ["release"])
         }
     }
 
@@ -162,13 +171,14 @@ final class DeviceRunCleanupTests: XCTestCase {
                           timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
     }
 
-    private func finish(_ run: RunRecord, method: DeviceConnectionMethod = .bluetoothBoard,
+    private func finish(_ run: RunRecord, disconnectAfterTask: Bool = false,
                         modelRequestFailed: Bool = true, session: DeviceToolSession?, stopRequested: Bool = false,
                         controller: CleanupDeviceController) async throws {
-        try await DeviceRunCleanup.finish(run: run, method: method, modelRequestFailed: modelRequestFailed,
+        let client = DeviceClient(controller: controller)
+        try await DeviceRunCleanup.finish(run: run, disconnectAfterTask: disconnectAfterTask, modelRequestFailed: modelRequestFailed,
                                           deviceTools: session, stopRequested: stopRequested,
-                                          finishBluetooth: { try await controller.finishBluetooth() },
-                                          disconnect: { await controller.disconnect() })
+                                          finishConnection: { try await client.finishTask() },
+                                          disconnect: { await client.disconnect() })
     }
 }
 
@@ -185,7 +195,7 @@ private actor CleanupDeviceController: DeviceController {
         events.append("screenshot")
         return DeviceScreenshot(width: 390, height: 844, mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
     }
-    func finishBluetooth() async throws {
+    func finishTask() async throws {
         events.append("release")
         if failRelease { throw DeviceControlError.deliveryUnknown("Fixture release failed") }
     }

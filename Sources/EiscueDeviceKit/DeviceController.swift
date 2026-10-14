@@ -29,9 +29,13 @@ public protocol DeviceController: Sendable {
     func importPairingIdentity(_ data: Data) async throws
     func removePairingIdentity() async throws
     func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error>
+    func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error>
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws
     func connectUSBBoard() async throws
     func connectBluetoothBoard() async throws
+    /// End this task's input and invalidate its observations. Controllers may
+    /// retain their connection; the default closes it for existing integrations.
+    func finishTask() async throws
     func disconnect() async
     func captureScreenshot() async throws -> DeviceScreenshot
     func tap(at point: DevicePoint, frameID: UUID) async throws
@@ -51,9 +55,13 @@ public extension DeviceController {
     func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
         AsyncThrowingStream { $0.finish(throwing: DeviceControlError.unsupported) }
     }
+    func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> {
+        AsyncThrowingStream { $0.finish(throwing: DeviceControlError.unsupported) }
+    }
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws { throw DeviceControlError.unsupported }
     func connectUSBBoard() async throws { throw DeviceControlError.unsupported }
     func connectBluetoothBoard() async throws { throw DeviceControlError.unsupported }
+    func finishTask() async throws { await disconnect() }
     func disconnect() async {}
     func captureScreenshot() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
     func tap(at point: DevicePoint, frameID: UUID) async throws { throw DeviceControlError.notConnected }

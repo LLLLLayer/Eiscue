@@ -8,9 +8,14 @@ enum AppDestination: Hashable {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var path: [AppDestination] = []
     @State private var showsSidebar = false
     @State private var wideSidebarIsExpanded = true
+    @State private var sidebarDrag: CGFloat = 0
+    @State private var isDraggingSidebar = false
+    @State private var sidebarDragID = 0
+    @State private var sidebarSettlementID = UUID()
 
     init(initialDestination: AppDestination? = nil) {
         _path = State(initialValue: initialDestination.map { [$0] } ?? [])
@@ -20,23 +25,23 @@ struct RootView: View {
         @Bindable var model = model
         GeometryReader { geometry in
             let usesWideLayout = horizontalSizeClass == .regular && geometry.size.width >= 820
+            let width = usesWideLayout ? 300.0 : min(340, geometry.size.width * 0.86)
+            let isOpen = usesWideLayout ? wideSidebarIsExpanded : showsSidebar
+            let revealedWidth = min(width, max(0, (isOpen ? width : 0) + sidebarDrag))
             ZStack(alignment: .leading) {
                 HStack(spacing: 0) {
-                    if usesWideLayout && wideSidebarIsExpanded {
+                    if usesWideLayout && (wideSidebarIsExpanded || isDraggingSidebar) {
                         sidebar(isPersistent: true)
-                            .frame(width: 300)
+                            .frame(width: width)
+                            .offset(x: revealedWidth - width)
+                            .frame(width: revealedWidth, alignment: .leading).clipped()
+                            .accessibilityHidden(!wideSidebarIsExpanded)
                         Divider()
                     }
                     NavigationStack(path: $path) {
-                        AssistantView(openSidebar: {
+                        AssistantView(sidebarDragID: sidebarDragID, openSidebar: {
                             if usesWideLayout {
                                 withAnimation(.easeInOut(duration: 0.22)) { wideSidebarIsExpanded.toggle() }
-                            } else {
-                                setSidebarVisible(true)
-                            }
-                        }, revealSidebar: {
-                            if usesWideLayout {
-                                withAnimation(.easeInOut(duration: 0.22)) { wideSidebarIsExpanded = true }
                             } else {
                                 setSidebarVisible(true)
                             }
@@ -55,27 +60,46 @@ struct RootView: View {
                     .accessibilityHidden(showsSidebar && !usesWideLayout)
                 }
 
-                if showsSidebar && !usesWideLayout {
-                    Color.black.opacity(0.22)
+                if !usesWideLayout && (showsSidebar || isDraggingSidebar) {
+                    Color.black.opacity(0.22 * revealedWidth / width)
                         .ignoresSafeArea()
                         .onTapGesture { setSidebarVisible(false) }
+                        .allowsHitTesting(showsSidebar)
                         .accessibilityHidden(true)
                     sidebar(isPersistent: false)
-                        .frame(width: min(340, geometry.size.width * 0.86))
+                        .frame(width: width)
                         .frame(maxHeight: .infinity)
                         .background(EiscueStyle.background.ignoresSafeArea())
                         .shadow(color: .black.opacity(0.12), radius: 20, x: 8)
+                        .offset(x: revealedWidth - width)
                         .transition(.move(edge: .leading))
                         .accessibilityAddTraits(.isModal)
-                        .gesture(DragGesture(minimumDistance: 25).onEnded { value in
-                            if value.translation.width < -70 { setSidebarVisible(false) }
-                        })
+                        .accessibilityHidden(!showsSidebar)
+                        .allowsHitTesting(showsSidebar)
+
                 }
             }
+            .clipped()
+            .gesture(SidebarDragGesture(isEnabled: path.isEmpty && !model.showsOnboarding,
+                                        isOpen: isOpen, onChanged: { translation in
+                if !isDraggingSidebar { sidebarDragID += 1; isDraggingSidebar = true }
+                sidebarSettlementID = UUID()
+                sidebarDrag = translation
+            }, onEnded: { translation, velocity, cancelled in
+                let projected = (isOpen ? width : 0) + translation + velocity * 0.16
+                let visible = cancelled ? isOpen : projected > width / 2
+                let settlementID = UUID()
+                sidebarSettlementID = settlementID
+                withAnimation(reduceMotion ? nil : .interactiveSpring(response: 0.3, dampingFraction: 0.9), completionCriteria: .removed) {
+                    if usesWideLayout { wideSidebarIsExpanded = visible } else { showsSidebar = visible }
+                    sidebarDrag = 0
+                } completion: { if sidebarSettlementID == settlementID { isDraggingSidebar = false } }
+            }))
             .accessibilityHidden(model.showsOnboarding && !model.isLoading)
             .allowsHitTesting(!model.showsOnboarding)
             .onChange(of: usesWideLayout) { _, isWide in
-                showsSidebar = false
+                showsSidebar = false; sidebarDrag = 0; isDraggingSidebar = false
+                sidebarSettlementID = UUID()
                 if isWide { wideSidebarIsExpanded = true }
             }
         }
@@ -131,6 +155,11 @@ struct RootView: View {
     }
 
     private func setSidebarVisible(_ visible: Bool) {
-        withAnimation(.easeInOut(duration: 0.22)) { showsSidebar = visible }
+        let settlementID = UUID()
+        sidebarSettlementID = settlementID
+        if !visible { isDraggingSidebar = true }
+        withAnimation(reduceMotion ? nil : .interactiveSpring(response: 0.3, dampingFraction: 0.9), completionCriteria: .removed) {
+            showsSidebar = visible; sidebarDrag = 0
+        } completion: { if sidebarSettlementID == settlementID { isDraggingSidebar = false } }
     }
 }

@@ -43,6 +43,13 @@ final class LocalizationUITests: XCTestCase {
         closeSidebar(in: app)
         openSettings(in: app)
         XCTAssertTrue(app.buttons["appLanguageSettingsButton"].exists)
+        XCTAssertTrue(app.buttons["appLanguageSettingsButton"].label.contains("English"))
+        XCTAssertFalse(app.buttons["showOnboardingButton"].exists)
+        reveal(app.switches["hapticsToggle"], in: app)
+        XCTAssertTrue(app.switches["hapticsToggle"].isHittable)
+        reveal(app.buttons["aboutNavigationLink"], in: app)
+        XCTAssertTrue(app.buttons["aboutNavigationLink"].isHittable)
+        for _ in 0..<3 where !app.buttons["modelSettingsButton"].isHittable { app.swipeDown() }
         XCTAssertTrue(app.staticTexts["Model"].exists)
         app.buttons["modelSettingsButton"].tap()
         XCTAssertTrue(app.textFields["modelBaseURL"].waitForExistence(timeout: 5))

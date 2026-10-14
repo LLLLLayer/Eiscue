@@ -171,17 +171,28 @@ struct OwnedDeviceCheckView: View {
                            y: Double((screenPoint.y - screenBounds.minY) / screenBounds.height) * Double(frame.height))
     }
 
-    func validatePNG(_ frame: DeviceScreenshot) throws {
-        guard frame.mimeType == "image/png", frame.data.prefix(8) == Data([137, 80, 78, 71, 13, 10, 26, 10]),
-              let source = CGImageSourceCreateWithData(frame.data as CFData, nil),
+    func validateImage(_ frame: DeviceScreenshot) throws {
+        let expectedType: String
+        switch frame.mimeType {
+        case "image/png" where frame.data.prefix(8) == Data([137, 80, 78, 71, 13, 10, 26, 10]):
+            expectedType = "public.png"
+        case "image/jpeg" where frame.data.prefix(3) == Data([255, 216, 255]):
+            expectedType = "public.jpeg"
+        default:
+            throw DeviceControlError.connection("Owned screenshot MIME type did not match PNG or JPEG data")
+        }
+        guard let source = CGImageSourceCreateWithData(frame.data as CFData, nil),
+              CGImageSourceGetType(source) as String? == expectedType,
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              width == frame.width, height == frame.height,
+              width == frame.width, height == frame.height, image.width == width, image.height == height,
               abs(CGFloat(width) - screenBounds.width * scale) <= 1,
               abs(CGFloat(height) - screenBounds.height * scale) <= 1,
               (width > height) == orientation.isLandscape else {
-            throw DeviceControlError.connection("Owned PNG did not match the current scene orientation and screen bounds")
+            throw DeviceControlError.connection("Owned screenshot did not match the current scene orientation and screen bounds")
         }
     }
 }
@@ -230,7 +241,7 @@ extension AppModel {
                 print("Owned capture changed geometry: \(before.changedGeometryNames(comparedTo: after).joined(separator: ","))")
                 continue
             }
-            try after.validatePNG(frame)
+            try after.validateImage(frame)
             return (frame, after)
         }
         throw DeviceControlError.staleFrame
@@ -260,13 +271,21 @@ extension AppModel {
     func runOwnedDeviceCheck() async {
         let proof = OwnedDeviceCheckState.shared
         let destination = URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json")
-        var report: [String: Any] = ["version": 4, "state": "started", "phase": "preparation",
-            "connectionMethod": DeviceConnectionMethod.localVPN.rawValue, "localTunnelConnectedAtStart": localTunnel.isConnected]
+        let arguments = ProcessInfo.processInfo.arguments
+        let smoke = arguments.contains("--owned-device-check") && arguments.contains("--owned-device-smoke")
+        var report: [String: Any] = ["version": 5, "kind": smoke ? "smoke" : "full",
+            "state": "started", "phase": "preparation", "completedSteps": [String](),
+            "connectionMethod": DeviceConnectionMethod.localVPN.rawValue, "localTunnelConnectedAtStart": localTunnel.isConnected,
+            "disconnectVerification": "localOnly"]
+        if smoke { report["plannedSteps"] = ["connect_1", "screenshot_1", "tap_1", "post_tap_screenshot_1", "disconnect_1"] }
+        var completedSteps: [String] = []
+        var requiresDisconnect = true
         var orientationToRestore: (scene: UIWindowScene, orientation: UIInterfaceOrientation)?
         var backgroundCheckID: UUID?
         defer { if let id = backgroundCheckID { background.end(taskID: id, success: false) } }
         func save(_ phase: String) {
             proof.phase = phase; report["phase"] = phase
+            report["completedSteps"] = completedSteps
             guard let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) else { return }
             try? data.write(to: destination, options: [.atomic, .completeFileProtection])
         }
@@ -285,22 +304,27 @@ extension AppModel {
             // Require the native target's attached scene and settled view frames.
             save("geometry")
             _ = try await ownedGeometry(proof)
-            for cycle in 1...2 {
+            for cycle in 1...(smoke ? 1 : 2) {
                 save("connect_\(cycle)")
                 // The same entry point used by AppModel.connectDevice. This
                 // returns only after identity verification, developer readiness
                 // and media startup.
+                requiresDisconnect = true
                 try await deviceClient.connect(method: .localVPN)
                 guard case .ready(let capabilities) = await deviceClient.status() else {
                     throw DeviceControlError.notConnected
                 }
                 report["capabilities_\(cycle)"] = capabilities.map(\.rawValue).sorted()
                 report["connected_\(cycle)"] = true
+                completedSteps.append("connect_\(cycle)")
                 save("screenshot_\(cycle)")
                 let capture = try await ownedCapture(proof)
                 let frame = capture.frame
-                try frame.data.write(to: URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceFrame.png"), options: [.atomic, .completeFileProtection])
+                let frameFile = "EiscueOwnedDeviceFrame.\(frame.mimeType == "image/jpeg" ? "jpg" : "png")"
+                try frame.data.write(to: URL.cachesDirectory.appendingPathComponent(frameFile), options: [.atomic, .completeFileProtection])
+                report["frameFile"] = frameFile
                 report["width"] = frame.width; report["height"] = frame.height; report["mimeType"] = frame.mimeType
+                completedSteps.append("screenshot_\(cycle)")
                 let before = proof.count
                 save("tap_\(cycle)")
                 let modelFrame = try DeviceObservationImage.prepare(frame)
@@ -310,12 +334,22 @@ extension AppModel {
                 try await deviceClient.tap(at: coordinates.nativePoint(modelPoint), frameID: modelFrame.frameID)
                 try await Task.sleep(for: .milliseconds(400))
                 guard proof.count == before + 1 else { throw DeviceControlError.connection("Owned button did not increment") }
+                report["buttonCountBefore_\(cycle)"] = before; report["buttonCountAfter_\(cycle)"] = proof.count
                 report["tapVerified_\(cycle)"] = true
                 report["modelViewportTapVerified_\(cycle)"] = true
                 report["modelViewportWidth"] = modelFrame.width; report["modelViewportHeight"] = modelFrame.height
+                completedSteps.append("tap_\(cycle)")
+                save("post_tap_screenshot_\(cycle)")
                 let afterTap = try await ownedCapture(proof)
                 report["postTapScreenshot_\(cycle)"] = !afterTap.frame.data.isEmpty
-                if cycle == 1 {
+                completedSteps.append("post_tap_screenshot_\(cycle)")
+                if smoke {
+                    let postTapFile = "EiscueOwnedDeviceFrameAfterTap.\(afterTap.frame.mimeType == "image/jpeg" ? "jpg" : "png")"
+                    try afterTap.frame.data.write(to: URL.cachesDirectory.appendingPathComponent(postTapFile), options: [.atomic, .completeFileProtection])
+                    report["postTapFrameFile"] = postTapFile
+                    report["postTapMimeType"] = afterTap.frame.mimeType
+                }
+                if cycle == 1 && !smoke {
                     let original = afterTap.geometry
                     orientationToRestore = (original.scene, original.orientation)
                     save("rotate_landscape_left")
@@ -343,7 +377,7 @@ extension AppModel {
                     guard proof.count == rotationCount else { throw DeviceControlError.connection("Owned stale orientation frame changed the button") }
                     let right = try await ownedCapture(proof, orientation: .landscapeRight)
                     guard right.frame.width == left.frame.width, right.frame.height == left.frame.height else {
-                        throw DeviceControlError.connection("Owned opposite landscape PNG dimensions did not match")
+                        throw DeviceControlError.connection("Owned opposite landscape screenshot dimensions did not match")
                     }
                     save("tap_new_orientation_frame")
                     try await deviceClient.tap(at: right.geometry.point(CGPoint(x: right.geometry.button.midX, y: right.geometry.button.midY), frame: right.frame), frameID: right.frame.frameID)
@@ -399,7 +433,7 @@ extension AppModel {
                         guard currentScenePhase == .background, background.isExecuting, !expired.withLock({ $0 }) else {
                             throw BackgroundExecution.Failure.expired
                         }
-                        try beforeHome.geometry.validatePNG(homeFrame)
+                        try beforeHome.geometry.validateImage(homeFrame)
                         let duration = started.duration(to: .now).components
                         report["backgroundScreenshotSeconds_\(sample)"] = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
                         report["backgroundScreenshotVerified_\(sample)"] = true
@@ -421,9 +455,11 @@ extension AppModel {
                 save("stop_\(cycle)")
                 await deviceClient.disconnect()
                 if case .ready = await deviceClient.status() { throw DeviceControlError.connection("Owned connection still ready after stop") }
+                requiresDisconnect = false
                 // Status no longer ready proves local disconnection only. The
                 // public API does not expose a daemon teardown acknowledgement.
                 report["locallyDisconnected_\(cycle)"] = true
+                completedSteps.append("disconnect_\(cycle)")
             }
             report["state"] = "passed"
         } catch {
@@ -431,14 +467,17 @@ extension AppModel {
             report["failedPhase"] = report["phase"]
             report["errorCategory"] = String(describing: type(of: error))
             report["reason"] = error.localizedDescription
-            await deviceClient.disconnect()
-            if let restoration = orientationToRestore {
-                save("restore_orientation_after_failure")
-                do {
-                    _ = try await ownedRotate(proof, scene: restoration.scene, orientation: restoration.orientation)
-                    report["originalOrientationRestored"] = true
-                } catch { report["orientationRestore"] = "failed" }
-            }
+        }
+        // Every failure or cancellation reaches teardown, including a partially
+        // completed connect. Keep the await here rather than an unawaited Task
+        // in defer so the report cannot finish before input is released.
+        if requiresDisconnect { await deviceClient.disconnect() }
+        if let restoration = orientationToRestore {
+            save("restore_orientation_after_failure")
+            do {
+                _ = try await ownedRotate(proof, scene: restoration.scene, orientation: restoration.orientation)
+                report["originalOrientationRestored"] = true
+            } catch { report["orientationRestore"] = "failed" }
         }
         save("finished")
     }

@@ -1,5 +1,5 @@
-# 中断后核查
+# Check after interruption
 
-任务发生断连、超时、取消或进程重启后，先读取新的屏幕，向用户说明已知步骤与未知结果。不要直接重复之前的点击、输入、发送或提交。
+After a disconnection, timeout, cancellation, or process restart, observe a new screen and tell the user which steps are known and which outcomes remain uncertain. Do not immediately repeat earlier taps, typing, sends, or submissions.
 
-如果页面已显示预期结果，记录该观察；如果动作是否发生仍不能确定，停止请求用户核查。继续执行仅限用户本次明确授权的剩余目标。工具不可用时报告具体缺口，不编造成功状态。
+If the screen already shows the expected result, record that observation. If you still cannot determine whether an action occurred, stop and ask the user to check. Continue only with the remaining goals explicitly authorized by the user for this request. If a required tool is unavailable, report what is missing; never invent a successful outcome.

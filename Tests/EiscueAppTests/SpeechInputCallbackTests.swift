@@ -31,7 +31,7 @@ final class SpeechInputCallbackTests: XCTestCase {
                     return
                 }
                 buffer.frameLength = 32
-                buffer.floatChannelData?[0].initialize(repeating: 0, count: 32)
+                buffer.floatChannelData?[0].initialize(repeating: 0.25, count: 32)
                 let time = AVAudioTime(sampleTime: 0, atRate: 16_000)
                 callback(buffer, time)
                 pipe.endAudio()
@@ -41,6 +41,28 @@ final class SpeechInputCallbackTests: XCTestCase {
             }
         }
         XCTAssertTrue(delivered)
+        XCTAssertEqual(pipe.snapshot.buffers, 1)
+        XCTAssertEqual(pipe.snapshot.frames, 32)
+        XCTAssertEqual(pipe.snapshot.peak, 0.25, accuracy: 0.001)
+        XCTAssertTrue(pipe.snapshot.hasInput)
+    }
+
+    @MainActor func testZeroBuffersAreNotEvidenceThatTheMicrophoneIsRecording() throws {
+        let pipe = SpeechAudioPipe(request: SFSpeechAudioBufferRecognitionRequest())
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480))
+        buffer.frameLength = 480
+        buffer.floatChannelData?[0].initialize(repeating: 0, count: 480)
+        pipe.append(buffer)
+        XCTAssertEqual(pipe.snapshot.frames, 480)
+        XCTAssertTrue(pipe.snapshot.readableSamples)
+        XCTAssertFalse(pipe.snapshot.hasInput)
+        let quietBuffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480))
+        quietBuffer.frameLength = 480
+        quietBuffer.floatChannelData?[0].initialize(repeating: 0.000001, count: 480)
+        pipe.append(quietBuffer)
+        XCTAssertTrue(pipe.snapshot.hasInput, "Very quiet input is different from digitally muted, all-zero buffers.")
+        pipe.endAudio()
     }
 
     @MainActor func testRecognitionCallbackSnapshotsErrorThenDeliversOnMainActor() async {
@@ -54,7 +76,8 @@ final class SpeechInputCallbackTests: XCTestCase {
                 callback(nil, NSError(domain: "SpeechInputCallbackTests", code: 1))
             }
         }
-        XCTAssertEqual(update, .init(text: nil, isFinal: false, hasError: true))
+        XCTAssertEqual(update, .init(text: nil, isFinal: false, hasError: true,
+                                    errorDomain: "SpeechInputCallbackTests", errorCode: 1))
     }
 
     @MainActor func testRecognitionCallbackWithoutResultCanArriveOnBackgroundQueue() async {

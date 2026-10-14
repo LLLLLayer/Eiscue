@@ -1,6 +1,27 @@
 import Foundation
 import Markdown
 
+/// Parsing is off the UI actor; revisiting a lazy row reuses its parsed blocks.
+/// Memory-only and bounded so this doesn't create another copy of chat history on disk.
+actor ChatMarkdownCache {
+    static let shared = ChatMarkdownCache()
+    private final class Entry {
+        let blocks: [ChatMarkdownBlock]
+        init(_ blocks: [ChatMarkdownBlock]) { self.blocks = blocks }
+    }
+    private let entries = NSCache<NSString, Entry>()
+    init() { entries.countLimit = 64; entries.totalCostLimit = 2 * 1_024 * 1_024 }
+
+    func blocks(for source: String) throws -> [ChatMarkdownBlock] {
+        try Task.checkCancellation()
+        if let entry = entries.object(forKey: source as NSString) { return entry.blocks }
+        let blocks = ChatMarkdownParser.parse(source)
+        try Task.checkCancellation()
+        entries.setObject(Entry(blocks), forKey: source as NSString, cost: source.utf8.count * 4)
+        return blocks
+    }
+}
+
 /// CommonMark + GFM are parsed by swift-markdown. Positions, rather than content,
 /// identify blocks so an appended streaming token does not recreate earlier views.
 struct ChatMarkdownBlock: Identifiable, Equatable, Sendable {

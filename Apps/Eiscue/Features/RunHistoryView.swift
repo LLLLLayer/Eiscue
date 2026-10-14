@@ -66,6 +66,7 @@ private struct RunDetailView: View {
     }
 
     var body: some View {
+        let timeline = record.timeline
         List {
             Section {
                 Label(record.state.title, systemImage: record.state.symbol)
@@ -90,56 +91,50 @@ private struct RunDetailView: View {
                 }
             }
 
-            if let activities = record.activities, !activities.isEmpty {
-                Section {
-                    ForEach(activities) { activity in
-                        NavigationLink {
-                            RunToolDetailView(activityID: activity.id, initialRecord: record)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: activity.isRunning ? "circle.dotted.circle" : activity.isError ? "exclamationmark.circle" : "checkmark.circle")
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(DeviceToolPresentation.activityTitle(for: activity))
-                                        .font(.subheadline.weight(.medium))
-                                    Text(activity.startedAt, format: .dateTime.hour().minute().second())
-                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Section {
+                if timeline.isEmpty {
+                    Text("runs.noEvents").foregroundStyle(.secondary)
+                } else {
+                    ForEach(timeline) { item in
+                        switch item {
+                        case .activity(let activity):
+                            NavigationLink {
+                                RunToolDetailView(activityID: activity.id, initialRecord: record)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: activity.isRunning ? "circle.dotted.circle" : activity.isError ? "exclamationmark.circle" : "checkmark.circle")
+                                        .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(DeviceToolPresentation.activityTitle(for: activity)).font(.subheadline.weight(.medium))
+                                        Text(activity.startedAt, format: .dateTime.hour().minute().second())
+                                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                    }
+                                }.padding(.vertical, 3)
+                            }
+                            .accessibilityIdentifier("runToolDetail_\(activity.id)")
+                        case .event(let event):
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: "circle.fill").font(.system(size: 5))
+                                    .frame(width: 20, height: 20).foregroundStyle(.tertiary)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack(alignment: .firstTextBaseline) {
+                                        Text(RunReport.eventTitle(event)).font(.subheadline.weight(.medium))
+                                        Spacer()
+                                        Text(event.date, format: .dateTime.hour().minute().second())
+                                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                    }
+                                    Text(RunReport.eventSummary(event))
+                                        .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
                                 }
                             }
-                            .padding(.vertical, 3)
+                            .padding(.vertical, 4)
+                            .accessibilityIdentifier("runTimelineEvent_\(event.id)")
                         }
-                        .accessibilityIdentifier("runToolDetail_\(activity.id)")
-                    }
-                } header: {
-                    Text(String(localized: "runDetails.steps", table: "RunDetails"))
-                }
-            }
-
-            Section {
-                if record.events.isEmpty {
-                    Text("runs.noEvents")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(record.events) { event in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(RunReport.eventTitle(event))
-                                    .font(.subheadline.weight(.medium))
-                                Spacer()
-                                Text(event.date, format: .dateTime.hour().minute().second())
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(RunReport.eventSummary(event))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        .padding(.vertical, 4)
                     }
                 }
             } header: {
-                Text("runs.log")
+                Text(String(localized: "runDetails.timeline", table: "RunDetails"))
+                    .accessibilityIdentifier("runTimelineHeader")
             } footer: {
                 Text("runs.logDetail")
             }

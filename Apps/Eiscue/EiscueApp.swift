@@ -11,7 +11,8 @@ struct EiscueApp: App {
                 #if DEBUG
                 if DebugDevicePageFixture.isEnabled {
                     RootView(initialDestination: .device)
-                } else if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
+                } else if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check")
+                            || ProcessInfo.processInfo.arguments.contains("--system-pairing-check") {
                     RootView(initialDestination: .device)
                 } else if ProcessInfo.processInfo.arguments.contains("--ble-device-check") {
                     BLEDeviceCheckView()
@@ -42,6 +43,10 @@ struct EiscueApp: App {
                     #endif
                     await model.load()
                     #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+                       ProcessInfo.processInfo.arguments.contains("--long-conversation-fixture") {
+                        model.installLongConversationFixture()
+                    }
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                        ProcessInfo.processInfo.arguments.contains("--tool-image-preview-fixture") {
                         model.installToolImagePreviewFixture()

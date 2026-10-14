@@ -51,5 +51,7 @@
 	<array>
 		<string>bluetooth-central</string>
 	</array>
+	<key>UIPrefersShowingLanguageSettings</key>
+	<true/>
 </dict>
 </plist>

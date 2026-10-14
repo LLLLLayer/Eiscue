@@ -101,3 +101,25 @@ actor RunJournal {
         }
     }
 }
+
+/// A single chronology retains every diagnostic event and the drill-down entry
+/// for each operation; identical timestamps keep their original order.
+enum RunTimelineItem: Identifiable {
+    case activity(ToolActivity)
+    case event(RunLogEntry)
+    var id: String {
+        switch self { case .activity(let value): "activity:\(value.id)"; case .event(let value): "event:\(value.id)" }
+    }
+    var date: Date {
+        switch self { case .activity(let value): value.startedAt; case .event(let value): value.date }
+    }
+}
+
+extension RunRecord {
+    var timeline: [RunTimelineItem] {
+        let items = events.map(RunTimelineItem.event) + (activities ?? []).map(RunTimelineItem.activity)
+        return items.enumerated().sorted {
+            $0.element.date == $1.element.date ? $0.offset < $1.offset : $0.element.date < $1.element.date
+        }.map(\.element)
+    }
+}

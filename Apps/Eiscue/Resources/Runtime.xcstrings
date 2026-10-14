@@ -1447,13 +1447,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Change your preferred language in Eiscue’s system settings."
+            "value": "Follows your system language by default. Choose another language in Eiscue’s iOS settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可在系统的 Eiscue 设置中更改语言。"
+            "value": "默认跟随系统。可在 iOS 的 Eiscue 设置中单独选择语言。"
           }
         }
       }

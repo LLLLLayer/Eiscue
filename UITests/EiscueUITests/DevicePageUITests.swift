@@ -49,7 +49,7 @@ final class DevicePageUITests: XCTestCase {
     }
 
     @MainActor
-    func testDebugSectionKeepsManualInputCheckBelowReadyConnection() {
+    func testDebugSectionGroupsDiagnosticsAndPersistsVisibilitySetting() {
         let app = launch()
         XCTAssertFalse(app.buttons["deviceConnectionOptionsMenu"].exists)
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
@@ -58,7 +58,7 @@ final class DevicePageUITests: XCTestCase {
         for _ in 0..<3 where !probe.isHittable { app.swipeUp() }
         XCTAssertTrue(debugTitle.exists)
         XCTAssertEqual(debugTitle.label, "调试")
-        XCTAssertGreaterThan(debugTitle.frame.minY, app.buttons["deviceScreenPreviewButton"].frame.maxY)
+        XCTAssertGreaterThan(app.buttons["deviceScreenPreviewButton"].frame.minY, debugTitle.frame.maxY)
         XCTAssertGreaterThan(probe.frame.minY, debugTitle.frame.maxY)
         XCTAssertTrue(probe.isHittable)
         probe.tap()
@@ -72,6 +72,40 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["probeEcho"].label, "Eiscue UI")
         app.navigationBars.buttons["完成"].tap()
         XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 5))
+
+        openSettings(in: app)
+        let toggle = app.switches["debugToolsToggle"]
+        for _ in 0..<3 where !toggle.isHittable { app.swipeUp() }
+        XCTAssertTrue(toggle.isHittable)
+        XCTAssertEqual(toggle.value as? String, "1")
+        saveScreenshot(app, name: "Settings-Debug-On")
+        // SwiftUI exposes the whole labelled row as a switch. Its center is
+        // the label, so tap the actual trailing control and verify the value.
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        saveScreenshot(app, name: "Settings-Debug-Off")
+        XCTAssertEqual(toggle.value as? String, "0")
+        openDevice(in: app)
+        XCTAssertTrue(app.staticTexts["devicePairingComplete"].exists)
+        XCTAssertFalse(debugTitle.exists)
+        XCTAssertFalse(probe.exists)
+        XCTAssertFalse(app.buttons["deviceScreenPreviewButton"].exists)
+
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "--reset-state" }
+        app.launch()
+        XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
+        XCTAssertFalse(debugTitle.exists, "A saved off choice must survive relaunching a Debug build.")
+        XCTAssertFalse(app.buttons["deviceScreenPreviewButton"].exists)
+
+        openSettings(in: app)
+        for _ in 0..<3 where !toggle.isHittable { app.swipeUp() }
+        XCTAssertEqual(toggle.value as? String, "0")
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        openDevice(in: app)
+        XCTAssertTrue(debugTitle.exists)
+        XCTAssertTrue(probe.exists)
+        XCTAssertTrue(app.buttons["deviceScreenPreviewButton"].exists)
     }
 
     @MainActor
@@ -110,11 +144,21 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertFalse(app.buttons["deviceConnectionOptionsMenu"].exists)
         saveScreenshot(app, name: "Device-Unpaired-Inline")
 
+        openSettings(in: app)
+        let debugToggle = app.switches["debugToolsToggle"]
+        for _ in 0..<3 where !debugToggle.isHittable { app.swipeUp() }
+        XCTAssertTrue(debugToggle.isHittable)
+        debugToggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(debugToggle.value as? String, "0")
+        openDevice(in: app)
         picker.tap()
         XCTAssertTrue(bluetooth.waitForExistence(timeout: 5))
         bluetooth.tap()
         XCTAssertTrue(bluetooth.waitForNonExistence(timeout: 5))
         XCTAssertEqual(picker.value as? String, "ESP32-C3 / S3 键鼠")
+        XCTAssertTrue(app.buttons["bluetoothVerifyButton"].exists,
+                      "Required first calibration stays available with diagnostics hidden.")
+        XCTAssertFalse(app.staticTexts["deviceDebugSectionTitle"].exists)
         app.terminate()
         app.launchArguments.removeAll { $0 == "--reset-state" }
         app.launch()

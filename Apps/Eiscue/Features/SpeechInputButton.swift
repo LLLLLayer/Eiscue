@@ -1,37 +1,41 @@
 import SwiftUI
 import UIKit
 
-/// A dedicated voice surface has no text selection recognizer. Touch tracking
-/// starts on press, release finishes, and dragging upward cancels the utterance.
+/// Tap for hands-free dictation, or hold and release for a short utterance.
+/// A dedicated control avoids competing with text selection gestures.
 struct SpeechInputButton: View {
     let controller: SpeechInputController
     var locale: Locale = .current
     var isDisabled = false
+    var hapticsEnabled = true
     let onTranscript: @MainActor (String) -> Void
     @State private var isCancelling = false
 
     var body: some View {
-        VStack(spacing: 5) {
-            HoldToTalkControl(
-                isBusy: controller.isBusy, isDisabled: isDisabled,
-                title: isCancelling ? speechText("speech.releaseToCancel")
-                    : controller.isBusy ? controller.statusText : speechText("speech.holdToTalk"),
-                status: controller.statusText,
-                onStart: { controller.beginHold(locale: locale, onTranscript: onTranscript) },
-                onFinish: { controller.endHold() },
-                onCancel: { controller.cancel() },
-                onCancelZone: { isCancelling = $0 },
-                onAccessibleTap: { controller.toggle(locale: locale, onTranscript: onTranscript) }
-            )
-            .frame(height: 50)
-            .overlay(RoundedRectangle(cornerRadius: 26).stroke(isCancelling ? Color.primary.opacity(0.35) : .clear))
-            if controller.isBusy {
-                Text(speechText(isCancelling ? "speech.releaseToCancel" : "speech.slideToCancel"))
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-        }
+        HoldToTalkControl(
+            isBusy: controller.isBusy, isDisabled: isDisabled || controller.state == .finishing,
+            hapticsEnabled: hapticsEnabled,
+            title: isCancelling ? speechText("speech.releaseToCancel")
+                : controller.isBusy && !controller.transcript.isEmpty ? controller.transcript
+                : controller.isRecording ? finishHint
+                : controller.isBusy ? controller.statusText : speechText("speech.tapToTalk"),
+            subtitle: !isCancelling && controller.isBusy && !controller.transcript.isEmpty
+                ? (controller.isRecording ? finishHint : controller.statusText) : nil,
+            status: controller.accessibilityStatus,
+            onStart: { controller.beginHold(locale: locale, onTranscript: onTranscript) },
+            onFinish: { controller.endHold() },
+            onCancel: { controller.cancel() },
+            onCancelZone: { isCancelling = $0 },
+            onAccessibleTap: { controller.toggle(locale: locale, onTranscript: onTranscript) }
+        )
+        .frame(height: 44)
+        .background(isCancelling ? Color.primary.opacity(0.12) : Color.clear, in: Capsule())
         .onChange(of: isDisabled) { if isDisabled { controller.cancel() } }
-        .onDisappear { controller.cancel(); isCancelling = false }
+        .onChange(of: controller.isBusy) { if !controller.isBusy { isCancelling = false } }
+    }
+
+    private var finishHint: String {
+        speechText(controller.isHoldSession ? "speech.releaseToFinish" : "speech.tapToFinish")
     }
 }
 
@@ -61,7 +65,9 @@ struct SpeechHoldInteraction {
 private struct HoldToTalkControl: UIViewRepresentable {
     let isBusy: Bool
     let isDisabled: Bool
+    let hapticsEnabled: Bool
     let title: String
+    let subtitle: String?
     let status: String
     let onStart: @MainActor () -> Void
     let onFinish: @MainActor () -> Void
@@ -71,8 +77,14 @@ private struct HoldToTalkControl: UIViewRepresentable {
 
     func makeUIView(context: Context) -> HoldToTalkButton {
         let button = HoldToTalkButton(type: .system)
+        button.configureGestures()
         button.accessibilityIdentifier = "holdToTalkButton"
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return button
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: HoldToTalkButton, context: Context) -> CGSize? {
+        proposal.width.map { CGSize(width: $0, height: 44) }
     }
 
     func updateUIView(_ button: HoldToTalkButton, context: Context) {
@@ -81,55 +93,83 @@ private struct HoldToTalkControl: UIViewRepresentable {
         // VoiceOver starts via accessibilityActivate without a pressed finger;
         // keep the surface enabled so its next activation can stop recording.
         button.isEnabled = !isDisabled
+        button.canBeginHold = !isBusy
+        button.hapticsEnabled = hapticsEnabled
         button.onStart = onStart; button.onFinish = onFinish; button.onCancel = onCancel
         button.onCancelZone = onCancelZone; button.onAccessibleTap = onAccessibleTap
         var configuration = UIButton.Configuration.plain()
         configuration.title = title
+        configuration.subtitle = subtitle
+        configuration.contentInsets = .init(top: 0, leading: 4, bottom: 0, trailing: 4)
+        configuration.titleLineBreakMode = .byTruncatingHead
+        configuration.subtitleLineBreakMode = .byTruncatingTail
         configuration.baseForegroundColor = .label
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
             var attributes = attributes
             attributes.font = .preferredFont(forTextStyle: .body)
             return attributes
         }
+        configuration.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = .preferredFont(forTextStyle: .caption2)
+            attributes.foregroundColor = UIColor.secondaryLabel
+            return attributes
+        }
         button.configuration = configuration
-        button.accessibilityLabel = speechText("speech.holdToTalk")
+        button.accessibilityLabel = title
         button.accessibilityValue = status
         button.accessibilityHint = speechText("speech.holdHint")
     }
 }
 
 @MainActor
-private final class HoldToTalkButton: UIButton {
+private final class HoldToTalkButton: UIButton, UIGestureRecognizerDelegate {
     var interaction = SpeechHoldInteraction()
     private var origin = CGPoint.zero
+    var canBeginHold = true
+    var hapticsEnabled = true
     var onStart: (@MainActor () -> Void)?
     var onFinish: (@MainActor () -> Void)?
     var onCancel: (@MainActor () -> Void)?
     var onCancelZone: (@MainActor (Bool) -> Void)?
     var onAccessibleTap: (@MainActor () -> Void)?
 
-    override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        guard interaction.begin(isEnabled: isEnabled) else { return false }
-        origin = touch.location(in: nil)
-        isHighlighted = true
-        onStart?()
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        return true
+    func configureGestures() {
+        // Keep the held gesture independent of title/configuration updates.
+        let hold = UILongPressGestureRecognizer(target: self, action: #selector(held))
+        hold.minimumPressDuration = 0.3; hold.allowableMovement = 12
+        hold.delegate = self
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+        tap.delegate = self
+        tap.require(toFail: hold)
+        addGestureRecognizer(hold); addGestureRecognizer(tap)
     }
-    override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        let wasCancelling = interaction.isCancelling
-        interaction.move(verticalDistance: touch.location(in: nil).y - origin.y)
-        if wasCancelling != interaction.isCancelling {
-            onCancelZone?(interaction.isCancelling)
-            UISelectionFeedbackGenerator().selectionChanged()
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        isEnabled && (!(gestureRecognizer is UILongPressGestureRecognizer) || canBeginHold)
+    }
+    @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+        if recognizer.state == .ended { onAccessibleTap?() }
+    }
+    @objc private func held(_ recognizer: UILongPressGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            guard interaction.begin(isEnabled: isEnabled && canBeginHold) else { return }
+            origin = recognizer.location(in: nil)
+            isHighlighted = true
+            onStart?()
+            if hapticsEnabled { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+        case .changed, .ended:
+            let wasCancelling = interaction.isCancelling
+            interaction.move(verticalDistance: recognizer.location(in: nil).y - origin.y)
+            if wasCancelling != interaction.isCancelling {
+                onCancelZone?(interaction.isCancelling)
+                if hapticsEnabled { UISelectionFeedbackGenerator().selectionChanged() }
+            }
+            if recognizer.state == .ended { complete(cancelled: false) }
+        case .cancelled, .failed: complete(cancelled: true)
+        default: break
         }
-        return true
     }
-    override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-        if let touch { interaction.move(verticalDistance: touch.location(in: nil).y - origin.y) }
-        complete(cancelled: false)
-    }
-    override func cancelTracking(with event: UIEvent?) { complete(cancelled: true) }
     private func complete(cancelled: Bool) {
         guard let completion = interaction.end(cancelled: cancelled) else { return }
         isHighlighted = false

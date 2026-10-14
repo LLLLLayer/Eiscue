@@ -11,11 +11,12 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 ## Features
 
 - **Chat and multiple models**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. Save multiple service/model configurations and switch from the conversation header. Each configuration keeps its own API key in Keychain.
-- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations default to **In-app connection (local VPN)**, which needs initial computer pairing. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved supported route choices are retained.
-- **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required.
-- **Conversation management**: streaming responses, Markdown, tool progress, copy and share. The sidebar supports pinning, reordering, renaming and bulk deletion; wide iPad windows can keep it visible.
-- **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. Task details show saved input/output, screenshots and tap/swipe positions when the matching image is available. An iOS 26 system Live Activity shows the current task phase. Completion/interruption notifications are optional and off by default.
-- **Interface and extensions**: native Liquid Glass, light/dark appearance, English and Simplified Chinese, and imported UTF-8 Markdown skills. Manual input diagnostics appear in a Debug-only section; required HID calibration remains available in every build. The supported C3 board with an ST7789 display can also show expressions, task phases and completed step counts.
+- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations default to **In-app connection (local VPN)**, which needs initial pairing: computer USB pairing on iOS 26, or system pairing on iOS 27+. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved supported route choices are retained.
+- **Language**: follows the system by default. Open Settings → App language to select English or Simplified Chinese in iOS settings.
+- **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required. Tap to start/finish dictation, or hold to talk; recognized text returns to the draft for editing. On iOS 27+, active in-app and USB network control connections show a notice instead of entering voice mode: system remote-control muting was observed on the in-app test phone; the USB network route uses the same screen service but has not been microphone-tested. This restriction does not apply to iOS 26 XCTest, Bluetooth HID, USB HID, or a disconnected device; microphone coexistence on those routes still needs physical-device validation.
+- **Conversation management**: streaming responses, Markdown, tool progress, copy and share. The sidebar supports pinning, reordering, renaming and bulk deletion; wide iPad windows can keep it visible. Swipe right to open and left to close the sidebar. Task details combine steps and logs in one timeline.
+- **Tasks and background execution**: stop, explicit continuation after a pause and redacted reports. Task details show saved input/output, screenshots and tap/swipe positions when the matching image is available. Connections stay open after normal task completion by default; disconnect manually on the device page or enable **Disconnect after tasks** in Settings. Changing apps alone does not disconnect, but this does not guarantee that iOS or the network will keep an idle session alive. An iOS 26 system Live Activity shows the current phase and final result; its ring stays nearly empty during execution, and iOS controls dismissal after the task ends. If the system activity receives the result, no duplicate notification is sent. Otherwise, optional completion/interruption notifications can be used; they are off by default.
+- **Interface and extensions**: native Liquid Glass, light/dark appearance, English and Simplified Chinese, and imported UTF-8 Markdown skills. Screen preview and repeat input checks for every connection route appear only in the device page's Debug section. The Debug toggle in Settings defaults on in Debug builds and remembers an off choice; Release builds contain neither the toggle nor these diagnostic entries. Required HID calibration remains available until completed in every build. The supported C3 board with an ST7789 display can also show expressions, task phases and completed step counts.
 
 ## Validation status
 
@@ -42,7 +43,9 @@ Model service URLs must use HTTPS. OpenAI-compatible services usually include `/
 
 ### Let the AI operate the device
 
-The default **In-app connection** route guides you through five steps: prepare a Mac, connect the phone by USB, run the copyable command, import pairing, and connect the device. The command and requirements appear below. Choosing a route does not start it automatically.
+The default **In-app connection** route offers system pairing on iOS 27+, while retaining import of an existing compatible pairing file. Select Eiscue in the system pairing page, confirm **Pair**, return to Eiscue for the code, then enter it in Settings. On iOS 26, setup uses five steps: prepare a Mac, connect the phone by USB, run the copyable command, import pairing, and connect the device. The command and requirements appear below. Choosing a route does not start it automatically.
+
+System pairing completed on an iOS 27 device using a diagnostic build on 2026-10-14. That result does not establish the default publication configuration or screenshot/input acceptance. Developer Mode and a compatible prepared DDI remain separate requirements; this does not establish a fully computer-free setup.
 
 To use the optional Bluetooth route:
 
@@ -59,7 +62,7 @@ The connection, screen sharing and calibration must all remain valid. Disconnect
 | --- | --- | --- | --- |
 | Bluetooth board (C3 / S3) | ReplayKit / BLE HID | Bluetooth pairing, AssistiveTouch, screen sharing and calibration; no computer-generated pairing file or DDI | No |
 | S3 USB input | ReplayKit / USB HID; control commands still use Bluetooth | As above, plus a USB connection with the phone acting as host | No |
-| In-app connection (default, local VPN) | In-app XCTest screenshots and input on iOS 26 | Initial USB identity setup on a computer, developer environment / DDI | Yes |
+| In-app connection (default, local VPN) | Developer-service capture/input; in-app XCTest on iOS 26 | USB identity setup on iOS 26 or system pairing on iOS 27+, plus developer environment / DDI | Yes |
 | S3 USB network adapter | As above, through a USB NCM relay | As above, plus a USB host connection and network adapter configuration | No |
 
 The former C3 Wi-Fi hotspot relay has been removed. An old saved selection resets to the default In-app connection without starting it; choose and connect a supported route explicitly.

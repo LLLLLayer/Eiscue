@@ -189,13 +189,17 @@ final class BackgroundExecution {
 
     /// Call after completion, failure, or an in-App stop. Repeated/stale calls
     /// are harmless. The host remains responsible for stopping its own work.
-    func end(taskID: UUID, success: Bool) {
-        guard let current = run, current.taskID == taskID else { return }
+    /// Returns whether the final status was delivered to this system activity,
+    /// not whether a particular system layout is currently visible.
+    @discardableResult
+    func end(taskID: UUID, success: Bool) -> Bool {
+        guard let current = run, current.taskID == taskID else { return false }
         if let lease = current.lease {
             run = nil
-            lease.finish(success: success)
+            return lease.finish(success: success, status: current.status)
         } else {
             abandonLaunch(token: current.token, error: CancellationError())
+            return false
         }
     }
 
@@ -336,30 +340,39 @@ private final class ContinuedTaskLease: @unchecked Sendable {
     func update(status: BackgroundTaskStatus) -> Bool {
         lock.withLock {
             guard !completed else { return false }
-            if task.progress.totalUnitCount != status.totalUnitCount {
-                task.progress.totalUnitCount = status.totalUnitCount
-            }
-            if task.progress.completedUnitCount != status.completedUnitCount {
-                task.progress.completedUnitCount = status.completedUnitCount
-            }
-            if task.title != status.title || task.subtitle != status.subtitle {
-                task.updateTitle(status.title, subtitle: status.subtitle)
-            }
+            apply(status: status)
             return true
         }
     }
 
-    func finish(success: Bool) {
+    func finish(success: Bool, status: BackgroundTaskStatus) -> Bool {
         let shouldComplete = lock.withLock {
             guard !completed else { return false }
+            // Publish the final text before completing the system activity.
+            // Expiration and completion cannot both claim to deliver a result.
+            apply(status: status)
             completed = true
             onExpiration = nil
             if success { task.progress.completedUnitCount = task.progress.totalUnitCount }
             return true
         }
-        guard shouldComplete else { return }
+        guard shouldComplete else { return false }
         task.expirationHandler = nil
         task.setTaskCompleted(success: success)
+        return true
+    }
+
+    /// Caller holds the lease lock.
+    private func apply(status: BackgroundTaskStatus) {
+        if task.progress.totalUnitCount != status.totalUnitCount {
+            task.progress.totalUnitCount = status.totalUnitCount
+        }
+        if task.progress.completedUnitCount != status.completedUnitCount {
+            task.progress.completedUnitCount = status.completedUnitCount
+        }
+        if task.title != status.title || task.subtitle != status.subtitle {
+            task.updateTitle(status.title, subtitle: status.subtitle)
+        }
     }
 
     private func expire() {

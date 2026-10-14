@@ -49,7 +49,7 @@ final class TaskStatusPresentationTests: XCTestCase {
             }
             XCTAssertEqual(snapshot.completedToolCalls, 0)
             XCTAssertEqual(snapshot.completedWorkUnits, 1)
-            XCTAssertEqual(snapshot.totalWorkUnits, 3, "Internal observations are not separate Pi tool calls.")
+            XCTAssertEqual(snapshot.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount, "Internal observations are not separate Pi tool calls.")
         }
         let deciding = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", devicePhase: .deciding)
         XCTAssertEqual(deciding.title, localized("task.status.title.waiting", "Waiting for AI"))
@@ -81,7 +81,7 @@ final class TaskStatusPresentationTests: XCTestCase {
 
     func testPrimaryTitleNeverClaimsRunningAfterTerminalOrRunnerStop() {
         let cases: [(RunState, StaticString, String.LocalizationValue)] = [
-            (.completed, "task.status.title.completed", "Turn ended"),
+            (.completed, "task.status.title.completed", "Task complete"),
             (.paused, "task.status.title.paused", "Task paused"),
             (.interrupted, "task.status.title.interrupted", "Task stopped"),
             (.failed, "task.status.title.failed", "Task failed")
@@ -102,7 +102,7 @@ final class TaskStatusPresentationTests: XCTestCase {
         var snapshot = TaskStatusPresentation.snapshot(for: run)
         XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.preparing", "Preparing device access"))
         XCTAssertEqual(snapshot.completedWorkUnits, 0)
-        XCTAssertEqual(snapshot.totalWorkUnits, 2)
+        XCTAssertEqual(snapshot.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
 
         run.state = .running
         run.events.append(RunLogEntry(kind: "run.started", summary: "private"))
@@ -122,8 +122,8 @@ final class TaskStatusPresentationTests: XCTestCase {
         run.state = .completed
         let completed = TaskStatusPresentation.snapshot(for: run)
         XCTAssertEqual(completed.subtitle, localized("task.status.phase.completed", "Open Eiscue to view the result"))
-        XCTAssertEqual(completed.completedWorkUnits, 2)
-        XCTAssertEqual(completed.totalWorkUnits, 2)
+        XCTAssertEqual(completed.completedWorkUnits, completed.totalWorkUnits)
+        XCTAssertEqual(completed.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
     }
 
     func testSuccessfulAndFailedCallsCountAsEndedButNotAsGoalSuccess() {
@@ -132,14 +132,14 @@ final class TaskStatusPresentationTests: XCTestCase {
         var snapshot = TaskStatusPresentation.snapshot(for: run)
         XCTAssertEqual(snapshot.completedToolCalls, 0)
         XCTAssertEqual(snapshot.completedWorkUnits, 1)
-        XCTAssertEqual(snapshot.totalWorkUnits, 3)
+        XCTAssertEqual(snapshot.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
 
         run.events += [event("action.acknowledged"), event("tool.finished"),
                        event("tool.started"), event("tool.failed"), event("tool.error")]
         snapshot = TaskStatusPresentation.snapshot(for: run)
         XCTAssertEqual(snapshot.completedToolCalls, 2)
         XCTAssertEqual(snapshot.completedWorkUnits, 3)
-        XCTAssertEqual(snapshot.totalWorkUnits, 4)
+        XCTAssertEqual(snapshot.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
         XCTAssertEqual(snapshot.subtitle, localized("task.status.phase.waiting", "Waiting for the next response"))
     }
 
@@ -150,12 +150,20 @@ final class TaskStatusPresentationTests: XCTestCase {
         run.events = [started, ended, started, ended]
         let replayed = TaskStatusPresentation.snapshot(for: run)
         XCTAssertEqual(replayed.completedToolCalls, 1)
-        XCTAssertEqual(replayed.totalWorkUnits, 3)
+        XCTAssertEqual(replayed.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
 
-        run.events += [event("tool.started"), event("tool.finished")]
+        run.events.append(event("tool.started"))
+        let nextStarted = TaskStatusPresentation.snapshot(for: run)
+        XCTAssertEqual(nextStarted.completedWorkUnits, replayed.completedWorkUnits)
+        XCTAssertEqual(nextStarted.totalWorkUnits, replayed.totalWorkUnits, "Discovering another step must not move the ring backwards.")
+
+        run.events.append(event("tool.finished"))
         let newInvocation = TaskStatusPresentation.snapshot(for: run)
         XCTAssertEqual(newInvocation.completedToolCalls, 2)
-        XCTAssertEqual(newInvocation.totalWorkUnits, 4)
+        XCTAssertGreaterThan(newInvocation.completedWorkUnits, nextStarted.completedWorkUnits)
+        XCTAssertLessThan(Double(newInvocation.completedWorkUnits) / Double(newInvocation.totalWorkUnits), 0.001,
+                          "Ordinary task progress should keep the system ring nearly empty.")
+        XCTAssertEqual(newInvocation.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
     }
 
     func testRecoveredCompletionIsEvidenceOfOneDiscoveredCall() {
@@ -163,7 +171,7 @@ final class TaskStatusPresentationTests: XCTestCase {
         let snapshot = TaskStatusPresentation.snapshot(for: run)
         XCTAssertEqual(snapshot.completedToolCalls, 1)
         XCTAssertEqual(snapshot.completedWorkUnits, 2)
-        XCTAssertEqual(snapshot.totalWorkUnits, 3)
+        XCTAssertEqual(snapshot.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
     }
 
     func testTerminalFailureAndInterruptionOverrideStaleToolAndDoNotFillProgress() {
@@ -177,12 +185,12 @@ final class TaskStatusPresentationTests: XCTestCase {
             var snapshot = TaskStatusPresentation.snapshot(for: run, currentTool: "device_tap", isReceivingResponse: true, isFinishing: true)
             XCTAssertEqual(snapshot.subtitle, localized(key, fallback))
             XCTAssertEqual(snapshot.completedWorkUnits, 0, "A failure before preparation finished must remain at zero.")
-            XCTAssertEqual(snapshot.totalWorkUnits, 2)
+            XCTAssertEqual(snapshot.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
 
             run.events = [event("run.started"), event("tool.started")]
             snapshot = TaskStatusPresentation.snapshot(for: run)
             XCTAssertEqual(snapshot.completedWorkUnits, 1)
-            XCTAssertEqual(snapshot.totalWorkUnits, 3)
+            XCTAssertEqual(snapshot.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
         }
     }
 
@@ -194,7 +202,7 @@ final class TaskStatusPresentationTests: XCTestCase {
         XCTAssertEqual(status.subtitle, localized("task.status.phase.paused", "Open Eiscue to continue"))
         XCTAssertEqual(status.completedToolCalls, 1)
         XCTAssertEqual(status.completedWorkUnits, 2)
-        XCTAssertEqual(status.totalWorkUnits, 3)
+        XCTAssertEqual(status.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
 
         for reason in [RunPauseReason.toolLimit, .noProgress] {
             run.pauseReason = reason
@@ -219,7 +227,7 @@ final class TaskStatusPresentationTests: XCTestCase {
         let after = TaskStatusPresentation.snapshot(for: run, isReceivingResponse: true)
         XCTAssertEqual(before, after, "Identical snapshots can be cached without refreshing every streamed token.")
         XCTAssertEqual(after.completedWorkUnits, 1)
-        XCTAssertEqual(after.totalWorkUnits, 2)
+        XCTAssertEqual(after.totalWorkUnits, TaskStatusPresentation.progressTotalUnitCount)
     }
 
     private func localized(_ key: StaticString, _ fallback: String.LocalizationValue) -> String {

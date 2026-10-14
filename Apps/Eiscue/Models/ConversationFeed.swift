@@ -50,6 +50,7 @@ enum ConversationFeedItem: Identifiable, Sendable, Equatable {
                   roles.insert(message.role).inserted else { continue }
             if message.role == .assistant && isAssistantStreaming { continue }
             result.insert(message.id)
+            if roles.count == 2 { break }
         }
         return result
     }
