@@ -72,11 +72,9 @@ Onboarding and the device page show setup steps inline, with no separate help pa
 The **Copy command** button includes downloading the source before running the pairing helper. Paste the entire command into Mac Terminal from **any folder**; it creates a new temporary checkout without touching existing folders:
 
 ```sh
-(
-  eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" || exit 1
-  git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
-  python3 "$eiscue_setup_dir/Scripts/setup-device.py"
-)
+eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" &&
+git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
+python3 "$eiscue_setup_dir/Scripts/setup-device.py"
 ```
 
 The Mac needs Xcode 26+, Python 3.9+, Rust 1.96.0 and internet access. Device trust, Developer Mode and Xcode device preparation are still required; the command does not install these tools or prepare DDI. It asks you to select and confirm a USB-connected device, then generates and transfers its pairing identity to the installed Eiscue app. It does not replace a pending transfer, import the identity or start a VPN. The app detects the received file on the same page; choose **Import from computer**, then **Connect device**. The source and build cache remain in the Mac's temporary folder; the helper deletes its separate private pairing file after sending. Initial compilation may download pinned Cargo dependencies.

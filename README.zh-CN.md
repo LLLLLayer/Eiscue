@@ -72,11 +72,9 @@
 「复制命令」包含先下载源码、再运行配对工具的完整步骤。在 Mac 终端的**任意目录**粘贴整段执行即可；命令会创建新的临时源码目录，不改动已有文件夹：
 
 ```sh
-(
-  eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" || exit 1
-  git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
-  python3 "$eiscue_setup_dir/Scripts/setup-device.py"
-)
+eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" &&
+git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
+python3 "$eiscue_setup_dir/Scripts/setup-device.py"
 ```
 
 Mac 需安装 Xcode 26+、Python 3.9+、Rust 1.96.0 并保持联网。设备信任、开发者模式和 Xcode 开发准备仍需完成，命令不会安装这些工具或准备 DDI。它让用户选择并确认 USB 设备，再生成身份并传入已安装的 Eiscue，不覆盖待导入文件、不代替 App 导入或启动 VPN。App 会在同一页面检测收到的文件，点「导入电脑发送的配对」，再点「连接设备」。源码及构建缓存保留在 Mac 临时目录，工具发送后会删除单独保存的私密配对文件；首次编译可能下载已锁定的 Cargo 依赖。

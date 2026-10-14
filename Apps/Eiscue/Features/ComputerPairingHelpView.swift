@@ -5,11 +5,9 @@ struct ComputerPairingHelpView: View {
     @State private var hasCopied = false
 
     static let command = """
-    (
-      eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" || exit 1
-      git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
-      python3 "$eiscue_setup_dir/Scripts/setup-device.py"
-    )
+    eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" &&
+    git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
+    python3 "$eiscue_setup_dir/Scripts/setup-device.py"
     """
 
     var body: some View {
