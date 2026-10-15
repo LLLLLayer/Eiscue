@@ -875,7 +875,7 @@ final class AppModel {
     }
 
     func deleteConversations(_ ids: Set<UUID>) async {
-        guard !isBusy else { return }
+        guard !isLoading, !isBusy else { return }
         let selected = conversations.filter { ids.contains($0.id) }
         guard !selected.isEmpty else { return }
         isSaving = true; defer { isSaving = false }
@@ -885,9 +885,10 @@ final class AppModel {
     }
 
     private func deleteStoredConversation(_ conversation: Conversation) async throws {
-        let records = try await journal.load().records.filter { $0.conversationID == conversation.id }
-        try await agent?.removeConversation(id: conversation.id)
-        try await journal.delete(records)
+        let runIDs = try await journal.runIDsForDeletion(conversationID: conversation.id, knownRecords: runs)
+        let runtime = agent ?? AgentClient(storageDirectory: runtimeDirectory)
+        try await runtime.removeConversation(id: conversation.id)
+        try await journal.delete(ids: runIDs)
         try await repository.delete(id: conversation.id)
         toolImagePreviews.remove(conversationID: conversation.id)
         conversations.removeAll { $0.id == conversation.id }; runs.removeAll { $0.conversationID == conversation.id }

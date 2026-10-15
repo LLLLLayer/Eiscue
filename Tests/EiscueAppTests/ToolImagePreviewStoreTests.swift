@@ -159,6 +159,7 @@ final class ToolImagePreviewStoreTests: XCTestCase {
         let deleted = Conversation(title: "Delete")
         let kept = Conversation(title: "Keep")
         model.conversations = [deleted, kept]
+        model.isLoading = false
         let result = completion(.image(image(), mimeType: "image/png"))
         model.toolImagePreviews.record(result, activityID: "delete-1", conversationID: deleted.id)
         model.toolImagePreviews.record(result, activityID: "keep", conversationID: kept.id)

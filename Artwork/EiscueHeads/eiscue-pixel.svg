@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 220" data-state="ready" role="img" aria-labelledby="title">
+<title id="title">Eiscue — pixel animated head</title>
+<style>
+  svg { --outline:#213347; --front:#abe8f7; --top:#e0faff; --side:#63bacc; --eye:#407887; --tuft:#454545; }
+  .face { stroke:var(--outline); stroke-width:4.5; stroke-linejoin:round; }
+  .gaze { animation:look 9s ease-in-out infinite; }
+  .open-eyes { transform-box:fill-box; transform-origin:center; animation:blink 4.8s linear infinite; }
+  .closed-eyes { display:none; }
+  [data-state="asleep"] .open-eyes { display:none; }
+  [data-state="asleep"] .closed-eyes { display:inline; }
+  [data-state="asleep"] .gaze { animation:none; }
+  [data-state="connecting"] .gaze { animation-duration:4s; }
+  @keyframes blink { 0%,80%,87%,100% { transform:scaleY(1) } 84% { transform:scaleY(.08) } }
+  @keyframes look { 0%,100% { transform:translateX(0) } 25% { transform:translateX(4px) } 75% { transform:translateX(-4px) } }
+  @media (prefers-reduced-motion:reduce) { .gaze,.open-eyes { animation:none; } }
+</style>
+
+<g class="face" style="stroke-width:5;stroke-linejoin:miter">
+  <path fill="var(--top)" d="M36 70L72 40H190L214 64L178 88Z"/>
+  <path fill="var(--side)" d="M178 88L214 64V166H202V178L178 202Z"/>
+  <path fill="var(--front)" d="M36 70L178 88V202L48 186V178H36Z"/>
+  <path fill="var(--outline)" d="M126 52V40H138V16H150V28H162V40H174V28H198V40L174 64L150 48L138 60Z"/>
+</g>
+<g class="gaze" fill="none" stroke="var(--eye)" stroke-width="4" stroke-linecap="round">
+  <g class="open-eyes"><rect x="65" y="114" width="24" height="38"/><rect x="127" y="122" width="24" height="38"/></g>
+  <path class="closed-eyes" d="M65 133V138H89V133M127 141V146H151V141"/>
+</g>
+<path fill="var(--top)" d="M108 157L122 172L107 183L94 170Z"/>
+<path fill="var(--side)" opacity=".6" d="M108 157L107 183L94 170Z"/>
+<path fill="none" stroke="var(--eye)" stroke-width="3.5" stroke-linejoin="round" d="M108 157L122 172L107 183L94 170Z"/>
+</svg>

@@ -25,6 +25,9 @@ struct AssistantView: View {
 
     var body: some View {
         AssistantTranscriptView { welcome }
+        .overlay {
+            SpeechRecordingOverlay(controller: speech)
+        }
         .id(model.selectedConversationID)
         .background(EiscueStyle.background)
         .navigationTitle("Eiscue")
@@ -230,7 +233,8 @@ struct AssistantView: View {
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 28) {
-            Image("StickerWave").resizable().scaledToFit().frame(width: 112, height: 112).accessibilityHidden(true)
+            EiscueHeadView(state: model.isDeviceReady ? .awake : (model.isConnecting || model.isPairing ? .looking : .asleep))
+                .frame(width: 112, height: 112).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 12) {
                 Text("assistant.welcome")
                     .font(.system(size: 32, weight: .semibold, design: .rounded))

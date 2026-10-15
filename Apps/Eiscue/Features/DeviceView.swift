@@ -95,9 +95,8 @@ struct DeviceView: View {
 
     private var deviceHeader: some View {
         HStack(alignment: .center, spacing: 14) {
-            Image(systemName: model.device.platform == .iPadOS ? "ipad" : "iphone.gen3")
-                .font(.system(size: 34, weight: .regular))
-                .frame(width: 44)
+            EiscueHeadView(state: model.isDeviceReady ? .awake : (isConnecting ? .looking : .asleep))
+                .frame(width: 58, height: 58)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.device.name).font(.headline)

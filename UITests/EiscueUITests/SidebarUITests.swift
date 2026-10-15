@@ -21,6 +21,8 @@ final class SidebarUITests: XCTestCase {
         XCTAssertTrue(newConversation.isHittable)
         XCTAssertEqual(settings.label, "Settings", "The icon-only control must retain its full accessible label.")
         XCTAssertEqual(newConversation.label, "New conversation")
+        XCTAssertGreaterThanOrEqual(settings.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(settings.frame.height, 44)
         XCTAssertEqual(newConversation.frame.midY, settings.frame.midY, accuracy: 2,
                        "The footer actions must share one horizontal row.")
         XCTAssertLessThan(newConversation.frame.maxX, settings.frame.minX)

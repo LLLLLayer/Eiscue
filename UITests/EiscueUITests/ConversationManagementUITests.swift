@@ -20,6 +20,9 @@ final class ConversationManagementUITests: XCTestCase {
         XCTAssertEqual(input.value as? String, "Keep this draft")
         openSidebar(in: app)
         let second = row("Second conversation", in: app)
+        assertUpdatedTime(for: second)
+        XCTAssertFalse(app.buttons["selectConversationsButton"].exists)
+        XCTAssertFalse(app.buttons["doneSelectingConversationsButton"].exists)
         second.press(forDuration: 1)
         app.buttons["renameConversationButton"].tap()
         let renameAlert = app.alerts["Rename conversation"]
@@ -37,8 +40,14 @@ final class ConversationManagementUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
         openSidebar(in: app)
         XCTAssertTrue(row("Renamed conversation", in: app).exists)
-        app.buttons["selectConversationsButton"].tap()
-        row("First conversation", in: app).tap()
+        assertUpdatedTime(for: row("Renamed conversation", in: app))
+        row("First conversation", in: app).press(forDuration: 1)
+        app.buttons["selectConversationButton"].tap()
+        XCTAssertTrue(app.buttons["doneSelectingConversationsButton"].exists)
+        app.buttons["doneSelectingConversationsButton"].tap()
+        XCTAssertFalse(app.buttons["deleteSelectedConversationsButton"].exists)
+        row("First conversation", in: app).press(forDuration: 1)
+        app.buttons["selectConversationButton"].tap()
         row("Renamed conversation", in: app).tap()
         app.buttons["pinSelectedConversationsButton"].tap()
         XCTAssertEqual(row("First conversation", in: app).value as? String, "Pinned")
@@ -78,6 +87,19 @@ final class ConversationManagementUITests: XCTestCase {
     }
 
     @MainActor private func row(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "conversationRow_", title)).firstMatch
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "conversationRow_", title)).firstMatch
+    }
+
+    @MainActor private func assertUpdatedTime(for row: XCUIElement) {
+        guard row.waitForExistence(timeout: 5) else {
+            XCTFail("The conversation row must remain accessible by its identifier and title.")
+            return
+        }
+        let identifier = row.identifier.replacingOccurrences(of: "conversationRow_", with: "conversationUpdatedAt_")
+        let updatedTime = row.staticTexts[identifier]
+        XCTAssertTrue(updatedTime.waitForExistence(timeout: 5))
+        XCTAssertTrue(updatedTime.label.hasPrefix("Updated "))
+        XCTAssertGreaterThan(updatedTime.label.count, "Updated ".count)
     }
 }

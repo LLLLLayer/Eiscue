@@ -19,7 +19,7 @@ final class SpeechInputCallbackTests: XCTestCase {
 
     /// This sends a synthetic PCM buffer through the real tap and request,
     /// without opening a microphone or starting a speech-recognition session.
-    @MainActor func testAudioTapAcceptsBackgroundBuffersAndIgnoresBuffersAfterEnd() async {
+    @MainActor func testAudioTapAcceptsBackgroundBuffersAndIgnoresBuffersAfterEnd() async throws {
         let pipe = SpeechAudioPipe(request: SFSpeechAudioBufferRecognitionRequest())
         let callback = SpeechInputCallbacks.audioTap(pipe: pipe)
         let delivered = await withCheckedContinuation { continuation in
@@ -44,7 +44,46 @@ final class SpeechInputCallbackTests: XCTestCase {
         XCTAssertEqual(pipe.snapshot.buffers, 1)
         XCTAssertEqual(pipe.snapshot.frames, 32)
         XCTAssertEqual(pipe.snapshot.peak, 0.25, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(pipe.consumeLevel()), 0.25, accuracy: 0.001)
+        XCTAssertNil(pipe.consumeLevel(), "A drained interval is distinct from measured silence.")
         XCTAssertTrue(pipe.snapshot.hasInput)
+    }
+
+    @MainActor func testMeterUsesRecentRMSWhileCaptureEvidenceRemainsCumulative() throws {
+        let pipe = SpeechAudioPipe(request: SFSpeechAudioBufferRecognitionRequest())
+        defer { pipe.endAudio() }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4))
+        buffer.frameLength = 4
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        for (index, value) in [Float(0.5), -0.5, 0, 0].enumerated() { samples[index] = value }
+        pipe.append(buffer)
+        XCTAssertEqual(try XCTUnwrap(pipe.consumeLevel()), sqrt(0.125), accuracy: 0.0001)
+        XCTAssertNil(pipe.consumeLevel())
+        for index in 0..<4 { samples[index] = 0 }
+        pipe.append(buffer)
+        XCTAssertEqual(pipe.consumeLevel(), 0, "Silence must not display the session's previous peak.")
+        XCTAssertNil(pipe.consumeLevel(), "Only the interval containing silent PCM reports zero.")
+        XCTAssertEqual(pipe.snapshot.peak, 0.5)
+        XCTAssertTrue(pipe.snapshot.hasInput, "The meter must not reset the existing capture-readiness evidence.")
+    }
+
+    @MainActor func testMeterReadsIntegerPCMAndIgnoresNonfiniteSamples() throws {
+        for commonFormat in [AVAudioCommonFormat.pcmFormatInt16, .pcmFormatInt32, .pcmFormatFloat32] {
+            let pipe = SpeechAudioPipe(request: SFSpeechAudioBufferRecognitionRequest())
+            defer { pipe.endAudio() }
+            let format = try XCTUnwrap(AVAudioFormat(commonFormat: commonFormat, sampleRate: 16_000,
+                                                    channels: 1, interleaved: false))
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2))
+            buffer.frameLength = 2
+            if let samples = buffer.int16ChannelData?[0] { samples[0] = 16_384; samples[1] = -16_384 }
+            if let samples = buffer.int32ChannelData?[0] { samples[0] = 1_073_741_824; samples[1] = -1_073_741_824 }
+            if let samples = buffer.floatChannelData?[0] { samples[0] = .nan; samples[1] = .infinity }
+            pipe.append(buffer)
+            if commonFormat == .pcmFormatFloat32 { XCTAssertNil(pipe.consumeLevel()) }
+            else { XCTAssertEqual(try XCTUnwrap(pipe.consumeLevel()), 0.5, accuracy: 0.0001) }
+            XCTAssertTrue(pipe.snapshot.peak.isFinite)
+        }
     }
 
     @MainActor func testZeroBuffersAreNotEvidenceThatTheMicrophoneIsRecording() throws {
@@ -92,6 +131,61 @@ final class SpeechInputCallbackTests: XCTestCase {
             }
         }
         XCTAssertEqual(update, .init(text: nil, isFinal: false, hasError: false))
+    }
+}
+
+final class SpeechAudioMeterTests: XCTestCase {
+    @MainActor func testEmptyWindowsHoldRecentAudioButStalledInputExpires() {
+        let meter = SpeechAudioMeter()
+        let now = ContinuousClock.now
+        meter.append(rms: 0.1, at: now)
+        let level = meter.level, history = meter.levels
+        for delay in [50, 100, 200, 249] {
+            meter.append(rms: nil, at: now + .milliseconds(delay))
+            XCTAssertEqual(meter.level, level)
+            XCTAssertEqual(meter.levels, history)
+        }
+        meter.append(rms: nil, at: now + .milliseconds(250))
+        XCTAssertEqual(meter.level, 0)
+        XCTAssertTrue(meter.levels.allSatisfy { $0 == 0 })
+        meter.append(rms: 0.1, at: now + .milliseconds(300))
+        XCTAssertGreaterThan(meter.level, 0)
+        meter.append(rms: 0, at: now + .milliseconds(350))
+        XCTAssertEqual(meter.level, 0, "Measured silence still flattens the trace immediately.")
+        XCTAssertTrue(meter.levels.allSatisfy { $0 == 0 })
+    }
+
+    func testLevelMappingIsFiniteBoundedAndDistinguishesQuietAndLoudInput() {
+        for silence in [Float.zero, -1, 0.000001, .nan, .infinity] {
+            XCTAssertEqual(SpeechAudioMeter.normalizedLevel(rms: silence), 0)
+        }
+        let quiet = SpeechAudioMeter.normalizedLevel(rms: 0.01)
+        let speech = SpeechAudioMeter.normalizedLevel(rms: 0.1)
+        XCTAssertGreaterThan(quiet, 0)
+        XCTAssertGreaterThan(speech, quiet)
+        XCTAssertLessThan(speech, 1)
+        XCTAssertEqual(SpeechAudioMeter.normalizedLevel(rms: 1), 1)
+        XCTAssertEqual(SpeechAudioMeter.normalizedLevel(rms: 2), 1)
+    }
+
+    @MainActor func testSmoothingRetainsBoundedHistoryAndSilenceImmediatelyFlattensTrace() {
+        let meter = SpeechAudioMeter()
+        let count = meter.levels.count
+        meter.append(rms: 0.1)
+        let first = meter.level
+        meter.append(rms: 0.1)
+        XCTAssertGreaterThan(meter.level, first)
+        XCTAssertLessThan(meter.level, SpeechAudioMeter.normalizedLevel(rms: 0.1))
+        for _ in 0..<100 { meter.append(rms: 0.1) }
+        XCTAssertEqual(meter.levels.count, count)
+        XCTAssertTrue(meter.levels.allSatisfy { (0...1).contains($0) })
+        meter.append(rms: 0)
+        XCTAssertEqual(meter.level, 0)
+        XCTAssertTrue(meter.levels.allSatisfy { $0 == 0 })
+        meter.append(rms: 0.1)
+        meter.reset()
+        XCTAssertEqual(meter.level, 0)
+        XCTAssertTrue(meter.levels.allSatisfy { $0 == 0 })
     }
 }
 

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 220" data-state="ready" role="img" aria-labelledby="title">
+<title id="title">Eiscue — ice animated head</title>
+<style>
+  svg { --outline:#213347; --front:#abe8f7; --top:#e0faff; --side:#63bacc; --eye:#407887; --tuft:#454545; }
+  .face { stroke:var(--outline); stroke-width:4.5; stroke-linejoin:round; }
+  .gaze { animation:look 9s ease-in-out infinite; }
+  .open-eyes { transform-box:fill-box; transform-origin:center; animation:blink 4.8s linear infinite; }
+  .closed-eyes { display:none; }
+  [data-state="asleep"] .open-eyes { display:none; }
+  [data-state="asleep"] .closed-eyes { display:inline; }
+  [data-state="asleep"] .gaze { animation:none; }
+  [data-state="connecting"] .gaze { animation-duration:4s; }
+  @keyframes blink { 0%,80%,87%,100% { transform:scaleY(1) } 84% { transform:scaleY(.08) } }
+  @keyframes look { 0%,100% { transform:translateX(0) } 25% { transform:translateX(4px) } 75% { transform:translateX(-4px) } }
+  @media (prefers-reduced-motion:reduce) { .gaze,.open-eyes { animation:none; } }
+</style>
+
+<g class="face">
+  <path fill="var(--top)" d="M40 70Q65 41 95 39Q106 36 118 39L200 55Q213 57 215 65L180 87Z"/>
+  <path fill="var(--side)" d="M180 87L215 65Q221 108 211 166Q209 182 177 196Z"/>
+  <path fill="var(--front)" d="M40 70L180 87Q181 139 177 188Q176 202 163 201L47 186Q33 184 32 172Q26 101 40 70Z"/>
+  <path fill="var(--tuft)" d="M126 53L146 17L162 35L190 23L203 41L163 61L149 44L136 58Z"/>
+</g>
+<g fill="white" opacity=".8"><ellipse cx="51" cy="92.5" rx="6" ry="9.5"/><ellipse cx="61" cy="107.5" rx="3" ry="4.5"/></g>
+<g class="gaze" fill="none" stroke="var(--eye)" stroke-width="4" stroke-linecap="round">
+  <g class="open-eyes"><ellipse cx="77" cy="133" rx="12" ry="19"/><ellipse cx="139" cy="141" rx="12" ry="19"/></g>
+  <path class="closed-eyes" d="M65 133Q77 143 89 133M127 141Q139 151 151 141"/>
+</g>
+<path fill="var(--top)" d="M108 157L122 172L107 183L94 170Z"/>
+<path fill="var(--side)" opacity=".6" d="M108 157L107 183L94 170Z"/>
+<path fill="none" stroke="var(--eye)" stroke-width="3.5" stroke-linejoin="round" d="M108 157L122 172L107 183L94 170Z"/>
+</svg>

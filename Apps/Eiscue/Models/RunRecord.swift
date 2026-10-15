@@ -95,10 +95,44 @@ actor RunJournal {
     }
 
     func delete(_ records: [RunRecord]) throws {
-        for record in records {
-            do { try FileManager.default.removeItem(at: directory.appendingPathComponent(record.id.uuidString).appendingPathExtension("json")) }
+        try delete(ids: Set(records.map(\.id)))
+    }
+
+    func runIDsForDeletion(conversationID: UUID, knownRecords: [RunRecord]) throws -> Set<UUID> {
+        var ids = Set(knownRecords.filter { $0.conversationID == conversationID }.map(\.id))
+        guard FileManager.default.fileExists(atPath: directory.path) else { return ids }
+        let urls = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        for url in urls where url.pathExtension == "json" {
+            let identity: RecordIdentity
+            do {
+                identity = try JSONDecoder().decode(RecordIdentity.self, from: Data(contentsOf: url))
+            } catch {
+                // A damaged payload can still be removed when this session
+                // already knows its owner. Unknown ownership must stop cleanup.
+                guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                      let known = knownRecords.first(where: { $0.id == id }) else { throw error }
+                if known.conversationID == conversationID { ids.insert(id) }
+                continue
+            }
+            guard UUID(uuidString: url.deletingPathExtension().lastPathComponent) == identity.id else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if identity.conversationID == conversationID { ids.insert(identity.id) }
+            else { ids.remove(identity.id) }
+        }
+        return ids
+    }
+
+    func delete(ids: Set<UUID>) throws {
+        for id in ids {
+            do { try FileManager.default.removeItem(at: directory.appendingPathComponent(id.uuidString).appendingPathExtension("json")) }
             catch CocoaError.fileNoSuchFile { continue }
         }
+    }
+
+    private struct RecordIdentity: Decodable {
+        let id: UUID
+        let conversationID: UUID
     }
 }
 

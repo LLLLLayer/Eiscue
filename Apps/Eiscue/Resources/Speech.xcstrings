@@ -75,13 +75,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Starting the microphone…"
+            "value": "Preparing voice input…"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在开启麦克风…"
+            "value": "正在准备语音输入…"
           }
         }
       }
@@ -99,6 +99,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在听…"
+          }
+        }
+      }
+    },
+    "speech.recordingFeedback": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The waveform follows your microphone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "波形随麦克风声音变化。"
           }
         }
       }

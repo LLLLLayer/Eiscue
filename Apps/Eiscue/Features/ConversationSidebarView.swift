@@ -23,14 +23,14 @@ struct ConversationSidebarView: View {
                     .lineLimit(1).minimumScaleFactor(0.75)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                if !model.conversations.isEmpty {
-                    Button(isSelecting ? String(localized: "common.done") : text("sidebar.select")) {
-                        isSelecting.toggle(); selectedIDs.removeAll()
+                if isSelecting {
+                    Button("common.done") {
+                        isSelecting = false; selectedIDs.removeAll()
                     }
                     .font(.subheadline.weight(.medium))
                     .buttonStyle(.glass)
                     .disabled(model.isBusy)
-                    .accessibilityIdentifier("selectConversationsButton")
+                    .accessibilityIdentifier("doneSelectingConversationsButton")
                 }
                 if let closeSidebar {
                     Button(action: closeSidebar) {
@@ -134,6 +134,7 @@ struct ConversationSidebarView: View {
                             .foregroundStyle(EiscueStyle.accent)
                     }
                     .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 24)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.capsule)
@@ -142,11 +143,12 @@ struct ConversationSidebarView: View {
                 Spacer(minLength: 0)
                 Button(action: openSettings) {
                     Image(systemName: "gearshape")
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(EiscueStyle.accent)
+                        .frame(minWidth: 24, minHeight: 24)
                 }
-                .buttonStyle(.glass(.clear))
+                .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .fixedSize()
                 .accessibilityLabel(Text("sidebar.settings", tableName: "Navigation"))
                 .accessibilityIdentifier("sidebarSettingsButton")
             }
@@ -196,10 +198,17 @@ struct ConversationSidebarView: View {
                     .foregroundStyle(EiscueStyle.accent)
                     .frame(width: 24)
                     .accessibilityHidden(true)
-                Text(conversation.title)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(conversation.title)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    Text(String(format: text("sidebar.updatedAt"), conversation.updatedAt.formatted(date: .abbreviated, time: .shortened)))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("conversationUpdatedAt_\(conversation.id.uuidString)")
+                }
+                .multilineTextAlignment(.leading)
                 Spacer(minLength: 4)
                 if pinned {
                     Image(systemName: "pin.fill")
@@ -216,6 +225,7 @@ struct ConversationSidebarView: View {
         }
         .buttonStyle(.plain)
         .disabled(model.isBusy)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversationRow_\(conversation.id.uuidString)")
         .accessibilityLabel(Text(conversation.title))
         .accessibilityValue(pinned ? String(localized: "sidebar.pinned", table: "Navigation") : "")
@@ -234,6 +244,7 @@ struct ConversationSidebarView: View {
                 } label: {
                     Label(text("sidebar.select"), systemImage: "checkmark.circle")
                 }
+                .accessibilityIdentifier("selectConversationButton")
                 Button {
                     model.toggleConversationPinned(conversation.id)
                 } label: {

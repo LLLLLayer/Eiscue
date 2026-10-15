@@ -42,6 +42,22 @@ final class SpeechInputSessionGateTests: XCTestCase {
 
 @MainActor
 final class SpeechInputControllerStartupTests: XCTestCase {
+    func testStoppingOrCancellingClearsAudioFeedbackBeforeLeavingRecording() async throws {
+        for cancel in [false, true] {
+            let fixture = SpeechStartupFixture()
+            let controller = fixture.controller()
+            defer { controller.cancel() }
+            controller.toggle(onTranscript: { _ in })
+            try await waitUntil { controller.isRecording }
+            controller.audioMeter.append(rms: 0.1)
+            XCTAssertGreaterThan(controller.audioMeter.level, 0)
+            if cancel { controller.cancel() } else { controller.stop() }
+            XCTAssertEqual(controller.state, cancel ? .idle : .finishing)
+            XCTAssertEqual(controller.audioMeter.level, 0)
+            XCTAssertTrue(controller.audioMeter.levels.allSatisfy { $0 == 0 })
+        }
+    }
+
     func testRecordingTriggerAuthorizesThenPreparesDeviceBeforeStartingAudio() async throws {
         for hold in [false, true] {
             let fixture = SpeechStartupFixture()

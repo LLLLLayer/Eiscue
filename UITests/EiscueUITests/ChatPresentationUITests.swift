@@ -66,6 +66,8 @@ final class ChatPresentationUITests: XCTestCase {
             XCTAssertEqual(app.buttons["composerAddButton"].frame.midY, hold.frame.midY, accuracy: 1)
             XCTAssertFalse(app.descendants(matching: .any)["messageInput"].exists)
             XCTAssertFalse(app.descendants(matching: .any)["speechPreview"].exists)
+            XCTAssertFalse(app.otherElements["speechRecordingOverlay"].exists,
+                           "Choosing voice mode alone must not imply microphone capture.")
             XCTAssertTrue(app.buttons["sendMessageButton"].exists)
             XCTAssertFalse(app.buttons["sendMessageButton"].isEnabled)
             attachScreenshot(app, name: "Stable voice composer — \(draft.isEmpty ? "empty" : draft.contains("\n") ? "multiline" : "single line")")
@@ -74,6 +76,58 @@ final class ChatPresentationUITests: XCTestCase {
             if !draft.isEmpty { XCTAssertEqual(editor.value as? String, draft) }
             XCTAssertEqual(composer.frame.height, textFrame.height, accuracy: 1)
             XCTAssertFalse(app.buttons["holdToTalkButton"].exists)
+        }
+    }
+
+    @MainActor func testRecordingOverlayStaysAboveStableComposerAndDismissesAfterFinish() {
+        let app = launchSpeechRecordingFixture()
+        let draft = "Keep this draft\nAnd the second line\nAnd the third line"
+        let editor = input(in: app)
+        editor.tap(); editor.typeText(draft)
+        app.buttons["speechInputButton"].tap()
+        let record = app.buttons["holdToTalkButton"]
+        XCTAssertTrue(record.waitForExistence(timeout: 5))
+        let composer = app.otherElements["messageComposer"]
+        let originalFrame = composer.frame
+        let overlay = app.otherElements["speechRecordingOverlay"]
+        XCTAssertFalse(overlay.exists)
+        startFixtureRecording(in: app)
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["speechRecordingStatus"].label, "Listening…")
+        XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
+        XCTAssertEqual(composer.frame.maxY, originalFrame.maxY, accuracy: 1)
+        XCTAssertLessThanOrEqual(overlay.frame.maxY, composer.frame.minY,
+                                "The message scrim must stop above the persistent composer.")
+        XCTAssertGreaterThanOrEqual(overlay.frame.maxY, composer.frame.minY - 14,
+                                   "Only the composer's 12-point top padding may separate it from the scrim.")
+        XCTAssertTrue(app.buttons["cancelDictationButton"].isHittable)
+        XCTAssertTrue(app.buttons["speechInputButton"].isHittable)
+        XCTAssertTrue(record.isHittable)
+        attachScreenshot(app, name: "Recording feedback with silent fixture and stable multiline composer")
+        record.tap()
+        let finishing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Transcribing…"),
+                                                  object: app.staticTexts["speechRecordingStatus"])
+        XCTAssertEqual(XCTWaiter.wait(for: [finishing], timeout: 2), .completed)
+        XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
+        XCTAssertTrue(overlay.waitForNonExistence(timeout: 8))
+        XCTAssertEqual(input(in: app).value as? String, draft)
+    }
+
+    @MainActor func testRecordingOverlayAllowsCancelAndKeyboardWithoutLosingDraft() {
+        let app = launchSpeechRecordingFixture()
+        let draft = "Preserve my typed text"
+        let editor = input(in: app)
+        editor.tap(); editor.typeText(draft)
+        let overlay = app.otherElements["speechRecordingOverlay"]
+        for control in ["cancelDictationButton", "speechInputButton"] {
+            app.buttons["speechInputButton"].tap()
+            XCTAssertTrue(app.buttons["holdToTalkButton"].waitForExistence(timeout: 5))
+            startFixtureRecording(in: app)
+            XCTAssertTrue(overlay.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons[control].isHittable)
+            app.buttons[control].tap()
+            XCTAssertTrue(overlay.waitForNonExistence(timeout: 8))
+            XCTAssertEqual(input(in: app).value as? String, draft)
         }
     }
 
@@ -305,6 +359,15 @@ final class ChatPresentationUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["disconnectDeviceButton"].exists)
+        return app
+    }
+
+    @MainActor private func launchSpeechRecordingFixture() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--speech-recording-fixture",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.buttons["composerAddButton"].waitForExistence(timeout: 10))
         return app
     }
 

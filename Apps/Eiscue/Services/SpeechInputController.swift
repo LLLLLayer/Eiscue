@@ -20,6 +20,7 @@ final class SpeechInputController {
     private(set) var transcript = ""
     private(set) var errorMessage: String?
     private(set) var capture = SpeechAudioPipe.Snapshot()
+    @ObservationIgnored let audioMeter = SpeechAudioMeter()
     var accessibilityStatus: String {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--speech-diagnostics") {
@@ -65,7 +66,8 @@ final class SpeechInputController {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if configuredDependencies == nil, arguments.contains("--ui-testing"),
-           arguments.contains("--local-device-ready-fixture"), arguments.contains("--speech-device-ready-fixture") {
+           arguments.contains("--speech-recording-fixture") ||
+            (arguments.contains("--local-device-ready-fixture") && arguments.contains("--speech-device-ready-fixture")) {
             configuredDependencies = Dependencies(authorize: {}, startRecognition: { _, _ in },
                 isForeground: { UIApplication.shared.applicationState != .background })
         }
@@ -164,6 +166,7 @@ final class SpeechInputController {
         self.onTranscript = onTranscript
         transcriptBuffer = SpeechTranscriptBuffer()
         capture = .init()
+        audioMeter.reset()
         transcript = ""
         errorMessage = nil
         state = .requestingPermission
@@ -275,17 +278,19 @@ final class SpeechInputController {
             let deadline = ContinuousClock.now + .seconds(4)
             while !Task.isCancelled {
                 guard let self, self.gate.accepts(token) else { return }
-                self.capture = pipe.snapshot
+                let capture = pipe.snapshot
+                self.audioMeter.append(rms: pipe.consumeLevel())
+                if tick % 4 == 0 { self.capture = capture }
                 // Remote-control policy can deliver valid buffers containing
                 // only zeroes. Buffer arrival alone doesn't mean the mic works.
-                if self.capture.hasInput, self.state == .preparing { self.state = .recording }
+                if capture.hasInput, self.state == .preparing { self.state = .recording }
                 if self.state == .preparing, ContinuousClock.now >= deadline {
                     self.fail(.microphoneUnavailable)
                     return
                 }
-                if tick % 5 == 0 { self.recordCaptureDiagnostic("capture") }
+                if tick % 20 == 0 { self.recordCaptureDiagnostic("capture") }
                 tick += 1
-                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
             }
         }
         // Apple's short-dictation API has a per-request duration limit.
@@ -323,6 +328,7 @@ final class SpeechInputController {
 
     private func stopAudio() {
         captureMonitor?.cancel(); captureMonitor = nil
+        audioMeter.reset()
         if let pipe { capture = pipe.snapshot }
         recordingTimeout?.cancel(); recordingTimeout = nil
         engine?.stop()
@@ -519,6 +525,8 @@ final class SpeechAudioPipe: @unchecked Sendable {
     private let request: SFSpeechAudioBufferRecognitionRequest
     private var ended = false
     private var captured = Snapshot()
+    private var levelEnergy: Double = 0
+    private var levelSamples = 0
     var snapshot: Snapshot { lock.withLock { captured } }
     init(request: SFSpeechAudioBufferRecognitionRequest) { self.request = request }
     func append(_ buffer: AVAudioPCMBuffer) {
@@ -530,21 +538,38 @@ final class SpeechAudioPipe: @unchecked Sendable {
             if let samples = buffer.floatChannelData?[0] {
                 captured.readableSamples = true
                 for index in 0..<Int(buffer.frameLength) {
-                    captured.peak = max(captured.peak, abs(samples[index * buffer.stride]))
+                    measure(samples[index * buffer.stride])
                 }
             } else if let samples = buffer.int16ChannelData?[0] {
                 captured.readableSamples = true
                 for index in 0..<Int(buffer.frameLength) {
-                    captured.peak = max(captured.peak, abs(Float(samples[index * buffer.stride])) / 32_768)
+                    measure(Float(samples[index * buffer.stride]) / 32_768)
                 }
             } else if let samples = buffer.int32ChannelData?[0] {
                 captured.readableSamples = true
                 for index in 0..<Int(buffer.frameLength) {
-                    captured.peak = max(captured.peak, abs(Float(samples[index * buffer.stride])) / 2_147_483_648)
+                    measure(Float(samples[index * buffer.stride]) / 2_147_483_648)
                 }
             }
             request.append(buffer)
         }
+    }
+    /// Drain one UI interval, independently of the cumulative capture evidence.
+    /// Empty windows are distinct from sampled silence. No buffers or individual
+    /// audio samples are retained for visualization.
+    func consumeLevel() -> Float? {
+        lock.withLock {
+            defer { levelEnergy = 0; levelSamples = 0 }
+            guard levelSamples > 0 else { return nil }
+            return Float(sqrt(levelEnergy / Double(levelSamples)))
+        }
+    }
+    private func measure(_ sample: Float) {
+        guard sample.isFinite else { return }
+        captured.peak = max(captured.peak, abs(sample))
+        let value = Double(sample)
+        levelEnergy += value * value
+        levelSamples += 1
     }
     func endAudio() {
         lock.withLock {
@@ -552,5 +577,42 @@ final class SpeechAudioPipe: @unchecked Sendable {
             ended = true
             request.endAudio()
         }
+    }
+}
+
+/// Only the small waveform view observes this 20 Hz projection. Keeping it
+/// separate from the controller prevents audio levels from rebuilding history.
+@MainActor
+@Observable
+final class SpeechAudioMeter {
+    private(set) var levels = Array(repeating: Double.zero, count: 40)
+    private(set) var level: Double = 0
+    @ObservationIgnored private var lastSampleAt: ContinuousClock.Instant?
+
+    func append(rms: Float?, at now: ContinuousClock.Instant = ContinuousClock.now) {
+        guard let rms else {
+            // The UI clock can outrun an audio callback. Hold the most recent
+            // measurement briefly, but never leave stalled input onscreen.
+            if let lastSampleAt, now - lastSampleAt >= .milliseconds(250) { reset() }
+            return
+        }
+        let input = Self.normalizedLevel(rms: rms)
+        guard input > 0 else { reset(); return }
+        lastSampleAt = now
+        level += (input - level) * (input > level ? 0.7 : 0.3)
+        levels.removeFirst()
+        levels.append(level)
+    }
+
+    func reset() {
+        lastSampleAt = nil
+        guard level != 0 || levels.contains(where: { $0 != 0 }) else { return }
+        level = 0
+        levels = Array(repeating: 0, count: levels.count)
+    }
+
+    nonisolated static func normalizedLevel(rms: Float) -> Double {
+        guard rms.isFinite, rms > 0.001 else { return 0 }
+        return min(1, max(0, (20 * log10(Double(rms)) + 60) / 54))
     }
 }

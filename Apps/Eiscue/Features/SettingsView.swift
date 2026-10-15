@@ -47,6 +47,10 @@ struct SettingsView: View {
                     SettingsRowLabel(String(localized: "composer.stickers", table: "Composer"), systemImage: "face.smiling")
                 }
                 .accessibilityIdentifier("stickerGalleryNavigationLink")
+            } header: {
+                Text("settings.assistant", tableName: "Runtime")
+                    .font(.caption)
+                    .accessibilityIdentifier("settingsAssistantSectionHeader")
             }
             .listRowBackground(EiscueStyle.surface)
 
@@ -82,31 +86,22 @@ struct SettingsView: View {
                     SettingsRowLabel(String(localized: "settings.taskStatus"), systemImage: "bell")
                 }
                 .accessibilityIdentifier("taskStatusSettingsButton")
-                Toggle(isOn: $model.disconnectAfterTask) {
-                    SettingsRowLabel(String(localized: "settings.disconnectAfterTask", table: "Connections"), systemImage: "powerplug")
-                }
-                .tint(EiscueStyle.switchTint)
-                .disabled(model.isBusy)
-                .accessibilityIdentifier("disconnectAfterTaskToggle")
-            }
-            .listRowBackground(EiscueStyle.surface)
-
-            Section {
                 Toggle(isOn: $model.hapticsEnabled) {
                     SettingsRowLabel(String(localized: "settings.haptics", table: "Runtime"), systemImage: "hand.tap")
                 }
                 .tint(EiscueStyle.switchTint)
                 .disabled(model.isBusy)
                 .accessibilityIdentifier("hapticsToggle")
-                LabeledContent {
-                    Text(String.localizedStringWithFormat(String(localized: "settings.conversation_count", table: "Runtime"), model.conversations.count))
-                } label: {
-                    SettingsRowLabel(String(localized: "settings.conversations", table: "Runtime"), systemImage: "bubble.left.and.bubble.right")
+                Toggle(isOn: $model.disconnectAfterTask) {
+                    SettingsRowLabel(String(localized: "settings.disconnectAfterTask", table: "Connections"), systemImage: "powerplug")
                 }
+                .tint(EiscueStyle.switchTint)
+                .disabled(model.isBusy)
+                .accessibilityIdentifier("disconnectAfterTaskToggle")
             } header: {
-                Text("settings.advanced")
-            } footer: {
-                Text(String(localized: "settings.data_footer", table: "Runtime"))
+                Text("settings.section.general", tableName: "Runtime")
+                    .font(.caption)
+                    .accessibilityIdentifier("settingsGeneralSectionHeader")
             }
             .listRowBackground(EiscueStyle.surface)
 
@@ -115,6 +110,10 @@ struct SettingsView: View {
                     SettingsRowLabel(String(localized: "settings.about", table: "Runtime"), systemImage: "info.circle")
                 }
                 .accessibilityIdentifier("aboutNavigationLink")
+            } header: {
+                Text("settings.section.about", tableName: "Runtime")
+                    .font(.caption)
+                    .accessibilityIdentifier("settingsAboutSectionHeader")
             }
             .listRowBackground(EiscueStyle.surface)
             #if DEBUG
@@ -124,6 +123,10 @@ struct SettingsView: View {
                 }
                 .tint(EiscueStyle.switchTint)
                 .accessibilityIdentifier("debugToolsToggle")
+            } header: {
+                Text("settings.section.debug", tableName: "Runtime")
+                    .font(.caption)
+                    .accessibilityIdentifier("settingsDebugSectionHeader")
             }
             .listRowBackground(EiscueStyle.surface)
             #endif
@@ -162,6 +165,9 @@ private struct TaskSettingsView: View {
                 } label: {
                     SettingsRowLabel(String(localized: "settings.notification_settings", table: "Runtime"), systemImage: "gearshape")
                 }
+            } header: {
+                Text("settings.section.notifications", tableName: "Runtime")
+                    .font(.caption)
             } footer: {
                 Text("settings.taskStatusShort")
             }
@@ -183,6 +189,9 @@ private struct TaskSettingsView: View {
                     SettingsRowLabel(String(localized: "settings.backgroundDetails"), systemImage: "info.circle")
                         .accessibilityIdentifier("backgroundStatusDetails")
                 }
+            } header: {
+                Text("settings.section.background", tableName: "Runtime")
+                    .font(.caption)
             }
             .listRowBackground(EiscueStyle.surface)
         }

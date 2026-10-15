@@ -33,6 +33,17 @@ final class LocalizationUITests: XCTestCase {
     }
 
     @MainActor
+    private func assertSettingsSections(_ titles: [String], savedConversationsTitle: String, in app: XCUIApplication) {
+        for (section, title) in zip(["Assistant", "General", "About", "Debug"], titles) {
+            let heading = app.staticTexts["settings\(section)SectionHeader"]
+            reveal(heading, in: app)
+            XCTAssertEqual(heading.label.lowercased(), title.lowercased())
+        }
+        XCTAssertFalse(app.staticTexts[savedConversationsTitle].exists)
+        for _ in 0..<6 where !app.buttons["modelSettingsButton"].isHittable { app.swipeDown() }
+    }
+
+    @MainActor
     func testEnglishInterfaceAndOptionalNotifications() {
         let app = launch(language: "en", locale: "en_US")
         XCTAssertFalse(app.tabBars.firstMatch.exists)
@@ -42,6 +53,8 @@ final class LocalizationUITests: XCTestCase {
         XCTAssertEqual(app.buttons["newConversationButton"].label, "New conversation")
         closeSidebar(in: app)
         openSettings(in: app)
+        XCTAssertEqual(app.buttons["runHistoryNavigationLink"].label, "All tasks")
+        assertSettingsSections(["Assistant", "General", "About", "Debug"], savedConversationsTitle: "Saved conversations", in: app)
         XCTAssertTrue(app.buttons["appLanguageSettingsButton"].exists)
         XCTAssertTrue(app.buttons["appLanguageSettingsButton"].label.contains("English"))
         XCTAssertFalse(app.buttons["showOnboardingButton"].exists)
@@ -67,6 +80,8 @@ final class LocalizationUITests: XCTestCase {
     func testChineseBackgroundSettingsUseResourcesWithoutRequestingPermission() {
         let app = launch(language: "zh-Hans", locale: "zh_CN")
         openSettings(in: app)
+        XCTAssertEqual(app.buttons["runHistoryNavigationLink"].label, "全部任务")
+        assertSettingsSections(["助手", "通用", "关于", "调试"], savedConversationsTitle: "已保存的对话", in: app)
         app.buttons["taskStatusSettingsButton"].tap()
         let toggle = app.switches["taskNotificationsToggle"]
         reveal(toggle, in: app)
