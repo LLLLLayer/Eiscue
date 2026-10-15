@@ -6,14 +6,16 @@ struct InlineMessageSelection: UIViewRepresentable {
     let text: String
     let markdown: Bool
     let foregroundColor: UIColor
-    let preferredWidth: CGFloat
+    let preferredSize: CGSize
     let onFinish: () -> Void
 
     func makeUIView(context: Context) -> MessageSelectionTextView {
         let view = MessageSelectionTextView()
         view.isEditable = false
         view.isSelectable = true
-        view.isScrollEnabled = false
+        view.isScrollEnabled = true
+        view.bounces = false
+        view.contentInsetAdjustmentBehavior = .never
         view.backgroundColor = .clear
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
@@ -33,9 +35,10 @@ struct InlineMessageSelection: UIViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: MessageSelectionTextView, context: Context) -> CGSize? {
-        let width = min(proposal.width ?? preferredWidth, preferredWidth > 0 ? preferredWidth : 320)
-        guard width > 0 else { return nil }
-        return CGSize(width: width, height: ceil(uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height))
+        guard preferredSize.width > 0, preferredSize.height > 0 else { return nil }
+        // Keep the original bubble's geometry. Rich text that is taller remains
+        // reachable by scrolling inside the selection instead of moving other rows.
+        return preferredSize
     }
 
     static func dismantleUIView(_ uiView: MessageSelectionTextView, coordinator: ()) {
@@ -83,7 +86,10 @@ final class MessageSelectionTextView: UITextView, @MainActor UIEditMenuInteracti
         if visible.isNull || visible.isEmpty { finishSelection(); return }
         let point = CGPoint(x: visible.minX + min(8, visible.width / 2),
                             y: visible.minY + min((font?.lineHeight ?? 20) / 2, visible.height / 2))
-        selectedTextRange = textRange(from: beginningOfDocument, to: endOfDocument)
+        UIView.performWithoutAnimation {
+            selectedTextRange = textRange(from: beginningOfDocument, to: endOfDocument)
+            setContentOffset(.zero, animated: false)
+        }
         editMenu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil,
             sourcePoint: point))
     }

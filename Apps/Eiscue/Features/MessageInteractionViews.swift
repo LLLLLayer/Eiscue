@@ -29,21 +29,24 @@ struct ChatMessageRow: View, Equatable {
             if message.role == .user { Spacer(minLength: 42) }
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
                 VStack(alignment: .leading, spacing: 8) {
-                    ZStack(alignment: .topLeading) {
-                        Group {
-                            if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
-                            else if !message.text.isEmpty { Text(verbatim: message.text) }
-                        }
-                        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                            if !showsSelection { messageTextSize = size }
-                        }
-                        .opacity(showsSelection ? 0 : 1)
-                        .allowsHitTesting(!showsSelection)
-                        .accessibilityHidden(showsSelection)
+                    Group {
+                        if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
+                        else if !message.text.isEmpty { Text(verbatim: message.text) }
+                    }
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                        if !showsSelection { messageTextSize = size }
+                    }
+                    .opacity(showsSelection ? 0 : 1)
+                    .allowsHitTesting(!showsSelection)
+                    .accessibilityHidden(showsSelection)
+                    // Selection must not participate in row sizing: UIKit and Markdown
+                    // have different intrinsic heights, which otherwise move the transcript.
+                    .overlay(alignment: .topLeading) {
                         if showsSelection {
                             InlineMessageSelection(text: message.text, markdown: message.role == .assistant,
                                 foregroundColor: message.role == .user ? (colorScheme == .dark ? .black : .white) : .label,
-                                preferredWidth: messageTextSize.width) { showsSelection = false }
+                                preferredSize: messageTextSize) { showsSelection = false }
+                                .transition(.identity)
                         }
                     }
                     .contentShape(Rectangle())

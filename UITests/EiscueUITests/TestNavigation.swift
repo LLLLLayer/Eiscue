@@ -2,6 +2,17 @@ import XCTest
 
 extension XCTestCase {
     @MainActor
+    func assertUnchangedFrame(_ element: XCUIElement, from expected: CGRect, context: String,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(element.exists, context, file: file, line: line)
+        let actual = element.frame
+        XCTAssertEqual(actual.minX, expected.minX, accuracy: 1, "\(context): x", file: file, line: line)
+        XCTAssertEqual(actual.minY, expected.minY, accuracy: 1, "\(context): y", file: file, line: line)
+        XCTAssertEqual(actual.width, expected.width, accuracy: 1, "\(context): width", file: file, line: line)
+        XCTAssertEqual(actual.height, expected.height, accuracy: 1, "\(context): height", file: file, line: line)
+    }
+
+    @MainActor
     func openSidebar(in app: XCUIApplication) {
         let settings = app.buttons["sidebarSettingsButton"]
         if settings.isHittable { return } // A wide iPad keeps the sidebar visible.

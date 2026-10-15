@@ -133,6 +133,44 @@ final class ToolImagePreviewUITests: XCTestCase {
         attach(app, name: "Non-expandable metadata and timestamp-only footers")
     }
 
+    @MainActor func testShortMessageSelectionKeepsTranscriptAndComposerFramesStable() {
+        for dark in [false, true] {
+            let app = launch(dark: dark)
+            let bubbles = app.descendants(matching: .any).matching(identifier: "messageBubble")
+            let times = app.staticTexts.matching(identifier: "messageTime")
+            let composer = app.otherElements["messageComposer"]
+            XCTAssertEqual(bubbles.count, 2)
+            XCTAssertEqual(times.count, 2)
+            XCTAssertTrue(composer.exists)
+            XCTAssertFalse(app.keyboards.firstMatch.exists)
+            let tracked = [("User bubble", bubbles.element(boundBy: 0)), ("Assistant bubble", bubbles.element(boundBy: 1)),
+                           ("User timestamp", times.element(boundBy: 0)), ("Assistant timestamp", times.element(boundBy: 1)),
+                           ("Composer", composer)]
+            let baseline = tracked.map { (name: $0.0, element: $0.1, frame: $0.1.frame) }
+            for index in 0..<2 {
+                let bubble = bubbles.element(boundBy: index)
+                XCTAssertTrue(bubble.isHittable)
+                bubble.press(forDuration: 1)
+                let selectable = bubble.textViews["selectableMessageText"]
+                XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+                for snapshot in baseline {
+                    assertUnchangedFrame(snapshot.element, from: snapshot.frame, context: "\(snapshot.name) while message \(index) is selected")
+                }
+                attach(app, name: "Stable \(index == 0 ? "user" : "assistant") selection frames — \(dark ? "Dark" : "Light")")
+                // The other message's timestamp dismisses selection without opening the keyboard.
+                let outside = times.element(boundBy: 1 - index)
+                XCTAssertTrue(outside.isHittable)
+                outside.tap()
+                XCTAssertTrue(selectable.waitForNonExistence(timeout: 5))
+                XCTAssertFalse(app.keyboards.firstMatch.exists)
+                for snapshot in baseline {
+                    assertUnchangedFrame(snapshot.element, from: snapshot.frame, context: "\(snapshot.name) after message \(index) selection ends")
+                }
+            }
+            app.terminate()
+        }
+    }
+
     @MainActor func testMessageSelectionAndConversationMenuInBothAppearances() {
         for dark in [false, true] {
             let app = launch(dark: dark)

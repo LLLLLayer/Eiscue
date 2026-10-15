@@ -323,11 +323,19 @@ final class ChatPresentationUITests: XCTestCase {
         let message = rows.matching(identifier: "messageBubble")
             .containing(.staticText, identifier: "markdownHeading").firstMatch
         XCTAssertTrue(message.exists)
+        let time = app.staticTexts.matching(identifier: "messageTime").element(boundBy: 1)
+        let composer = app.otherElements["messageComposer"]
+        XCTAssertTrue(time.exists)
+        XCTAssertTrue(composer.exists)
+        let messageFrame = message.frame, timeFrame = time.frame, composerFrame = composer.frame
         heading.press(forDuration: 1)
         let inlineMessage = rows.matching(identifier: "messageBubble")
             .containing(.textView, identifier: "selectableMessageText").firstMatch
         let selectable = inlineMessage.textViews["selectableMessageText"]
         XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+        assertUnchangedFrame(inlineMessage, from: messageFrame, context: "Markdown bubble while selected")
+        assertUnchangedFrame(time, from: timeFrame, context: "Markdown timestamp while selected")
+        assertUnchangedFrame(composer, from: composerFrame, context: "Composer while Markdown is selected")
         assertNoMessageContextActions(in: app)
         XCTAssertFalse(app.sheets.firstMatch.exists, "Text selection must remain inside the original message.")
         XCTAssertFalse(app.buttons["Done"].exists, "Inline selection must not require dismissing a second page.")
@@ -342,6 +350,9 @@ final class ChatPresentationUITests: XCTestCase {
         tapEditMenu("Copy", in: app)
         XCTAssertTrue(selectable.waitForNonExistence(timeout: 5))
         XCTAssertTrue(rows["markdownHeading"].waitForExistence(timeout: 5))
+        assertUnchangedFrame(message, from: messageFrame, context: "Markdown bubble after Copy")
+        assertUnchangedFrame(time, from: timeFrame, context: "Markdown timestamp after Copy")
+        assertUnchangedFrame(composer, from: composerFrame, context: "Composer after Markdown Copy")
         let destination = self.input(in: app)
         destination.tap()
         destination.press(forDuration: 1)
