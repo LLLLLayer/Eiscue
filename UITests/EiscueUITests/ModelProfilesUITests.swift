@@ -9,9 +9,9 @@ final class ModelProfilesUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
         openSettings(in: app)
         app.buttons["modelSettingsButton"].tap()
-        saveNewProfile("Daily", modelID: "model-one", key: "ui-key-one", in: app)
+        saveNewProfile("model-one", key: "ui-key-one", in: app)
         XCTAssertFalse(app.staticTexts["Tap to switch. You can also switch from the menu at the top of a conversation."].exists)
-        app.buttons["Edit Daily"].tap()
+        app.buttons["Edit model-one"].tap()
         expandAdvanced(in: app)
 
         replaceLimit("maxOutputTokensInput", with: "32769", in: app)
@@ -31,7 +31,7 @@ final class ModelProfilesUITests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Use HTTPS. Screen tasks need a model that accepts images."].exists)
         app.buttons["saveModelSettingsButton"].tap()
-        XCTAssertTrue(profile("Daily", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(profile("model-one", in: app).waitForExistence(timeout: 5))
 
         app.terminate()
         app.launchArguments.removeAll { $0 == "--reset-state" }
@@ -39,7 +39,7 @@ final class ModelProfilesUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
         openSettings(in: app)
         app.buttons["modelSettingsButton"].tap()
-        app.buttons["Edit Daily"].tap()
+        app.buttons["Edit model-one"].tap()
         XCTAssertFalse(app.secureTextFields["modelAPIKey"].exists, "Editing limits must preserve the saved API key.")
         expandAdvanced(in: app)
         for (identifier, value) in [("maxOutputTokensInput", "5001"), ("maxToolCallsInput", "37"), ("taskTimeoutInput", "91")] {
@@ -49,7 +49,7 @@ final class ModelProfilesUITests: XCTestCase {
         }
     }
 
-    @MainActor func testNamedModelsSwitchFromChatAndPersistIndependently() {
+    @MainActor func testModelsSwitchFromChatAndPersistIndependentlyAfterEditingModelID() {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
@@ -57,16 +57,17 @@ final class ModelProfilesUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
         openSettings(in: app)
         app.buttons["modelSettingsButton"].tap()
-        saveNewProfile("Everyday", modelID: "model-one", key: "ui-key-one", in: app)
+        saveNewProfile("model-one", key: "ui-key-one", in: app)
         app.buttons["addModelProfileButton"].tap()
-        saveNewProfile("Writing", modelID: "model-two", key: "ui-key-two", in: app)
-        XCTAssertEqual(profile("Writing", in: app).value as? String, "Selected")
+        saveNewProfile("model-two", key: "ui-key-two", in: app)
+        XCTAssertEqual(profile("model-two", in: app).value as? String, "Selected")
+        let secondProfileID = profile("model-two", in: app).identifier
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Saved model profiles"; screenshot.lifetime = .keepAlways; add(screenshot)
         app.navigationBars.buttons["Done"].tap()
         returnToAssistant(in: app)
         app.buttons["conversationMenuButton"].tap()
-        let quickSwitch = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "switchModelProfile_", "Everyday")).firstMatch
+        let quickSwitch = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "switchModelProfile_", "model-one")).firstMatch
         XCTAssertTrue(quickSwitch.waitForExistence(timeout: 5))
         quickSwitch.tap()
 
@@ -76,31 +77,55 @@ final class ModelProfilesUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
         openSettings(in: app)
         app.buttons["modelSettingsButton"].tap()
-        XCTAssertEqual(profile("Everyday", in: app).value as? String, "Selected")
-        XCTAssertNotEqual(profile("Writing", in: app).value as? String, "Selected")
-        app.buttons["Edit Writing"].tap()
+        XCTAssertEqual(profile("model-one", in: app).value as? String, "Selected")
+        XCTAssertNotEqual(profile("model-two", in: app).value as? String, "Selected")
+        app.buttons["Edit model-two"].tap()
         XCTAssertEqual(app.textFields["modelIdentifier"].value as? String, "model-two")
+        XCTAssertFalse(app.textFields["modelProfileName"].exists)
         XCTAssertFalse(app.secureTextFields["modelAPIKey"].exists)
+        XCTAssertTrue(app.buttons["replaceAPIKeyButton"].exists)
         let editorScreenshot = XCTAttachment(screenshot: app.screenshot())
         editorScreenshot.name = "Saved model editor"; editorScreenshot.lifetime = .keepAlways; add(editorScreenshot)
-        let name = app.textFields["modelProfileName"]
-        name.tap()
-        app.buttons["clearModelNameButton"].tap()
-        name.typeText("Writing assistant")
+        let identifier = app.textFields["modelIdentifier"]
+        identifier.tap()
+        app.buttons["clearModelIdentifierButton"].tap()
+        identifier.typeText("model-two-edited")
         app.buttons["saveModelSettingsButton"].tap()
-        XCTAssertTrue(profile("Writing assistant", in: app).waitForExistence(timeout: 5))
-        profile("Writing assistant", in: app).press(forDuration: 1)
+        XCTAssertTrue(profile("model-two-edited", in: app).waitForExistence(timeout: 5))
+        XCTAssertEqual(profile("model-two-edited", in: app).identifier, secondProfileID)
+        XCTAssertFalse(profile("model-two", in: app).exists)
+        XCTAssertEqual(profile("model-two-edited", in: app).value as? String, "Selected")
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
+        openSettings(in: app)
+        app.buttons["modelSettingsButton"].tap()
+        XCTAssertEqual(profile("model-two-edited", in: app).identifier, secondProfileID)
+        XCTAssertEqual(profile("model-two-edited", in: app).value as? String, "Selected")
+        XCTAssertNotEqual(profile("model-one", in: app).value as? String, "Selected")
+        app.buttons["Edit model-two-edited"].tap()
+        XCTAssertEqual(app.textFields["modelIdentifier"].value as? String, "model-two-edited")
+        XCTAssertFalse(app.textFields["modelProfileName"].exists)
+        XCTAssertFalse(app.secureTextFields["modelAPIKey"].exists, "Editing the model ID must preserve its saved API key.")
+        XCTAssertTrue(app.buttons["replaceAPIKeyButton"].exists)
+        app.navigationBars.buttons["Cancel"].tap()
+        profile("model-two-edited", in: app).press(forDuration: 1)
         app.buttons["Delete model"].firstMatch.tap()
         app.buttons.matching(identifier: "confirmDeleteModelProfileButton").firstMatch.tap()
-        XCTAssertTrue(profile("Writing assistant", in: app).waitForNonExistence(timeout: 5))
-        XCTAssertTrue(profile("Everyday", in: app).exists)
+        XCTAssertTrue(profile("model-two-edited", in: app).waitForNonExistence(timeout: 5))
+        XCTAssertEqual(profile("model-one", in: app).value as? String, "Selected")
+        app.buttons["Edit model-one"].tap()
+        XCTAssertEqual(app.textFields["modelIdentifier"].value as? String, "model-one")
+        XCTAssertFalse(app.secureTextFields["modelAPIKey"].exists, "Deleting another profile must retain this model's saved API key.")
+        XCTAssertTrue(app.buttons["replaceAPIKeyButton"].exists)
     }
 
-    @MainActor private func saveNewProfile(_ name: String, modelID: String, key: String, in app: XCUIApplication) {
-        let profileName = app.textFields["modelProfileName"]
-        XCTAssertTrue(profileName.waitForExistence(timeout: 5))
-        profileName.tap(); profileName.typeText(name)
+    @MainActor private func saveNewProfile(_ modelID: String, key: String, in app: XCUIApplication) {
         let url = app.textFields["modelBaseURL"]
+        XCTAssertTrue(url.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textFields["modelProfileName"].exists)
+        XCTAssertFalse(app.buttons["clearModelNameButton"].exists)
         url.tap(); app.buttons["clearModelBaseURLButton"].tap(); url.typeText("https://example.invalid/v1")
         let identifier = app.textFields["modelIdentifier"]
         reveal(identifier, in: app)

@@ -437,7 +437,7 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
         else if url.path.hasSuffix("responses") { chunks = Self.responses }
         else { chunks = Self.anthropic }
         work.withLock { task in
-            task = Task {
+            task = Task { @Sendable [self, chunks] in
                 for chunk in chunks {
                     do { try await Task.sleep(for: .milliseconds(100)) }
                     catch { return }

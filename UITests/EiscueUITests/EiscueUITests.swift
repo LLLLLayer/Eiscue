@@ -51,7 +51,17 @@ final class EiscueUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<6 {
             if element.isHittable { return }
-            app.swipeUp()
+            // Scroll the presented form, above the keyboard's password bar.
+            let forms = app.collectionViews.allElementsBoundByIndex
+            let form = forms.last(where: \.isHittable) ?? forms.last
+            let viewport = form?.frame ?? app.frame
+            let keyboardTop = app.keyboards.firstMatch.exists ? app.keyboards.firstMatch.frame.minY : viewport.maxY
+            let bottom = min(viewport.maxY - 24, keyboardTop - (app.keyboards.firstMatch.exists ? 100 : 24))
+            let top = max(viewport.minY + 24, app.frame.minY + 140)
+            guard bottom > top else { break }
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: viewport.maxX - 18, dy: bottom))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: viewport.maxX - 18, dy: top)))
         }
         XCTAssertTrue(element.isHittable)
     }
@@ -201,7 +211,7 @@ final class EiscueUITests: XCTestCase {
         XCTAssertTrue(skill.waitForExistence(timeout: 5))
         skill.tap()
         XCTAssertTrue(app.staticTexts["skillContentPreview"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["skillContentPreview"].label.contains("先观察当前屏幕"))
+        XCTAssertTrue(app.staticTexts["skillContentPreview"].label.contains("Observe the current screen before deciding what to do next."))
         let source = app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "内置", "内置")
         ).firstMatch

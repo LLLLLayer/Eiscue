@@ -81,6 +81,8 @@ Requires an Apple Silicon Mac and Xcode 26+ (validation records use Xcode 26.3 /
 
 Before running SwiftPM, preserve the current contents and staged/unstaged state of `Package.resolved`. `swift test` can drop the Xcode-only swift-markdown/cmark pins. Compare with that pre-run state and restore only changes produced by this run; never overwrite pre-existing or concurrent edits with an unconditional checkout/restore from Git.
 
+For logged checks, use `bash Scripts/run-logged-check.sh .build/<unique-name>.log <command> [arguments...]`. It saves stdout/stderr and `exit=<code>`, returns the command's actual exit code, and refuses to overwrite an existing log. Do not end a test wrapper with only `echo`/`printf`: that masks failures as exit 0. A fixture server intentionally stopped after testing is a separate lifecycle result, not a test pass.
+
 ```sh
 xcodegen generate
 
@@ -164,7 +166,7 @@ There are no SwiftLint / SwiftFormat / clang-format configs. Match the surroundi
 - **Swift 6** language mode with strict concurrency for app and Kits. `PhoneAgentNCM` (vendored) stays in Swift 5 mode. UI state types are `@MainActor`. System/ObjC callbacks that fire on background queues (speech, audio, background tasks) must be non-isolated `@Sendable` closures that hop to `MainActor` explicitly; inheriting MainActor isolation has crashed the app on device before.
 - Kit types crossing boundaries are `Sendable`; public enums are `Codable, Sendable` where persisted. Tool parameters use `AgentJSONValue` JSON-schema literals with `"additionalProperties": false`. `mayHaveSideEffects` defaults to `true`; set `false` only for pure observation tools.
 - Code is dense: short helpers, several statements per line in places, and few comments. Comments explain *why* a constraint exists (security, race, platform quirk) rather than restating code.
-- Debug-only entry points (`--owned-device-check`, `--owned-device-smoke`, `--ble-device-check`, `--bluetooth-setup-check`, `--legacy-device-probe`, `--import-pairing-transfer`, `--device-connection-check`, `--resume-existing-local-tunnel`, UI fixtures) must stay inside `#if DEBUG`. Release builds must not contain automation or auto-import paths. `--owned-device-smoke` requires `--owned-device-check` and limits verification to one connection, screenshot, owned counter-button tap, post-action screenshot and local disconnect; it does not establish cross-app or background acceptance.
+- Every `--…` launch argument must be read only inside `#if DEBUG`. This includes device checks (`--owned-device-check`, `--owned-device-smoke`, `--ble-device-check`, `--bluetooth-setup-check`, `--system-pairing-check`, `--loopback-reflector-check`, `--legacy-device-probe`, `--device-connection-check`), tunnel/import helpers (`--import-pairing-transfer`, `--resume-existing-local-tunnel`, `--restart-existing-local-tunnel`), diagnostics (`--pairing-diagnostics`, `--speech-diagnostics`), `--pairing-local-interface` (publishes pairing on `en0` instead of the VPN peer) and the `--ui-testing` fixtures. Retired `--wireless-board-probe` / `--owned-device-check-wireless` flags make the setup check return without action. Release builds must not contain automation or auto-import paths. `--owned-device-smoke` requires `--owned-device-check` and limits verification to one connection, screenshot, owned counter-button tap, post-action screenshot and local disconnect; it does not establish cross-app or background acceptance.
 - Speech: remote-control microphone muting was observed on the iOS 27 local-VPN test phone (the public `isInputMuted` flag remained false); USB network relay uses the same DisplayService backend, but has no microphone acceptance evidence. For an active iOS 27+ local-VPN / USB network control connection, keep text input and show a localized toast on voice entry; do not disconnect device control automatically. Do not extend this route restriction to iOS 26 owned XCTest, a disconnected/merely selected route, or BLE / USB HID: both HID outputs use `bluetoothBoard` with ReplayKit, not the `usbBoard` network relay. No route restriction is not proof of microphone coexistence; physical acceptance is still needed. A stream of all-zero PCM buffers is not evidence of recording. `--speech-diagnostics` and `--speech-capture-check` are DEBUG-only; the latter also requires the former and runs a bounded capture without saving audio or text. Diagnostics store only permissions, audio format, buffer counts, levels and error codes in the app sandbox.
 - UI elements that tests interact with get stable `accessibilityIdentifier`s (e.g. `sendMessageButton`, `modelSettingsButton`, `deviceNavigationLink`). When you add containers, keep child identifiers reachable; container identifiers have hidden children before.
 - UI follows native iOS 26 Liquid Glass (`.glass` / `.glassProminent` for standalone buttons, semantic backgrounds for content) with a monochrome adaptive accent. See `docs/chat-experience.md`.
@@ -181,33 +183,43 @@ There are no SwiftLint / SwiftFormat / clang-format configs. Match the surroundi
 - **UI tests** (`UITests/EiscueUITests`) use XCTest and launch with `--ui-testing --skip-onboarding [--reset-state]` plus `-AppleLanguages (zh-Hans) -AppleLocale zh_CN` (or English). `--ui-testing` isolates state in `Caches/EiscueUITests`, the `org.eiscue.app.uitests` defaults suite, and the `org.eiscue.app.uitests.credentials` Keychain service. `AgentIntegrationUITests` sets `EISCUE_TEST_MODEL_URL=http://127.0.0.1:18765/v1` and needs `Scripts/test-model-server.py` running. The fixture's special prompts trigger 401/503 and streaming-release behavior. Shared navigation helpers are in `TestNavigation.swift`.
 - Normal installs, launches and real-state device diagnostics must respect the phone's system / per-app language. Do not pass `-AppleLanguages` or `-AppleLocale` to these runs unless the user explicitly requests a language override. Keep explicit language selection in isolated UI / localization fixtures only.
 - The scheme runs app and UI tests non-parallel. iPad-only (wide sidebar) scenarios are skipped on iPhone, so cover them on an iPad simulator.
+- Physical-device UI cases skip unless explicitly enabled: `TEST_RUNNER_EISCUE_REAL_BOARD_TEST=1` (board acceptance), `TEST_RUNNER_EISCUE_REAL_DEVICE_TEST=1` (system pairing preparation), `TEST_RUNNER_EISCUE_REAL_SPEECH_TEST=1` (microphone capture) and `TEST_RUNNER_EISCUE_DEVICE_SCREENSHOT=1`. Set them only when the user asks for that hardware run.
 - Unsigned simulator builds can't access the Keychain. Keep the default local signing for app tests.
 - Firmware host tests are protocol/localhost tests only (UBSan by default via `BOARD_SANITIZERS`; ASan has deadlocked locally). The ObjC automation fixture uses fake runtime classes and never contacts a device.
 - **Verification culture** (see `docs/validation.md`): keep "code integrated", "software tests passed" and "real-device acceptance" separate. Simulators can't validate BLE HID input, ReplayKit, background limits, or developer-service control. Report exact test counts and failures, keep aborted or failed runs visible instead of counting them as passes, and don't treat a build, ACK, or local socket close as proof of device behavior. Unverified items currently include Bluetooth swipe, full cross-app agent tasks, long background runs, S3 USB HID phone input, S3 USB NCM hardware, and company-VPN coexistence.
 
 ### Recorded baseline
 
-Evidence from **2026-10-14**, commit `efb7703`, Xcode 26.3, iPhone 16e / iOS 26.3 simulator. These are recorded results, not a guarantee for later changes.
+Evidence from **2026-10-15**, commit `14d154f`, Xcode 26.3 (`DEVELOPER_DIR`), iPhone 16e / iOS 26.3.1 simulator, full UI suite with `Scripts/test-model-server.py` running. These are recorded results, not a guarantee for later changes. Logs are local under `.build/agents-init/`.
 
 | Check | Recorded result |
 | --- | --- |
-| Kit tests (`swift test`) | 149 tests / 19 suites; 4 failing tests, 10 issues |
-| App unit tests | 226 passed |
-| UI tests | 44 run: 34 passed, 5 skipped, 5 failed |
+| Kit tests (`swift test`) | 155 tests / 19 suites; 4 failing tests, 10 issues. Xcode 27 failed to compile `ProviderFixtureProtocol.startLoading()` due to a sending-closure isolation error; no tests ran |
+| App unit tests | 242 passed |
+| UI tests | 56 run: 42 passed, 9 skipped, 5 failed |
 | Firmware auth host fixture | 6 groups passed |
 | Firmware companion host fixture | 5 groups passed |
-| NCM host / Python firmware tests (`test-board-firmware.sh`) | Not run: ESP-IDF / `IDF_PATH` unavailable in this baseline |
+| NCM host / Python firmware tests (`test-board-firmware.sh`) | Not run: `IDF_PATH` unset |
 | Owned-automation host checks | 332 passed |
-| Rust library tests | 64 passed |
+| Rust library tests | 68 passed |
 
-Failures and skipped coverage:
+Failures and skipped coverage at that baseline:
 
-- `DeviceErrorPresentationTests`: 4 tests still assert copy changed in `a465682`.
-- `AgentIntegrationUITests`: 2 failures. The timeline test reads an empty `toolActivityRow` container label after `08cf84b` moved the title into its own accessibility element. The pause test expects `toolError.noProgress`, while the card shows `RunPauseReason.detail` (since `a957ab1`).
-- `MessageSharingUITests`: 3 failures cannot find `messageActivityController`. A failure screenshot shows the system share sheet presented, but does not establish that saving, dismissal or readback works. Revalidate those flows before attributing all failures to test selectors.
-- The 5 UI skips are 3 real-board cases, 1 device-only probe and 1 iPad-only case; they are not passes.
+- `DeviceErrorPresentationTests`: 4 tests asserted copy changed in `a465682`.
+- `AgentIntegrationUITests`: the same 2 failures as `efb7703`. The timeline test read an empty `toolActivityRow` container label after `08cf84b` moved the title into its own accessibility element. The pause test expected `toolError.noProgress`, while the card showed `RunPauseReason.detail` (since `a957ab1`).
+- `EiscueUITests.testBuiltInSkillCanBePreviewedAndSelected` asserted the Chinese preview text `先观察当前屏幕`; built-in skill Markdown became canonical English in `14d154f`.
+- `EiscueUITests.testModelConfigurationValidatesHTTPSAndDoesNotPrefillSavedKey`: `reveal` could not make `modelAPIKey` hittable after six swipes. Follow-up inspection found the scroll targeted the underlying settings/keyboard accessory instead of the presented form.
+- `MessageSharingUITests`: the two share-sheet tests that failed at `efb7703` passed. `testAttachmentOnlyFileSavesToLocalFilesAndReadsBackExactBytes` failed inside the system Files picker ("renamed folder did not become a selectable native directory"); that run did not verify save/readback.
+- The 9 skips are 3 real-board cases, 4 physical-device/opt-in cases (control probe, screenshot, speech capture, system pairing), 1 iOS 27-only voice notice and 1 iPad-only sidebar case; they are not passes.
 
-Fix and rerun the failing checks before treating their targets as a green gate. Keep the original failed results alongside the rerun evidence.
+Follow-up fixes on **2026-10-15** (`.build/review-fixes-20261015/`):
+
+- Kit tests: **155 passed / 19 suites** with both Xcode 26.3 and Xcode 27 (the latter ran the two test products separately). The provider fixture explicitly captures Sendable values; localized error assertions match current copy.
+- Model profile app tests: **7 passed** after removing the name field from model setup. New profiles display their model ID; existing saved aliases and credential accounts are preserved.
+- Targeted UI reruns: **16 distinct cases passed, 1 physical-device case skipped**, across the core UI, model profiles, two agent timeline/pause cases and three native-sharing cases. The Files test uses the system's actual folder/file elements and verified exact bytes through a fresh public picker. The core form scroll stays above the keyboard accessory and targets the presented form.
+- Intermediate runs remain recorded: `ui-tests-01` had 14 passed / 2 failed / 1 skipped; `ui-tests-02` had 7 app tests passed and UI 11 passed / 1 failed / 1 skipped; final `sharing-tests-03` passed all 3 sharing cases. Failed runs return exit 65; the final sharing run returns 0.
+
+These targeted reruns fix the listed failures; they do not constitute a new full 56-case UI run or physical-device control acceptance. Preserve the original baseline and intermediate failures alongside the rerun evidence.
 
 ## Security
 
@@ -229,6 +241,6 @@ Fix and rerun the failing checks before treating their targets as a green gate. 
 - **Info.plist keys** are set in `project.yml`: camera, Bluetooth, microphone, speech and local-network usage strings (localized in `InfoPlist.xcstrings`); `UIBackgroundModes: bluetooth-central`; `BGTaskSchedulerPermittedIdentifiers`; `NSAllowsLocalNetworking`; and Bonjour `_remotepairing._tcp` / `_remotepairing-pairable-host._tcp`.
 - **Dependencies** are pinned. PiDurableKit uses revision `6e7f2671…` (SwiftPM) and swift-markdown is exactly 0.9.0 (Xcode project only). `Package.resolved`, `Cargo.lock` and firmware `dependencies.lock` are committed. See `docs/dependencies.md`.
 - **Environment variables**: `EISCUE_TEST_MODEL_URL` (UI-test model fixture), `EISCUE_RUST_TOOLCHAIN` (default `1.96.0`), `IDF_PATH` / `IDF_TOOLS_PATH` (ESP-IDF 5.5.3), `BOARD_SANITIZERS` and `CC` (firmware host tests).
-- **Runtime data**: Everything lives in the app sandbox under `Application Support/Eiscue/`: `conversations.json`, `Runtime/` (per-conversation Pi SQLite), `Runs/` (task journal), `Skills/` (imported), and `Attachments/`. Built-in skills are `Apps/Eiscue/Resources/Skills/*.md`. Deleting a conversation removes its runtime files and journal; deleting the API key keeps conversations. Preferences such as `deviceConnectionMethod`, `appearance`, `modelProfiles` (profile list and selection; no keys), the legacy `modelSettings` projection and `onboardingVersion` are stored in UserDefaults.
+- **Runtime data**: Everything lives in the app sandbox under `Application Support/Eiscue/`: `conversations.json`, `Runtime/` (per-conversation Pi SQLite), `Runs/` (task journal), `Skills/` (imported), and `Attachments/`. Built-in skills are `Apps/Eiscue/Resources/Skills/*.md`. Deleting a conversation removes its runtime files and journal; deleting the API key keeps conversations. Preferences such as `deviceConnectionMethod`, `bluetoothInputRoute`, `allowsDeviceControl`, `disconnectAfterTask`, `appearance`, `modelProfiles` (profile list and selection; no keys), the legacy `modelSettings` projection and `onboardingVersion` are stored in UserDefaults. Only `Runs/` and the ReplayKit frame cache set `isExcludedFromBackup`; conversations, attachments and the screenshot-bearing Pi SQLite are included in device backups.
 - **Local tunnel** addresses are fixed: local `10.7.1.1/24`, peer `10.7.0.1/32`, host route only, no default route or DNS. The USB NCM board is `192.168.7.1/24` and the phone uses a manual `.2`.
 - **Build artifacts**: `.build/` is gitignored and holds research checkouts, backend/firmware builds, test results, and private board backups.

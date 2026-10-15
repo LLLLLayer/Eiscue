@@ -141,7 +141,7 @@ final class AgentIntegrationUITests: XCTestCase {
         waitUntilIdle(in: app)
         XCTAssertTrue(app.buttons["endPausedRunButton"].exists)
         XCTAssertFalse(app.buttons["resumeRunButton"].exists)
-        XCTAssertTrue(app.staticTexts["重复操作后画面没有变化，任务已暂停。请检查当前画面后再继续。"].exists)
+        XCTAssertTrue(app.staticTexts["任务暂无进展。请查看屏幕，再继续任务或补充说明。"].exists)
 
         app.terminate()
         app = launch(reset: false, timeline: true)
@@ -197,7 +197,7 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 1, file: file, line: line)
         XCTAssertLessThan(firstReply.frame.midY, tool.frame.midY, file: file, line: line)
         XCTAssertLessThan(tool.frame.midY, finalReply.frame.midY, file: file, line: line)
-        XCTAssertEqual(tool.label, "操作已执行", file: file, line: line)
+        XCTAssertTrue(tool.staticTexts["操作已执行"].exists, file: file, line: line)
         XCTAssertEqual(tool.buttons.count, 0, "Plain activity rows have no disclosure control.", file: file, line: line)
         if !tool.isHittable { app.swipeDown() }
         tool.tap()

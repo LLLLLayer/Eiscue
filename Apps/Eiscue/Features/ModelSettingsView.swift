@@ -127,7 +127,6 @@ private struct ModelProfileEditor: View {
     let cancel: () -> Void
     let saved: () -> Void
     @State private var settings: ModelSettings
-    @State private var name: String
     @State private var newKey = ""
     @State private var replacesKey = false
     @State private var errorMessage: String?
@@ -143,7 +142,6 @@ private struct ModelProfileEditor: View {
         self.profile = profile; self.cancel = cancel; self.saved = saved
         let settings = profile?.settings ?? ModelSettings()
         _settings = State(initialValue: settings)
-        _name = State(initialValue: profile?.name ?? "")
         _outputTokens = State(initialValue: String(settings.maxOutputTokens))
         _toolCalls = State(initialValue: String(settings.maxToolCalls))
         _timeoutSeconds = State(initialValue: String(settings.timeoutSeconds))
@@ -160,12 +158,6 @@ private struct ModelProfileEditor: View {
 
     var body: some View {
         Form {
-            Section {
-                clearableField(title: modelsText("models.name"), placeholder: modelsText("models.namePlaceholder"),
-                               value: $name, identifier: "modelProfileName", clearIdentifier: "clearModelNameButton")
-            } footer: { Text(modelsText("models.nameHint")) }
-            .listRowBackground(EiscueStyle.surface)
-
             Section {
                 Picker("model.apiType", selection: $settings.api) {
                     ForEach(AgentAPI.allCases, id: \.self) { api in Text(api.title).tag(api) }
@@ -316,7 +308,7 @@ private struct ModelProfileEditor: View {
             settings.maxOutputTokens = outputTokens; settings.maxToolCalls = toolCalls; settings.timeoutSeconds = timeoutSeconds
             settings.baseURL = settings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             settings.model = settings.model.trimmingCharacters(in: .whitespacesAndNewlines)
-            _ = try model.saveModelProfile(id: profile?.id, name: name, settings: settings,
+            _ = try model.saveModelProfile(id: profile?.id, name: profile?.name ?? "", settings: settings,
                                           newKey: newKey.trimmingCharacters(in: .whitespacesAndNewlines))
             newKey = ""; saved()
         } catch {

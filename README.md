@@ -10,7 +10,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 
 ## Features
 
-- **Chat and multiple models**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. Save multiple service/model configurations and switch from the conversation header. Each configuration keeps its own API key in Keychain.
+- **Chat and multiple models**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. Save multiple service/model configurations and switch from the conversation header. New configurations use their model IDs as display names, without a separate name field. Each configuration keeps its own API key in Keychain.
 - **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations default to **In-app connection (local VPN)**, which needs initial pairing: computer USB pairing on iOS 26, or system pairing on iOS 27+. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved supported route choices are retained.
 - **Language**: follows the system by default. Open Settings → App language to select English or Simplified Chinese in iOS settings.
 - **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required. Tap to start/finish dictation, or hold to talk; recognized text returns to the draft for editing. On iOS 27+, active in-app and USB network control connections show a notice instead of entering voice mode: system remote-control muting was observed on the in-app test phone; the USB network route uses the same screen service but has not been microphone-tested. This restriction does not apply to iOS 26 XCTest, Bluetooth HID, USB HID, or a disconnected device; microphone coexistence on those routes still needs physical-device validation.
@@ -147,6 +147,8 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 ### Recorded test baseline
 
+To retain a check's output without masking its exit status, run `bash Scripts/run-logged-check.sh .build/<unique-name>.log <command> [arguments...]`. Existing logs are preserved; a failed check still returns a nonzero exit code.
+
 2026-10-14, commit `efb7703`, Xcode 26.3, iPhone 16e / iOS 26.3 simulator:
 
 | Suite | Result |
@@ -157,11 +159,13 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 | Firmware host tests | Board authentication: 6 groups passed; C3 companion display: 5 groups passed. NCM relay host tests were not run in this round |
 | Device backend | 64 Rust library tests and 332 ObjC automation bridge checks passed |
 
-The 4 Kit failures and 2 UI failures were traced to outdated copy or view-hierarchy assertions. Another 3 sharing tests could not find the system panel identifier. Screenshots show that the panel opened, but **saving, dismissal and readback still need revalidation after the tests are fixed**; the screenshots do not establish that the complete sharing flow works. Skipped cases require real hardware or an iPad. The failing suites are not currently green gates. These tests were not rerun for this documentation update.
+At that baseline, the 4 Kit failures and 2 UI failures were traced to outdated copy or view-hierarchy assertions. Another 3 sharing tests could not find the system panel identifier. Screenshots showed the panel open, but did not establish successful saving, dismissal or readback. Skipped cases required real hardware or an iPad; the failing suites were not green gates.
 
 Later targeted checks on 2026-10-14 passed 4 Kit tests, 12 app tests and 10 UI cases (8 on iPhone, 2 on iPad). Coverage includes read-only tool-image recovery, screenshot details and previews, context menus, keyboard navigation, model parameter persistence and opening/dismissing/reopening native file sharing. Saving, readback and photo sharing were not rerun. These checks do not replace the full baseline or establish real-device control acceptance; failed intermediate runs are retained in the local validation record.
 
 Hotspot-relay removal on 2026-10-14 additionally passed 21 Kit tests, 34 app tests, 3 device-page UI tests, 14 offline firmware-tool tests and 64 Rust library tests. All three native backend slices were rebuilt. These targeted checks do not replace the full baseline or validate physical USB/Bluetooth behavior.
+
+A full recheck on 2026-10-15 at `14d154f` recorded 155 Kit tests with 4 failures, 242 app tests passed, and 56 UI cases (42 passed, 5 failed, 9 skipped). Xcode 27 also exposed a concurrency compile error in the provider test fixture. Follow-up fixes passed all **155 Kit tests / 19 suites on both Xcode 26.3 and 27**, **7 model-profile app tests**, and **16 distinct targeted UI cases**, with 1 physical-device case skipped. Coverage includes model setup without custom names, credential retention, timeline/pause presentation, native file/photo sharing and exact-byte readback after Save to Files. Intermediate failed runs are retained. The 56-case suite was not rerun in full after these fixes, and this is not physical-device control acceptance.
 
 ### Backend and firmware
 

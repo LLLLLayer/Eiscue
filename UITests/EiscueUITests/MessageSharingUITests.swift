@@ -78,8 +78,16 @@ final class MessageSharingUITests: XCTestCase {
         app.buttons["verifySavedShareButton"].tap()
         let picker = app.descendants(matching: .any)["fixtureSavedDocumentPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 8), "Read-back must use a fresh public document picker")
-        guard openLocalStorage(in: app), tapLabel(folderName, in: app) else { return }
-        guard tapLabel(filename, in: picker) else { return }
+        guard openLocalStorage(in: app), openLocalFolder(folderName, in: picker) else { return }
+        // Files exposes the extension separately in its cell identifier and
+        // omits it from the caption, even with shouldShowFileExtensions enabled.
+        let name = filename as NSString
+        let document = picker.cells["\(name.deletingPathExtension), \(name.pathExtension)"]
+        guard document.waitForExistence(timeout: 5), document.isHittable else {
+            XCTFail("The native picker did not expose this run's exact document name and extension"); return
+        }
+        let icon = document.images.firstMatch
+        if icon.exists && icon.isHittable { icon.tap() } else { document.tap() }
         let result = app.staticTexts["fixtureSavedFileVerification"]
         XCTAssertTrue(result.waitForExistence(timeout: 8))
         XCTAssertEqual(result.label, "Saved file bytes verified")
@@ -143,13 +151,27 @@ final class MessageSharingUITests: XCTestCase {
                 confirm.tap()
             } else { nameField.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: []) }
         }
-        if app.navigationBars[name].waitForExistence(timeout: 2) { return true }
-        let directory = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ AND elementType != %d AND elementType != %d", name,
-            XCUIElement.ElementType.textField.rawValue, XCUIElement.ElementType.textView.rawValue)).firstMatch
+        return openLocalFolder(name, in: app)
+    }
+
+    @MainActor private func openLocalFolder(_ name: String, in element: XCUIElement) -> Bool {
+        // Files can enter the new folder immediately after the inline rename.
+        // Its navigation bar keeps a fixed identifier; the browsing root names
+        // the current directory and its actual local file provider.
+        let folder = element.otherElements["DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage, Title: \(name)"]
+        if folder.waitForExistence(timeout: 2) { return true }
+        let directory = element.cells.containing(.staticText, identifier: name).firstMatch
         guard directory.waitForExistence(timeout: 5), directory.isHittable else {
-            XCTFail("The renamed folder did not become a selectable native directory"); return false
+            XCTFail("The native picker did not expose the unique saved-file folder"); return false
         }
-        directory.tap()
+        // In icon mode a caption tap can leave the picker at its parent. Tap
+        // the folder artwork and verify the resulting directory before saving
+        // or looking for the document.
+        let icon = directory.images.firstMatch
+        if icon.exists && icon.isHittable { icon.tap() } else { directory.tap() }
+        guard folder.waitForExistence(timeout: 5) else {
+            XCTFail("The native picker did not enter the unique local folder"); return false
+        }
         return true
     }
 
