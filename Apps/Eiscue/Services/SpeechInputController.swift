@@ -10,6 +10,11 @@ import UIKit
 @Observable
 final class SpeechInputController {
     enum State: Equatable { case idle, requestingPermission, preparing, recording, finishing }
+    struct Dependencies {
+        var authorize: @MainActor () async throws -> Void
+        var startRecognition: @MainActor (Locale, UUID) throws -> Void
+        var isForeground: @MainActor () -> Bool
+    }
 
     private(set) var state: State = .idle
     private(set) var transcript = ""
@@ -50,11 +55,22 @@ final class SpeechInputController {
     @ObservationIgnored private var hasTap = false
     @ObservationIgnored private var ownsAudioSession = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private let dependencies: Dependencies?
     #if DEBUG
     @ObservationIgnored private var captureDiagnostics: [[String: Any]] = []
     #endif
 
-    init() {
+    init(dependencies: Dependencies? = nil) {
+        var configuredDependencies = dependencies
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if configuredDependencies == nil, arguments.contains("--ui-testing"),
+           arguments.contains("--local-device-ready-fixture"), arguments.contains("--speech-device-ready-fixture") {
+            configuredDependencies = Dependencies(authorize: {}, startRecognition: { _, _ in },
+                isForeground: { UIApplication.shared.applicationState != .background })
+        }
+        #endif
+        self.dependencies = configuredDependencies
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                                             object: nil, queue: .main) { [weak self] _ in
@@ -92,14 +108,16 @@ final class SpeechInputController {
         }
     }
 
-    func toggle(locale: Locale = .current, onTranscript: @escaping @MainActor (String) -> Void) {
+    func toggle(locale: Locale = .current, beforeRecording: @escaping @MainActor () async throws -> Void = {},
+                onTranscript: @escaping @MainActor (String) -> Void) {
         if isBusy { stop() }
-        else { begin(mode: .toggle, locale: locale, onTranscript: onTranscript) }
+        else { begin(mode: .toggle, locale: locale, beforeRecording: beforeRecording, onTranscript: onTranscript) }
     }
 
-    func beginHold(locale: Locale = .current, onTranscript: @escaping @MainActor (String) -> Void) {
+    func beginHold(locale: Locale = .current, beforeRecording: @escaping @MainActor () async throws -> Void = {},
+                   onTranscript: @escaping @MainActor (String) -> Void) {
         if isBusy { stop(); return }
-        begin(mode: .hold, locale: locale, onTranscript: onTranscript)
+        begin(mode: .hold, locale: locale, beforeRecording: beforeRecording, onTranscript: onTranscript)
     }
 
     /// Also cancels pending permission work: releasing before authorization
@@ -137,10 +155,12 @@ final class SpeechInputController {
 
     func clearError() { errorMessage = nil }
 
+    private var isForeground: Bool { dependencies?.isForeground() ?? (UIApplication.shared.applicationState != .background) }
+
     private func begin(mode: SpeechInputSessionGate.Mode, locale: Locale,
+                       beforeRecording: @escaping @MainActor () async throws -> Void = {},
                        onTranscript: @escaping @MainActor (String) -> Void) {
-        guard UIApplication.shared.applicationState != .background,
-              let token = gate.begin(mode: mode) else { return }
+        guard isForeground, let token = gate.begin(mode: mode) else { return }
         self.onTranscript = onTranscript
         transcriptBuffer = SpeechTranscriptBuffer()
         capture = .init()
@@ -153,24 +173,36 @@ final class SpeechInputController {
         recordCaptureDiagnostic("begin")
         startTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            var isRunningPreparationHook = false
             do {
                 try await self.authorize()
                 self.recordCaptureDiagnostic("authorized")
                 try Task.checkCancellation()
-                guard self.gate.accepts(token), UIApplication.shared.applicationState != .background else { return }
+                guard self.gate.accepts(token) else { return }
+                guard self.isForeground else { self.cancel(); return }
                 self.state = .preparing
+                isRunningPreparationHook = true
+                try await beforeRecording()
+                isRunningPreparationHook = false
+                try Task.checkCancellation()
+                guard self.gate.accepts(token) else { return }
+                guard self.isForeground else { self.cancel(); return }
                 try self.startRecognition(locale: locale, token: token)
             } catch is CancellationError {
-                // Stop/cancel already invalidated the session and cleared state.
+                if self.gate.accepts(token) { self.cancel() }
             } catch {
                 guard self.gate.accepts(token) else { return }
                 self.recordCaptureDiagnostic("startup-error", error: error as NSError)
-                self.fail(error as? Failure ?? .unavailable)
+                if isRunningPreparationHook {
+                    self.clearSession()
+                    self.errorMessage = error.localizedDescription
+                } else { self.fail(error as? Failure ?? .unavailable) }
             }
         }
     }
 
     private func authorize() async throws {
+        if let dependencies { try await dependencies.authorize(); return }
         let authorization: SFSpeechRecognizerAuthorizationStatus
         if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
             authorization = await withCheckedContinuation { continuation in
@@ -189,6 +221,11 @@ final class SpeechInputController {
     }
 
     private func startRecognition(locale: Locale, token: UUID) throws {
+        if let dependencies {
+            try dependencies.startRecognition(locale, token)
+            state = .recording
+            return
+        }
         guard let recognizer = SFSpeechRecognizer(locale: locale) else { throw Failure.unsupportedLocale }
         if let requestedLanguage = locale.language.languageCode,
            recognizer.locale.language.languageCode != requestedLanguage { throw Failure.unsupportedLocale }

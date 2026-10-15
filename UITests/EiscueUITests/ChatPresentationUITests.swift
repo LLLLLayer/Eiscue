@@ -77,7 +77,7 @@ final class ChatPresentationUITests: XCTestCase {
         }
     }
 
-    @MainActor func testRemoteControlTemporarilyReleasesForVoiceModeAndReconnectsOnKeyboardExit() throws {
+    @MainActor func testVoiceModeSwitchKeepsRemoteControlConnectedAndPreservesDraft() throws {
         let app = try launchSpeechConnectionFixture()
         let selectedRoute = try XCTUnwrap(app.buttons["deviceConnectionMethodPicker"].value as? String)
         let selectedBackend = try XCTUnwrap(app.buttons["deviceControlBackendPicker"].value as? String)
@@ -96,33 +96,63 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertTrue(record.waitForExistence(timeout: 5))
         XCTAssertEqual(record.label, "Tap to talk")
         XCTAssertFalse(app.staticTexts["speechNotice"].exists)
-        XCTAssertNotEqual(deviceLink.value as? String, connectedStatus,
-                          "Voice mode must release the active control connection before recording can start.")
+        XCTAssertEqual(deviceLink.value as? String, connectedStatus,
+                       "Switching input mode must retain device control until recording is requested.")
         XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
         XCTAssertEqual(composer.frame.maxY, restingBottom, accuracy: 1)
         XCTAssertFalse(app.descendants(matching: .any)["messageInput"].exists)
         XCTAssertFalse(app.buttons["sendMessageButton"].isEnabled)
         XCTAssertFalse(app.alerts.firstMatch.exists)
-        attachScreenshot(app, name: "Voice composer after releasing device control")
+        attachScreenshot(app, name: "Voice composer retains device control")
 
-        // Switching back without tapping the record control must also restore
-        // the connection; this test never requests microphone permission.
+        // Merely switching input modes never starts recording or a handoff.
         app.buttons["speechInputButton"].tap()
         XCTAssertTrue(record.waitForNonExistence(timeout: 5))
         XCTAssertEqual(input(in: app).value as? String, draft)
         XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
-        let reconnected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", connectedStatus), object: deviceLink)
-        XCTAssertEqual(XCTWaiter.wait(for: [reconnected], timeout: 5), .completed)
+        XCTAssertEqual(deviceLink.value as? String, connectedStatus)
         XCTAssertFalse(app.staticTexts["speechNotice"].exists)
         XCTAssertFalse(app.alerts.firstMatch.exists)
         openDevice(in: app)
         XCTAssertTrue(app.buttons["disconnectDeviceButton"].waitForExistence(timeout: 5),
-                      "Leaving voice mode must restore the original control connection.")
+                      "Switching back without recording must retain the original control connection.")
         XCTAssertEqual(app.buttons["deviceConnectionMethodPicker"].value as? String, selectedRoute)
         XCTAssertEqual(app.buttons["deviceControlBackendPicker"].value as? String, selectedBackend)
     }
 
-    @MainActor func testVoiceModeReconnectFailurePreservesDraftAndShowsNotice() throws {
+    @MainActor func testRecordingTemporarilyReleasesRemoteControlAndRestoresAfterFinish() throws {
+        let app = try launchSpeechConnectionFixture()
+        let selectedRoute = try XCTUnwrap(app.buttons["deviceConnectionMethodPicker"].value as? String)
+        let selectedBackend = try XCTUnwrap(app.buttons["deviceControlBackendPicker"].value as? String)
+        returnToAssistant(in: app)
+        let deviceLink = app.buttons["deviceNavigationLink"]
+        let connectedStatus = try XCTUnwrap(deviceLink.value as? String)
+        let draft = "Keep this draft after recording"
+        let editor = input(in: app)
+        editor.tap(); editor.typeText(draft)
+        app.buttons["speechInputButton"].tap()
+        let record = app.buttons["holdToTalkButton"]
+        XCTAssertTrue(record.waitForExistence(timeout: 5))
+        XCTAssertEqual(deviceLink.value as? String, connectedStatus)
+
+        startFixtureRecording(in: app)
+        XCTAssertNotEqual(deviceLink.value as? String, connectedStatus,
+                          "The recording trigger must release control before microphone capture starts.")
+        XCTAssertFalse(app.buttons["sendMessageButton"].isEnabled)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        record.tap()
+        XCTAssertTrue(record.waitForNonExistence(timeout: 8))
+        XCTAssertEqual(input(in: app).value as? String, draft)
+        let reconnected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", connectedStatus), object: deviceLink)
+        XCTAssertEqual(XCTWaiter.wait(for: [reconnected], timeout: 5), .completed)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        openDevice(in: app)
+        XCTAssertTrue(app.buttons["disconnectDeviceButton"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["deviceConnectionMethodPicker"].value as? String, selectedRoute)
+        XCTAssertEqual(app.buttons["deviceControlBackendPicker"].value as? String, selectedBackend)
+    }
+
+    @MainActor func testRecordingReconnectFailurePreservesDraftAndShowsNotice() throws {
         let app = try launchSpeechConnectionFixture(failsReconnection: true)
         returnToAssistant(in: app)
         let draft = "Keep this draft after reconnect fails"
@@ -133,10 +163,12 @@ final class ChatPresentationUITests: XCTestCase {
         app.buttons["speechInputButton"].tap()
         XCTAssertTrue(app.buttons["holdToTalkButton"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["speechNotice"].exists)
+        startFixtureRecording(in: app)
         app.buttons["speechInputButton"].tap()
         let notice = app.staticTexts["speechNotice"]
-        XCTAssertTrue(notice.waitForExistence(timeout: 5))
-        XCTAssertEqual(notice.label, "Couldn’t reconnect device control. Reconnect from the device page.")
+        let reconnectFailure = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND label == %@",
+            "Couldn’t reconnect device control. Reconnect from the device page."), object: notice)
+        XCTAssertEqual(XCTWaiter.wait(for: [reconnectFailure], timeout: 8), .completed)
         XCTAssertEqual(input(in: app).value as? String, draft)
         XCTAssertEqual(composer.frame.height, originalHeight, accuracy: 1)
         XCTAssertFalse(app.buttons["holdToTalkButton"].exists)
@@ -274,6 +306,15 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["disconnectDeviceButton"].exists)
         return app
+    }
+
+    @MainActor private func startFixtureRecording(in app: XCUIApplication) {
+        // This explicit fixture uses fake authorization/capture, while running
+        // the normal pre-recording handoff and finish/cancel lifecycle.
+        let record = app.buttons["holdToTalkButton"]
+        record.tap()
+        let recording = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Listening…"), object: record)
+        XCTAssertEqual(XCTWaiter.wait(for: [recording], timeout: 5), .completed)
     }
 
     @MainActor private func input(in app: XCUIApplication) -> XCUIElement {

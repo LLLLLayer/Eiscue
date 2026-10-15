@@ -124,7 +124,7 @@ struct AssistantView: View {
             if wasBusy && !busy { finishVoiceMode() }
         }
         .onChange(of: model.isDictationBlockedByDeviceConnection) { _, blocked in
-            if blocked && isVoiceMode {
+            if blocked && speech.isBusy {
                 speech.cancel(); finishVoiceMode(reconnect: false)
                 showSpeechNotice(String(localized: "speech.error.remoteControl", table: "Speech"))
             }
@@ -170,31 +170,30 @@ struct AssistantView: View {
     }
 
     private var isChangingVoiceConnection: Bool { isPreparingVoice || voiceRestorationID != nil }
+    private var isSpeechDisabled: Bool {
+        let isReleasingForRecording = isPreparingVoice && model.isConnecting &&
+            model.dictationDeviceRestoration?.id == voiceSessionID && model.dictationDeviceRestoration?.isValid == true
+        return model.isBusy && !isReleasingForRecording
+    }
 
     private func enterVoiceMode() {
         guard voiceSessionID == nil, !isChangingVoiceConnection, !model.isBusy else { return }
         speechNotice = nil; speechNoticeID = nil
         speech.clearError()
+        isVoiceMode = true; isComposerFocused = false
+    }
+
+    private func prepareForRecording() async throws {
+        try Task.checkCancellation()
+        guard isVoiceMode, voiceSessionID == nil, !isChangingVoiceConnection,
+              scenePhase == .active else { throw CancellationError() }
         let id = UUID(), composerID = model.composerSessionID
         voiceSessionID = id; isPreparingVoice = true
-        Task { @MainActor in
-            guard voiceSessionID == id else { return }
-            guard scenePhase == .active, model.composerSessionID == composerID else {
-                finishVoiceMode(reconnect: false); return
-            }
-            do {
-                try await model.prepareDeviceForDictation(id: id)
-                guard voiceSessionID == id else { return }
-                guard scenePhase == .active, model.composerSessionID == composerID else {
-                    finishVoiceMode(reconnect: false); return
-                }
-                isPreparingVoice = false; isVoiceMode = true; isComposerFocused = false
-            } catch {
-                guard voiceSessionID == id else { return }
-                finishVoiceMode()
-                if !(error is CancellationError) { showSpeechNotice(error.localizedDescription) }
-            }
-        }
+        defer { if voiceSessionID == id { isPreparingVoice = false } }
+        try await model.prepareDeviceForDictation(id: id)
+        try Task.checkCancellation()
+        guard voiceSessionID == id, isVoiceMode, scenePhase == .active,
+              model.composerSessionID == composerID else { throw CancellationError() }
     }
 
     /// Called only after capture stops (including permission/error cancellation).
@@ -339,7 +338,9 @@ struct AssistantView: View {
                     // The same editor measures both modes, including a multiline draft.
                     if isVoiceMode {
                         editor.hidden()
-                        SpeechInputButton(controller: speech, isDisabled: model.isBusy, hapticsEnabled: model.hapticsEnabled, onTranscript: receiveDictation)
+                        SpeechInputButton(controller: speech, isDisabled: isSpeechDisabled,
+                            hapticsEnabled: model.hapticsEnabled, beforeRecording: prepareForRecording,
+                            onTranscript: receiveDictation)
                             .frame(maxWidth: .infinity)
                     } else { editor }
                 }

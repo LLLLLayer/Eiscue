@@ -8,6 +8,7 @@ struct SpeechInputButton: View {
     var locale: Locale = .current
     var isDisabled = false
     var hapticsEnabled = true
+    var beforeRecording: @MainActor () async throws -> Void = {}
     let onTranscript: @MainActor (String) -> Void
     @State private var isCancelling = false
 
@@ -22,11 +23,11 @@ struct SpeechInputButton: View {
             subtitle: !isCancelling && controller.isBusy && !controller.transcript.isEmpty
                 ? (controller.isRecording ? finishHint : controller.statusText) : nil,
             status: controller.accessibilityStatus,
-            onStart: { controller.beginHold(locale: locale, onTranscript: onTranscript) },
+            onStart: { controller.beginHold(locale: locale, beforeRecording: beforeRecording, onTranscript: onTranscript) },
             onFinish: { controller.endHold() },
             onCancel: { controller.cancel() },
             onCancelZone: { isCancelling = $0 },
-            onAccessibleTap: { controller.toggle(locale: locale, onTranscript: onTranscript) }
+            onAccessibleTap: { controller.toggle(locale: locale, beforeRecording: beforeRecording, onTranscript: onTranscript) }
         )
         .frame(height: 44)
         .background(isCancelling ? Color.primary.opacity(0.12) : Color.clear, in: Capsule())
