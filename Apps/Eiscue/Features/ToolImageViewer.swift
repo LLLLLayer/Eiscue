@@ -131,17 +131,19 @@ private struct ToolImageViewer: View {
     }
 
     private var animation: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.9) }
-    private var dragProgress: CGFloat { min(abs(dragOffset.height) / 300, 1) }
+    private var dragProgress: CGFloat { min(hypot(dragOffset.width, dragOffset.height) / 300, 1) }
 
     private func updateDismissDrag(_ translation: CGSize) {
         guard interactive, !closing else { return }
-        dragOffset = CGSize(width: translation.width * 0.2, height: translation.height)
+        dragOffset = translation
     }
 
-    private func endDismissDrag(_ translation: CGSize, _ velocity: CGFloat, _ cancelled: Bool) {
+    private func endDismissDrag(_ translation: CGSize, _ velocity: CGSize, _ cancelled: Bool) {
         guard interactive, !closing else { return }
-        let distance = abs(translation.height)
-        let flicked = distance > 18 && abs(velocity) > 800 && translation.height * velocity > 0
+        let distance = hypot(translation.width, translation.height)
+        // Count only velocity continuing along the drag, not a sideways or reversing flick.
+        let outwardVelocity = distance > 0 ? (translation.width * velocity.width + translation.height * velocity.height) / distance : 0
+        let flicked = distance > 18 && outwardVelocity > 800
         if !cancelled && (distance > 120 || flicked) { close() }
         else { withAnimation(animation) { dragOffset = .zero } }
     }
@@ -167,7 +169,7 @@ struct ZoomableToolImage: UIViewRepresentable {
     let image: UIImage
     var dismissalEnabled = false
     var onDismissDrag: (CGSize) -> Void = { _ in }
-    var onDismissEnd: (CGSize, CGFloat, Bool) -> Void = { _, _, _ in }
+    var onDismissEnd: (CGSize, CGSize, Bool) -> Void = { _, _, _ in }
     func makeUIView(context: Context) -> ToolImageScrollView { ToolImageScrollView() }
     func updateUIView(_ view: ToolImageScrollView, context: Context) {
         view.onDismissDrag = onDismissDrag; view.onDismissEnd = onDismissEnd
@@ -182,7 +184,7 @@ final class ToolImageScrollView: UIScrollView, UIScrollViewDelegate {
     private lazy var dismissPan = UIPanGestureRecognizer(target: self, action: #selector(dragToDismiss(_:)))
     private lazy var dismissDelegate = DismissGestureDelegate(scrollView: self)
     var onDismissDrag: (CGSize) -> Void = { _ in }
-    var onDismissEnd: (CGSize, CGFloat, Bool) -> Void = { _, _, _ in }
+    var onDismissEnd: (CGSize, CGSize, Bool) -> Void = { _, _, _ in }
     var dismissalEnabled = false {
         didSet { if oldValue != dismissalEnabled { dismissPan.isEnabled = dismissalEnabled } }
     }
@@ -242,8 +244,10 @@ final class ToolImageScrollView: UIScrollView, UIScrollViewDelegate {
         let offset = CGSize(width: translation.x, height: translation.y)
         switch gesture.state {
         case .began, .changed: onDismissDrag(offset)
-        case .ended: onDismissEnd(offset, gesture.velocity(in: window).y, false)
-        case .cancelled, .failed: onDismissEnd(offset, 0, true)
+        case .ended:
+            let velocity = gesture.velocity(in: window)
+            onDismissEnd(offset, CGSize(width: velocity.x, height: velocity.y), false)
+        case .cancelled, .failed: onDismissEnd(offset, .zero, true)
         default: break
         }
     }
@@ -255,10 +259,8 @@ final class ToolImageScrollView: UIScrollView, UIScrollViewDelegate {
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let scrollView, scrollView.dismissalEnabled,
                   scrollView.zoomScale <= scrollView.minimumZoomScale + 0.01,
-                  !scrollView.isZooming, !scrollView.isZoomBouncing,
-                  let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
-            let velocity = pan.velocity(in: scrollView.window)
-            return abs(velocity.y) > abs(velocity.x) * 1.2
+                  !scrollView.isZooming, !scrollView.isZoomBouncing else { return false }
+            return true
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
