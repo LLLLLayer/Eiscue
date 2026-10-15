@@ -358,6 +358,39 @@ final class DeviceConnectionMethodTests: XCTestCase {
         }
     }
 
+    func testUnconfirmedMediaReleaseSettlesStatusBeforeInvalidatingVoicePreparation() async throws {
+        let fixture = try dictationFixture()
+        let model = fixture.model
+        await model.connectDevice()
+        await fixture.controller.setReleaseConfirmed(false)
+        await fixture.controller.suspendNextStatus()
+        let id = UUID()
+        let preparation = Task { try await model.prepareDeviceForDictation(id: id) }
+        defer { Task { await fixture.controller.completePendingStatus() } }
+        try await waitUntil { await fixture.controller.hasPendingStatus() }
+        let restoration = try XCTUnwrap(model.dictationDeviceRestoration)
+
+        XCTAssertEqual(restoration.id, id)
+        XCTAssertTrue(model.isConnecting)
+        XCTAssertTrue(model.isBusy)
+        XCTAssertTrue(restoration.isValid, "The UI must still recognize its own release while status is pending.")
+        XCTAssertFalse(restoration.releaseConfirmed)
+        XCTAssertFalse(restoration.releaseFinished)
+
+        await fixture.controller.completePendingStatus()
+        do { try await preparation.value; XCTFail("Unconfirmed release must not authorize microphone capture.") }
+        catch DictationDevicePreparationError.releaseUnconfirmed { }
+        XCTAssertFalse(model.isConnecting)
+        XCTAssertFalse(restoration.isValid)
+        XCTAssertTrue(restoration.releaseFinished)
+        XCTAssertNil(model.dictationDeviceRestoration)
+        let error = await model.finishDeviceDictation(id: id)
+        XCTAssertNil(error)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard], "An unconfirmed release must never reconnect automatically.")
+        XCTAssertEqual(calls.disconnects, 1)
+    }
+
     func testManualDisconnectCancelsAnInFlightDictationRestoreAndWaitsForCleanup() async throws {
         let fixture = try dictationFixture()
         let model = fixture.model
@@ -1019,13 +1052,19 @@ private actor AppConnectionRecordingController: DeviceController {
     var events: [String] = []
     var pending: CheckedContinuation<Void, Error>?
     var pendingDisconnect: CheckedContinuation<Void, Never>?
+    var suspendsNextStatus = false
+    var pendingStatus: CheckedContinuation<Void, Never>?
     init(failure: DeviceControlError?, grantsControl: Bool, suspendsConnection: Bool, suspendsDisconnect: Bool) {
         self.failure = failure; self.grantsControl = grantsControl; self.suspendsConnection = suspendsConnection
         self.suspendsDisconnect = suspendsDisconnect
     }
     func status() async -> DeviceStatus {
-        if connected && grantsControl { .ready(capabilities: [.screenshot, .tap]) }
-        else { .unavailable(reason: "synthetic diagnostic only") }
+        if suspendsNextStatus {
+            suspendsNextStatus = false
+            await withCheckedContinuation { pendingStatus = $0 }
+        }
+        return connected && grantsControl ? .ready(capabilities: [.screenshot, .tap])
+            : .unavailable(reason: "synthetic diagnostic only")
     }
     func importPairingIdentity(_ data: Data) async throws {
         pairingMutations += 1
@@ -1092,6 +1131,12 @@ private actor AppConnectionRecordingController: DeviceController {
     func setConnectionFailure(_ failure: DeviceControlError?) { self.failure = failure }
     func setSuspendsConnection(_ value: Bool) { suspendsConnection = value }
     func setReleaseConfirmed(_ value: Bool) { releaseConfirmed = value }
+    func suspendNextStatus() { suspendsNextStatus = true }
+    func hasPendingStatus() -> Bool { pendingStatus != nil }
+    func completePendingStatus() {
+        pendingStatus?.resume()
+        pendingStatus = nil
+    }
     func calls() -> (methods: [DeviceConnectionMethod], backends: [DeviceControlBackend], disconnects: Int,
                      cancelledConnections: Int, pairingMutations: Int, events: [String]) {
         (methods, backends, disconnects, cancelledConnections, pairingMutations, events)

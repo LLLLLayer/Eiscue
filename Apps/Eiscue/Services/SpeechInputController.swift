@@ -185,11 +185,13 @@ final class SpeechInputController {
                 guard self.isForeground else { self.cancel(); return }
                 self.state = .preparing
                 isRunningPreparationHook = true
+                self.recordCaptureDiagnostic("device-preparation-started")
                 try await beforeRecording()
                 isRunningPreparationHook = false
                 try Task.checkCancellation()
                 guard self.gate.accepts(token) else { return }
                 guard self.isForeground else { self.cancel(); return }
+                self.recordCaptureDiagnostic("device-preparation-finished")
                 try self.startRecognition(locale: locale, token: token)
             } catch is CancellationError {
                 if self.gate.accepts(token) { self.cancel() }
@@ -256,6 +258,10 @@ final class SpeechInputController {
         hasTap = true
         recognitionTask = recognizer.recognitionTask(with: request, resultHandler: SpeechInputCallbacks.recognition { [weak self] update in
             guard let self, self.gate.accepts(token) else { return }
+            if update.hasError {
+                self.recordCaptureDiagnostic("recognition-error", error: NSError(
+                    domain: update.errorDomain ?? "Speech", code: update.errorCode ?? 0))
+            }
             guard pipe.snapshot.hasInput else {
                 if update.hasError || update.isFinal { self.fail(.microphoneUnavailable) }
                 return
@@ -264,8 +270,6 @@ final class SpeechInputController {
             self.transcript = self.transcriptBuffer.text
             if update.isFinal { self.complete(token: token) }
             else if update.hasError {
-                self.recordCaptureDiagnostic("recognition-error", error: NSError(
-                    domain: update.errorDomain ?? "Speech", code: update.errorCode ?? 0))
                 if self.state == .finishing || !self.transcript.isEmpty { self.complete(token: token) }
                 else { self.fail(.unavailable) }
             }

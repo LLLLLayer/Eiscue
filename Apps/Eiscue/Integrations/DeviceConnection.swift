@@ -89,12 +89,14 @@ extension AppModel {
         // still wait for media teardown before restoring or starting a new one.
         restoration.releaseTask = Task {
             restoration.releaseConfirmed = await restoration.client.disconnectAndConfirmRelease()
-            if !restoration.releaseConfirmed { restoration.isValid = false }
             let status = await restoration.client.status()
             if deviceOperationID == operationID {
                 deviceStatus = status; isConnecting = false
                 if case .unavailable(let reason) = status { connectionMessage = reason }
             }
+            // Keep our pending release recognizable until the busy state settles,
+            // so the UI does not cancel preparation before it receives this error.
+            if !restoration.releaseConfirmed { restoration.isValid = false }
             restoration.releaseFinished = true
             if !restoration.isValid, restoration.finishTask == nil,
                dictationDeviceRestoration === restoration { dictationDeviceRestoration = nil }

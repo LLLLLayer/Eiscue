@@ -155,6 +155,14 @@ struct AssistantView: View {
         .task {
             let arguments = ProcessInfo.processInfo.arguments
             guard arguments.contains("--speech-diagnostics"), arguments.contains("--speech-capture-check") else { return }
+            // Loading the saved conversation changes composerSessionID and
+            // cancels capture. Wait for the same ready UI a user records from.
+            let deadline = ContinuousClock.now + .seconds(10)
+            while model.isLoading || UIApplication.shared.applicationState != .active {
+                guard ContinuousClock.now < deadline else { return }
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            }
+            guard !model.isBusy, !Task.isCancelled else { return }
             isVoiceMode = true
             speech.toggle(onTranscript: { _ in })
             do { try await Task.sleep(for: .seconds(10)) } catch { }
@@ -176,11 +184,11 @@ struct AssistantView: View {
     private var isSpeechDisabled: Bool {
         let isReleasingForRecording = isPreparingVoice && model.isConnecting &&
             model.dictationDeviceRestoration?.id == voiceSessionID && model.dictationDeviceRestoration?.isValid == true
-        return model.isBusy && !isReleasingForRecording
+        return model.isLoading || (model.isBusy && !isReleasingForRecording)
     }
 
     private func enterVoiceMode() {
-        guard voiceSessionID == nil, !isChangingVoiceConnection, !model.isBusy else { return }
+        guard voiceSessionID == nil, !isChangingVoiceConnection, !model.isLoading, !model.isBusy else { return }
         speechNotice = nil; speechNoticeID = nil
         speech.clearError()
         isVoiceMode = true; isComposerFocused = false

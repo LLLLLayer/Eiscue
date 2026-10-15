@@ -109,16 +109,78 @@ impl Drop for Drains {
 }
 pub(crate) struct Media {
     _video: DisplayServiceClient<Stream>,
-    stop_identifier: u32,
     hid: UniversalHidServiceClient<Stream>,
     _drains: Drains,
     healthy: Arc<AtomicBool>,
 }
+#[derive(Default, Debug, Eq, PartialEq)]
+pub(crate) enum ReleaseState {
+    #[default]
+    Idle,
+    Unknown,
+    Owned(u32),
+}
+impl ReleaseState {
+    pub fn is_idle(&self) -> bool { matches!(self, Self::Idle) }
+
+    fn claim(&mut self, identifier: u32) -> Result<(), Error> {
+        match self {
+            Self::Unknown if identifier != 0 => { *self = Self::Owned(identifier); Ok(()) }
+            Self::Owned(owned) if *owned == identifier => Ok(()),
+            _ => Err(error(Stage::VideoAnswer, Cause::Protocol)),
+        }
+    }
+
+    async fn stop_with<F, Fut>(&mut self, stop: F) -> Result<(), Error>
+    where F: FnOnce(u32) -> Fut, Fut: std::future::Future<Output = Result<plist::Value, Error>> {
+        let identifier = match self {
+            Self::Idle => return Ok(()),
+            Self::Unknown => return Err(error(Stage::Media, Cause::DeliveryUncertain)),
+            Self::Owned(identifier) => *identifier,
+        };
+        let reply = stop(identifier).await?;
+        if !stop_confirmed(&reply, identifier) { return Err(error(Stage::Media, Cause::Protocol)); }
+        *self = Self::Idle;
+        Ok(())
+    }
+
+    pub async fn stop(&mut self, adapter: &mut AdapterHandle, handshake: &mut RsdHandshake) -> Result<(), Error> {
+        self.stop_with(|identifier| async move {
+            // Dropping local sockets does not release the peer's assertion.
+            // The scoped stop must use a fresh reply-bearing connection.
+            let mut stop = bounded(Stage::Media, DisplayServiceClient::connect_rsd(adapter, handshake)).await?;
+            bounded(Stage::Media, stop.stop_media_stream_identifiers(&[identifier])).await
+        }).await
+    }
+}
+
+async fn start_reply(
+    release: &mut ReleaseState,
+    start: impl std::future::Future<Output = Result<plist::Value, Error>>,
+) -> Result<(plist::Value, idevice::core_device::display_stream::negotiation::ScreenVideoStream), Error> {
+    // Cancellation or a missing reply cannot prove that the peer never started.
+    *release = ReleaseState::Unknown;
+    let answer = start.await?;
+    if let Some(identifier) = owned_start_identifier(&answer) { release.claim(identifier)?; }
+    let negotiated = parse_screen_video_answer(extract_answer(&answer)?)
+        .map_err(|_| error(Stage::VideoAnswer, Cause::Protocol))?;
+    Ok((answer, negotiated))
+}
+
+fn owned_start_identifier(answer: &plist::Value) -> Option<u32> {
+    // Only this start response's connection proves ownership before parsing the
+    // answer. serverInfo may list unrelated controllers and is never evidence.
+    answer.as_dictionary()?.get("connection")?.as_dictionary()?
+        .get("streamConfig")?.as_dictionary()?.get("RemoteSSRC")?.as_unsigned_integer()
+        .and_then(|id| u32::try_from(id).ok()).filter(|id| *id != 0)
+}
+
 impl Media {
     pub async fn start(
         adapter: &mut AdapterHandle,
         handshake: &mut RsdHandshake,
         mailbox: Arc<crate::video::VideoMailbox>,
+        release: &mut ReleaseState,
     ) -> Result<Self, Error> {
         let fail = || error(Stage::VideoAnswer, Cause::Protocol);
         let mut drains = Drains::default();
@@ -161,7 +223,7 @@ impl Media {
             None
         };
         if initial_geometry.is_none() { display_info = None; }
-        let answer = bounded(
+        let (answer, negotiated) = start_reply(release, Box::pin(bounded(
             Stage::VideoNegotiation,
             video.start_media_stream(build_start_video_parameters(
                 &receiver,
@@ -173,18 +235,16 @@ impl Media {
                 DISPLAY_ID,
                 session,
             )),
-        )
-        .await?;
-        let negotiated = parse_screen_video_answer(extract_answer(&answer)?).map_err(|_| fail())?;
-        let config = match feedback_endpoint(&answer) {
+        ))).await?;
+        let config = match feedback_endpoint(&answer, negotiated.ssrc) {
             Some(config) => config,
             None => {
                 let status = bounded(Stage::VideoAnswer, video.get_media_stream_server_status()).await?;
-                feedback_endpoint(&status).ok_or_else(fail)?
+                feedback_endpoint(&status, negotiated.ssrc).ok_or_else(fail)?
             }
         };
-        if config.1 != negotiated.ssrc { return Err(fail()); }
         let (feedback_port, _, receiver_ssrc) = config;
+        release.claim(receiver_ssrc)?;
         // Refresh outside the receiver: service latency must not block RTP/ACKs.
         // Each frame carries a snapshot, validated against that frame's SPS.
         mailbox.begin_stream();
@@ -284,19 +344,10 @@ impl Media {
         .await?;
         Ok(Self {
             _video: video,
-            stop_identifier: receiver_ssrc,
             hid,
             _drains: drains,
             healthy,
         })
-    }
-    pub async fn stop(self, adapter: &mut AdapterHandle, handshake: &mut RsdHandshake) -> Result<(), Error> {
-        // Dropping local sockets does not clear the peer's remote-observation
-        // assertion. Never reuse the start connection for this stop request.
-        let mut stop = bounded(Stage::Media, DisplayServiceClient::connect_rsd(adapter, handshake)).await?;
-        let reply = bounded(Stage::Media, stop.stop_media_stream_identifiers(&[self.stop_identifier])).await?;
-        if stop_confirmed(&reply, self.stop_identifier) { Ok(()) }
-        else { Err(error(Stage::Media, Cause::Protocol)) }
     }
     pub async fn drag(
         &mut self,
@@ -484,21 +535,26 @@ impl VideoFeedback {
 
 }
 /// Authenticated stream configuration, never infer RTCP destination from the offer.
-fn feedback_endpoint(value: &plist::Value) -> Option<(u16,u32,u32)> {
+fn feedback_endpoint(value: &plist::Value, expected_sender: u32) -> Option<(u16,u32,u32)> {
     fn number(d: &plist::Dictionary, key: &str) -> Option<u64> { d.get(key)?.as_unsigned_integer() }
-    fn visit(v: &plist::Value, depth: usize, found: &mut Vec<(u16,u32,u32)>) {
+    fn visit(v: &plist::Value, depth: usize, expected_sender: u32, found: &mut Vec<Option<(u16,u32,u32)>>) {
         if depth > 5 { return; }
         if let Some(d) = v.as_dictionary() {
-            if let (Some(port),Some(sender),Some(receiver)) = (number(d,"SourcePort"),number(d,"LocalSSRC"),number(d,"RemoteSSRC")) {
-                if let (Ok(port),Ok(sender),Ok(receiver)) = (u16::try_from(port),u32::try_from(sender),u32::try_from(receiver)) {
-                    if port != 0 && sender != 0 && receiver != 0 { found.push((port,sender,receiver)); }
-                }
+            if number(d,"LocalSSRC") == Some(u64::from(expected_sender)) {
+                let endpoint = || {
+                    let port = u16::try_from(number(d,"SourcePort")?).ok()?;
+                    let receiver = u32::try_from(number(d,"RemoteSSRC")?).ok()?;
+                    (port != 0 && expected_sender != 0 && receiver != 0).then_some((port,expected_sender,receiver))
+                };
+                found.push(endpoint());
             }
-            for child in d.values() { visit(child,depth+1,found); }
+            for child in d.values() { visit(child,depth+1,expected_sender,found); }
+        } else if let Some(values) = v.as_array() {
+            for child in values { visit(child,depth+1,expected_sender,found); }
         }
     }
-    let mut found=Vec::new(); visit(value,0,&mut found);
-    if found.len()==1 { Some(found[0]) } else { None }
+    let mut found=Vec::new(); visit(value,0,expected_sender,&mut found);
+    if found.len()==1 { found[0] } else { None }
 }
 fn extract_answer(value: &plist::Value) -> Result<&[u8], Error> {
     fn visit<'a>(
@@ -516,7 +572,7 @@ fn extract_answer(value: &plist::Value) -> Result<&[u8], Error> {
                     if k == "negotiatorAnswer" {
                         *count += 1;
                         *answer = v.as_data();
-                    } else {
+                    } else if k != "serverInfo" && k != "sessions" {
                         visit(v, depth + 1, count, answer);
                     }
                 }
@@ -538,6 +594,76 @@ fn extract_answer(value: &plist::Value) -> Result<&[u8], Error> {
 }
 #[cfg(test)]
 mod tests {
+    fn stream_config(sender: u32, receiver: u32) -> plist::Value {
+        plist::Dictionary::from_iter([
+            ("SourcePort", plist::Value::from(53134u32)),
+            ("LocalSSRC", plist::Value::from(sender)),
+            ("RemoteSSRC", plist::Value::from(receiver)),
+        ]).into()
+    }
+    fn start_response(config: plist::Value) -> plist::Value {
+        let connection = plist::Dictionary::from_iter([("streamConfig", config)]);
+        plist::Dictionary::from_iter([
+            ("connection", connection.into()),
+            ("negotiatorAnswer", plist::Value::Data(vec![1])),
+        ]).into()
+    }
+    fn stop_response(ids: &[u32]) -> plist::Value {
+        let sessions = ids.iter().map(|id| start_response(stream_config(22, *id))).collect();
+        let server = plist::Dictionary::from_iter([("sessions", plist::Value::Array(sessions))]);
+        plist::Dictionary::from_iter([("serverInfo", plist::Value::Dictionary(server))]).into()
+    }
+
+    #[tokio::test]
+    async fn malformed_owned_start_retains_scoped_cleanup_across_failed_stops() {
+        let mut release = ReleaseState::default();
+        let result = start_reply(&mut release, async { Ok(start_response(stream_config(22, 11))) }).await;
+        assert_eq!(result.unwrap_err(), error(Stage::VideoAnswer, Cause::Protocol));
+        assert_eq!(release, ReleaseState::Owned(11));
+        for reply in [Err(error(Stage::Media, Cause::Timeout)), Ok(plist::Value::Dictionary(Default::default())), Ok(stop_response(&[11, 99]))] {
+            assert!(release.stop_with(|id| async move { assert_eq!(id, 11); reply }).await.is_err());
+            assert_eq!(release, ReleaseState::Owned(11), "No local Media object is needed to retain failed cleanup ownership");
+        }
+        assert_eq!(release.claim(99), Err(error(Stage::VideoAnswer, Cause::Protocol)));
+        assert_eq!(release, ReleaseState::Owned(11), "A conflicting configuration cannot replace our stop token");
+        release.stop_with(|id| async move { assert_eq!(id, 11); Ok(stop_response(&[99])) }).await.unwrap();
+        assert!(release.is_idle());
+        release.stop_with(|_| async { panic!("Confirmed release must be idempotent") }).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn lost_start_reply_and_foreign_status_never_become_noop_release_success() {
+        let mut release = ReleaseState::default();
+        let original = error(Stage::VideoNegotiation, Cause::Timeout);
+        assert_eq!(start_reply(&mut release, async { Err(original) }).await.unwrap_err(), original);
+        for _ in 0..2 {
+            assert_eq!(release.stop_with(|_| async { panic!("Unknown ownership must not send a stop") }).await,
+                Err(error(Stage::Media, Cause::DeliveryUncertain)));
+        }
+        for reply in [stop_response(&[99]), start_response(stream_config(22, 0))] {
+            release = ReleaseState::Idle;
+            assert!(start_reply(&mut release, async { Ok(reply) }).await.is_err());
+            assert_eq!(release, ReleaseState::Unknown, "Global status and zero tokens cannot establish owned media");
+        }
+        release = ReleaseState::Idle;
+        assert!(tokio::time::timeout(Duration::from_millis(1), start_reply(&mut release, std::future::pending())).await.is_err());
+        assert_eq!(release, ReleaseState::Unknown, "Cancellation after dispatch must retain uncertainty");
+    }
+
+    #[test]
+    fn fallback_config_matches_only_the_owned_answer_and_rejects_ambiguity() {
+        let status = plist::Value::Array(vec![stream_config(99, 77), stream_config(22, 11)]);
+        assert_eq!(feedback_endpoint(&status, 22), Some((53134, 22, 11)));
+        assert_eq!(feedback_endpoint(&stream_config(99, 77), 22), None);
+        assert_eq!(feedback_endpoint(&plist::Value::Array(vec![stream_config(22, 11), stream_config(22, 12)]), 22), None);
+        assert!(extract_answer(&stop_response(&[99])).is_err(), "A foreign session's negotiatorAnswer is not this start reply");
+        let mut reply = start_response(stream_config(22, 11)).into_dictionary().unwrap();
+        reply.extend(stop_response(&[99]).into_dictionary().unwrap());
+        let reply = plist::Value::Dictionary(reply);
+        assert_eq!(owned_start_identifier(&reply), Some(11));
+        assert_eq!(extract_answer(&reply).unwrap(), &[1]);
+    }
+
     #[test]
     fn stop_requires_peer_confirmation_and_does_not_confuse_other_streams() {
         fn response(ids: &[u32]) -> plist::Value {
@@ -717,11 +843,11 @@ mod tests {
         let mut connection=plist::Dictionary::new();
         connection.insert("streamConfig".into(),plist::Value::Dictionary(cfg.clone()));
         let mut answer=plist::Dictionary::new(); answer.insert("connection".into(),plist::Value::Dictionary(connection));
-        assert_eq!(feedback_endpoint(&plist::Value::Dictionary(answer)),Some((53134,22,11)));
+        assert_eq!(feedback_endpoint(&plist::Value::Dictionary(answer),22),Some((53134,22,11)));
         cfg.insert("SourcePort".into(),plist::Value::Integer(65536u64.into()));
-        assert_eq!(feedback_endpoint(&plist::Value::Dictionary(cfg.clone())),None);
+        assert_eq!(feedback_endpoint(&plist::Value::Dictionary(cfg.clone()),22),None);
         cfg.insert("SourcePort".into(),plist::Value::Integer(0u64.into()));
-        assert_eq!(feedback_endpoint(&plist::Value::Dictionary(cfg)),None);
+        assert_eq!(feedback_endpoint(&plist::Value::Dictionary(cfg),22),None);
     }
     #[test]
     fn answer_must_be_unique_bounded_data() {

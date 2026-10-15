@@ -732,6 +732,30 @@
         "source": "ncm-dev/rust/src/video.rs",
         "modified": true,
         "change": "Separate the latest assembled-picture decode cursor from RTCP screenshot confirmation. Receiving new RTP packets alone leaves input geometry valid; reference-chain resets, codec changes and display-size metadata changes revoke it. Cover continuous incoming pictures, queued layout changes and rotation back to the original dimensions."
+      },
+      "src/media.rs": {
+        "source": "ncm-dev/rust/src/media.rs",
+        "modified": true,
+        "sha256": "4e5e870d58964c783b593e3403ab73ce527fba9f84f344674a6b26b062c3836c",
+        "change": "Retain scoped media ownership before fallible reply parsing and HID setup. Preserve unknown/failed release state, ignore foreign server-status answers, bind fallback configuration to the owned answer, and clear ownership only after confirmed absence. Box negotiation to bound async stack usage; add synthetic partial-start/cleanup regressions."
+      },
+      "src/lib.rs": {
+        "source": "ncm-dev/rust/src/lib.rs",
+        "modified": true,
+        "sha256": "a817513d71a58f087f3cd1cc3ca23c153d26234296dc015d07812cf3b5ae4c50",
+        "change": "Keep media release state separate from completed Media, refuse a new start while cleanup is unresolved, and stop an identified partial start even when no Media object exists. Add Session cleanup regression fixtures."
+      },
+      "src/legacy_probe.rs": {
+        "source": "ncm-dev/rust/src/legacy_probe.rs",
+        "modified": true,
+        "sha256": "38dbcfd69c8225d6f51b7e266ab1d16e62b5efdbd20832ff0b0538fce0865a60",
+        "change": "Initialize the separate media release state in an existing synthetic Session fixture; production probe unchanged."
+      },
+      "src/xctest_session.rs": {
+        "source": "ncm-dev/rust/src/xctest_session.rs",
+        "modified": true,
+        "sha256": "a0933f57fb447bea76b1e48ab3c7bdef3e48e2118a93f84a0bfd0ae7c1ccf4c4",
+        "change": "Initialize the separate media release state in an existing synthetic Session fixture; production XCTest path unchanged."
       }
     }
   }

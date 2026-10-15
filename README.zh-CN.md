@@ -173,6 +173,8 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 2026-10-15 在 iPhone 12 mini / iOS 27 上完成麦克风对照：全程保留配对和 VPN，CoreDevice 连接前收到非零音频，连接期间全部为零且系统报告远程控制静音，确认释放屏幕会话后恢复非零音频。这项历史检查验证了该设备的收音和恢复，不代表后续语音自动释放／重连流程、语音识别或 XCTest、HID、USB 网络路线与录音共存已验收。Apple 官方记录了 [Device Hub 的相机／麦克风冲突](https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub#Handle-camera-and-microphone-access-conflicts-on-physical-devices)。
 
+同一天在该手机上的后续复查中，App 重启后仍收到全零音频，系统继续报告远程控制静音。配对和 VPN 可以复用，但配对凭据不能恢复之前的屏幕控制会话。目前无法自动识别并释放被终止的 App 进程遗留的会话，手机重启后的一次有界检查连续约 10 秒收到非零音频。跨 App 进程重启的自动清理，以及完整录音／重连流程，仍需继续完善和真机验收。
+
 2026-10-15 新增语音自动释放／重连流程后，30 项连接 Kit 测试、52 项 App 连接测试及 3 项 iOS 27 模拟器 UI 用例通过，覆盖确认释放、恢复、取消、失败处理和输入框布局稳定性。这些检查不代表真机收音或语音识别验收。后续将释放时机改为真正开始录音，通过了 66 项定向 App 测试和 4 项模拟器 UI 用例，包括仅切换输入模式时保持连接。
 
 ### 后端与固件

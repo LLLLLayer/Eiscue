@@ -640,6 +640,7 @@ mod tests {
             _rsd_control: None,
             prepared: true,
             media: None,
+            media_release: crate::media::ReleaseState::default(),
             xctest: Some(owned),
             indigo: None,
             video: std::sync::Arc::new(crate::video::VideoMailbox::default()),

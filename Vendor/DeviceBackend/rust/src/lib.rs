@@ -165,6 +165,7 @@ pub struct Session {
     _rsd_control: Option<RemoteXpcClient<StreamHandle>>,
     prepared: bool,
     media: Option<media::Media>,
+    media_release: media::ReleaseState,
     xctest: Option<xctest_session::OwnedXCTestSession>,
     indigo: Option<IndigoHidClient<Box<dyn idevice::ReadWrite>>>,
     video: std::sync::Arc<video::VideoMailbox>,
@@ -223,6 +224,7 @@ impl Session {
             _rsd_control: Some(rsd_control),
             prepared: false,
             media: None,
+            media_release: media::ReleaseState::default(),
             xctest: None,
             indigo: None,
             video: std::sync::Arc::new(video::VideoMailbox::default()),
@@ -321,15 +323,15 @@ impl Session {
     /// Starts real DisplayService video negotiation and drains packets in
     /// the owned tunnel. No HEVC decode. Explicit media consent is a caller duty.
     /// Preparation sends no touch reports. Its scoped streams/drains are dropped
-    /// on error/cancellation; the authenticated tunnel and screenshot path survive.
+    /// on error/cancellation; retained release state still requires scoped cleanup.
     pub async fn start_touch_media(&mut self) -> Result<(), Error> {
         self.require("com.apple.coredevice.displayservice", Stage::Media)?;
         self.require("com.apple.coredevice.hid.universalhidservice", Stage::Input)?;
-        if self.media.is_some() {
+        if self.media.is_some() || !self.media_release.is_idle() {
             return Err(error(Stage::Media, Cause::InvalidParameters));
         }
         self.media = Some(
-            media::Media::start(&mut self.adapter, &mut self.handshake, self.video.clone()).await?,
+            media::Media::start(&mut self.adapter, &mut self.handshake, self.video.clone(), &mut self.media_release).await?,
         );
         Ok(())
     }
@@ -337,9 +339,9 @@ impl Session {
     /// No global stopAll; retained authentication can serve the next task.
     pub async fn stop_touch_media(&mut self) -> Result<(), Error> {
         self.check()?;
-        let result = if let Some(media) = self.media.take() {
-            media.stop(&mut self.adapter, &mut self.handshake).await
-        } else { Ok(()) };
+        let media = self.media.take();
+        let result = self.media_release.stop(&mut self.adapter, &mut self.handshake).await;
+        drop(media);
         self.indigo.take();
         self.video.reset();
         result
@@ -680,8 +682,7 @@ mod tests {
         ));
         assert_eq!(connector.calls.load(Ordering::SeqCst), 0);
     }
-    #[tokio::test]
-    async fn failed_video_preparation_does_not_revoke_screenshot_generation() {
+    fn broken_media_session() -> Session {
         let (stream, peer) = tokio::io::duplex(1024);
         drop(peer); // synthetic broken video transport, no device connection
         let adapter = Adapter::new(
@@ -709,7 +710,7 @@ mod tests {
             )
         })
         .collect();
-        let mut session = Session {
+        Session {
             owner: Owner::default(),
             _control: None,
             adapter,
@@ -722,11 +723,16 @@ mod tests {
             _rsd_control: None,
             prepared: true,
             media: None,
+            media_release: media::ReleaseState::default(),
             xctest: None,
             indigo: None,
             video: std::sync::Arc::new(video::VideoMailbox::default()),
             valid: true,
-        };
+        }
+    }
+    #[tokio::test]
+    async fn failed_video_preparation_does_not_revoke_screenshot_generation() {
+        let mut session = broken_media_session();
         let result =
             tokio::time::timeout(Duration::from_secs(2), session.start_touch_media()).await;
         assert!(!matches!(result, Ok(Ok(()))));
@@ -749,6 +755,26 @@ mod tests {
                 )
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn partial_media_start_and_failed_stop_retain_session_cleanup_state() {
+        let mut session = broken_media_session();
+        session.media_release = media::ReleaseState::Unknown;
+        for _ in 0..2 {
+            assert_eq!(session.stop_touch_media().await, Err(error(Stage::Media, Cause::DeliveryUncertain)));
+            assert!(session.media.is_none());
+            assert_eq!(session.media_release, media::ReleaseState::Unknown);
+        }
+        session.media_release = media::ReleaseState::Owned(11);
+        for _ in 0..2 {
+            let stopped = tokio::time::timeout(Duration::from_millis(20), session.stop_touch_media()).await;
+            assert!(!matches!(stopped, Ok(Ok(()))), "Broken scoped-stop transport cannot confirm release");
+            assert_eq!(session.media_release, media::ReleaseState::Owned(11));
+        }
+        assert_eq!(session.start_touch_media().await, Err(error(Stage::Media, Cause::InvalidParameters)),
+            "A new start must not replace unresolved owned media");
+        assert!(session.check().is_ok());
     }
 
     #[test]
