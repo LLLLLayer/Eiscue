@@ -73,7 +73,7 @@ final class ConversationOrderingTests: XCTestCase {
             let path = try XCTUnwrap(app.path(forResource: language, ofType: "lproj"))
             let bundle = try XCTUnwrap(Bundle(path: path))
             for key in ["sidebar.title", "sidebar.close", "sidebar.empty", "sidebar.newConversation", "sidebar.settings",
-                        "sidebar.pinned", "sidebar.pin", "sidebar.unpin", "sidebar.moveUp", "sidebar.moveDown", "sidebar.delete"] {
+                        "sidebar.pinned", "sidebar.pin", "sidebar.unpin", "sidebar.moveUp", "sidebar.moveDown", "sidebar.renameAction", "sidebar.delete"] {
                 let translated = bundle.localizedString(forKey: key, value: nil, table: "Navigation")
                 XCTAssertNotEqual(translated, key, "Missing \(language)/Navigation/\(key)")
                 XCTAssertFalse(translated.isEmpty)

@@ -15,7 +15,7 @@ struct ChatMarkdownView: View, Equatable {
     var body: some View {
         Group {
             if let blocks { ChatMarkdownBlocks(blocks: blocks) }
-            else { Text(verbatim: source).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+            else { Text(verbatim: source).textSelection(.enabled) }
         }
         .tint(.primary)
         .task(id: ParseRequest(source: source, isHeld: holdsRendering)) {
@@ -37,7 +37,7 @@ private struct ChatMarkdownBlocks: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(blocks) { block in ChatMarkdownBlockView(block: block).equatable() }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 

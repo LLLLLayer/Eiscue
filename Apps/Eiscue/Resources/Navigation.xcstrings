@@ -177,13 +177,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete conversation"
+            "value": "Delete"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除对话"
+            "value": "删除"
           }
         }
       }
@@ -252,6 +252,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已选 %lld 项"
+          }
+        }
+      }
+    },
+    "sidebar.renameAction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名"
           }
         }
       }

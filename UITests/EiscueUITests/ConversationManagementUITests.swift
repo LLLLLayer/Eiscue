@@ -24,6 +24,9 @@ final class ConversationManagementUITests: XCTestCase {
         XCTAssertFalse(app.buttons["selectConversationsButton"].exists)
         XCTAssertFalse(app.buttons["doneSelectingConversationsButton"].exists)
         second.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["renameConversationButton"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.buttons["renameConversationButton"].label, "Rename")
+        XCTAssertEqual(app.buttons["deleteConversationButton"].label, "Delete")
         app.buttons["renameConversationButton"].tap()
         let renameAlert = app.alerts["Rename conversation"]
         XCTAssertTrue(renameAlert.waitForExistence(timeout: 5))

@@ -141,11 +141,20 @@ final class ToolImagePreviewUITests: XCTestCase {
             XCTAssertTrue(app.buttons["userCopyMessageButton"].waitForExistence(timeout: 3))
             attach(app, name: "User bubble context menu — \(dark ? "Dark" : "Light")")
             app.buttons["userCopyMessageButton"].tap()
+            let reply = app.descendants(matching: .any).matching(identifier: "messageBubble").element(boundBy: 1)
+            XCTAssertTrue(reply.exists)
+            reply.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).press(forDuration: 1)
+            XCTAssertTrue(app.buttons["copyMessageButton"].waitForExistence(timeout: 3))
+            attach(app, name: "Assistant message context menu — \(dark ? "Dark" : "Light")")
+            app.buttons["copyMessageButton"].tap()
             openSidebar(in: app)
-            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "conversationRow_")).firstMatch
+            let row = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier BEGINSWITH %@", "conversationRow_")).firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 3))
             row.press(forDuration: 1)
             XCTAssertTrue(app.buttons["renameConversationButton"].waitForExistence(timeout: 3))
+            XCTAssertEqual(app.buttons["renameConversationButton"].label, "重命名")
+            XCTAssertEqual(app.buttons["deleteConversationButton"].label, "删除")
             attach(app, name: "Conversation context menu — \(dark ? "Dark" : "Light")")
             app.terminate()
         }

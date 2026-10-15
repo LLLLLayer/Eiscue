@@ -33,6 +33,38 @@ def path(vertices, yaw):
     return "M" + "L".join(" ".join(number(value) for value in point) for point in points) + "Z"
 
 
+def rounded_path(points, radius):
+    corners = []
+    for index, point in enumerate(points):
+        previous, following = points[index - 1], points[(index + 1) % len(points)]
+        before = math.dist(point, previous)
+        after = math.dist(point, following)
+        distance = min(radius, before / 2, after / 2)
+        start = tuple(point[axis] + (previous[axis] - point[axis]) * distance / before for axis in (0, 1))
+        end = tuple(point[axis] + (following[axis] - point[axis]) * distance / after for axis in (0, 1))
+        corners.append((start, point, end))
+    pair = lambda point: " ".join(number(value) for value in point)
+    return "M" + pair(corners[0][0]) + "".join(
+        ("" if index == 0 else "L" + pair(start)) + "Q" + pair(point) + " " + pair(end)
+        for index, (start, point, end) in enumerate(corners)) + "Z"
+
+
+def hull(yaw):
+    w, h, d = HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH
+    points = [project(*vertex, yaw) for vertex in [
+        (-w, -h, -d), (w, -h, -d), (w, -h, d), (w, h, -d),
+        (w, h, d), (-w, h, d), (-w, h, -d), (-w, -h, d)]]
+    # Retain collinear slots on the visible vertical edges so all yaw values
+    # have the same path commands, including the side switch through zero.
+    if yaw < 0:
+        points[2] = (points[1][0], points[2][1])
+        points[6] = (points[5][0], points[6][1])
+    else:
+        points[3] = (points[4][0], points[3][1])
+        points[7] = (points[0][0], points[7][1])
+    return points
+
+
 def geometry(style, yaw):
     w, h, d = HALF_WIDTH, HALF_HEIGHT, HALF_DEPTH
     faces = {
@@ -46,6 +78,15 @@ def geometry(style, yaw):
         rear = -d if visible else d
         faces[name] = [(x, -h, rear), (x, -h, d), (x, h, d), (x, h, rear)]
     result = {name: path(vertices, yaw) for name, vertices in faces.items()}
+    if style != "pixel":
+        result["hull"] = rounded_path(hull(yaw), 12)
+        result["tuft"] = rounded_path([project(x, y, -5, yaw) for x, y in TUFT], 4)
+        for name, vertices in {
+            "crease-top": [(-58, -64, 50), (58, -64, 50)],
+            "crease-left": [(-70, -49, 50), (-70, 49, 50)],
+            "crease-right": [(70, -49, 50), (70, 49, 50)],
+        }.items():
+            result[name] = path(vertices, yaw).removesuffix("Z")
     angle = math.radians(yaw)
     origin = project(-w, -h, d, yaw)
     result["plane"] = "matrix(" + ",".join(number(value) for value in (
@@ -63,7 +104,10 @@ def animation_rules(style):
     for state, (period, amplitude, gaze) in STATES.items():
         frames = [(phase, math.sin(phase * 2 * math.pi)) for phase in phases(amplitude)]
         projected = [(phase, turn, geometry(style, -8 + turn * amplitude)) for phase, turn in frames]
-        for name in ("top", "left", "right", "front", "tuft", "plane", "gaze"):
+        names = ("top", "left", "right", "front", "tuft", "plane", "gaze")
+        if style != "pixel":
+            names += ("hull", "crease-top", "crease-left", "crease-right")
+        for name in names:
             declarations = []
             for phase, turn, values in projected:
                 if name == "gaze":
@@ -72,9 +116,9 @@ def animation_rules(style):
                     value = f"transform:{values[name]}"
                 else:
                     value = f'd:path("{values[name]}")'
-                    if name in ("left", "right"):
+                    if name in ("left", "right", "crease-left", "crease-right"):
                         yaw = -8 + turn * amplitude
-                        visible = yaw > 0 if name == "left" else yaw < 0
+                        visible = yaw > 0 if name.endswith("left") else yaw < 0
                         value += ";visibility:" + ("visible" if visible else "hidden")
                 declarations.append(f"{number(phase * 100)}%{{{value}}}")
             rules.append(f"@keyframes {state}-{name}{{" + "".join(declarations) + "}")
@@ -91,30 +135,64 @@ def svg(style):
         opened = '<rect x="31" y="46" width="22" height="36"/><rect x="89" y="46" width="22" height="36"/>'
         closed = "M31 64V69H53V64M89 64V69H111V64"
         worried = "M29 47H40V42H53V38M89 38V42H100V47H113"
-        pupils = '<rect x="36" y="58" width="12" height="20"/><rect x="94" y="58" width="12" height="20"/>'
+        pupils = '<g fill="var(--eye)" stroke="none"><rect x="36" y="58" width="12" height="20"/><rect x="94" y="58" width="12" height="20"/></g>'
     else:
-        opened = '<ellipse cx="42" cy="64" rx="11" ry="18"/><ellipse cx="100" cy="64" rx="11" ry="18"/>'
-        closed = "M31 64Q42 73 53 64M89 64Q100 73 111 64"
-        worried = "M29 47Q42 46 53 38M89 38Q100 46 113 47"
-        pupils = '<ellipse cx="42" cy="68" rx="6" ry="10"/><ellipse cx="100" cy="68" rx="6" ry="10"/>'
+        opened = '<ellipse cx="42" cy="69" rx="13" ry="20"/><ellipse cx="100" cy="69" rx="13" ry="20"/>'
+        closed = "M30 69Q42 79 54 69M88 69Q100 79 112 69"
+        worried = "M29 52Q42 51 53 43M89 43Q100 51 113 52"
+        pupils = '<g stroke-width="4"><ellipse cx="42" cy="69" rx="11" ry="16"/><ellipse cx="100" cy="69" rx="11" ry="16"/></g>'
     shine = "" if pixel else (
+        f'<rect x="3" y="3" width="134" height="122" rx="16" fill="none" stroke="white" stroke-width="3" opacity="{0.12 if ink else 0.4}"/>'
         f'<g fill="white" opacity="{0.25 if ink else 0.8}"><ellipse cx="17" cy="22.5" rx="6" ry="9.5"/>'
         '<ellipse cx="27" cy="37.5" rx="3" ry="4.5"/></g>')
     ink_css = "" if not ink else """
-svg{--outline:#2e2e2e;--front:#f7f7f7;--top:#fff;--side:#d6d6d6;--eye:#2e2e2e;--tuft:#2e2e2e}
-@media(prefers-color-scheme:dark){svg{--outline:#dbdbdb;--front:#2b2b2b;--top:#3b3b3b;--side:#1f1f1f;--eye:#dbdbdb;--tuft:#dbdbdb}}
+svg{--outline:#2e2e2e;--top:#fff;--front:#f7f7f7;--side:#d6d6d6;--top-start:var(--top);--top-end:var(--front);--front-start:var(--front);--front-end:var(--side);--side-start:var(--side);--side-end:var(--front);--side-end-opacity:.8;--eye:var(--outline);--tuft-start:var(--outline);--tuft-end:var(--eye)}
+@media(prefers-color-scheme:dark){svg{--outline:#dbdbdb;--top:#3b3b3b;--front:#2b2b2b;--side:#1f1f1f}}
 """
-    faces = "\n".join(
-        f'<path class="project-{name} projected" fill="var(--{color})"'
-        + (' visibility="hidden"' if name == "left" else "")
-        + f' d="{static[name]}"/>'
-        for name, color in [("top", "top"), ("left", "side"), ("right", "side"), ("front", "front"), ("tuft", "tuft")])
+    def shape(name, fill, extra=""):
+        hidden = ' visibility="hidden"' if name in ("left", "crease-left") else ""
+        return f'<path class="project-{name} projected" fill="{fill}"{hidden}{extra} d="{static[name]}"/>'
+
+    beak_gradient = (f'<linearGradient id="{style}-beak" gradientUnits="userSpaceOnUse" x1="60" y1="90" x2="85" y2="118">'
+                     '<stop stop-color="var(--top)"/><stop offset="1" stop-color="var(--front)"/></linearGradient>')
+    if pixel:
+        defs = '<defs>' + beak_gradient + '</defs>'
+        faces = '<g class="face">' + "\n".join(shape(name, f"var(--{color})") for name, color in [
+            ("top", "top"), ("left", "side"), ("right", "side"), ("front", "front"), ("tuft", "tuft")]) + '</g>'
+        beak = (f'<path fill="url(#{style}-beak)" d="M71 88L85 102L71 113L58 101Z"/>'
+                '<path fill="var(--side)" opacity=".6" d="M71 88L71 113L58 101Z"/>'
+                '<path fill="none" stroke="var(--eye)" stroke-width="3.5" stroke-linejoin="round" d="M71 88L85 102L71 113L58 101Z"/>')
+        closing = ""
+    else:
+        gradients = []
+        for name, coordinates in {
+            "top": (65, 35, 155, 100), "front": (55, 85, 175, 200),
+            "side": (90, 60, 210, 195), "tuft": (110, 25, 180, 80),
+        }.items():
+            x1, y1, x2, y2 = coordinates
+            opacity = ' stop-opacity="var(--side-end-opacity)"' if name == "side" else ""
+            gradients.append(f'<linearGradient id="{style}-{name}" gradientUnits="userSpaceOnUse" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">'
+                             f'<stop stop-color="var(--{name}-start)"/><stop offset="1" stop-color="var(--{name}-end)"{opacity}/></linearGradient>')
+        gradients.append(beak_gradient)
+        defs = '<defs>' + "\n".join(gradients) + f'<clipPath id="{style}-hull">' + shape("hull", "white") + '</clipPath></defs>'
+        faces = f'<g clip-path="url(#{style}-hull)">' + "\n".join(shape(name, f"url(#{style}-{color})") for name, color in [
+            ("top", "top"), ("left", "side"), ("right", "side"), ("front", "front")])
+        faces += '<g fill="none" stroke="var(--eye)" stroke-width="3.2" stroke-linecap="round" opacity=".85">' + "\n".join(
+            shape(name, "none") for name in ("crease-top", "crease-left", "crease-right")) + '</g>'
+        faces += '</g>' + shape("hull", "none", ' stroke="var(--outline)" stroke-width="7.5" stroke-linejoin="round"')
+        faces += shape("tuft", f"url(#{style}-tuft)", ' stroke="var(--outline)" stroke-width="7.5" stroke-linejoin="round"')
+        faces += f'<g clip-path="url(#{style}-hull)">'
+        beak_path = rounded_path([(71, 89), (90, 106), (72, 118), (52, 104)], 2.5)
+        beak = (f'<path fill="url(#{style}-beak)" d="{beak_path}"/>'
+                '<path fill="var(--side)" opacity=".6" d="M71 89L72 118L52 104Z"/>'
+                f'<path fill="none" stroke="var(--eye)" stroke-width="3.8" stroke-linejoin="round" d="{beak_path}"/>')
+        closing = '</g>'
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 220" data-state="ready" role="img" aria-labelledby="title">
 <title id="title">Eiscue — {style} projected animated head</title>
 <!-- Generated by Scripts/generate-eiscue-heads.py. Editable vectors; no embedded scripts. -->
 <style>
-svg{{--outline:#213347;--front:#abe8f7;--top:#e0faff;--side:#63bacc;--eye:#407887;--tuft:#454545;}}
-.face{{stroke:var(--outline);stroke-width:{5 if pixel else 4.5};stroke-linecap:round;stroke-linejoin:{"miter" if pixel else "round"};}}
+svg{{--outline:#213347;--top-start:#f2fcff;--top-end:#c9f2fa;--front-start:#c4f5ff;--front-end:#99deeb;--side-start:#8cd9e6;--side-end:#54b3c7;--side-end-opacity:1;--eye:#407d8c;--tuft-start:#595959;--tuft-end:#383d40;--front:#abe8f7;--top:#e0faff;--side:#63bacc;--tuft:#454545;}}
+.face{{stroke:var(--outline);stroke-width:5;stroke-linecap:round;stroke-linejoin:miter;}}
 .project-left,.project-right{{stroke-linejoin:round;}}
 .project-plane{{transform-origin:0 0;}}
 .closed-eyes,.concerned-eyes{{display:none;}}
@@ -127,9 +205,8 @@ svg{{--outline:#213347;--front:#abe8f7;--top:#e0faff;--side:#63bacc;--eye:#40788
 {animation_rules(style)}
 @media(prefers-reduced-motion:reduce){{.projected,.open-eyes{{animation:none !important;}}}}
 {ink_css}</style>
-<g class="face">
+{defs}
 {faces}
-</g>
 <g class="project-plane projected" transform="{static["plane"]}">
 {shine}
 <g class="project-gaze projected" fill="none" stroke="var(--eye)" stroke-width="4" stroke-linecap="round">
@@ -137,13 +214,12 @@ svg{{--outline:#213347;--front:#abe8f7;--top:#e0faff;--side:#63bacc;--eye:#40788
   <path class="closed-eyes" d="{closed}"/>
   <g class="concerned-eyes" stroke-width="6" stroke-linejoin="{"miter" if pixel else "round"}">
     <path d="{worried}"/>
-    <g fill="var(--eye)" stroke="none">{pupils}</g>
+    {pupils}
   </g>
 </g>
-<path fill="var(--top)" d="M71 88L85 102L71 113L58 101Z"/>
-<path fill="var(--side)" opacity=".6" d="M71 88L71 113L58 101Z"/>
-<path fill="none" stroke="var(--eye)" stroke-width="3.5" stroke-linejoin="round" d="M71 88L85 102L71 113L58 101Z"/>
+{beak}
 </g>
+{closing}
 </svg>
 '''
 
@@ -152,6 +228,16 @@ def verify_geometry():
     for state, (_, amplitude, _) in STATES.items():
         for phase in phases(amplitude):
             yaw = -8 + amplitude * math.sin(phase * 2 * math.pi)
+            boundary = hull(yaw)
+            assert rounded_path(boundary, 12).count("Q") == 8
+            for index, start in enumerate(boundary):
+                end = boundary[(index + 1) % len(boundary)]
+                for x in (-HALF_WIDTH, HALF_WIDTH):
+                    for y in (-HALF_HEIGHT, HALF_HEIGHT):
+                        for z in (-HALF_DEPTH, HALF_DEPTH):
+                            px, py = project(x, y, z, yaw)
+                            cross = (end[0] - start[0]) * (py - start[1]) - (end[1] - start[1]) * (px - start[0])
+                            assert cross >= -1e-8, (yaw, index, cross)
             for x, y in TUFT + PIXEL_TUFT:
                 px, py = project(x, y, -5, yaw)
                 assert 3 < px < 237 and 3 < py < 217, (px, py)

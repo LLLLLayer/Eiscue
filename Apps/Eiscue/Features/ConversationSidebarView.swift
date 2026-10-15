@@ -221,6 +221,8 @@ struct ConversationSidebarView: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
             .background((isSelecting ? checked : selected) ? EiscueStyle.accent.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 12))
+            // The lifted context-menu preview needs an opaque base beneath its highlight.
+            .background(EiscueStyle.background, in: RoundedRectangle(cornerRadius: 12))
             .contentShape(.interaction, RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
@@ -236,7 +238,7 @@ struct ConversationSidebarView: View {
                 Button {
                     renameID = conversation.id; renameTitle = conversation.title; showsRename = true
                 } label: {
-                    Label(text("sidebar.rename"), systemImage: "pencil")
+                    Label(text("sidebar.renameAction"), systemImage: "pencil")
                 }
                 .accessibilityIdentifier("renameConversationButton")
                 Button {

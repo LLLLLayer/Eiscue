@@ -37,8 +37,9 @@ struct ChatMessageRow: View, Equatable {
                 .padding(.horizontal, message.role == .user ? 16 : 8)
                 .padding(.vertical, message.role == .user ? 12 : 2)
                 .foregroundStyle(message.role == .user ? (colorScheme == .dark ? Color.black : Color.white) : Color.primary)
-                .background(message.role == .user ? (colorScheme == .dark ? Color.white : Color.black) : .clear,
-                            in: RoundedRectangle(cornerRadius: 22))
+                // An opaque preview surface keeps the native lift shadow behind the message.
+                .background(message.role == .user ? (colorScheme == .dark ? Color.white : Color.black) : EiscueStyle.background,
+                            in: RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contentShape(.interaction, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contextMenu { messageMenu }
