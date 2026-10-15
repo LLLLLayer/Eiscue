@@ -110,6 +110,7 @@ private struct StreamingResponseView: View {
     var body: some View {
         if !model.displayedStreamingText.isEmpty {
             AssistantMessageContent(text: model.displayedStreamingText).equatable()
+                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("streamingResponse")

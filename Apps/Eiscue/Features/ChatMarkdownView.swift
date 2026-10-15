@@ -15,7 +15,7 @@ struct ChatMarkdownView: View, Equatable {
     var body: some View {
         Group {
             if let blocks { ChatMarkdownBlocks(blocks: blocks) }
-            else { Text(verbatim: source).textSelection(.enabled) }
+            else { Text(verbatim: source) }
         }
         .tint(.primary)
         .task(id: ParseRequest(source: source, isHeld: holdsRendering)) {
@@ -46,10 +46,10 @@ private struct ChatMarkdownBlockView: View, Equatable {
     var body: some View {
         switch block.content {
         case .paragraph(let runs):
-            inlineText(runs).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            inlineText(runs).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("markdownParagraph")
         case .heading(let level, let runs):
-            inlineText(runs, base: headingFont(level)).textSelection(.enabled)
+            inlineText(runs, base: headingFont(level))
                 .fixedSize(horizontal: false, vertical: true).padding(.top, 2)
                 .accessibilityAddTraits(.isHeader).accessibilityIdentifier("markdownHeading")
         case .code(let language, let source):
@@ -107,7 +107,7 @@ private struct ChatMarkdownBlockView: View, Equatable {
             }
             ScrollView(.horizontal) {
                 Text(verbatim: source.trimmingCharacters(in: .newlines))
-                    .font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    .font(.system(.callout, design: .monospaced))
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -137,7 +137,7 @@ private struct ChatMarkdownBlockView: View, Equatable {
                 case .leading: .leading; case .center: .center; case .trailing: .trailing
                 }
                 inlineText(runs, base: isHeader ? .subheadline.bold() : .subheadline)
-                    .textSelection(.enabled).frame(minWidth: 100, maxWidth: 230, alignment: alignment)
+                    .frame(minWidth: 100, maxWidth: 230, alignment: alignment)
                     .fixedSize(horizontal: false, vertical: true).padding(8)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .background { if isHeader { Rectangle().fill(Color.primary.opacity(0.07)) } }

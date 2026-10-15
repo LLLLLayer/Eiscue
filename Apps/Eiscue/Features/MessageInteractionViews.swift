@@ -32,7 +32,7 @@ struct ChatMessageRow: View, Equatable {
                     ZStack(alignment: .topLeading) {
                         Group {
                             if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
-                            else if !message.text.isEmpty { Text(verbatim: message.text).textSelection(.enabled) }
+                            else if !message.text.isEmpty { Text(verbatim: message.text) }
                         }
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
                             if !showsSelection { messageTextSize = size }
@@ -46,7 +46,16 @@ struct ChatMessageRow: View, Equatable {
                                 preferredWidth: messageTextSize.width) { showsSelection = false }
                         }
                     }
-                    ForEach(message.attachments) { attachment in ChatAttachmentView(attachment: attachment) }
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(selectionGesture,
+                        including: hasText && !showsSelection && !message.attachments.isEmpty ? .all : .subviews)
+                    if !message.attachments.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(message.attachments) { attachment in ChatAttachmentView(attachment: attachment) }
+                        }
+                        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12))
+                        .contextMenu { if hasText { attachmentMenu } }
+                    }
                     if isUnsubmitted {
                         Text("assistant.unsubmittedMessage").font(.caption2).foregroundStyle(.secondary)
                     }
@@ -54,12 +63,13 @@ struct ChatMessageRow: View, Equatable {
                 .padding(.horizontal, message.role == .user ? 16 : 8)
                 .padding(.vertical, message.role == .user ? 12 : 2)
                 .foregroundStyle(message.role == .user ? (colorScheme == .dark ? Color.black : Color.white) : Color.primary)
-                // An opaque preview surface keeps the native lift shadow behind the message.
                 .background(message.role == .user ? (colorScheme == .dark ? Color.white : Color.black) : EiscueStyle.background,
                             in: RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contentShape(.interaction, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
-                .contextMenu { if !showsSelection { messageMenu } }
+                .contextMenu { if !hasText { attachmentMenu } }
+                .highPriorityGesture(selectionGesture,
+                    including: hasText && !showsSelection && message.attachments.isEmpty ? .all : .subviews)
                 .accessibilityElement(children: .contain).accessibilityIdentifier("messageBubble")
                 .padding(.horizontal, message.role == .user ? 0 : -8)
                 if showsActions {
@@ -78,8 +88,7 @@ struct ChatMessageRow: View, Equatable {
             if message.role != .user { Spacer(minLength: 0) }
         }
         .background(alignment: message.role == .user ? .bottomTrailing : .bottomLeading) {
-            // Older messages still share from their context menu after their
-            // visible footer moves to the sender's newest message.
+            // Attachment sharing stays available independently of text selection.
             MessageActivityPresenter(payload: sharePayload) { id, hasError in
                 if sharePayload?.id == id { sharePayload = nil }
                 if hasError { model.errorMessage = MessageSharingError.delivery.localizedDescription }
@@ -99,18 +108,14 @@ struct ChatMessageRow: View, Equatable {
         .onDisappear { sharePreparation?.cancel(); showsSelection = false }
     }
 
-    @ViewBuilder private var messageMenu: some View {
-        if hasText {
-            Button(chatText("chat.selectAndCopy"), systemImage: "selection.pin.in.out") { showsSelection = true }
-                .accessibilityIdentifier("selectMessageTextButton")
-        }
+    private var selectionGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.4).onEnded { _ in showsSelection = true }
+    }
+
+    @ViewBuilder private var attachmentMenu: some View {
         Button(chatText("chat.share"), systemImage: "square.and.arrow.up") { share() }
             .disabled(!canShare || isPreparingShare || sharePayload != nil)
             .accessibilityIdentifier(message.role == .user ? "userShareMessageButton" : "shareMessageButton")
-        if message.role == .user, hasText {
-            Button(chatText("chat.useAsDraft"), systemImage: "pencil") { model.draft = message.text }
-                .disabled(model.isBusy)
-        }
     }
 
     private func share() {

@@ -236,6 +236,7 @@ final class MessageSharingUITests: XCTestCase {
             dx: bubble.frame.maxX - 8, dy: bubble.frame.midY)).press(forDuration: 1)
         let share = app.buttons["userShareMessageButton"]
         XCTAssertTrue(share.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.textViews["selectableMessageText"].exists, "Long-pressing an attachment must keep its real-file sharing menu.")
         XCTAssertFalse(app.buttons["userCopyMessageButton"].exists, "Attachment-only messages must not offer an empty-text Copy action.")
         XCTAssertFalse(app.buttons["selectMessageTextButton"].exists, "Attachment-only messages must not offer empty text selection.")
         XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)

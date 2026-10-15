@@ -133,32 +133,39 @@ final class ToolImagePreviewUITests: XCTestCase {
         attach(app, name: "Non-expandable metadata and timestamp-only footers")
     }
 
-    @MainActor func testContextMenusMatchBubbleAndConversationInBothAppearances() {
+    @MainActor func testMessageSelectionAndConversationMenuInBothAppearances() {
         for dark in [false, true] {
             let app = launch(dark: dark)
+            var draft = ""
             for (index, text) in ["查看当前屏幕", "屏幕显示的是外观设置。"].enumerated() {
                 let bubble = app.descendants(matching: .any).matching(identifier: "messageBubble").element(boundBy: index)
                 XCTAssertTrue(bubble.isHittable)
-                bubble.coordinate(withNormalizedOffset: CGVector(dx: index == 0 ? 0.1 : 0.99, dy: 0.5)).press(forDuration: 1)
-                let selectText = app.buttons["selectMessageTextButton"]
-                XCTAssertTrue(selectText.waitForExistence(timeout: 3))
-                XCTAssertEqual(selectText.label, "选择并复制")
-                XCTAssertEqual(app.buttons.matching(identifier: "selectMessageTextButton").count, 1)
-                XCTAssertFalse(app.buttons["userCopyMessageButton"].exists)
-                XCTAssertFalse(app.buttons["copyMessageButton"].exists)
-                XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)
-                XCTAssertTrue(app.buttons[index == 0 ? "userShareMessageButton" : "shareMessageButton"].exists)
-                attach(app, name: "\(index == 0 ? "User" : "Assistant") message context menu — \(dark ? "Dark" : "Light")")
-                selectText.tap()
+                bubble.press(forDuration: 1)
                 let selectable = bubble.textViews["selectableMessageText"]
                 XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+                for identifier in ["selectMessageTextButton", "userCopyMessageButton", "copyMessageButton",
+                                   "userShareMessageButton", "shareMessageButton", "messageRunHistoryButton"] {
+                    XCTAssertFalse(app.buttons[identifier].exists)
+                }
+                XCTAssertFalse(app.buttons["编辑为新消息"].exists)
                 XCTAssertEqual(selectable.value as? String, text)
                 XCTAssertFalse(app.sheets.firstMatch.exists)
-                attach(app, name: "\(index == 0 ? "User" : "Assistant") inline native selection — \(dark ? "Dark" : "Light")")
+                attach(app, name: "\(index == 0 ? "User" : "Assistant") direct native selection — \(dark ? "Dark" : "Light")")
                 let composer = app.textFields["messageInput"].exists ? app.textFields["messageInput"] : app.textViews["messageInput"]
                 XCTAssertTrue(composer.isHittable)
                 composer.tap()
                 XCTAssertTrue(selectable.waitForNonExistence(timeout: 5), "Returning to the composer must end inline selection.")
+                if !draft.isEmpty {
+                    XCTAssertEqual(composer.value as? String, draft, "Ending message selection must preserve the existing draft.")
+                }
+                let addition = index == 0 ? "Draft" : " after selection"
+                composer.typeText(addition)
+                let edited = composer.value as? String ?? ""
+                // Tapping the field chooses the insertion point. Verify that
+                // typing preserves the draft without assuming the caret is at its end.
+                XCTAssertEqual(edited.count, draft.count + addition.count)
+                XCTAssertEqual(edited.replacingOccurrences(of: addition, with: ""), draft)
+                draft = edited
             }
             openSidebar(in: app)
             let row = app.descendants(matching: .any)

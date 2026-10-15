@@ -285,7 +285,7 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists)
     }
 
-    @MainActor func testMarkdownMessageHasTimeContextActionsAndNativeRangeSelection() {
+    @MainActor func testMarkdownMessageLongPressSelectsAndCopiesAllTextInline() {
         let app = launch()
         let input = input(in: app)
         input.tap(); input.typeText("markdown rendering fixture")
@@ -323,33 +323,22 @@ final class ChatPresentationUITests: XCTestCase {
         let message = rows.matching(identifier: "messageBubble")
             .containing(.staticText, identifier: "markdownHeading").firstMatch
         XCTAssertTrue(message.exists)
-        // Press the message's trailing space so native word selection does not
-        // intercept the row's long-press context menu.
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
-            dx: message.frame.maxX - 8, dy: heading.frame.midY)).press(forDuration: 1)
-        let selectText = app.buttons["selectMessageTextButton"]
-        XCTAssertTrue(selectText.waitForExistence(timeout: 5))
-        XCTAssertEqual(selectText.label, "Select & copy")
-        XCTAssertEqual(app.buttons.matching(identifier: "selectMessageTextButton").count, 1)
-        XCTAssertFalse(app.buttons["copyMessageButton"].exists)
-        XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)
-        XCTAssertTrue(app.buttons["shareMessageButton"].exists)
-        selectText.tap()
+        heading.press(forDuration: 1)
         let inlineMessage = rows.matching(identifier: "messageBubble")
             .containing(.textView, identifier: "selectableMessageText").firstMatch
         let selectable = inlineMessage.textViews["selectableMessageText"]
         XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+        assertNoMessageContextActions(in: app)
         XCTAssertFalse(app.sheets.firstMatch.exists, "Text selection must remain inside the original message.")
         XCTAssertFalse(app.buttons["Done"].exists, "Inline selection must not require dismissing a second page.")
         XCTAssertTrue(self.input(in: app).isHittable)
         let completeText = selectable.value as? String ?? ""
         XCTAssertTrue(completeText.contains("let answer = 42"))
         let selectionScreenshot = XCTAttachment(screenshot: app.screenshot())
-        selectionScreenshot.name = "Native word selection inside the original message"
+        selectionScreenshot.name = "Long press selects the entire original message"
         selectionScreenshot.lifetime = .keepAlways
         add(selectionScreenshot)
-        // The combined action must already select a range and present Copy;
-        // no second long press is needed to begin native text selection.
+        // One long press must select the entire message and offer native Copy.
         tapEditMenu("Copy", in: app)
         XCTAssertTrue(selectable.waitForNonExistence(timeout: 5))
         XCTAssertTrue(rows["markdownHeading"].waitForExistence(timeout: 5))
@@ -359,11 +348,10 @@ final class ChatPresentationUITests: XCTestCase {
         tapEditMenu("Paste", in: app)
         let pasted = destination.value as? String ?? ""
         XCTAssertFalse(pasted.isEmpty)
-        XCTAssertLessThan(pasted.count, completeText.count)
-        XCTAssertTrue(completeText.contains(pasted), "The pasted selection must be part of the message")
+        XCTAssertEqual(pasted, completeText, "Copy must include all rendered message text, including offscreen blocks.")
     }
 
-    @MainActor func testOnlyLatestSenderMessagesShowTimeAndOlderMessageStillShares() {
+    @MainActor func testOnlyLatestSenderMessagesShowTimeAndOlderMessageCopiesAllText() {
         let app = launch()
         for prompt in ["First message", "Second message"] {
             let editor = input(in: app)
@@ -373,9 +361,7 @@ final class ChatPresentationUITests: XCTestCase {
             let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
             XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed)
         }
-        for identifier in ["selectMessageTextButton", "userCopyMessageButton", "copyMessageButton", "userShareMessageButton", "shareMessageButton"] {
-            XCTAssertFalse(app.buttons[identifier].exists, "\(identifier) belongs in the long-press menu, not the footer.")
-        }
+        assertNoMessageContextActions(in: app)
         XCTAssertEqual(app.staticTexts.matching(identifier: "messageTime").count, 2)
         XCTAssertFalse(app.buttons["userMessageMoreButton"].exists)
         XCTAssertFalse(app.buttons["messageMoreButton"].exists)
@@ -383,30 +369,16 @@ final class ChatPresentationUITests: XCTestCase {
             .containing(.staticText, identifier: "First message").firstMatch
         if !oldMessage.isHittable { app.swipeDown() }
         XCTAssertTrue(oldMessage.isHittable)
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
-            dx: oldMessage.frame.maxX - 8, dy: oldMessage.frame.midY)).press(forDuration: 1)
-        let share = app.buttons["userShareMessageButton"]
-        XCTAssertTrue(share.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["selectMessageTextButton"].exists)
-        XCTAssertFalse(app.buttons["userCopyMessageButton"].exists)
-        XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)
-        share.tap()
-        // iOS may replace the controller's root accessibility identifier when
-        // its system-hosted share surface attaches. Verify the actual sheet,
-        // original payload and completed Copy action, not only our marker.
-        let sheet = app.descendants(matching: .any).matching(NSPredicate(
-            format: "identifier IN %@", ["ActivityListView", "messageActivityController"])).firstMatch
-        XCTAssertTrue(sheet.waitForExistence(timeout: 8))
-        XCTAssertTrue(sheet.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "First message"))
-            .firstMatch.waitForExistence(timeout: 3))
-        let copy = sheet.cells.matching(NSPredicate(format: "label == %@", "Copy")).firstMatch
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        let shareScreenshot = XCTAttachment(screenshot: app.screenshot())
-        shareScreenshot.name = "Older message in native share sheet"
-        shareScreenshot.lifetime = .keepAlways
-        add(shareScreenshot)
-        copy.tap()
-        XCTAssertTrue(sheet.waitForNonExistence(timeout: 5))
+        oldMessage.staticTexts["First message"].press(forDuration: 1)
+        let selectable = app.descendants(matching: .any).matching(identifier: "messageBubble")
+            .containing(.textView, identifier: "selectableMessageText").firstMatch.textViews["selectableMessageText"]
+        XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+        XCTAssertEqual(selectable.value as? String, "First message")
+        assertNoMessageContextActions(in: app)
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        attachScreenshot(app, name: "Older user message directly selected in full")
+        tapEditMenu("Copy", in: app)
+        XCTAssertTrue(selectable.waitForNonExistence(timeout: 5))
         let destination = input(in: app)
         destination.tap(); destination.press(forDuration: 1)
         tapEditMenu("Paste", in: app)
@@ -459,6 +431,14 @@ final class ChatPresentationUITests: XCTestCase {
         screenshot.name = name
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    @MainActor private func assertNoMessageContextActions(in app: XCUIApplication) {
+        for identifier in ["selectMessageTextButton", "userCopyMessageButton", "copyMessageButton",
+                           "userShareMessageButton", "shareMessageButton", "messageRunHistoryButton"] {
+            XCTAssertFalse(app.buttons[identifier].exists, "Text messages use native selection without an intermediate action menu.")
+        }
+        XCTAssertFalse(app.buttons["Edit as a new message"].exists)
     }
 
     @MainActor private func tapEditMenu(_ title: String, in app: XCUIApplication) {

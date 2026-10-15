@@ -63,10 +63,10 @@ final class MessageSelectionTextView: UITextView, @MainActor UIEditMenuInteracti
         started = true
         addInteraction(editMenu)
         installOutsideTap()
-        // Let the lifted context-menu preview return before presenting selection handles.
+        // Wait for the inline view's first layout, without an intermediate menu.
         selectionTask = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
-            guard let self, self.window != nil, !self.finished else { return }
+            await Task.yield()
+            guard !Task.isCancelled, let self, self.window != nil, !self.finished else { return }
             self.beginSelection()
         }
     }
@@ -83,21 +83,14 @@ final class MessageSelectionTextView: UITextView, @MainActor UIEditMenuInteracti
         if visible.isNull || visible.isEmpty { finishSelection(); return }
         let point = CGPoint(x: visible.minX + min(8, visible.width / 2),
                             y: visible.minY + min((font?.lineHeight ?? 20) / 2, visible.height / 2))
-        let position = closestPosition(to: point) ?? beginningOfDocument
-        if let word = tokenizer.rangeEnclosingPosition(position, with: .word,
-            inDirection: UITextDirection(rawValue: UITextStorageDirection.forward.rawValue)), !word.isEmpty {
-            selectedTextRange = word
-        } else if let end = self.position(from: position, offset: 1) {
-            selectedTextRange = textRange(from: position, to: end)
-        }
-        let rect = selectedTextRange.map { firstRect(for: $0) } ?? CGRect(origin: point, size: .zero)
+        selectedTextRange = textRange(from: beginningOfDocument, to: endOfDocument)
         editMenu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil,
-            sourcePoint: CGPoint(x: rect.midX, y: rect.minY)))
+            sourcePoint: point))
     }
 
     private func installOutsideTap() {
         // Include the composer, but not the system edit menu hosted outside our controller.
-        // Install before delayed activation so a new tap cannot have its focus stolen back.
+        // Install before activation so a new tap cannot have its focus stolen back.
         var responder = next
         while let current = responder {
             if let controller = current as? UIViewController {
@@ -148,6 +141,7 @@ final class MessageSelectionTextView: UITextView, @MainActor UIEditMenuInteracti
                            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
 
     func editMenuInteraction(_ interaction: UIEditMenuInteraction, targetRectFor configuration: UIEditMenuConfiguration) -> CGRect {
-        selectedTextRange.map { firstRect(for: $0) } ?? .null
+        // A long message can start above the viewport; anchor its menu to the visible part.
+        CGRect(origin: configuration.sourcePoint, size: .zero)
     }
 }
