@@ -80,37 +80,45 @@ final class ChatPresentationUITests: XCTestCase {
     }
 
     @MainActor func testRecordingOverlayStaysAboveStableComposerAndDismissesAfterFinish() {
-        let app = launchSpeechRecordingFixture()
-        let draft = "Keep this draft\nAnd the second line\nAnd the third line"
-        let editor = input(in: app)
-        editor.tap(); editor.typeText(draft)
-        app.buttons["speechInputButton"].tap()
-        let record = app.buttons["holdToTalkButton"]
-        XCTAssertTrue(record.waitForExistence(timeout: 5))
-        let composer = app.otherElements["messageComposer"]
-        let originalFrame = composer.frame
-        let overlay = app.otherElements["speechRecordingOverlay"]
-        XCTAssertFalse(overlay.exists)
-        startFixtureRecording(in: app)
-        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["speechRecordingStatus"].label, "Listening…")
-        XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
-        XCTAssertEqual(composer.frame.maxY, originalFrame.maxY, accuracy: 1)
-        XCTAssertLessThanOrEqual(overlay.frame.maxY, composer.frame.minY,
-                                "The message scrim must stop above the persistent composer.")
-        XCTAssertGreaterThanOrEqual(overlay.frame.maxY, composer.frame.minY - 14,
-                                   "Only the composer's 12-point top padding may separate it from the scrim.")
-        XCTAssertTrue(app.buttons["cancelDictationButton"].isHittable)
-        XCTAssertTrue(app.buttons["speechInputButton"].isHittable)
-        XCTAssertTrue(record.isHittable)
-        attachScreenshot(app, name: "Recording feedback with silent fixture and stable multiline composer")
-        record.tap()
-        let finishing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Transcribing…"),
-                                                  object: app.staticTexts["speechRecordingStatus"])
-        XCTAssertEqual(XCTWaiter.wait(for: [finishing], timeout: 2), .completed)
-        XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
-        XCTAssertTrue(overlay.waitForNonExistence(timeout: 8))
-        XCTAssertEqual(input(in: app).value as? String, draft)
+        for appearance in ["Light", "Dark"] {
+            let app = launchSpeechRecordingFixture()
+            openSettings(in: app)
+            app.buttons["appearancePicker"].tap()
+            app.buttons[appearance].tap()
+            returnToAssistant(in: app)
+            let draft = "Keep this draft\nAnd the second line\nAnd the third line"
+            let editor = input(in: app)
+            editor.tap(); editor.typeText(draft)
+            app.buttons["speechInputButton"].tap()
+            let record = app.buttons["holdToTalkButton"]
+            XCTAssertTrue(record.waitForExistence(timeout: 5))
+            let composer = app.otherElements["messageComposer"]
+            let originalFrame = composer.frame
+            let overlay = app.otherElements["speechRecordingOverlay"]
+            XCTAssertFalse(overlay.exists)
+            attachScreenshot(app, name: "Voice composer before recording — \(appearance)")
+            startFixtureRecording(in: app)
+            XCTAssertTrue(overlay.waitForExistence(timeout: 5))
+            XCTAssertEqual(app.staticTexts["speechRecordingStatus"].label, "Listening…")
+            XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
+            XCTAssertEqual(composer.frame.maxY, originalFrame.maxY, accuracy: 1)
+            XCTAssertLessThanOrEqual(overlay.frame.maxY, composer.frame.minY,
+                                    "The message scrim must stop above the persistent composer.")
+            XCTAssertGreaterThanOrEqual(overlay.frame.maxY, composer.frame.minY - 14,
+                                       "Only the composer's 12-point top padding may separate it from the scrim.")
+            XCTAssertTrue(app.buttons["cancelDictationButton"].isHittable)
+            XCTAssertTrue(app.buttons["speechInputButton"].isHittable)
+            XCTAssertTrue(record.isHittable)
+            attachScreenshot(app, name: "Recording feedback with silent fixture and stable multiline composer — \(appearance)")
+            record.tap()
+            let finishing = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Transcribing…"),
+                                                      object: app.staticTexts["speechRecordingStatus"])
+            XCTAssertEqual(XCTWaiter.wait(for: [finishing], timeout: 2), .completed)
+            XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
+            XCTAssertTrue(overlay.waitForNonExistence(timeout: 8))
+            XCTAssertEqual(input(in: app).value as? String, draft)
+            app.terminate()
+        }
     }
 
     @MainActor func testRecordingOverlayAllowsCancelAndKeyboardWithoutLosingDraft() {

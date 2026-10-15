@@ -7,11 +7,16 @@ struct SpeechRecordingOverlay: View {
     let controller: SpeechInputController
     @Environment(\.colorScheme) private var colorScheme
 
+    // The chrome backdrop shares this tone, while this overlay alone blocks transcript input.
+    static func scrimColor(for colorScheme: ColorScheme) -> Color {
+        Color(uiColor: .systemGray).opacity(colorScheme == .dark ? 0.38 : 0.24)
+    }
+
     var body: some View {
         if controller.isBusy {
             ZStack {
                 Rectangle()
-                    .fill(Color(uiColor: .systemGray).opacity(colorScheme == .dark ? 0.38 : 0.24))
+                    .fill(Self.scrimColor(for: colorScheme))
                     .accessibilityHidden(true)
                 VStack(spacing: 16) {
                     if controller.isRecording {

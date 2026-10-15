@@ -25,13 +25,14 @@ struct AssistantView: View {
 
     var body: some View {
         AssistantTranscriptView { welcome }
+        .background(EiscueStyle.background, ignoresSafeAreaEdges: [])
         .overlay {
             SpeechRecordingOverlay(controller: speech)
         }
         .id(model.selectedConversationID)
-        .background(EiscueStyle.background)
         .navigationTitle("Eiscue")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(speech.isBusy ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("assistant.history", systemImage: "sidebar.left") {
@@ -86,6 +87,13 @@ struct AssistantView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        .background {
+            EiscueStyle.background
+                .overlay {
+                    if speech.isBusy { SpeechRecordingOverlay.scrimColor(for: colorScheme) }
+                }
+                .ignoresSafeArea()
+        }
         .photosPicker(isPresented: $showsPhotoPicker, selection: $selectedPhotos,
                       maxSelectionCount: max(1, 4 - model.draftAttachments.count), matching: .images)
         .onChange(of: selectedPhotos) { _, items in

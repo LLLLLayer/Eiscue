@@ -25,7 +25,7 @@ enum EiscueHeadState: String, CaseIterable, Identifiable {
     }
 }
 
-/// Small vector artwork; disconnected and failed faces keep a static expression.
+/// Cube geometry and facial features share the same projected pose.
 struct EiscueHeadView: View {
     var style: EiscueHeadStyle = .ice
     let state: EiscueHeadState
@@ -34,32 +34,33 @@ struct EiscueHeadView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var appearedAt = Date.now
 
-    private var animates: Bool { (state == .awake || state == .looking) && !reduceMotion && scenePhase == .active }
+    private var animates: Bool { state != .concerned && !reduceMotion && scenePhase == .active }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !animates)) { timeline in
             let elapsed = animates ? timeline.date.timeIntervalSince(appearedAt) : 0
-            let turn = animates ? sin(elapsed * (state == .looking ? 1.5 : 0.65)) : 0
+            let period = state == .asleep ? 10.0 : state == .looking ? 4.0 : 7.0
+            let turn = animates ? sin(elapsed * 2 * .pi / period) : 0
+            let amplitude = state == .asleep ? 22.0 : state == .looking ? 36.0 : 28.0
+            let yaw = animates ? -8 + turn * amplitude : -20
             Canvas { context, size in
                 let blinkPhase = elapsed.truncatingRemainder(dividingBy: 4.8)
                 let openness = state == .asleep ? 0 : 1 - max(0, 1 - abs(blinkPhase - 4.1) / 0.14)
-                let gaze = animates ? turn * (state == .looking ? 6 : 3)
+                let gaze = state == .asleep ? 0 : animates ? turn * (state == .looking ? 6 : 3)
                     : state == .looking ? 8 : 0
                 let scale = min(size.width / 240, size.height / 220)
                 var drawing = context
                 drawing.translateBy(x: (size.width - 240 * scale) / 2, y: (size.height - 220 * scale) / 2)
                 drawing.scaleBy(x: scale, y: scale)
-                draw(in: &drawing, openness: openness, gaze: gaze)
+                draw(in: &drawing, openness: openness, gaze: gaze, yaw: yaw)
             }
-            .rotation3DEffect(.degrees(turn * (state == .looking ? 8 : 4)), axis: (x: 0, y: 1, z: 0), perspective: 0.2)
-            .rotationEffect(.degrees(turn * (state == .looking ? 1.6 : 0.8)))
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Eiscue")
         .accessibilityValue(state.title)
     }
 
-    private func draw(in context: inout GraphicsContext, openness: Double, gaze: Double) {
+    private func draw(in context: inout GraphicsContext, openness: Double, gaze: Double, yaw: Double) {
         let monochrome = style == .ink
         let dark = colorScheme == .dark
         let outline = monochrome ? (dark ? Color(white: 0.86) : Color(white: 0.18)) : Color(red: 0.13, green: 0.20, blue: 0.28)
@@ -68,71 +69,73 @@ struct EiscueHeadView: View {
         let side = monochrome ? (dark ? Color(white: 0.12) : Color(white: 0.84)) : Color(red: 0.39, green: 0.73, blue: 0.80)
         let eye = monochrome ? outline : Color(red: 0.25, green: 0.47, blue: 0.53)
         let stroke = StrokeStyle(lineWidth: style == .pixel ? 5 : 4.5, lineCap: .round, lineJoin: style == .pixel ? .miter : .round)
+        let angle = yaw * .pi / 180
+        let pitch = 18.0 * .pi / 180
 
-        func paint(_ path: Path, _ color: Color) {
+        // Project each cube plane, including the face artwork, so a turn changes
+        // the visible side and shared edges instead of rotating a flat picture.
+        func project(_ x: Double, _ y: Double, _ z: Double) -> CGPoint {
+            CGPoint(x: 120 + cos(angle) * x + sin(angle) * z,
+                    y: 119 + cos(pitch) * y + sin(pitch) * (-sin(angle) * x + cos(angle) * z))
+        }
+        func surface(_ vertices: [(Double, Double, Double)], _ color: Color) {
+            let path = polygon(vertices.map { vertex in
+                let point = project(vertex.0, vertex.1, vertex.2)
+                return (point.x, point.y)
+            })
             context.fill(path, with: .color(color))
             context.stroke(path, with: .color(outline), style: stroke)
         }
-        if style == .pixel {
-            paint(polygon([(36, 70), (72, 40), (190, 40), (214, 64), (178, 88)]), top)
-            paint(polygon([(178, 88), (214, 64), (214, 166), (202, 166), (202, 178), (178, 202)]), side)
-            paint(polygon([(36, 70), (178, 88), (178, 202), (48, 186), (48, 178), (36, 178)]), front)
-            paint(polygon([(126, 52), (126, 40), (138, 40), (138, 16), (150, 16), (150, 28),
-                           (162, 28), (162, 40), (174, 40), (174, 28), (198, 28), (198, 40), (174, 64), (150, 48), (138, 60)]), outline)
-        } else {
-            var topFace = Path()
-            topFace.move(to: CGPoint(x: 40, y: 70))
-            topFace.addQuadCurve(to: CGPoint(x: 95, y: 39), control: CGPoint(x: 65, y: 41))
-            topFace.addQuadCurve(to: CGPoint(x: 118, y: 39), control: CGPoint(x: 106, y: 36))
-            topFace.addLine(to: CGPoint(x: 200, y: 55))
-            topFace.addQuadCurve(to: CGPoint(x: 215, y: 65), control: CGPoint(x: 213, y: 57))
-            topFace.addLine(to: CGPoint(x: 180, y: 87)); topFace.closeSubpath()
-            paint(topFace, top)
-            var rightFace = Path()
-            rightFace.move(to: CGPoint(x: 180, y: 87)); rightFace.addLine(to: CGPoint(x: 215, y: 65))
-            rightFace.addQuadCurve(to: CGPoint(x: 211, y: 166), control: CGPoint(x: 221, y: 108))
-            rightFace.addQuadCurve(to: CGPoint(x: 177, y: 196), control: CGPoint(x: 209, y: 182))
-            rightFace.closeSubpath(); paint(rightFace, side)
-            var frontFace = Path()
-            frontFace.move(to: CGPoint(x: 40, y: 70)); frontFace.addLine(to: CGPoint(x: 180, y: 87))
-            frontFace.addQuadCurve(to: CGPoint(x: 177, y: 188), control: CGPoint(x: 181, y: 139))
-            frontFace.addQuadCurve(to: CGPoint(x: 163, y: 201), control: CGPoint(x: 176, y: 202))
-            frontFace.addLine(to: CGPoint(x: 47, y: 186))
-            frontFace.addQuadCurve(to: CGPoint(x: 32, y: 172), control: CGPoint(x: 33, y: 184))
-            frontFace.addQuadCurve(to: CGPoint(x: 40, y: 70), control: CGPoint(x: 26, y: 101))
-            frontFace.closeSubpath(); paint(frontFace, front)
-            paint(polygon([(126, 53), (146, 17), (162, 35), (190, 23), (203, 41), (163, 61), (149, 44), (136, 58)]),
-                  monochrome ? outline : Color(white: 0.27))
-            context.fill(Path(ellipseIn: CGRect(x: 45, y: 83, width: 12, height: 19)), with: .color(.white.opacity(monochrome ? 0.25 : 0.8)))
-            context.fill(Path(ellipseIn: CGRect(x: 58, y: 103, width: 6, height: 9)), with: .color(.white.opacity(monochrome ? 0.25 : 0.8)))
+        surface([(-70, -64, -50), (70, -64, -50), (70, -64, 50), (-70, -64, 50)], top)
+        let visibleSide = yaw < 0 ? 70.0 : -70.0
+        surface([(visibleSide, -64, -50), (visibleSide, -64, 50),
+                 (visibleSide, 64, 50), (visibleSide, 64, -50)], side)
+        surface([(-70, -64, 50), (70, -64, 50), (70, 64, 50), (-70, 64, 50)], front)
+
+        let tuft: [(Double, Double)] = style == .pixel
+            ? [(-2, -67), (-2, -79), (10, -79), (10, -103), (22, -103), (22, -91),
+               (34, -91), (34, -79), (46, -79), (46, -91), (70, -91), (70, -79),
+               (34, -61), (18, -78), (7, -64)]
+            : [(-2, -67), (17, -103), (32, -85), (59, -97), (71, -79), (33, -61), (18, -78), (7, -64)]
+        surface(tuft.map { ($0.0, $0.1, -5) }, monochrome ? outline : Color(white: 0.27))
+
+        let origin = project(-70, -64, 50)
+        let horizontal = project(-69, -64, 50)
+        let vertical = project(-70, -63, 50)
+        context.concatenate(CGAffineTransform(a: horizontal.x - origin.x, b: horizontal.y - origin.y,
+                                             c: vertical.x - origin.x, d: vertical.y - origin.y,
+                                             tx: origin.x, ty: origin.y))
+        if style != .pixel {
+            context.fill(Path(ellipseIn: CGRect(x: 11, y: 13, width: 12, height: 19)), with: .color(.white.opacity(monochrome ? 0.25 : 0.8)))
+            context.fill(Path(ellipseIn: CGRect(x: 24, y: 33, width: 6, height: 9)), with: .color(.white.opacity(monochrome ? 0.25 : 0.8)))
         }
 
-        for (index, center) in [CGPoint(x: 77 + gaze, y: 133), CGPoint(x: 139 + gaze, y: 141)].enumerated() {
+        for (index, center) in [CGPoint(x: 42 + gaze, y: 64), CGPoint(x: 100 + gaze, y: 64)].enumerated() {
             if state == .concerned {
                 // Filled eyes and broad inner-raised brows stay legible at 32 pt.
-                let rect = CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 22)
+                let rect = CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 20)
                 context.fill(style == .pixel ? Path(rect) : Path(ellipseIn: rect), with: .color(eye))
                 var brow = Path()
                 if index == 0 {
-                    brow.move(to: CGPoint(x: center.x - 14, y: center.y - 17))
+                    brow.move(to: CGPoint(x: center.x - 13, y: center.y - 17))
                     if style == .pixel {
                         brow.addLine(to: CGPoint(x: center.x - 2, y: center.y - 17))
                         brow.addLine(to: CGPoint(x: center.x - 2, y: center.y - 22))
-                        brow.addLine(to: CGPoint(x: center.x + 12, y: center.y - 22))
-                        brow.addLine(to: CGPoint(x: center.x + 12, y: center.y - 27))
+                        brow.addLine(to: CGPoint(x: center.x + 11, y: center.y - 22))
+                        brow.addLine(to: CGPoint(x: center.x + 11, y: center.y - 26))
                     } else {
-                        brow.addQuadCurve(to: CGPoint(x: center.x + 12, y: center.y - 27),
+                        brow.addQuadCurve(to: CGPoint(x: center.x + 11, y: center.y - 26),
                                           control: CGPoint(x: center.x, y: center.y - 18))
                     }
                 } else {
-                    brow.move(to: CGPoint(x: center.x - 12, y: center.y - 27))
+                    brow.move(to: CGPoint(x: center.x - 11, y: center.y - 26))
                     if style == .pixel {
-                        brow.addLine(to: CGPoint(x: center.x - 12, y: center.y - 22))
+                        brow.addLine(to: CGPoint(x: center.x - 11, y: center.y - 22))
                         brow.addLine(to: CGPoint(x: center.x, y: center.y - 22))
                         brow.addLine(to: CGPoint(x: center.x, y: center.y - 17))
-                        brow.addLine(to: CGPoint(x: center.x + 14, y: center.y - 17))
+                        brow.addLine(to: CGPoint(x: center.x + 13, y: center.y - 17))
                     } else {
-                        brow.addQuadCurve(to: CGPoint(x: center.x + 14, y: center.y - 17),
+                        brow.addQuadCurve(to: CGPoint(x: center.x + 13, y: center.y - 17),
                                           control: CGPoint(x: center.x, y: center.y - 18))
                     }
                 }
@@ -140,24 +143,24 @@ struct EiscueHeadView: View {
                     lineJoin: style == .pixel ? .miter : .round))
             } else if openness < 0.15 {
                 var closed = Path()
-                closed.move(to: CGPoint(x: center.x - 12, y: center.y))
+                closed.move(to: CGPoint(x: center.x - 11, y: center.y))
                 if style == .pixel {
-                    closed.addLine(to: CGPoint(x: center.x - 12, y: center.y + 5))
-                    closed.addLine(to: CGPoint(x: center.x + 12, y: center.y + 5))
-                    closed.addLine(to: CGPoint(x: center.x + 12, y: center.y))
+                    closed.addLine(to: CGPoint(x: center.x - 11, y: center.y + 5))
+                    closed.addLine(to: CGPoint(x: center.x + 11, y: center.y + 5))
+                    closed.addLine(to: CGPoint(x: center.x + 11, y: center.y))
                 } else {
-                    closed.addQuadCurve(to: CGPoint(x: center.x + 12, y: center.y), control: CGPoint(x: center.x, y: center.y + 10))
+                    closed.addQuadCurve(to: CGPoint(x: center.x + 11, y: center.y), control: CGPoint(x: center.x, y: center.y + 9))
                 }
                 context.stroke(closed, with: .color(eye), style: StrokeStyle(lineWidth: 4, lineCap: .round))
             } else {
-                let rect = CGRect(x: center.x - 12, y: center.y - 19 * openness, width: 24, height: 38 * openness)
+                let rect = CGRect(x: center.x - 11, y: center.y - 18 * openness, width: 22, height: 36 * openness)
                 let path = style == .pixel ? Path(rect) : Path(ellipseIn: rect)
                 context.stroke(path, with: .color(eye), style: StrokeStyle(lineWidth: 4, lineJoin: .round))
             }
         }
-        let beak = polygon([(108, 157), (122, 172), (107, 183), (94, 170)])
+        let beak = polygon([(71, 88), (85, 102), (71, 113), (58, 101)])
         context.fill(beak, with: .color(top))
-        context.fill(polygon([(108, 157), (107, 183), (94, 170)]), with: .color(side.opacity(0.6)))
+        context.fill(polygon([(71, 88), (71, 113), (58, 101)]), with: .color(side.opacity(0.6)))
         context.stroke(beak, with: .color(eye), style: StrokeStyle(lineWidth: 3.5, lineJoin: .round))
     }
 
