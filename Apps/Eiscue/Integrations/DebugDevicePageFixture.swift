@@ -17,6 +17,10 @@ enum DebugDevicePageFixture {
         isSpeechEnabled && ProcessInfo.processInfo.arguments.contains("--speech-device-reconnect-failure")
     }
 
+    static var delaysSpeechReconnection: Bool {
+        isSpeechEnabled && ProcessInfo.processInfo.arguments.contains("--speech-device-reconnect-delay")
+    }
+
     static var isOnboardingEnabled: Bool {
         let arguments = ProcessInfo.processInfo.arguments
         return arguments.contains("--ui-testing") &&
@@ -67,7 +71,8 @@ extension AppModel {
         }
         let speechFixture = DebugDevicePageFixture.isSpeechEnabled
         let client = DeviceClient(controller: DevicePageFixtureController(imageData: image.pngData()!,
-            allowsReconnection: speechFixture, failsReconnection: DebugDevicePageFixture.failsSpeechReconnection))
+            allowsReconnection: speechFixture, failsReconnection: DebugDevicePageFixture.failsSpeechReconnection,
+            delaysReconnection: DebugDevicePageFixture.delaysSpeechReconnection))
         deviceClient = client
         networkDeviceClient = client
         // Exercise the same CoreDevice media handoff without a simulator VPN.
@@ -99,12 +104,14 @@ private actor DevicePageFixtureController: DeviceController {
     private let imageData: Data
     private let allowsReconnection: Bool
     private let failsReconnection: Bool
+    private let delaysReconnection: Bool
     private var connected = true
 
-    init(imageData: Data, allowsReconnection: Bool, failsReconnection: Bool) {
+    init(imageData: Data, allowsReconnection: Bool, failsReconnection: Bool, delaysReconnection: Bool) {
         self.imageData = imageData
         self.allowsReconnection = allowsReconnection
         self.failsReconnection = failsReconnection
+        self.delaysReconnection = delaysReconnection
     }
 
     func status() async -> DeviceStatus {
@@ -116,16 +123,17 @@ private actor DevicePageFixtureController: DeviceController {
     func disconnectAndConfirmRelease() async -> Bool { await disconnect(); return true }
 
     func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws {
-        try reconnect(backend: backend)
+        try await reconnect(backend: backend)
     }
 
     func connectUSBBoard(backend: DeviceControlBackend) async throws {
-        try reconnect(backend: backend)
+        try await reconnect(backend: backend)
     }
 
-    private func reconnect(backend: DeviceControlBackend) throws {
+    private func reconnect(backend: DeviceControlBackend) async throws {
         guard allowsReconnection, backend == .coreDevice else { throw DeviceControlError.unsupported }
         guard !failsReconnection else { throw DeviceControlError.notConnected }
+        if delaysReconnection { try await Task.sleep(for: .seconds(30)) }
         connected = true
     }
 

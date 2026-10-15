@@ -5,6 +5,7 @@ import UIKit
 struct ChatMessageRow: View, Equatable {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let message: AgentMessage
     var showsActions = true
     var isUnsubmitted = false
@@ -13,6 +14,7 @@ struct ChatMessageRow: View, Equatable {
         lhs.message == rhs.message && lhs.showsActions == rhs.showsActions && lhs.isUnsubmitted == rhs.isUnsubmitted
     }
     @State private var showsSelection = false
+    @State private var messageTextSize = CGSize.zero
     @State private var canShareAttachments = false
     @State private var checkedAttachments = false
     @State private var isPreparingShare = false
@@ -27,8 +29,23 @@ struct ChatMessageRow: View, Equatable {
             if message.role == .user { Spacer(minLength: 42) }
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
                 VStack(alignment: .leading, spacing: 8) {
-                    if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
-                    else if !message.text.isEmpty { Text(verbatim: message.text).textSelection(.enabled) }
+                    ZStack(alignment: .topLeading) {
+                        Group {
+                            if message.role == .assistant { AssistantMessageContent(text: message.text).equatable() }
+                            else if !message.text.isEmpty { Text(verbatim: message.text).textSelection(.enabled) }
+                        }
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                            if !showsSelection { messageTextSize = size }
+                        }
+                        .opacity(showsSelection ? 0 : 1)
+                        .allowsHitTesting(!showsSelection)
+                        .accessibilityHidden(showsSelection)
+                        if showsSelection {
+                            InlineMessageSelection(text: message.text, markdown: message.role == .assistant,
+                                foregroundColor: message.role == .user ? (colorScheme == .dark ? .black : .white) : .label,
+                                preferredWidth: messageTextSize.width) { showsSelection = false }
+                        }
+                    }
                     ForEach(message.attachments) { attachment in ChatAttachmentView(attachment: attachment) }
                     if isUnsubmitted {
                         Text("assistant.unsubmittedMessage").font(.caption2).foregroundStyle(.secondary)
@@ -42,7 +59,7 @@ struct ChatMessageRow: View, Equatable {
                             in: RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contentShape(.interaction, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
                 .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: message.role == .user ? 22 : 8))
-                .contextMenu { messageMenu }
+                .contextMenu { if !showsSelection { messageMenu } }
                 .accessibilityElement(children: .contain).accessibilityIdentifier("messageBubble")
                 .padding(.horizontal, message.role == .user ? 0 : -8)
                 if showsActions {
@@ -68,15 +85,10 @@ struct ChatMessageRow: View, Equatable {
                 if hasError { model.errorMessage = MessageSharingError.delivery.localizedDescription }
             }.frame(width: 30, height: 32).allowsHitTesting(false)
         }
-        .sheet(isPresented: $showsSelection) {
-            NavigationStack {
-                SelectableMessageText(text: message.role == .assistant ? ChatMarkdownParser.plainText(message.text) : message.text)
-                    .padding(.horizontal, 18).background(EiscueStyle.background)
-                    .navigationTitle(chatText("chat.selectText"))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("common.done") { showsSelection = false } } }
-            }.presentationDetents([.large])
-        }
+        .onChange(of: message.text) { showsSelection = false }
+        .onChange(of: colorScheme) { showsSelection = false }
+        .onChange(of: dynamicTypeSize) { showsSelection = false }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in showsSelection = false }
         .task(id: message.attachments.map(\.id)) {
             checkedAttachments = false
             let available = await model.messageAttachments.canShareAttachments(message.attachments)
@@ -84,14 +96,12 @@ struct ChatMessageRow: View, Equatable {
             canShareAttachments = available
             checkedAttachments = true
         }
-        .onDisappear { sharePreparation?.cancel() }
+        .onDisappear { sharePreparation?.cancel(); showsSelection = false }
     }
 
     @ViewBuilder private var messageMenu: some View {
         if hasText {
-            Button(chatText("chat.copy"), systemImage: "doc.on.doc") { copy() }
-                .accessibilityIdentifier(message.role == .user ? "userCopyMessageButton" : "copyMessageButton")
-            Button(chatText("chat.selectText"), systemImage: "selection.pin.in.out") { showsSelection = true }
+            Button(chatText("chat.selectAndCopy"), systemImage: "selection.pin.in.out") { showsSelection = true }
                 .accessibilityIdentifier("selectMessageTextButton")
         }
         Button(chatText("chat.share"), systemImage: "square.and.arrow.up") { share() }
@@ -101,14 +111,6 @@ struct ChatMessageRow: View, Equatable {
             Button(chatText("chat.useAsDraft"), systemImage: "pencil") { model.draft = message.text }
                 .disabled(model.isBusy)
         }
-        NavigationLink { RunHistoryView(conversationID: model.selectedConversationID) } label: {
-            Label("runs.conversationTitle", systemImage: "clock.arrow.circlepath")
-        }.accessibilityIdentifier("messageRunHistoryButton")
-    }
-
-    private func copy() {
-        guard hasText else { return }
-        UIPasteboard.general.string = message.text
     }
 
     private func share() {
@@ -126,26 +128,6 @@ struct ChatMessageRow: View, Equatable {
                 if !(error is CancellationError) { model.errorMessage = error.localizedDescription }
             }
         }
-    }
-}
-
-/// Native UITextView provides range selection and the standard Copy/Share menu,
-/// including selection handles; opening a message never copies the whole text.
-private struct SelectableMessageText: UIViewRepresentable {
-    let text: String
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
-        view.isEditable = false; view.isSelectable = true
-        view.backgroundColor = .clear
-        view.textContainerInset = .init(top: 20, left: 0, bottom: 20, right: 0)
-        view.adjustsFontForContentSizeCategory = true
-        view.accessibilityIdentifier = "selectableMessageText"
-        return view
-    }
-    func updateUIView(_ view: UITextView, context: Context) {
-        if view.text != text { view.text = text }
-        view.font = .preferredFont(forTextStyle: .body)
-        view.textColor = .label
     }
 }
 

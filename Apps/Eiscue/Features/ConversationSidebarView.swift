@@ -35,10 +35,13 @@ struct ConversationSidebarView: View {
                 if let closeSidebar {
                     Button(action: closeSidebar) {
                         Image(systemName: "sidebar.left")
+                            .font(.system(size: 20, weight: .regular))
+                            .frame(width: 24, height: 24)
+                            .padding(3)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
-                    .controlSize(.large)
+                    .controlSize(.regular)
                     .foregroundStyle(EiscueStyle.accent)
                     .accessibilityLabel(Text("sidebar.close", tableName: "Navigation"))
                     .accessibilityIdentifier("closeSidebarButton")
@@ -143,12 +146,14 @@ struct ConversationSidebarView: View {
                 Spacer(minLength: 0)
                 Button(action: openSettings) {
                     Image(systemName: "gearshape")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(EiscueStyle.accent)
-                        .frame(minWidth: 24, minHeight: 24)
+                        .frame(width: 24, height: 24)
+                        .padding(3)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
+                .controlSize(.regular)
                 .accessibilityLabel(Text("sidebar.settings", tableName: "Navigation"))
                 .accessibilityIdentifier("sidebarSettingsButton")
             }

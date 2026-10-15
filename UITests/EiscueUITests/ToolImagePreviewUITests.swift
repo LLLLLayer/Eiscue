@@ -136,17 +136,30 @@ final class ToolImagePreviewUITests: XCTestCase {
     @MainActor func testContextMenusMatchBubbleAndConversationInBothAppearances() {
         for dark in [false, true] {
             let app = launch(dark: dark)
-            let bubble = app.descendants(matching: .any).matching(identifier: "messageBubble").firstMatch
-            bubble.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).press(forDuration: 1)
-            XCTAssertTrue(app.buttons["userCopyMessageButton"].waitForExistence(timeout: 3))
-            attach(app, name: "User bubble context menu — \(dark ? "Dark" : "Light")")
-            app.buttons["userCopyMessageButton"].tap()
-            let reply = app.descendants(matching: .any).matching(identifier: "messageBubble").element(boundBy: 1)
-            XCTAssertTrue(reply.exists)
-            reply.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).press(forDuration: 1)
-            XCTAssertTrue(app.buttons["copyMessageButton"].waitForExistence(timeout: 3))
-            attach(app, name: "Assistant message context menu — \(dark ? "Dark" : "Light")")
-            app.buttons["copyMessageButton"].tap()
+            for (index, text) in ["查看当前屏幕", "屏幕显示的是外观设置。"].enumerated() {
+                let bubble = app.descendants(matching: .any).matching(identifier: "messageBubble").element(boundBy: index)
+                XCTAssertTrue(bubble.isHittable)
+                bubble.coordinate(withNormalizedOffset: CGVector(dx: index == 0 ? 0.1 : 0.99, dy: 0.5)).press(forDuration: 1)
+                let selectText = app.buttons["selectMessageTextButton"]
+                XCTAssertTrue(selectText.waitForExistence(timeout: 3))
+                XCTAssertEqual(selectText.label, "选择并复制")
+                XCTAssertEqual(app.buttons.matching(identifier: "selectMessageTextButton").count, 1)
+                XCTAssertFalse(app.buttons["userCopyMessageButton"].exists)
+                XCTAssertFalse(app.buttons["copyMessageButton"].exists)
+                XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)
+                XCTAssertTrue(app.buttons[index == 0 ? "userShareMessageButton" : "shareMessageButton"].exists)
+                attach(app, name: "\(index == 0 ? "User" : "Assistant") message context menu — \(dark ? "Dark" : "Light")")
+                selectText.tap()
+                let selectable = bubble.textViews["selectableMessageText"]
+                XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+                XCTAssertEqual(selectable.value as? String, text)
+                XCTAssertFalse(app.sheets.firstMatch.exists)
+                attach(app, name: "\(index == 0 ? "User" : "Assistant") inline native selection — \(dark ? "Dark" : "Light")")
+                let composer = app.textFields["messageInput"].exists ? app.textFields["messageInput"] : app.textViews["messageInput"]
+                XCTAssertTrue(composer.isHittable)
+                composer.tap()
+                XCTAssertTrue(selectable.waitForNonExistence(timeout: 5), "Returning to the composer must end inline selection.")
+            }
             openSidebar(in: app)
             let row = app.descendants(matching: .any)
                 .matching(NSPredicate(format: "identifier BEGINSWITH %@", "conversationRow_")).firstMatch

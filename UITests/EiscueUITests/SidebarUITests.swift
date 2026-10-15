@@ -14,6 +14,7 @@ final class SidebarUITests: XCTestCase {
     func testSidebarIsHorizontalAndSettingsPushesIntoMainNavigation() {
         let app = launch()
         XCTAssertFalse(app.tabBars.firstMatch.exists)
+        let openButtonFrame = app.buttons["historyButton"].frame
         openSidebar(in: app)
         let settings = app.buttons["sidebarSettingsButton"]
         let newConversation = app.buttons["newConversationButton"]
@@ -23,14 +24,20 @@ final class SidebarUITests: XCTestCase {
         XCTAssertEqual(newConversation.label, "New conversation")
         XCTAssertGreaterThanOrEqual(settings.frame.width, 44)
         XCTAssertGreaterThanOrEqual(settings.frame.height, 44)
+        XCTAssertEqual(settings.frame.width, openButtonFrame.width, accuracy: 1)
+        XCTAssertEqual(settings.frame.height, openButtonFrame.height, accuracy: 1)
         XCTAssertEqual(newConversation.frame.midY, settings.frame.midY, accuracy: 2,
                        "The footer actions must share one horizontal row.")
         XCTAssertLessThan(newConversation.frame.maxX, settings.frame.minX)
         XCTAssertLessThan(newConversation.frame.midX, app.frame.midX,
                           "The sidebar must open at the leading edge, not as a bottom sheet.")
-        if app.buttons["closeSidebarButton"].exists {
+        let close = app.buttons["closeSidebarButton"]
+        if close.exists {
+            XCTAssertEqual(close.frame.width, settings.frame.width, accuracy: 1)
+            XCTAssertEqual(close.frame.height, settings.frame.height, accuracy: 1)
             XCTAssertFalse(app.buttons["deviceNavigationLink"].isHittable, "A compact drawer must hide the underlying controls.")
         }
+        attach(app, name: "Sidebar control sizing")
         settings.tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["modelSettingsButton"].isHittable)

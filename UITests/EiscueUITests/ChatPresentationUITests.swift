@@ -241,6 +241,50 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists)
     }
 
+    @MainActor func testFinishedDictationShowsCancellableDeviceRestorationOutsideVoiceButton() throws {
+        let app = try launchSpeechConnectionFixture(delaysReconnection: true)
+        returnToAssistant(in: app)
+        let draft = "Keep draft"
+        let editor = input(in: app)
+        editor.tap(); editor.typeText(draft)
+        let composer = app.otherElements["messageComposer"]
+        let originalHeight = composer.frame.height
+        let voiceMode = app.buttons["speechInputButton"]
+        voiceMode.tap()
+        startFixtureRecording(in: app)
+        app.buttons["holdToTalkButton"].tap()
+        let status = app.staticTexts["speechDeviceRestorationStatus"]
+        XCTAssertTrue(status.waitForExistence(timeout: 8))
+        XCTAssertEqual(status.label, "Reconnecting device…")
+        XCTAssertEqual(composer.frame.height, originalHeight, accuracy: 1,
+                       "Connection restoration must not add a row that moves the composer and message list.")
+        XCTAssertLessThan(status.frame.maxY, composer.frame.minY)
+        XCTAssertFalse(app.otherElements["speechRecordingOverlay"].exists)
+        XCTAssertEqual(voiceMode.label, "Switch to voice input")
+        XCTAssertEqual(voiceMode.activityIndicators.count, 0,
+                       "Completed speech must not retain a device-connection spinner in the voice button.")
+        attachScreenshot(app, name: "Finished dictation with cancellable restoration overlay")
+        let editableDraft = input(in: app)
+        XCTAssertEqual(editableDraft.value as? String, draft)
+        editableDraft.tap(); editableDraft.typeText(" now")
+        let editedValue = try XCTUnwrap(editableDraft.value as? String)
+        XCTAssertEqual(editedValue.replacingOccurrences(of: " now", with: ""), draft)
+        XCTAssertEqual(editedValue.count, draft.count + " now".count)
+        let editedHeight = composer.frame.height
+        XCTAssertFalse(app.buttons["sendMessageButton"].isEnabled)
+        app.buttons["cancelSpeechDeviceRestorationButton"].tap()
+        XCTAssertTrue(status.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(composer.frame.height, editedHeight, accuracy: 1)
+        let readyToSend = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"),
+                                                   object: app.buttons["sendMessageButton"])
+        XCTAssertEqual(XCTWaiter.wait(for: [readyToSend], timeout: 5), .completed)
+        XCTAssertEqual(input(in: app).value as? String, editedValue)
+        XCTAssertTrue(voiceMode.isEnabled)
+        openDevice(in: app)
+        XCTAssertTrue(app.buttons["connectDeviceButton"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists)
+    }
+
     @MainActor func testMarkdownMessageHasTimeContextActionsAndNativeRangeSelection() {
         let app = launch()
         let input = input(in: app)
@@ -260,6 +304,7 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertFalse(app.buttons["messageMoreButton"].exists)
         XCTAssertFalse(app.buttons["userMessageMoreButton"].exists)
         XCTAssertFalse(app.buttons["copyMessageButton"].exists)
+        XCTAssertFalse(app.buttons["selectMessageTextButton"].exists)
         XCTAssertFalse(app.buttons["shareMessageButton"].exists)
         for appearance in ["Light", "Dark"] {
             openSettings(in: app)
@@ -284,20 +329,30 @@ final class ChatPresentationUITests: XCTestCase {
             dx: message.frame.maxX - 8, dy: heading.frame.midY)).press(forDuration: 1)
         let selectText = app.buttons["selectMessageTextButton"]
         XCTAssertTrue(selectText.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["copyMessageButton"].exists)
+        XCTAssertEqual(selectText.label, "Select & copy")
+        XCTAssertEqual(app.buttons.matching(identifier: "selectMessageTextButton").count, 1)
+        XCTAssertFalse(app.buttons["copyMessageButton"].exists)
+        XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)
         XCTAssertTrue(app.buttons["shareMessageButton"].exists)
         selectText.tap()
-        let selectable = app.textViews["selectableMessageText"]
+        let inlineMessage = rows.matching(identifier: "messageBubble")
+            .containing(.textView, identifier: "selectableMessageText").firstMatch
+        let selectable = inlineMessage.textViews["selectableMessageText"]
         XCTAssertTrue(selectable.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.sheets.firstMatch.exists, "Text selection must remain inside the original message.")
+        XCTAssertFalse(app.buttons["Done"].exists, "Inline selection must not require dismissing a second page.")
+        XCTAssertTrue(self.input(in: app).isHittable)
         let completeText = selectable.value as? String ?? ""
         XCTAssertTrue(completeText.contains("let answer = 42"))
-        selectable.coordinate(withNormalizedOffset: CGVector(dx: 0.16, dy: 0.05)).press(forDuration: 1)
         let selectionScreenshot = XCTAttachment(screenshot: app.screenshot())
-        selectionScreenshot.name = "Native word selection"
+        selectionScreenshot.name = "Native word selection inside the original message"
         selectionScreenshot.lifetime = .keepAlways
         add(selectionScreenshot)
+        // The combined action must already select a range and present Copy;
+        // no second long press is needed to begin native text selection.
         tapEditMenu("Copy", in: app)
-        app.buttons["Done"].tap()
+        XCTAssertTrue(selectable.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(rows["markdownHeading"].waitForExistence(timeout: 5))
         let destination = self.input(in: app)
         destination.tap()
         destination.press(forDuration: 1)
@@ -318,7 +373,7 @@ final class ChatPresentationUITests: XCTestCase {
             let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["stopRunButton"])
             XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed)
         }
-        for identifier in ["userCopyMessageButton", "copyMessageButton", "userShareMessageButton", "shareMessageButton"] {
+        for identifier in ["selectMessageTextButton", "userCopyMessageButton", "copyMessageButton", "userShareMessageButton", "shareMessageButton"] {
             XCTAssertFalse(app.buttons[identifier].exists, "\(identifier) belongs in the long-press menu, not the footer.")
         }
         XCTAssertEqual(app.staticTexts.matching(identifier: "messageTime").count, 2)
@@ -332,7 +387,9 @@ final class ChatPresentationUITests: XCTestCase {
             dx: oldMessage.frame.maxX - 8, dy: oldMessage.frame.midY)).press(forDuration: 1)
         let share = app.buttons["userShareMessageButton"]
         XCTAssertTrue(share.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["userCopyMessageButton"].exists)
+        XCTAssertTrue(app.buttons["selectMessageTextButton"].exists)
+        XCTAssertFalse(app.buttons["userCopyMessageButton"].exists)
+        XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)
         share.tap()
         // iOS may replace the controller's root accessibility identifier when
         // its system-hosted share surface attaches. Verify the actual sheet,
@@ -356,7 +413,8 @@ final class ChatPresentationUITests: XCTestCase {
         XCTAssertEqual(destination.value as? String, "First message")
     }
 
-    @MainActor private func launchSpeechConnectionFixture(failsReconnection: Bool = false) throws -> XCUIApplication {
+    @MainActor private func launchSpeechConnectionFixture(failsReconnection: Bool = false,
+                                                         delaysReconnection: Bool = false) throws -> XCUIApplication {
         guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
             throw XCTSkip("The CoreDevice media handoff applies to iOS 27.")
         }
@@ -364,6 +422,7 @@ final class ChatPresentationUITests: XCTestCase {
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--local-device-ready-fixture",
                                "--speech-device-ready-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         if failsReconnection { app.launchArguments.append("--speech-device-reconnect-failure") }
+        if delaysReconnection { app.launchArguments.append("--speech-device-reconnect-delay") }
         app.launch()
         XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["disconnectDeviceButton"].exists)

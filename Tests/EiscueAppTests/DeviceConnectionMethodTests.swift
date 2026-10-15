@@ -412,6 +412,39 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertFalse(model.isConnecting)
     }
 
+    func testCancellingDictationRestorationKeepsSendBlockedUntilMediaCleanupCompletes() async throws {
+        let fixture = try dictationFixture()
+        let model = fixture.model
+        await model.connectDevice()
+        model.isLoading = false; model.draft = "Completed dictation"
+        let id = UUID()
+        try await model.prepareDeviceForDictation(id: id)
+        await fixture.controller.setSuspendsConnection(true)
+        let finish = Task { await model.finishDeviceDictation(id: id) }
+        try await waitUntil { await fixture.controller.calls().methods.count == 2 }
+        await fixture.controller.setSuspendsDisconnect(true)
+        let cancel = Task { await model.finishDeviceDictation(id: id, reconnect: false) }
+        defer { Task { await fixture.controller.completePendingDisconnect() } }
+        try await waitUntil { await fixture.controller.calls().disconnects == 2 }
+        XCTAssertTrue(model.isConnecting)
+        XCTAssertNotNil(model.dictationDeviceRestoration)
+        XCTAssertFalse(model.canSend, "Cancelling restoration must not race an unfinished media release.")
+        XCTAssertEqual(model.draft, "Completed dictation")
+        await fixture.controller.completePendingDisconnect()
+        let error = await cancel.value
+        let originalError = await finish.value
+        XCTAssertNil(error)
+        XCTAssertNil(originalError)
+        XCTAssertNil(model.dictationDeviceRestoration)
+        XCTAssertFalse(model.isConnecting || model.isDeviceReady)
+        XCTAssertTrue(model.canSend)
+        XCTAssertEqual(model.draft, "Completed dictation")
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.cancelledConnections, 1)
+        XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard], "Cancellation must not retry or use another route.")
+        XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
     func testLocalVPNLossRevokesDictationRestorationWhileMediaIsReleased() async throws {
         let fixture = try Fixture(savedMethod: "localVPN", operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
         let model = fixture.model
@@ -1130,6 +1163,7 @@ private actor AppConnectionRecordingController: DeviceController {
     }
     func setConnectionFailure(_ failure: DeviceControlError?) { self.failure = failure }
     func setSuspendsConnection(_ value: Bool) { suspendsConnection = value }
+    func setSuspendsDisconnect(_ value: Bool) { suspendsDisconnect = value }
     func setReleaseConfirmed(_ value: Bool) { releaseConfirmed = value }
     func suspendNextStatus() { suspendsNextStatus = true }
     func hasPendingStatus() -> Bool { pendingStatus != nil }

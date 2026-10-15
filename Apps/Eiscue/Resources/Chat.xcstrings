@@ -18,23 +18,6 @@
         }
       }
     },
-    "chat.copy": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制"
-          }
-        }
-      }
-    },
     "chat.copied": {
       "extractionState": "manual",
       "localizations": {
@@ -99,23 +82,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "更多消息操作"
-          }
-        }
-      }
-    },
-    "chat.selectText": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select text"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择文字"
           }
         }
       }
@@ -592,6 +558,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "AI 查看过的图像"
+          }
+        }
+      }
+    },
+    "chat.selectAndCopy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select & copy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择并复制"
           }
         }
       }

@@ -18,6 +18,7 @@ struct AssistantView: View {
     @State private var isVoiceMode = false
     @State private var voiceSessionID: UUID?
     @State private var voiceRestorationID: UUID?
+    @State private var cancellingVoiceRestorationID: UUID?
     @State private var isPreparingVoice = false
     @State private var speechNotice: String?
     @State private var speechNoticeID: UUID?
@@ -35,13 +36,23 @@ struct AssistantView: View {
         .toolbarBackground(speech.isBusy ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("assistant.history", systemImage: "sidebar.left") {
+                Button {
                     endComposerInput()
                     openSidebar()
+                } label: {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 20, weight: .regular))
+                        .frame(width: 24, height: 24)
+                        .padding(3)
                 }
-                .labelStyle(.iconOnly)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .controlSize(.regular)
+                .foregroundStyle(EiscueStyle.accent)
+                .accessibilityLabel("assistant.history")
                 .accessibilityIdentifier("historyButton")
             }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .principal) {
                 Menu {
                     Button("runs.conversationTitle", systemImage: "clock.arrow.circlepath") {
@@ -144,7 +155,21 @@ struct AssistantView: View {
             if phase == .background { endComposerInput(reconnect: false) }
         }
         .overlay(alignment: .top) {
-            if let speechNotice {
+            if let voiceRestorationID, model.dictationDeviceRestoration?.id == voiceRestorationID {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(String(localized: cancellingVoiceRestorationID == nil
+                        ? "speech.deviceReconnecting" : "speech.deviceReconnectCancelling", table: "Speech"))
+                        .accessibilityIdentifier("speechDeviceRestorationStatus")
+                    Button(String(localized: "speech.cancelDeviceReconnection", table: "Speech"), action: cancelVoiceRestoration)
+                        .disabled(cancellingVoiceRestorationID != nil)
+                        .accessibilityIdentifier("cancelSpeechDeviceRestorationButton")
+                }
+                .font(.subheadline).foregroundStyle(.primary)
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                .frame(maxWidth: 360).padding(.horizontal, 24).padding(.top, 8)
+            } else if let speechNotice {
                 Text(speechNotice).font(.subheadline).multilineTextAlignment(.center)
                     .foregroundStyle(.primary).padding(.horizontal, 18).padding(.vertical, 12)
                     .glassEffect(.regular, in: .rect(cornerRadius: 18))
@@ -227,6 +252,17 @@ struct AssistantView: View {
             guard voiceRestorationID == id else { return }
             voiceRestorationID = nil
             if let error, scenePhase == .active { showSpeechNotice(error) }
+        }
+    }
+
+    private func cancelVoiceRestoration() {
+        guard let id = voiceRestorationID, cancellingVoiceRestorationID == nil else { return }
+        cancellingVoiceRestorationID = id
+        Task { @MainActor in
+            // Keep the send/recording gates until the cancelled connection has
+            // released its partial media session, including delayed teardown.
+            _ = await model.finishDeviceDictation(id: id, reconnect: false)
+            if cancellingVoiceRestorationID == id { cancellingVoiceRestorationID = nil }
         }
     }
 
@@ -366,7 +402,7 @@ struct AssistantView: View {
                 }
                 Button(action: toggleVoiceMode) {
                     Group {
-                        if isChangingVoiceConnection { ProgressView().controlSize(.small) }
+                        if isPreparingVoice { ProgressView().controlSize(.small) }
                         else { Image(systemName: isVoiceMode ? "keyboard" : "waveform").font(.system(size: 18, weight: .medium)) }
                     }
                     .frame(width: 44, height: 44).contentShape(Rectangle())

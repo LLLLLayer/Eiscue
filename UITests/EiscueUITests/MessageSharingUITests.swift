@@ -21,6 +21,7 @@ final class MessageSharingUITests: XCTestCase {
         let filename = app.staticTexts["fixtureSharedFilename"].label
         let row = app.descendants(matching: .any)["fixtureFileShareRow"]
         XCTAssertFalse(row.buttons["userCopyMessageButton"].exists, "No empty-text Copy action")
+        XCTAssertFalse(row.buttons["selectMessageTextButton"].exists, "No text-selection action for an attachment-only message")
         shareAttachment(in: row, app: app)
         assertNativeController(in: app)
         let nativeShare = nativeController(in: app)
@@ -40,6 +41,7 @@ final class MessageSharingUITests: XCTestCase {
         let app = launch()
         let row = app.descendants(matching: .any)["fixturePhotoShareRow"]
         XCTAssertFalse(row.buttons["userCopyMessageButton"].exists)
+        XCTAssertFalse(row.buttons["selectMessageTextButton"].exists)
         shareAttachment(in: row, app: app)
         assertNativeController(in: app)
         record(app, name: "Attachment-only native photo share")
@@ -235,6 +237,8 @@ final class MessageSharingUITests: XCTestCase {
         let share = app.buttons["userShareMessageButton"]
         XCTAssertTrue(share.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["userCopyMessageButton"].exists, "Attachment-only messages must not offer an empty-text Copy action.")
+        XCTAssertFalse(app.buttons["selectMessageTextButton"].exists, "Attachment-only messages must not offer empty text selection.")
+        XCTAssertFalse(app.buttons["messageRunHistoryButton"].exists)
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: share)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
         share.tap()
