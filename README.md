@@ -171,6 +171,8 @@ A full recheck on 2026-10-15 at `14d154f` recorded 155 Kit tests with 4 failures
 
 The control-backend selector added on 2026-10-15 passed 108 DeviceKit tests, 37 connection app tests on each of iOS 26.3.1 and 27.0 simulators, 2 UI cases on iOS 26 and 3 on iOS 27. These checks cover selection/persistence, unavailable choices, release and cancellation, no fallback, and the existing CoreDevice voice notice. They do not validate physical iOS 27 XCTest input.
 
+A physical iPhone 12 mini / iOS 27 microphone comparison on 2026-10-15 kept pairing and VPN unchanged: input was nonzero before CoreDevice connection, all-zero with a system remote-control mute during connection, and nonzero again after confirmed screen-session release. This validates microphone capture and recovery on that device, not speech recognition or coexistence on XCTest, HID or USB network routes. Apple documents camera/microphone conflicts for [Device Hub](https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub#Handle-camera-and-microphone-access-conflicts-on-physical-devices).
+
 ### Backend and firmware
 
 The device backend ships an XCFramework for arm64 iOS, simulator and macOS, without x86_64 slices. Rebuild only when backend source changes, using the pinned Rust 1.96.0 toolchain:

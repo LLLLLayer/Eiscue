@@ -171,6 +171,8 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 2026-10-15 新增控制后端选择后，108 项 DeviceKit 测试通过；iOS 26.3.1 和 27.0 模拟器各通过 37 项连接单测，UI 分别通过 2 项和 3 项。覆盖选择与保存、不可用选项、释放与取消、禁止回退，以及原有 CoreDevice 语音提示；不代表 iOS 27 XCTest 的真机输入已验收。
 
+2026-10-15 在 iPhone 12 mini / iOS 27 上完成麦克风对照：全程保留配对和 VPN，CoreDevice 连接前收到非零音频，连接期间全部为零且系统报告远程控制静音，确认释放屏幕会话后恢复非零音频。本次验证该设备的收音和恢复，不代表语音识别成功，也不代表 XCTest、HID 或 USB 网络路线与录音共存已验收。Apple 官方记录了 [Device Hub 的相机／麦克风冲突](https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub#Handle-camera-and-microphone-access-conflicts-on-physical-devices)。
+
 ### 后端与固件
 
 设备后端附带 arm64 iOS、模拟器和 macOS XCFramework，不含 x86_64。仅在修改后端源码时重建；使用固定 Rust 1.96.0 工具链：
