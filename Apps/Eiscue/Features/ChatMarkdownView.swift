@@ -18,13 +18,16 @@ struct ChatMarkdownView: View, Equatable {
             else { Text(verbatim: source).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
         }
         .tint(.primary)
-        .transaction { $0.animation = nil }
         .task(id: ParseRequest(source: source, isHeld: holdsRendering)) {
             // A late parse must not relayout the screen between an Agent's
             // observation and its input. Reparse when that boundary is released.
             guard !holdsRendering else { return }
             guard let parsed = try? await ChatMarkdownCache.shared.blocks(for: source), !Task.isCancelled else { return }
-            blocks = parsed
+            // Only parsing updates are immediate. Keep inherited layout animations
+            // so text moves with the rest of a message when tool images expand.
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { blocks = parsed }
         }
     }
 }
