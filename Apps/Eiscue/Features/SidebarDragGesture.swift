@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// Horizontal recognition leaves vertical history scrolling and nested image/code
-/// scrolling alone. Translation is delivered on every movement, not just release.
+/// Resolve the drag direction before either the drawer or a vertical list moves.
+/// Translation is delivered on every movement, not just release.
 struct SidebarDragGesture: UIGestureRecognizerRepresentable {
     let isEnabled: Bool
     let isOpen: Bool
@@ -44,7 +44,8 @@ struct SidebarDragGesture: UIGestureRecognizerRepresentable {
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             var view = touch.view
             while let current = view, current !== gestureRecognizer.view {
-                if current is UITextField || current is UISlider || (current as? UITextView)?.isEditable == true { return false }
+                if current is UITextField || current is UISlider { return false }
+                if let text = current as? UITextView, text.isEditable || text.isFirstResponder { return false }
                 if !isOpen, current is UIControl { return false }
                 if let scroll = current as? UIScrollView, scroll.contentSize.width > scroll.bounds.width + 1 { return false }
                 view = current.superview
@@ -52,9 +53,13 @@ struct SidebarDragGesture: UIGestureRecognizerRepresentable {
             return true
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            guard let scroll = other.view as? UIScrollView else { return false }
-            return other === scroll.panGestureRecognizer
+                               shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            guard let scroll = other.view as? UIScrollView,
+                  other === scroll.panGestureRecognizer else { return false }
+            // Let ShouldBegin choose the axis first. If the drawer wins, the
+            // list cannot follow diagonal motion; if it fails, scrolling proceeds.
+            // Nested horizontal content retains its own gesture priority.
+            return scroll.contentSize.width <= scroll.bounds.width + 1
         }
     }
 }

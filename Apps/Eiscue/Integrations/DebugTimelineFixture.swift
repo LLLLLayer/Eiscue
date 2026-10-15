@@ -14,6 +14,12 @@ extension AppModel {
         }
         let conversation = Conversation(title: "Long history fixture", messages: messages)
         conversations = [conversation]; runs = []; selectedConversationID = conversation.id
+        if ProcessInfo.processInfo.arguments.contains("--long-sidebar-fixture") {
+            conversations += (0..<40).map { index in
+                Conversation(title: String(format: "Sidebar history %02d", index),
+                             createdAt: Date(timeIntervalSince1970: 1_700_000_000 - Double(index)))
+            }
+        }
     }
 
     /// Exercises the real transcript with deterministic tool output, without

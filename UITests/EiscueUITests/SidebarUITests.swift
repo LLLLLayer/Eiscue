@@ -130,6 +130,75 @@ final class SidebarUITests: XCTestCase {
         }
     }
 
+    @MainActor func testDiagonalSidebarOpeningPreservesMessageReadingPosition() throws {
+        let app = launchLongHistory()
+        if app.buttons["sidebarSettingsButton"].isHittable && !app.buttons["closeSidebarButton"].exists {
+            throw XCTSkip("The persistent sidebar resizes and reflows Markdown; absolute reading coordinates apply to the overlay drawer only.")
+        }
+        hideWideSidebar(in: app)
+        let scroll = app.scrollViews["conversationScrollView"]
+        let viewport = scroll.frame
+        let messages = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "History entry "))
+        let anchor = try readingAnchor(in: messages, viewport: viewport)
+        let initialY = anchor.frame.minY
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let verticalStart = origin.withOffset(CGVector(dx: viewport.midX, dy: viewport.midY - 60))
+        verticalStart.press(forDuration: 0.05, thenDragTo: verticalStart.withOffset(CGVector(dx: 30, dy: 140)),
+                            withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertFalse(app.buttons["sidebarSettingsButton"].exists, "A vertical-dominant diagonal must scroll messages without opening the sidebar.")
+        XCTAssertTrue(anchor.isHittable)
+        XCTAssertGreaterThan(anchor.frame.minY - initialY, 40, "The vertical component must still scroll the history.")
+
+        let reading = try readingAnchor(in: messages, viewport: viewport)
+        let readingY = reading.frame.minY
+        let horizontalStart = origin.withOffset(CGVector(dx: viewport.minX + viewport.width * 0.18, dy: viewport.midY + 35))
+        horizontalStart.press(forDuration: 0.05,
+                              thenDragTo: horizontalStart.withOffset(CGVector(dx: min(240, viewport.width * 0.65), dy: -70)),
+                              withVelocity: .slow, thenHoldForDuration: 0.5)
+        let settings = app.buttons["sidebarSettingsButton"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.isHittable)
+        let close = app.buttons["closeSidebarButton"]
+        if close.exists { close.tap() } else { app.buttons["historyButton"].tap() }
+        XCTAssertTrue(settings.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(reading.isHittable)
+        XCTAssertEqual(reading.frame.minY, readingY, accuracy: 2,
+                       "A horizontal-dominant opening drag must not also scroll the messages by its vertical component.")
+        attach(app, name: "Diagonal sidebar opening preserves the message reading position")
+    }
+
+    @MainActor func testDiagonalSidebarClosingPreservesConversationReadingPosition() throws {
+        let app = launchLongHistory()
+        openSidebar(in: app)
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let viewport = list.frame
+        let conversations = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "conversationRow_", "Sidebar history "))
+        let anchor = try readingAnchor(in: conversations, viewport: viewport)
+        let initialY = anchor.frame.minY
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let verticalStart = origin.withOffset(CGVector(dx: viewport.midX, dy: viewport.midY + 60))
+        verticalStart.press(forDuration: 0.05, thenDragTo: verticalStart.withOffset(CGVector(dx: -30, dy: -140)),
+                            withVelocity: .slow, thenHoldForDuration: 0.5)
+        let settings = app.buttons["sidebarSettingsButton"]
+        XCTAssertTrue(settings.isHittable, "A vertical-dominant diagonal must scroll conversations without closing the sidebar.")
+        XCTAssertTrue(anchor.isHittable)
+        XCTAssertGreaterThan(initialY - anchor.frame.minY, 40)
+
+        let reading = try readingAnchor(in: conversations, viewport: viewport)
+        let readingY = reading.frame.minY
+        let horizontalStart = origin.withOffset(CGVector(dx: viewport.maxX - 24, dy: viewport.midY - 28))
+        // Release slowly below the closing threshold, so the same List remains mounted.
+        horizontalStart.press(forDuration: 0.05, thenDragTo: horizontalStart.withOffset(CGVector(dx: -100, dy: 55)),
+                              withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertTrue(settings.isHittable)
+        XCTAssertTrue(reading.isHittable)
+        XCTAssertEqual(reading.frame.minY, readingY, accuracy: 2,
+                       "A horizontal-dominant closing drag must not also move the conversation list vertically.")
+        attach(app, name: "Diagonal closing drag preserves the conversation reading position")
+    }
+
     @MainActor func testNavigationDismissesKeyboardAndKeepsDraft() {
         let app = launch()
         let input = app.textFields["messageInput"].exists ? app.textFields["messageInput"] : app.textViews["messageInput"]
@@ -154,6 +223,21 @@ final class SidebarUITests: XCTestCase {
         let settings = app.buttons["sidebarSettingsButton"]
         if settings.isHittable { app.buttons["historyButton"].tap() }
         XCTAssertTrue(settings.waitForNonExistence(timeout: 5))
+    }
+
+    @MainActor private func launchLongHistory() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--long-conversation-fixture",
+                               "--long-sidebar-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["LATEST_HISTORY_MESSAGE"].waitForExistence(timeout: 10))
+        return app
+    }
+
+    @MainActor private func readingAnchor(in query: XCUIElementQuery, viewport: CGRect) throws -> XCUIElement {
+        let visible = query.allElementsBoundByIndex.filter { $0.isHittable && viewport.contains($0.frame) }
+        let nearest = try XCTUnwrap(visible.min { abs($0.frame.midY - viewport.midY) < abs($1.frame.midY - viewport.midY) })
+        return query.matching(NSPredicate(format: "label == %@", nearest.label)).firstMatch
     }
 
     @MainActor private func attach(_ app: XCUIApplication, name: String) {
