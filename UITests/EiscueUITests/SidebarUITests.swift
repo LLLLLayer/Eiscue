@@ -109,8 +109,15 @@ final class SidebarUITests: XCTestCase {
             XCTAssertTrue(settings.waitForExistence(timeout: 5))
             XCTAssertTrue(settings.isHittable)
             XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-            closeSidebar(in: app)
+            attach(app, name: "Sidebar after right swipe — \(appearance)")
+            let closeStart = origin.withOffset(CGVector(dx: min(280, app.frame.width * 0.7), dy: y))
+            let closeEnd = origin.withOffset(CGVector(dx: 12, dy: y))
+            closeStart.press(forDuration: 0.05, thenDragTo: closeEnd)
+            XCTAssertTrue(settings.waitForNonExistence(timeout: 5))
+            XCTAssertTrue(send.isHittable)
+            XCTAssertTrue(send.isEnabled)
             XCTAssertEqual(input.value as? String, "Keep this draft")
+            attach(app, name: "Chat after left swipe closes sidebar — \(appearance)")
         }
     }
 

@@ -79,7 +79,6 @@ struct RootView: View {
 
                 }
             }
-            .clipped()
             .gesture(SidebarDragGesture(isEnabled: path.isEmpty && !model.showsOnboarding,
                                         isOpen: isOpen, onChanged: { translation in
                 if !isDraggingSidebar { sidebarDragID += 1; isDraggingSidebar = true }
@@ -103,6 +102,7 @@ struct RootView: View {
                 if isWide { wideSidebarIsExpanded = true }
             }
         }
+        .background { EiscueStyle.background.ignoresSafeArea() }
         .toolImagePreviewHost()
         .fullScreenCover(isPresented: Binding(
             get: { model.showsOnboarding && !model.isLoading },
