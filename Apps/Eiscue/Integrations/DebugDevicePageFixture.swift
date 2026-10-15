@@ -9,6 +9,14 @@ enum DebugDevicePageFixture {
         return arguments.contains("--ui-testing") && arguments.contains("--local-device-ready-fixture")
     }
 
+    static var isSpeechEnabled: Bool {
+        isEnabled && ProcessInfo.processInfo.arguments.contains("--speech-device-ready-fixture")
+    }
+
+    static var failsSpeechReconnection: Bool {
+        isSpeechEnabled && ProcessInfo.processInfo.arguments.contains("--speech-device-reconnect-failure")
+    }
+
     static var isOnboardingEnabled: Bool {
         let arguments = ProcessInfo.processInfo.arguments
         return arguments.contains("--ui-testing") &&
@@ -57,11 +65,15 @@ extension AppModel {
                 UIBezierPath(roundedRect: CGRect(x: 40, y: 152 + index * 32, width: 240, height: 12), cornerRadius: 6).fill()
             }
         }
-        let client = DeviceClient(controller: DevicePageFixtureController(imageData: image.pngData()!))
+        let speechFixture = DebugDevicePageFixture.isSpeechEnabled
+        let client = DeviceClient(controller: DevicePageFixtureController(imageData: image.pngData()!,
+            allowsReconnection: speechFixture, failsReconnection: DebugDevicePageFixture.failsSpeechReconnection))
         deviceClient = client
         networkDeviceClient = client
-        deviceConnectionMethod = .localVPN
-        activeDeviceConnectionMethod = .localVPN
+        // Exercise the same CoreDevice media handoff without a simulator VPN.
+        if speechFixture { deviceControlBackend = .coreDevice }
+        deviceConnectionMethod = speechFixture ? .usbBoard : .localVPN
+        activeDeviceConnectionMethod = deviceConnectionMethod
         activeDeviceControlBackend = deviceControlBackend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion)
         hasPairingIdentity = true
         deviceStatus = .ready(capabilities: [.screenshot, .tap, .swipe, .textInput])
@@ -85,9 +97,15 @@ private actor OnboardingPairingFixtureController: DeviceController {
 
 private actor DevicePageFixtureController: DeviceController {
     private let imageData: Data
+    private let allowsReconnection: Bool
+    private let failsReconnection: Bool
     private var connected = true
 
-    init(imageData: Data) { self.imageData = imageData }
+    init(imageData: Data, allowsReconnection: Bool, failsReconnection: Bool) {
+        self.imageData = imageData
+        self.allowsReconnection = allowsReconnection
+        self.failsReconnection = failsReconnection
+    }
 
     func status() async -> DeviceStatus {
         connected ? .ready(capabilities: [.screenshot, .tap, .swipe, .textInput]) : .unavailable(reason: "Fixture disconnected")
@@ -95,6 +113,21 @@ private actor DevicePageFixtureController: DeviceController {
 
     func hasPairingIdentity() async throws -> Bool { true }
     func disconnect() async { connected = false }
+    func disconnectAndConfirmRelease() async -> Bool { await disconnect(); return true }
+
+    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws {
+        try reconnect(backend: backend)
+    }
+
+    func connectUSBBoard(backend: DeviceControlBackend) async throws {
+        try reconnect(backend: backend)
+    }
+
+    private func reconnect(backend: DeviceControlBackend) throws {
+        guard allowsReconnection, backend == .coreDevice else { throw DeviceControlError.unsupported }
+        guard !failsReconnection else { throw DeviceControlError.notConnected }
+        connected = true
+    }
 
     func captureScreenshot() async throws -> DeviceScreenshot {
         guard connected else { throw DeviceControlError.notConnected }

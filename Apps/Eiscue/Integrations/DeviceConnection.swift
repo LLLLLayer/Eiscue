@@ -25,15 +25,168 @@ enum DeviceMicrophonePolicy {
     }
 }
 
+@MainActor
+final class DictationDeviceRestoration {
+    let id: UUID
+    let operationID: UUID
+    let method: DeviceConnectionMethod
+    let preference: DeviceControlBackend
+    let backend: DeviceControlBackend
+    let client: DeviceClient
+    var releaseTask: Task<Void, Never>?
+    var finishTask: Task<String?, Never>?
+    var releaseFinished = false
+    var releaseConfirmed = false
+    var isFinishing = false
+    var isRestoring = false
+    var isValid = true
+
+    init(id: UUID, operationID: UUID, method: DeviceConnectionMethod, preference: DeviceControlBackend,
+         backend: DeviceControlBackend, client: DeviceClient) {
+        self.id = id; self.operationID = operationID; self.method = method; self.preference = preference
+        self.backend = backend; self.client = client
+    }
+}
+
+enum DictationDevicePreparationError: LocalizedError {
+    case busy, releaseUnconfirmed
+    var errorDescription: String? {
+        switch self {
+        case .busy: String(localized: "speech.devicePreparationBusy", table: "Speech")
+        case .releaseUnconfirmed: String(localized: "speech.deviceReleaseFailed", table: "Speech")
+        }
+    }
+}
+
 extension AppModel {
     var isDictationBlockedByDeviceConnection: Bool {
         DeviceMicrophonePolicy.blocksDictation(method: activeDeviceConnectionMethod, backend: activeDeviceControlBackend,
                                                isConnected: isDeviceReady,
-                                               on: ProcessInfo.processInfo.operatingSystemVersion)
+                                               on: deviceOperatingSystemVersion)
+    }
+
+    func prepareDeviceForDictation(id: UUID) async throws {
+        let previous = dictationDeviceRestoration
+        invalidateDictationDeviceRestoration()
+        dictationPreparationID = id
+        await previous?.releaseTask?.value
+        _ = await previous?.finishTask?.value
+        try Task.checkCancellation()
+        guard dictationPreparationID == id, currentScenePhase == .active else { throw CancellationError() }
+        guard !isBusy else { throw DictationDevicePreparationError.busy }
+        guard isDictationBlockedByDeviceConnection,
+              let method = activeDeviceConnectionMethod, let backend = activeDeviceControlBackend else { return }
+        guard !needsRecovery, pausedRun == nil else { throw DictationDevicePreparationError.busy }
+
+        let operationID = UUID(); deviceOperationID = operationID
+        let restoration = DictationDeviceRestoration(id: id, operationID: operationID, method: method,
+            preference: deviceControlBackend, backend: backend, client: deviceClient)
+        dictationDeviceRestoration = restoration
+        isConnecting = true
+        activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil; screenshot = nil
+        deviceStatus = .unavailable(reason: String(localized: "connection.disconnected"))
+        // The release belongs to the connection, so cancelling a gesture must
+        // still wait for media teardown before restoring or starting a new one.
+        restoration.releaseTask = Task {
+            restoration.releaseConfirmed = await restoration.client.disconnectAndConfirmRelease()
+            if !restoration.releaseConfirmed { restoration.isValid = false }
+            let status = await restoration.client.status()
+            if deviceOperationID == operationID {
+                deviceStatus = status; isConnecting = false
+                if case .unavailable(let reason) = status { connectionMessage = reason }
+            }
+            restoration.releaseFinished = true
+            if !restoration.isValid, restoration.finishTask == nil,
+               dictationDeviceRestoration === restoration { dictationDeviceRestoration = nil }
+        }
+        await restoration.releaseTask?.value
+        try Task.checkCancellation()
+        guard restoration.releaseConfirmed else { throw DictationDevicePreparationError.releaseUnconfirmed }
+        guard dictationPreparationID == id, restoration.isValid, !restoration.isFinishing,
+              dictationDeviceRestoration === restoration, deviceOperationID == operationID,
+              currentScenePhase == .active else { throw CancellationError() }
+    }
+
+    func finishDeviceDictation(id: UUID, reconnect: Bool = true) async -> String? {
+        if dictationPreparationID == id { dictationPreparationID = nil }
+        guard let restoration = dictationDeviceRestoration, restoration.id == id else { return nil }
+        restoration.isFinishing = true
+        if !reconnect {
+            restoration.isValid = false
+            if restoration.isRestoring, deviceOperationID == restoration.operationID { deviceConnectionTask?.cancel() }
+        }
+        if let task = restoration.finishTask { return await task.value }
+        let task = Task { await restoreDeviceAfterDictation(restoration) }
+        restoration.finishTask = task
+        return await task.value
+    }
+
+    func invalidateDictationDeviceRestoration() {
+        dictationPreparationID = nil
+        guard let restoration = dictationDeviceRestoration else { return }
+        restoration.isValid = false
+        if restoration.isRestoring, deviceOperationID == restoration.operationID { deviceConnectionTask?.cancel() }
+        if restoration.releaseFinished, restoration.finishTask == nil { dictationDeviceRestoration = nil }
+    }
+
+    private func cancelDictationDeviceRestoration() async {
+        let restoration = dictationDeviceRestoration
+        invalidateDictationDeviceRestoration()
+        await restoration?.releaseTask?.value
+        _ = await restoration?.finishTask?.value
+    }
+
+    private func canRestoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) -> Bool {
+        restoration.isValid && dictationDeviceRestoration === restoration &&
+        deviceOperationID == restoration.operationID && currentScenePhase == .active &&
+        deviceConnectionMethod == restoration.method && deviceControlBackend == restoration.preference &&
+        !isRunning && !needsRecovery && pausedRun == nil
+    }
+
+    private func restoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) async -> String? {
+        await restoration.releaseTask?.value
+        defer {
+            if dictationDeviceRestoration === restoration { dictationDeviceRestoration = nil }
+            if deviceOperationID == restoration.operationID {
+                isConnecting = false; deviceConnectionTask = nil
+                if !isDeviceReady { activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil }
+            }
+        }
+        guard canRestoreDeviceAfterDictation(restoration) else { return nil }
+        let failure = String(localized: "speech.deviceReconnectFailed", table: "Speech")
+        guard restoration.method != .localVPN || localTunnel.isConnected else {
+            deviceConnectionError = failure; connectionMessage = failure
+            return failure
+        }
+        restoration.isRestoring = true
+        isConnecting = true
+        activeDeviceConnectionMethod = restoration.method; activeDeviceControlBackend = restoration.backend
+        let task = Task {
+            try await restoration.client.connect(method: restoration.method, configuration: .defaults, backend: restoration.backend)
+            try Task.checkCancellation()
+        }
+        deviceConnectionTask = task
+        do {
+            try await task.value
+            let status = await restoration.client.status()
+            if canRestoreDeviceAfterDictation(restoration), case .ready = status {
+                deviceStatus = status; deviceConnectionError = nil
+                connectionMessage = String(localized: "connection.ready")
+                return nil
+            }
+        } catch { /* Release partial or cancelled media before another command can proceed. */ }
+        await restoration.client.disconnect()
+        if deviceOperationID == restoration.operationID {
+            deviceStatus = await restoration.client.status()
+            activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil; screenshot = nil
+        }
+        guard canRestoreDeviceAfterDictation(restoration) else { return nil }
+        deviceConnectionError = failure; connectionMessage = failure
+        return failure
     }
 
     var supportsSystemPairing: Bool {
-        DevicePairingSupport.supportsSystemPairing(on: ProcessInfo.processInfo.operatingSystemVersion)
+        DevicePairingSupport.supportsSystemPairing(on: deviceOperatingSystemVersion)
     }
 
     var canChangeDeviceControlBackend: Bool {
@@ -43,6 +196,7 @@ extension AppModel {
     }
 
     func startLocalTunnel() async {
+        await cancelDictationDeviceRestoration()
         guard !isBusy, deviceConnectionMethod == .localVPN else { return }
         isManagingTunnel = true
         deviceConnectionError = nil
@@ -56,6 +210,7 @@ extension AppModel {
     }
 
     func stopLocalTunnel() async {
+        await cancelDictationDeviceRestoration()
         guard !isStoppingTunnel else { return }
         isStoppingTunnel = true
         defer { isStoppingTunnel = false }
@@ -76,6 +231,7 @@ extension AppModel {
     var isBoardHardwareStopped: Bool { _ = bluetoothRevision; return bluetoothController.isHardwareStopLatched }
 
     func selectBluetoothInputRoute(_ route: BluetoothBoardInputRoute) async {
+        await cancelDictationDeviceRestoration()
         guard route != bluetoothInputRoute, deviceConnectionMethod == .bluetoothBoard, !isBusy else { return }
         isChangingDeviceConnectionMethod = true
         defer { isChangingDeviceConnectionMethod = false }
@@ -161,13 +317,14 @@ extension AppModel {
     }
 
     func connectDevice() async {
+        await cancelDictationDeviceRestoration()
         guard !isBusy, !isConnecting else { return }
         let method = deviceConnectionMethod
         let backend = deviceControlBackend
         guard method != .localVPN || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true; activeDeviceConnectionMethod = method; deviceConnectionError = nil
-        activeDeviceControlBackend = method == .bluetoothBoard ? nil : backend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion)
+        activeDeviceControlBackend = method == .bluetoothBoard ? nil : backend.resolved(on: deviceOperatingSystemVersion)
         if method == .localVPN, activeDeviceControlBackend == .xcTest {
             connectionMessage = String(localized: "connection.automationAuthorization")
         } else {
@@ -204,6 +361,7 @@ extension AppModel {
     /// The primary button starts only the selected connection method. Boards never
     /// start a tunnel, change VPN preferences, or fall back onto local VPN.
     func enableDeviceControl() async {
+        await cancelDictationDeviceRestoration()
         guard !isBusy, !isChangingDeviceConnectionMethod else { return }
         let method = deviceConnectionMethod
         let backend = deviceControlBackend
@@ -215,6 +373,7 @@ extension AppModel {
     }
 
     func selectDeviceConnectionMethod(_ method: DeviceConnectionMethod) async {
+        await cancelDictationDeviceRestoration()
         guard method != deviceConnectionMethod, !isChangingDeviceConnectionMethod,
               !isSaving, !isStopping, !isManagingTunnel, !isStoppingTunnel, !isImportingAttachments else { return }
         isChangingDeviceConnectionMethod = true
@@ -243,8 +402,9 @@ extension AppModel {
     }
 
     func selectDeviceControlBackend(_ backend: DeviceControlBackend) async {
+        await cancelDictationDeviceRestoration()
         guard backend != deviceControlBackend, canChangeDeviceControlBackend else { return }
-        guard backend.isAvailable(on: ProcessInfo.processInfo.operatingSystemVersion) else {
+        guard backend.isAvailable(on: deviceOperatingSystemVersion) else {
             deviceConnectionError = DeviceControlError.backendUnavailable(backend).localizedDescription
             return
         }
@@ -263,6 +423,7 @@ extension AppModel {
     func disconnectDevice(expectedPairingID: UUID? = nil, stopChatRun: Bool = true,
                           stopReason: String = String(localized: "connection.disconnected")) async {
         guard expectedPairingID == nil || expectedPairingID == pairingLeaseID else { return }
+        await cancelDictationDeviceRestoration()
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true
         defer { if deviceOperationID == operationID { isConnecting = false } }
@@ -277,6 +438,7 @@ extension AppModel {
     }
 
     func releaseDeviceConnection() async {
+        await cancelDictationDeviceRestoration()
         activeDeviceConnectionMethod = nil
         activeDeviceControlBackend = nil
         let pending = deviceConnectionTask
@@ -290,6 +452,7 @@ extension AppModel {
     }
 
     func startPairing() {
+        invalidateDictationDeviceRestoration()
         guard !isBusy, !isConnecting else { return }
         // iOS 26 has no device-initiated PairableHost Settings flow. Reject
         // before acquiring a background task or changing pairing state.
@@ -351,6 +514,7 @@ extension AppModel {
     }
 
     func importPairingIdentity(_ url: URL) async {
+        await cancelDictationDeviceRestoration()
         guard !isBusy else { return }
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true
@@ -369,6 +533,7 @@ extension AppModel {
     }
 
     func forgetPairingIdentity() async {
+        await cancelDictationDeviceRestoration()
         guard !isBusy else { return }
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true

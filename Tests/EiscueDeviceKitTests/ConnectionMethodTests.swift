@@ -30,6 +30,36 @@ import Testing
         await #expect(throws: DeviceControlError.unsupported) { try await client.pressKey(.search, frameID: UUID()) }
     }
 
+    @Test func existingCustomControllersDisconnectWithoutClaimingConfirmedRelease() async {
+        let controller = MethodRecordingController()
+        let client = DeviceClient(controller: controller)
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        #expect(await controller.disconnects == 1)
+    }
+
+    @Test(arguments: [true, false])
+    func publicClientForwardsConfirmedAndUnconfirmedMediaRelease(confirmed: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27)
+        let client = fixture.client()
+        try await client.connectUSBBoard(backend: .coreDevice)
+        if !confirmed { fixture.session.mediaFailure = DeviceControlError.connection("synthetic release failure") }
+        #expect(await client.disconnectAndConfirmRelease() == confirmed)
+        #expect(fixture.session.mediaStops == 1 && fixture.session.closed)
+        #expect(try await client.hasPairingIdentity())
+        guard case .unavailable = await client.status() else { Issue.record("Released control must be unavailable"); return }
+        #expect(await client.disconnectAndConfirmRelease() == confirmed,
+                "A later no-session release must preserve an earlier unconfirmed outcome.")
+        #expect(fixture.session.mediaStops == 1)
+    }
+
+    @Test func noSessionConfirmsReleaseWithoutCreatingAConnection() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27)
+        #expect(await fixture.client().disconnectAndConfirmRelease())
+        #expect(fixture.sessionBackends.isEmpty)
+        #expect(fixture.session.mediaStops == 0 && fixture.session.mediaStarts == 0)
+        #expect(fixture.vpnFactoryCalls == 0 && fixture.boardFactoryCalls == 0)
+    }
+
     @Test func backendChoicesResolveWithoutChangingExplicitSelections() throws {
         #expect(Set(DeviceControlBackend.allCases) == [.automatic, .coreDevice, .xcTest])
         for backend in DeviceControlBackend.allCases {
@@ -422,11 +452,13 @@ private enum TestFailure: Error { case didNotStart }
 private actor MethodRecordingController: DeviceController {
     var methods: [DeviceConnectionMethod] = []
     var configurations: [LocalVPNConfiguration] = []
+    var disconnects = 0
     func status() async -> DeviceStatus { .unavailable(reason: "synthetic") }
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws {
         methods.append(.localVPN); configurations.append(configuration)
     }
     func connectUSBBoard() async throws { methods.append(.usbBoard) }
+    func disconnect() async { disconnects += 1 }
 }
 private actor VPNOnlyController: DeviceController {
     func status() async -> DeviceStatus { .unavailable(reason: "synthetic") }

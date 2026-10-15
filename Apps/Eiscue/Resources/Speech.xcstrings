@@ -408,6 +408,57 @@
           }
         }
       }
+    },
+    "speech.devicePreparationBusy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish the current task before using voice input."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先结束当前任务，再使用语音输入。"
+          }
+        }
+      }
+    },
+    "speech.deviceReconnectFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t reconnect device control. Reconnect from the device page."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备控制未能恢复，请到设备页重新连接。"
+          }
+        }
+      }
+    },
+    "speech.deviceReleaseFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t pause device control. Try disconnecting from the device page before using voice input."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时无法暂停设备控制，请在设备页断开后再使用语音输入。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

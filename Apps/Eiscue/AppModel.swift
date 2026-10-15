@@ -130,6 +130,9 @@ final class AppModel {
     @ObservationIgnored var deviceOperationID = UUID()
     @ObservationIgnored var deviceConnectionTask: Task<Void, Error>?
     @ObservationIgnored var activeDeviceConnectionMethod: DeviceConnectionMethod?
+    var dictationDeviceRestoration: DictationDeviceRestoration?
+    @ObservationIgnored var dictationPreparationID: UUID?
+    @ObservationIgnored let deviceOperatingSystemVersion: OperatingSystemVersion
     @ObservationIgnored var currentScenePhase: ScenePhase = .active
     @ObservationIgnored var lastTaskPresentation: TaskStatusPresentation?
     @ObservationIgnored var isReceivingResponse = false
@@ -137,7 +140,9 @@ final class AppModel {
 
     init(storageDirectory suppliedDirectory: URL? = nil, preferences suppliedPreferences: UserDefaults? = nil,
          repository suppliedRepository: (any ConversationRepository)? = nil,
-         credentialStore suppliedCredentials: CredentialStore? = nil) {
+         credentialStore suppliedCredentials: CredentialStore? = nil,
+         operatingSystemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion) {
+        deviceOperatingSystemVersion = operatingSystemVersion
         let files = FileManager.default
         var directory = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Eiscue", isDirectory: true)
         var defaults = UserDefaults.standard
@@ -206,7 +211,9 @@ final class AppModel {
         }
         do { try background.register() } catch { connectionMessage = error.localizedDescription }
         localTunnel.onDisconnect = { [weak self] in
-            guard let self, self.activeDeviceConnectionMethod == .localVPN || self.isPairing else { return }
+            guard let self else { return }
+            if self.dictationDeviceRestoration?.method == .localVPN { self.invalidateDictationDeviceRestoration() }
+            guard self.activeDeviceConnectionMethod == .localVPN || self.isPairing else { return }
             let operationID = self.deviceOperationID
             let runID = self.activeRun?.id
             if self.isDeviceReady && !self.isStoppingTunnel {
@@ -243,7 +250,7 @@ final class AppModel {
     }
     var isRunning: Bool { activeRun != nil }
     var isBusy: Bool { isSaving || isRunning || isPairing || isStopping || isConnecting || isChangingDeviceConnectionMethod || isManagingTunnel || isStoppingTunnel || isImportingAttachments }
-    var canSend: Bool { !isLoading && !isBusy && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty) }
+    var canSend: Bool { !isLoading && !isBusy && dictationDeviceRestoration == nil && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty) }
     var canAddAttachments: Bool { !isLoading && !isBusy && draftAttachments.count < MessageAttachments.maximumCount }
     var isDeviceReady: Bool { if case .ready = deviceStatus { true } else { false } }
     var newRunScope: TaskScope { isDeviceReady ? scope : .chat }
@@ -815,6 +822,7 @@ final class AppModel {
 
     func sceneChanged(_ phase: ScenePhase) {
         currentScenePhase = phase
+        if phase == .background { invalidateDictationDeviceRestoration() }
         if phase == .active {
             refreshPairingTransfer()
             Task { await taskNotifications.refreshAuthorization() }

@@ -39,6 +39,9 @@ public protocol DeviceController: Sendable {
     /// retain their connection; the default closes it for existing integrations.
     func finishTask() async throws
     func disconnect() async
+    /// Disconnect and report whether the backend confirmed media release.
+    /// Existing controllers return false because closure alone is not proof.
+    func disconnectAndConfirmRelease() async -> Bool
     func captureScreenshot() async throws -> DeviceScreenshot
     func tap(at point: DevicePoint, frameID: UUID) async throws
     func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frameID: UUID) async throws
@@ -73,6 +76,7 @@ public extension DeviceController {
     func connectBluetoothBoard() async throws { throw DeviceControlError.unsupported }
     func finishTask() async throws { await disconnect() }
     func disconnect() async {}
+    func disconnectAndConfirmRelease() async -> Bool { await disconnect(); return false }
     func captureScreenshot() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
     func tap(at point: DevicePoint, frameID: UUID) async throws { throw DeviceControlError.notConnected }
     func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frameID: UUID) async throws { throw DeviceControlError.notConnected }

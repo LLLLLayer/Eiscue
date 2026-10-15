@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct AssistantView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     let sidebarDragID: Int
     let openSidebar: () -> Void
     @FocusState private var isComposerFocused: Bool
@@ -15,6 +16,9 @@ struct AssistantView: View {
     @State private var showsCamera = false
     @State private var speech = SpeechInputController()
     @State private var isVoiceMode = false
+    @State private var voiceSessionID: UUID?
+    @State private var voiceRestorationID: UUID?
+    @State private var isPreparingVoice = false
     @State private var speechNotice: String?
     @State private var speechNoticeID: UUID?
     @State private var showsRunHistory = false
@@ -112,15 +116,21 @@ struct AssistantView: View {
         .onChange(of: model.showsModelSettings) { _, shown in if shown { endComposerInput() } }
         .onChange(of: speech.errorMessage) { _, message in
             guard let message else { return }
-            isVoiceMode = false
+            finishVoiceMode()
             showSpeechNotice(message)
             speech.clearError()
         }
+        .onChange(of: speech.isBusy) { wasBusy, busy in
+            if wasBusy && !busy { finishVoiceMode() }
+        }
         .onChange(of: model.isDictationBlockedByDeviceConnection) { _, blocked in
             if blocked && isVoiceMode {
-                speech.cancel(); isVoiceMode = false
+                speech.cancel(); finishVoiceMode(reconnect: false)
                 showSpeechNotice(String(localized: "speech.error.remoteControl", table: "Speech"))
             }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { endComposerInput(reconnect: false) }
         }
         .overlay(alignment: .top) {
             if let speechNotice {
@@ -150,11 +160,64 @@ struct AssistantView: View {
         #endif
     }
 
-    private func endComposerInput() {
+    private func endComposerInput(reconnect: Bool = true) {
         isComposerFocused = false
         speech.cancel()
+        if !reconnect { model.invalidateDictationDeviceRestoration() }
+        finishVoiceMode(reconnect: reconnect)
         speechNotice = nil; speechNoticeID = nil
         dismissKeyboard()
+    }
+
+    private var isChangingVoiceConnection: Bool { isPreparingVoice || voiceRestorationID != nil }
+
+    private func enterVoiceMode() {
+        guard voiceSessionID == nil, !isChangingVoiceConnection, !model.isBusy else { return }
+        speechNotice = nil; speechNoticeID = nil
+        speech.clearError()
+        let id = UUID(), composerID = model.composerSessionID
+        voiceSessionID = id; isPreparingVoice = true
+        Task { @MainActor in
+            guard voiceSessionID == id else { return }
+            guard scenePhase == .active, model.composerSessionID == composerID else {
+                finishVoiceMode(reconnect: false); return
+            }
+            do {
+                try await model.prepareDeviceForDictation(id: id)
+                guard voiceSessionID == id else { return }
+                guard scenePhase == .active, model.composerSessionID == composerID else {
+                    finishVoiceMode(reconnect: false); return
+                }
+                isPreparingVoice = false; isVoiceMode = true; isComposerFocused = false
+            } catch {
+                guard voiceSessionID == id else { return }
+                finishVoiceMode()
+                if !(error is CancellationError) { showSpeechNotice(error.localizedDescription) }
+            }
+        }
+    }
+
+    /// Called only after capture stops (including permission/error cancellation).
+    /// Keep Send disabled until the prior control session has been restored so
+    /// the recovered draft cannot accidentally start a plain-chat task.
+    private func finishVoiceMode(reconnect: Bool = true) {
+        isVoiceMode = false; isPreparingVoice = false
+        guard let id = voiceSessionID else { return }
+        voiceSessionID = nil; voiceRestorationID = id
+        Task { @MainActor in
+            let error = await model.finishDeviceDictation(id: id, reconnect: reconnect)
+            guard voiceRestorationID == id else { return }
+            voiceRestorationID = nil
+            if let error, scenePhase == .active { showSpeechNotice(error) }
+        }
+    }
+
+    private func toggleVoiceMode() {
+        if isVoiceMode {
+            isVoiceMode = false; isComposerFocused = true
+            if speech.isBusy { speech.stop() }
+            else { finishVoiceMode() }
+        } else { enterVoiceMode() }
     }
 
     private func showSpeechNotice(_ message: String) {
@@ -193,7 +256,7 @@ struct AssistantView: View {
             isComposerFocused = true
         } label: {
             Label(title, systemImage: symbol).font(.subheadline).foregroundStyle(.secondary).contentShape(Rectangle())
-        }.buttonStyle(.plain).disabled(model.isBusy || speech.isBusy)
+        }.buttonStyle(.plain).disabled(model.isBusy || speech.isBusy || isChangingVoiceConnection)
     }
 
     private var composer: some View {
@@ -238,8 +301,8 @@ struct AssistantView: View {
                     .padding(12).glassEffect(.regular, in: .rect(cornerRadius: 18))
             }
             HStack(alignment: .bottom, spacing: 2) {
-                if speech.isBusy {
-                    Button { speech.cancel() } label: {
+                if speech.isBusy || isPreparingVoice {
+                    Button { speech.cancel(); finishVoiceMode() } label: {
                         Image(systemName: "xmark").font(.system(size: 18, weight: .medium))
                             .frame(width: 44, height: 44).contentShape(Rectangle())
                     }
@@ -269,7 +332,7 @@ struct AssistantView: View {
                             .frame(width: 44, height: 44).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(model.isBusy || speech.isBusy)
+                    .disabled(model.isBusy || speech.isBusy || isChangingVoiceConnection)
                     .accessibilityLabel(text("composer.add")).accessibilityIdentifier("composerAddButton")
                 }
                 ZStack(alignment: .bottom) {
@@ -280,22 +343,14 @@ struct AssistantView: View {
                             .frame(maxWidth: .infinity)
                     } else { editor }
                 }
-                Button {
-                    if !isVoiceMode && model.isDictationBlockedByDeviceConnection {
-                        showSpeechNotice(String(localized: "speech.error.remoteControl", table: "Speech"))
-                        return
+                Button(action: toggleVoiceMode) {
+                    Group {
+                        if isChangingVoiceConnection { ProgressView().controlSize(.small) }
+                        else { Image(systemName: isVoiceMode ? "keyboard" : "waveform").font(.system(size: 18, weight: .medium)) }
                     }
-                    speechNotice = nil; speechNoticeID = nil
-                    if speech.isBusy { speech.stop() }
-                    else { speech.clearError() }
-                    isVoiceMode.toggle()
-                    isComposerFocused = !isVoiceMode
-                } label: {
-                    Image(systemName: isVoiceMode ? "keyboard" : "waveform")
-                        .font(.system(size: 18, weight: .medium)).frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).disabled(model.isBusy)
+                .buttonStyle(.plain).disabled(model.isBusy || isChangingVoiceConnection)
                 .accessibilityLabel(String(localized: isVoiceMode ? "speech.keyboardMode" : "speech.voiceMode", table: "Speech"))
                 .accessibilityIdentifier("speechInputButton")
                 if model.activeRun != nil {
@@ -318,7 +373,7 @@ struct AssistantView: View {
                         .frame(width: 22, height: 22)
                     }
                     .buttonStyle(ComposerSendButtonStyle())
-                    .disabled(!model.canSend || isVoiceMode || speech.isBusy)
+                    .disabled(!model.canSend || isVoiceMode || speech.isBusy || voiceSessionID != nil || isChangingVoiceConnection)
                     .accessibilityLabel("assistant.send").accessibilityIdentifier("sendMessageButton")
                 }
             }

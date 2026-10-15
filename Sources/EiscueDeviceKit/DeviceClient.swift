@@ -47,6 +47,7 @@ public struct DeviceClient: Sendable {
     #endif
     public func finishTask() async throws { try await controller.finishTask() }
     public func disconnect() async { await controller.disconnect() }
+    public func disconnectAndConfirmRelease() async -> Bool { await controller.disconnectAndConfirmRelease() }
     public func captureScreenshot() async throws -> DeviceScreenshot { try await controller.captureScreenshot() }
     public func tap(at point: DevicePoint, frameID: UUID) async throws { try await controller.tap(at: point, frameID: frameID) }
     public func swipe(from: DevicePoint, to: DevicePoint, duration: Duration = .milliseconds(500), frameID: UUID) async throws {

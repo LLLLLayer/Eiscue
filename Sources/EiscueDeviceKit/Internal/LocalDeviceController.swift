@@ -308,6 +308,10 @@ import OSLog
     func disconnect() async {
         if let release = disconnectNow() { _ = await release.value }
     }
+    func disconnectAndConfirmRelease() async -> Bool {
+        if let release = disconnectNow() { return await release.value }
+        return !releaseUnconfirmed
+    }
     @discardableResult private func disconnectNow() -> Task<Bool, Never>? {
         epoch = UUID(); ready = false; busy = false; frames.invalidate()
         pairingTask?.cancel(); pairingTask = nil

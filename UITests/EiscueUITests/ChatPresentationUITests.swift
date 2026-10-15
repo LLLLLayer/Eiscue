@@ -77,50 +77,74 @@ final class ChatPresentationUITests: XCTestCase {
         }
     }
 
-    @MainActor func testRemoteControlShowsVoiceNoticeWithoutChangingComposer() throws {
-        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
-            throw XCTSkip("The remote-media microphone restriction applies to iOS 27.")
-        }
-        let app = XCUIApplication()
-        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--local-device-ready-fixture",
-                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        app.launch()
-        XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
+    @MainActor func testRemoteControlTemporarilyReleasesForVoiceModeAndReconnectsOnKeyboardExit() throws {
+        let app = try launchSpeechConnectionFixture()
+        let selectedRoute = try XCTUnwrap(app.buttons["deviceConnectionMethodPicker"].value as? String)
+        let selectedBackend = try XCTUnwrap(app.buttons["deviceControlBackendPicker"].value as? String)
         returnToAssistant(in: app)
-        let editor = input(in: app)
-        editor.tap(); editor.typeText("Keep this draft")
+        let deviceLink = app.buttons["deviceNavigationLink"]
+        let connectedStatus = try XCTUnwrap(deviceLink.value as? String)
         let composer = app.otherElements["messageComposer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        let restingBottom = composer.frame.maxY
+        let draft = "Keep this draft\nAnd this second line\nAnd this third line"
+        let editor = input(in: app)
+        editor.tap(); editor.typeText(draft)
         let originalFrame = composer.frame
-        let keyboardVisible = app.keyboards.firstMatch.isHittable
         app.buttons["speechInputButton"].tap()
-        let notice = app.staticTexts["speechNotice"]
-        XCTAssertTrue(notice.waitForExistence(timeout: 3))
-        XCTAssertEqual(notice.label, "Can't start voice input during device control.")
-        XCTAssertFalse(app.buttons["holdToTalkButton"].exists)
-        XCTAssertEqual(editor.value as? String, "Keep this draft")
+        let record = app.buttons["holdToTalkButton"]
+        XCTAssertTrue(record.waitForExistence(timeout: 5))
+        XCTAssertEqual(record.label, "Tap to talk")
+        XCTAssertFalse(app.staticTexts["speechNotice"].exists)
+        XCTAssertNotEqual(deviceLink.value as? String, connectedStatus,
+                          "Voice mode must release the active control connection before recording can start.")
         XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
-        XCTAssertEqual(composer.frame.maxY, originalFrame.maxY, accuracy: 1)
-        XCTAssertEqual(app.keyboards.firstMatch.isHittable, keyboardVisible)
+        XCTAssertEqual(composer.frame.maxY, restingBottom, accuracy: 1)
+        XCTAssertFalse(app.descendants(matching: .any)["messageInput"].exists)
+        XCTAssertFalse(app.buttons["sendMessageButton"].isEnabled)
         XCTAssertFalse(app.alerts.firstMatch.exists)
-        attachScreenshot(app, name: "Remote control voice notice preserves text input")
-        XCTAssertTrue(notice.waitForNonExistence(timeout: 6))
+        attachScreenshot(app, name: "Voice composer after releasing device control")
+
+        // Switching back without tapping the record control must also restore
+        // the connection; this test never requests microphone permission.
+        app.buttons["speechInputButton"].tap()
+        XCTAssertTrue(record.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(input(in: app).value as? String, draft)
+        XCTAssertEqual(composer.frame.height, originalFrame.height, accuracy: 1)
+        let reconnected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", connectedStatus), object: deviceLink)
+        XCTAssertEqual(XCTWaiter.wait(for: [reconnected], timeout: 5), .completed)
+        XCTAssertFalse(app.staticTexts["speechNotice"].exists)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
         openDevice(in: app)
         XCTAssertTrue(app.buttons["disconnectDeviceButton"].waitForExistence(timeout: 5),
-                      "A blocked voice entry must not disconnect the device.")
-        app.buttons["disconnectDeviceButton"].tap()
-        XCTAssertTrue(app.buttons["disconnectDeviceButton"].waitForNonExistence(timeout: 5))
-        #if targetEnvironment(simulator)
-        // The in-memory controller has disconnected; the real VPN manager
-        // separately reports that Network Extension isn't available here.
-        let tunnelAlert = app.alerts.firstMatch
-        XCTAssertTrue(tunnelAlert.waitForExistence(timeout: 3))
-        XCTAssertTrue(tunnelAlert.staticTexts["Local VPN needs an iPhone or iPad. It is unavailable in Simulator."].exists)
-        tunnelAlert.buttons["OK"].tap()
-        #endif
+                      "Leaving voice mode must restore the original control connection.")
+        XCTAssertEqual(app.buttons["deviceConnectionMethodPicker"].value as? String, selectedRoute)
+        XCTAssertEqual(app.buttons["deviceControlBackendPicker"].value as? String, selectedBackend)
+    }
+
+    @MainActor func testVoiceModeReconnectFailurePreservesDraftAndShowsNotice() throws {
+        let app = try launchSpeechConnectionFixture(failsReconnection: true)
         returnToAssistant(in: app)
+        let draft = "Keep this draft after reconnect fails"
+        let editor = input(in: app)
+        editor.tap(); editor.typeText(draft)
+        let composer = app.otherElements["messageComposer"]
+        let originalHeight = composer.frame.height
         app.buttons["speechInputButton"].tap()
-        XCTAssertTrue(app.buttons["holdToTalkButton"].waitForExistence(timeout: 5),
-                      "The voice-entry block ends when the control connection ends.")
+        XCTAssertTrue(app.buttons["holdToTalkButton"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["speechNotice"].exists)
+        app.buttons["speechInputButton"].tap()
+        let notice = app.staticTexts["speechNotice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        XCTAssertEqual(notice.label, "Couldn’t reconnect device control. Reconnect from the device page.")
+        XCTAssertEqual(input(in: app).value as? String, draft)
+        XCTAssertEqual(composer.frame.height, originalHeight, accuracy: 1)
+        XCTAssertFalse(app.buttons["holdToTalkButton"].exists)
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        attachScreenshot(app, name: "Reconnect failure preserves the text draft")
+        openDevice(in: app)
+        XCTAssertTrue(app.buttons["connectDeviceButton"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists)
     }
 
     @MainActor func testMarkdownMessageHasTimeContextActionsAndNativeRangeSelection() {
@@ -236,6 +260,20 @@ final class ChatPresentationUITests: XCTestCase {
         destination.tap(); destination.press(forDuration: 1)
         tapEditMenu("Paste", in: app)
         XCTAssertEqual(destination.value as? String, "First message")
+    }
+
+    @MainActor private func launchSpeechConnectionFixture(failsReconnection: Bool = false) throws -> XCUIApplication {
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else {
+            throw XCTSkip("The CoreDevice media handoff applies to iOS 27.")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--local-device-ready-fixture",
+                               "--speech-device-ready-fixture", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        if failsReconnection { app.launchArguments.append("--speech-device-reconnect-failure") }
+        app.launch()
+        XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["disconnectDeviceButton"].exists)
+        return app
     }
 
     @MainActor private func input(in app: XCUIApplication) -> XCUIElement {
