@@ -29,6 +29,7 @@ extension AppModel {
         networkDeviceClient = client
         deviceConnectionMethod = .localVPN
         activeDeviceConnectionMethod = nil
+        activeDeviceControlBackend = nil
         hasPairingIdentity = saved
         deviceStatus = .unavailable(reason: String(localized: "connection.disconnected"))
         deviceConnectionError = nil
@@ -61,6 +62,7 @@ extension AppModel {
         networkDeviceClient = client
         deviceConnectionMethod = .localVPN
         activeDeviceConnectionMethod = .localVPN
+        activeDeviceControlBackend = deviceControlBackend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion)
         hasPairingIdentity = true
         deviceStatus = .ready(capabilities: [.screenshot, .tap, .swipe, .textInput])
         deviceConnectionError = nil

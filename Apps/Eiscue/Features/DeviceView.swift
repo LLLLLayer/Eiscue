@@ -26,6 +26,7 @@ struct DeviceView: View {
                     if model.deviceConnectionMethod == .bluetoothBoard {
                         BluetoothBoardSetupView()
                     } else {
+                        DeviceControlBackendPicker()
                         connectionCard
                     }
                     #if DEBUG
@@ -50,6 +51,7 @@ struct DeviceView: View {
                 }
             }
             .onChange(of: model.deviceConnectionMethod) { _, _ in showsConnectionFeedback = false }
+            .onChange(of: model.deviceControlBackend) { _, _ in showsConnectionFeedback = false }
             .fileImporter(isPresented: $importsIdentity, allowedContentTypes: [.json, .data]) { result in
                 if case .success(let url) = result { showsConnectionFeedback = true; Task { await model.importPairingIdentity(url) } }
                 if case .failure(let error) = result { model.errorMessage = error.localizedDescription }
@@ -481,6 +483,109 @@ struct DeviceConnectionMethodPicker: View {
         .buttonStyle(.plain).disabled(!canChange)
         .accessibilityLabel(Text("device.connectionMethod")).accessibilityValue(model.deviceConnectionMethod.selectionTitle)
         .accessibilityIdentifier("deviceConnectionMethodPicker")
+    }
+}
+
+struct DeviceControlBackendPicker: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showsBackends = false
+    private var systemVersion: OperatingSystemVersion { ProcessInfo.processInfo.operatingSystemVersion }
+    private var selection: String {
+        if model.deviceControlBackend == .automatic {
+            String(localized: "device.backend.automaticValue \(model.deviceControlBackend.resolved(on: systemVersion).selectionTitle)", table: "Connections")
+        } else { model.deviceControlBackend.selectionTitle }
+    }
+
+    var body: some View {
+        Button { showsBackends = true } label: {
+            SurfaceCard {
+                HStack(spacing: 12) {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(String(localized: "device.backend.title", table: "Connections")).fontWeight(.medium)
+                            Text(selection).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text(String(localized: "device.backend.title", table: "Connections")).fontWeight(.medium)
+                        Spacer(minLength: 8)
+                        Text(selection).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                    }
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary).accessibilityHidden(true)
+                }
+                .font(.subheadline).foregroundStyle(.primary).frame(minHeight: 24)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain).disabled(!model.canChangeDeviceControlBackend)
+        .accessibilityLabel(String(localized: "device.backend.title", table: "Connections"))
+        .accessibilityValue(selection)
+        .accessibilityIdentifier("deviceControlBackendPicker")
+        .sheet(isPresented: $showsBackends) {
+            NavigationStack {
+                List(DeviceControlBackend.allCases, id: \.self) { backend in
+                    let available = backend.isAvailable(on: systemVersion)
+                    Button {
+                        Task {
+                            await model.selectDeviceControlBackend(backend)
+                            if model.deviceControlBackend == backend { showsBackends = false }
+                        }
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: backend.selectionSymbol).font(.title3).frame(width: 28)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(backend.selectionTitle).font(.body.weight(.medium))
+                                Text(available ? backend.selectionDetail : String(localized: "device.backend.requiresUpgrade", table: "Connections"))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            if model.deviceControlBackend == backend {
+                                Image(systemName: "checkmark").font(.body.weight(.semibold)).accessibilityHidden(true)
+                            }
+                        }
+                        .foregroundStyle(.primary).padding(.vertical, 8).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).disabled(!available || !model.canChangeDeviceControlBackend)
+                    .accessibilityValue(model.deviceControlBackend == backend ? String(localized: "device.connection.selected", table: "Connections") : "")
+                    .accessibilityIdentifier("deviceControlBackendChoice_\(backend.rawValue)")
+                    .listRowBackground(EiscueStyle.surface)
+                }
+                .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(EiscueStyle.background)
+                .navigationTitle(String(localized: "device.backend.title", table: "Connections"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("common.done") { showsBackends = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        }
+    }
+}
+
+private extension DeviceControlBackend {
+    var selectionTitle: String {
+        switch self {
+        case .automatic: String(localized: "device.backend.automatic", table: "Connections")
+        case .coreDevice: String(localized: "device.backend.coreDevice", table: "Connections")
+        case .xcTest: String(localized: "device.backend.xctest", table: "Connections")
+        }
+    }
+    var selectionDetail: String {
+        switch self {
+        case .automatic: String(localized: "device.backend.automaticDetail", table: "Connections")
+        case .coreDevice: String(localized: "device.backend.coreDeviceDetail", table: "Connections")
+        case .xcTest: String(localized: "device.backend.xctestDetail", table: "Connections")
+        }
+    }
+    var selectionSymbol: String {
+        switch self {
+        case .automatic: "gearshape"
+        case .coreDevice: "display"
+        case .xcTest: "hand.tap"
+        }
     }
 }
 

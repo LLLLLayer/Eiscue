@@ -80,6 +80,11 @@ final class AppModel {
     var deviceConnectionMethod: DeviceConnectionMethod {
         didSet { preferences.set(deviceConnectionMethod.rawValue, forKey: "deviceConnectionMethod") }
     }
+    /// Change through selectDeviceControlBackend so an old network session is released first.
+    var deviceControlBackend: DeviceControlBackend {
+        didSet { preferences.set(deviceControlBackend.rawValue, forKey: "deviceControlBackend") }
+    }
+    var activeDeviceControlBackend: DeviceControlBackend?
     var isChangingDeviceConnectionMethod = false
     var isConnecting = false
     var isPairing = false
@@ -155,6 +160,7 @@ final class AppModel {
         preferences = defaults
         scope = (defaults.object(forKey: "allowsDeviceControl") as? Bool ?? true) ? .control : .chat
         deviceConnectionMethod = DeviceConnectionMethod(rawValue: defaults.string(forKey: "deviceConnectionMethod") ?? "") ?? .localVPN
+        deviceControlBackend = DeviceControlBackend(rawValue: defaults.string(forKey: "deviceControlBackend") ?? "") ?? .automatic
         showsOnboarding = defaults.integer(forKey: "onboardingVersion") < 1
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"),

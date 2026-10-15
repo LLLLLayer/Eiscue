@@ -41,15 +41,18 @@ extension NativeDeveloperServices: LocalDeviceSession {}
 
 struct LocalDeviceConnectionDependencies: Sendable {
     let supportsPhysicalDevice: Bool
-    let makeSession: @MainActor @Sendable () -> any LocalDeviceSession
+    let operatingSystemVersion: OperatingSystemVersion
+    let makeSession: @MainActor @Sendable (DeviceControlBackend) -> any LocalDeviceSession
     let makeVPNDiscovery: @MainActor @Sendable () -> any LocalVPNDiscovering
     let makeBoardDiscovery: @MainActor @Sendable () -> any USBBoardDiscovering
 
     init(supportsPhysicalDevice: Bool,
-         makeSession: @escaping @MainActor @Sendable () -> any LocalDeviceSession,
+         operatingSystemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
+         makeSession: @escaping @MainActor @Sendable (DeviceControlBackend) -> any LocalDeviceSession,
          makeVPNDiscovery: @escaping @MainActor @Sendable () -> any LocalVPNDiscovering,
          makeBoardDiscovery: @escaping @MainActor @Sendable () -> any USBBoardDiscovering) {
         self.supportsPhysicalDevice = supportsPhysicalDevice
+        self.operatingSystemVersion = operatingSystemVersion
         self.makeSession = makeSession
         self.makeVPNDiscovery = makeVPNDiscovery
         self.makeBoardDiscovery = makeBoardDiscovery
@@ -63,7 +66,13 @@ struct LocalDeviceConnectionDependencies: Sendable {
             false
             #endif
         }(),
-        makeSession: { NativeDeveloperServices() },
+        makeSession: { backend in
+            switch backend {
+            case .automatic: NativeDeveloperServices()
+            case .coreDevice: NativeDeveloperServices(controlBackend: .coreDevice)
+            case .xcTest: NativeDeveloperServices(controlBackend: .xcTest)
+            }
+        },
         makeVPNDiscovery: { LocalVPNDiscovery() },
         makeBoardDiscovery: { NCMProbeClient() }
     )

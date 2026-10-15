@@ -11,6 +11,7 @@
 "device.backend.touch-not-ready" = "无法启动设备操作，仍可继续聊天。";
 "device.backend.transport-failed" = "设备连接已断开，请重新连接。";
 "device.error.busy" = "设备正在操作，请等待完成。";
+"device.error.core-device-unavailable" = "CoreDevice 控制需要 iOS 27 或更高版本。iOS 26 请选用 XCTest。";
 "device.error.delivery-unknown" = "操作可能已到达设备，请勿重复执行。%@ 请重新连接并查看屏幕，确认结果。";
 "device.error.invalid-bundle-id" = "App Bundle ID 无效。";
 "device.error.invalid-coordinates" = "坐标必须位于当前截图内。";
@@ -24,6 +25,7 @@
 "device.error.system-pairing-unavailable" = "系统设置配对需要 iOS 27 或更高版本。iOS 26 请导入电脑生成的兼容 RemotePairing 配对文件。";
 "device.error.stale-frame" = "截图已过期、已使用或来自旧连接，请重新截图后操作。";
 "device.error.unsupported" = "本机控制需要 iOS 真机，模拟器和 Mac 无法建立此连接。";
+"device.error.xctest-unavailable" = "XCTest 控制需要 iOS 26 或更高版本。";
 "device.media.invalid-image" = "屏幕图像无效。";
 "device.media.previous-release-unconfirmed" = "上次屏幕连接可能仍未关闭，请查看系统远程控制状态后再连接。";
 "device.media.start-incomplete" = "屏幕连接未完成，且无法确认是否已关闭。请查看系统远程控制状态。";

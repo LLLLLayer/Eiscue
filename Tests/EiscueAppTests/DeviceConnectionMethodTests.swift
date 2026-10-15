@@ -5,16 +5,32 @@ import XCTest
 
 @MainActor
 final class DeviceConnectionMethodTests: XCTestCase {
-    func testDictationIsBlockedOnlyByConnectedRemoteMediaOnIOS27() {
+    func testDictationIsBlockedOnlyByConnectedCoreDeviceMediaOnIOS27() {
         let oldOS = OperatingSystemVersion(majorVersion: 26, minorVersion: 5, patchVersion: 0)
         let newOS = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)
         for method in [DeviceConnectionMethod.localVPN, .usbBoard] {
-            XCTAssertTrue(DeviceMicrophonePolicy.blocksDictation(method: method, isConnected: true, on: newOS))
-            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, isConnected: false, on: newOS))
-            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, isConnected: true, on: oldOS))
+            XCTAssertTrue(DeviceMicrophonePolicy.blocksDictation(method: method, backend: .coreDevice, isConnected: true, on: newOS))
+            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, backend: .coreDevice, isConnected: false, on: newOS))
+            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, backend: .coreDevice, isConnected: true, on: oldOS))
+            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, backend: .xcTest, isConnected: true, on: newOS))
+            XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: method, backend: nil, isConnected: true, on: newOS))
         }
-        XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: .bluetoothBoard, isConnected: true, on: newOS))
-        XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: nil, isConnected: true, on: newOS))
+        XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: .bluetoothBoard, backend: .coreDevice, isConnected: true, on: newOS))
+        XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: nil, backend: .coreDevice, isConnected: true, on: newOS))
+    }
+
+    func testDictationUsesTheActiveBackendRatherThanTheSelectedPreference() throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", savedBackend: "coreDevice")
+        let model = fixture.model
+        model.activeDeviceConnectionMethod = .usbBoard
+        model.deviceStatus = .ready(capabilities: [.screenshot, .tap])
+        model.activeDeviceControlBackend = .xcTest
+        XCTAssertFalse(model.isDictationBlockedByDeviceConnection)
+        model.deviceControlBackend = .xcTest
+        model.activeDeviceControlBackend = .coreDevice
+        XCTAssertEqual(model.isDictationBlockedByDeviceConnection, ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27)
+        model.activeDeviceControlBackend = nil
+        XCTAssertFalse(model.isDictationBlockedByDeviceConnection)
     }
 
     func testBothHIDOutputsKeepDictationAvailableAfterRestoringPreferences() throws {
@@ -30,7 +46,8 @@ final class DeviceConnectionMethodTests: XCTestCase {
             model.activeDeviceConnectionMethod = model.deviceConnectionMethod
             model.deviceStatus = .ready(capabilities: [.screenshot, .tap, .textInput])
             XCTAssertFalse(DeviceMicrophonePolicy.blocksDictation(method: model.activeDeviceConnectionMethod,
-                isConnected: model.isDeviceReady, on: version), "HID output \(route) must not inherit the USB network restriction.")
+                backend: model.activeDeviceControlBackend, isConnected: model.isDeviceReady, on: version),
+                "HID output \(route) must not inherit the USB network restriction.")
         }
     }
 
@@ -51,6 +68,149 @@ final class DeviceConnectionMethodTests: XCTestCase {
     func testUnknownSavedMethodSafelyDefaultsToLocalVPN() throws {
         let fixture = try Fixture(savedMethod: "future-unsupported-method")
         XCTAssertEqual(fixture.model.deviceConnectionMethod, .localVPN)
+    }
+
+    func testBackendDefaultsToAutomaticAndExplicitPreferencePersistsWithoutConnecting() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard")
+        XCTAssertEqual(fixture.model.deviceControlBackend, .automatic)
+        XCTAssertNil(fixture.model.activeDeviceControlBackend)
+        await fixture.model.selectDeviceControlBackend(.xcTest)
+        XCTAssertEqual(fixture.preferences.string(forKey: "deviceControlBackend"), "xcTest")
+        let restored = AppModel(storageDirectory: fixture.directory, preferences: fixture.preferences)
+        XCTAssertEqual(restored.deviceControlBackend, .xcTest)
+        XCTAssertNil(restored.activeDeviceControlBackend)
+        XCTAssertFalse(restored.isConnecting || restored.isDeviceReady)
+        let calls = await fixture.controller.calls()
+        XCTAssertTrue(calls.methods.isEmpty)
+        XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
+    func testUnknownBackendDefaultsToAutomaticAndSavedExplicitChoiceIsPreserved() throws {
+        let unknown = try Fixture(savedBackend: "future-backend")
+        XCTAssertEqual(unknown.model.deviceControlBackend, .automatic)
+        let saved = try Fixture(savedBackend: "coreDevice")
+        XCTAssertEqual(saved.model.deviceControlBackend, .coreDevice)
+        XCTAssertNil(saved.model.activeDeviceControlBackend)
+    }
+
+    func testBackendSwitchReleasesBeforeSavingAndBlocksCompetingChanges() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsDisconnect: true)
+        let model = fixture.model
+        await model.connectDevice()
+        model.screenshot = DeviceScreenshot(width: 4, height: 4, mimeType: "image/png", data: Data())
+        let switching = Task { await model.selectDeviceControlBackend(.xcTest) }
+        try await waitUntil { await fixture.controller.calls().disconnects == 1 }
+        XCTAssertTrue(model.isChangingDeviceConnectionMethod)
+        XCTAssertFalse(model.canChangeDeviceControlBackend)
+        XCTAssertEqual(model.deviceControlBackend, .automatic)
+        XCTAssertNil(model.activeDeviceControlBackend)
+        await model.selectDeviceControlBackend(.coreDevice)
+        await model.selectDeviceConnectionMethod(.bluetoothBoard)
+        await model.connectDevice()
+        await fixture.controller.completePendingDisconnect()
+        await switching.value
+        XCTAssertEqual(model.deviceConnectionMethod, .usbBoard)
+        XCTAssertEqual(model.deviceControlBackend, .xcTest)
+        XCTAssertNil(model.activeDeviceConnectionMethod)
+        XCTAssertNil(model.screenshot)
+        XCTAssertFalse(model.isConnecting || model.isChangingDeviceConnectionMethod || model.isDeviceReady)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard])
+        XCTAssertEqual(calls.disconnects, 1)
+        XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
+    func testBackendSwitchCancelsPendingConnectionAndReconnectUsesNewChoice() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        XCTAssertEqual(model.activeDeviceControlBackend, DeviceControlBackend.automatic.resolved(on: ProcessInfo.processInfo.operatingSystemVersion))
+        XCTAssertTrue(model.canChangeDeviceControlBackend)
+        await model.selectDeviceControlBackend(.xcTest)
+        await pending.value
+        XCTAssertNil(model.activeDeviceControlBackend)
+        XCTAssertNil(model.deviceConnectionError)
+        let reconnect = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods.count == 2 }
+        await fixture.controller.completePendingConnection()
+        await reconnect.value
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.backends, [.automatic, .xcTest])
+        XCTAssertEqual(calls.disconnects, 1)
+        XCTAssertEqual(calls.cancelledConnections, 1)
+        XCTAssertEqual(model.activeDeviceControlBackend, .xcTest)
+        XCTAssertTrue(model.isDeviceReady)
+        await model.disconnectDevice()
+        XCTAssertNil(model.activeDeviceControlBackend)
+    }
+
+    func testExplicitBackendFailureDoesNotFallBackOrKeepAnActiveBackend() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", savedBackend: "xcTest", failure: .connection("synthetic backend unavailable"))
+        await fixture.model.connectDevice()
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.backends, [.xcTest])
+        XCTAssertEqual(calls.methods, [.usbBoard])
+        XCTAssertEqual(fixture.model.deviceControlBackend, .xcTest)
+        XCTAssertNil(fixture.model.activeDeviceControlBackend)
+        XCTAssertEqual(fixture.model.deviceConnectionError, "synthetic backend unavailable")
+    }
+
+    func testBackendPreferenceSurvivesBluetoothRoundTripWithoutExtraNetworkDisconnect() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", savedBackend: "xcTest")
+        let model = fixture.model
+        await model.connectDevice()
+        await model.selectDeviceConnectionMethod(.bluetoothBoard)
+        XCTAssertEqual(model.deviceControlBackend, .xcTest)
+        XCTAssertNil(model.activeDeviceControlBackend)
+        let operationID = model.deviceOperationID
+        let message = model.connectionMessage
+        await model.selectDeviceControlBackend(.automatic)
+        XCTAssertEqual(model.deviceOperationID, operationID)
+        XCTAssertEqual(model.connectionMessage, message)
+        await model.selectDeviceConnectionMethod(.usbBoard)
+        await model.connectDevice()
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.backends, [.xcTest, .automatic])
+        XCTAssertEqual(calls.disconnects, 1)
+        XCTAssertEqual(calls.pairingMutations, 0)
+        await model.disconnectDevice()
+    }
+
+    func testBackendSwitchIsRejectedDuringActivePausedAndRecoverableRuns() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard")
+        let model = fixture.model
+        let conversationID = UUID()
+        model.selectedConversationID = conversationID
+        for state in [RunState.running, .paused, .interrupted] {
+            let run = RunRecord(id: UUID(), conversationID: conversationID, requestID: UUID(), startedAt: .now,
+                                scope: .control, model: "fixture", skill: nil, state: state, detail: "", events: [])
+            if state == .running { model.activeRun = run }
+            else { model.runs = [run] }
+            if state == .interrupted { model.interruptedConversationIDs.insert(conversationID) }
+            XCTAssertFalse(model.canChangeDeviceControlBackend)
+            await model.selectDeviceControlBackend(.xcTest)
+            XCTAssertEqual(model.deviceControlBackend, .automatic)
+            model.activeRun = nil; model.runs = []; model.interruptedConversationIDs.removeAll()
+        }
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.disconnects, 0)
+        XCTAssertTrue(model.canChangeDeviceControlBackend)
+    }
+
+    func testLegacyInjectedControllerKeepsAutomaticBehaviorAndRejectsExplicitSelection() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard")
+        let controller = LegacyAppConnectionController()
+        fixture.model.deviceClient = DeviceClient(controller: controller)
+        await fixture.model.connectDevice()
+        XCTAssertTrue(fixture.model.isDeviceReady)
+        await fixture.model.selectDeviceControlBackend(.xcTest)
+        await fixture.model.connectDevice()
+        XCTAssertFalse(fixture.model.isDeviceReady)
+        XCTAssertNil(fixture.model.activeDeviceControlBackend)
+        XCTAssertEqual(fixture.model.deviceConnectionError, DeviceControlError.unsupported.localizedDescription)
+        let connections = await controller.connections
+        XCTAssertEqual(connections, 1, "An explicit unsupported backend must not invoke the legacy automatic connection.")
     }
 
     func testConnectionRetentionIsDefaultAndAutomaticDisconnectPreferencePersists() throws {
@@ -465,13 +625,15 @@ final class DeviceConnectionMethodTests: XCTestCase {
     let controller: AppConnectionRecordingController
     let model: AppModel
 
-    init(savedMethod: String? = "localVPN", failure: DeviceControlError? = nil,
-         grantsControl: Bool = true, suspendsConnection: Bool = false) throws {
+    init(savedMethod: String? = "localVPN", savedBackend: String? = nil, failure: DeviceControlError? = nil,
+         grantsControl: Bool = true, suspendsConnection: Bool = false, suspendsDisconnect: Bool = false) throws {
         suite = "DeviceConnectionMethodTests.\(UUID().uuidString)"
         preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
         if let savedMethod { preferences.set(savedMethod, forKey: "deviceConnectionMethod") }
+        if let savedBackend { preferences.set(savedBackend, forKey: "deviceControlBackend") }
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
-        controller = AppConnectionRecordingController(failure: failure, grantsControl: grantsControl, suspendsConnection: suspendsConnection)
+        controller = AppConnectionRecordingController(failure: failure, grantsControl: grantsControl,
+            suspendsConnection: suspendsConnection, suspendsDisconnect: suspendsDisconnect)
         model = AppModel(storageDirectory: directory, preferences: preferences,
                          credentialStore: CredentialStore(service: suite))
         let client = DeviceClient(controller: controller)
@@ -481,18 +643,32 @@ final class DeviceConnectionMethodTests: XCTestCase {
     deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
 }
 
+private actor LegacyAppConnectionController: DeviceController {
+    var connections = 0
+    var connected = false
+    func status() async -> DeviceStatus {
+        connected ? .ready(capabilities: [.screenshot, .tap]) : .unavailable(reason: "Fixture disconnected")
+    }
+    func connectUSBBoard() async throws { connections += 1; connected = true }
+    func disconnect() async { connected = false }
+}
+
 private actor AppConnectionRecordingController: DeviceController {
     let failure: DeviceControlError?
     let grantsControl: Bool
     let suspendsConnection: Bool
+    var suspendsDisconnect: Bool
     var methods: [DeviceConnectionMethod] = []
+    var backends: [DeviceControlBackend] = []
     var disconnects = 0
     var cancelledConnections = 0
     var pairingMutations = 0
     var connected = false
     var pending: CheckedContinuation<Void, Error>?
-    init(failure: DeviceControlError?, grantsControl: Bool, suspendsConnection: Bool) {
+    var pendingDisconnect: CheckedContinuation<Void, Never>?
+    init(failure: DeviceControlError?, grantsControl: Bool, suspendsConnection: Bool, suspendsDisconnect: Bool) {
         self.failure = failure; self.grantsControl = grantsControl; self.suspendsConnection = suspendsConnection
+        self.suspendsDisconnect = suspendsDisconnect
     }
     func status() async -> DeviceStatus {
         if connected && grantsControl { .ready(capabilities: [.screenshot, .tap]) }
@@ -511,6 +687,14 @@ private actor AppConnectionRecordingController: DeviceController {
         return AsyncThrowingStream { $0.finish(throwing: DeviceControlError.unsupported) }
     }
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws { methods.append(.localVPN); connected = true }
+    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws {
+        backends.append(backend)
+        try await connectLocalVPN(configuration: configuration)
+    }
+    func connectUSBBoard(backend: DeviceControlBackend) async throws {
+        backends.append(backend)
+        try await connectUSBBoard()
+    }
     func connectUSBBoard() async throws {
         methods.append(.usbBoard)
         if let failure { throw failure }
@@ -534,8 +718,19 @@ private actor AppConnectionRecordingController: DeviceController {
         self.pending = nil; cancelledConnections += 1
         pending.resume(throwing: CancellationError())
     }
-    func disconnect() async { disconnects += 1; connected = false; cancelPending() }
-    func calls() -> (methods: [DeviceConnectionMethod], disconnects: Int, cancelledConnections: Int, pairingMutations: Int) {
-        (methods, disconnects, cancelledConnections, pairingMutations)
+    func disconnect() async {
+        disconnects += 1; connected = false; cancelPending()
+        if suspendsDisconnect {
+            suspendsDisconnect = false
+            await withCheckedContinuation { pendingDisconnect = $0 }
+        }
+    }
+    func completePendingDisconnect() {
+        pendingDisconnect?.resume()
+        pendingDisconnect = nil
+    }
+    func calls() -> (methods: [DeviceConnectionMethod], backends: [DeviceControlBackend], disconnects: Int,
+                     cancelledConnections: Int, pairingMutations: Int) {
+        (methods, backends, disconnects, cancelledConnections, pairingMutations)
     }
 }

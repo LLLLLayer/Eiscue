@@ -25,15 +25,18 @@ public struct DeviceClient: Sendable {
     public func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> {
         await controller.beginPairing(configuration: configuration)
     }
-    public func connect(method: DeviceConnectionMethod, configuration: LocalVPNConfiguration = .defaults) async throws {
+    public func connect(method: DeviceConnectionMethod, configuration: LocalVPNConfiguration = .defaults,
+                        backend: DeviceControlBackend = .automatic) async throws {
         switch method {
         case .bluetoothBoard: try await controller.connectBluetoothBoard()
-        case .localVPN: try await controller.connectLocalVPN(configuration: configuration)
-        case .usbBoard: try await controller.connectUSBBoard()
+        case .localVPN: try await controller.connectLocalVPN(configuration: configuration, backend: backend)
+        case .usbBoard: try await controller.connectUSBBoard(backend: backend)
         }
     }
-    public func connectLocalVPN(configuration: LocalVPNConfiguration = .defaults) async throws { try await controller.connectLocalVPN(configuration: configuration) }
-    public func connectUSBBoard() async throws { try await controller.connectUSBBoard() }
+    public func connectLocalVPN(configuration: LocalVPNConfiguration = .defaults, backend: DeviceControlBackend = .automatic) async throws {
+        try await controller.connectLocalVPN(configuration: configuration, backend: backend)
+    }
+    public func connectUSBBoard(backend: DeviceControlBackend = .automatic) async throws { try await controller.connectUSBBoard(backend: backend) }
     public func connectBluetoothBoard() async throws { try await controller.connectBluetoothBoard() }
     #if DEBUG
     /// Explicit development probe. Never marks device control ready or sends input.

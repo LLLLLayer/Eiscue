@@ -67,6 +67,9 @@ public struct NativeVideoSnapshot: Sendable {
 public enum NativeControlAction: String, Sendable, CaseIterable {
     case screenshot, tap, swipe, textInput, launchApplication, home, listApplications
 }
+public enum NativeControlBackend: Sendable, Equatable {
+    case coreDevice, xcTest
+}
 
 /// Owns one native worker, its two relay streams and media. The caller closes
 /// on explicit stop, execution expiry or disconnect, rather than app visibility.
@@ -91,18 +94,20 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
     private var automationStopping = false
     private var ownsXCTestChannels = false
     private var automationStopConfirmed = false
-    private static var usesOwnedXCTest: Bool {
-        #if os(iOS) && !targetEnvironment(simulator)
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
-        #else
-        false
-        #endif
-    }
+    let controlBackend: NativeControlBackend
+    private var usesOwnedXCTest: Bool { controlBackend == .xcTest }
     public var supportedControlActions: Set<NativeControlAction> {
         guard mediaStartCompleted else { return [] }
         return Set(NativeControlAction.allCases)
     }
-    public init() {}
+    public init(controlBackend: NativeControlBackend) { self.controlBackend = controlBackend }
+    public convenience init() {
+        #if os(iOS) && !targetEnvironment(simulator)
+        self.init(controlBackend: ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 ? .coreDevice : .xcTest)
+        #else
+        self.init(controlBackend: .coreDevice)
+        #endif
+    }
     deinit {
         videoPump?.cancel()
         let lease = automationLease
@@ -202,11 +207,11 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
     }
     public func checkDeveloperReadiness() async throws { _ = try await operation(1) }
     public func capturePNG() async throws -> Data {
-        try await operation(Self.usesOwnedXCTest ? UInt32(NCM_ACTION_LEGACY_SCREENSHOT) : 2, expectedKind: 4)
+        try await operation(usesOwnedXCTest ? UInt32(NCM_ACTION_LEGACY_SCREENSHOT) : 2, expectedKind: 4)
     }
     /// Starts an authenticated screen video stream; packets are drained locally.
     public func startTouchMedia() async throws {
-        if Self.usesOwnedXCTest { try await startOwnedAutomation(); return }
+        if usesOwnedXCTest { try await startOwnedAutomation(); return }
         _ = try await operation(3)
         mediaStartCompleted = true
         videoPump?.cancel()
@@ -235,7 +240,7 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
     /// Stop local observation, then release this controller's owned automation
     /// or DisplayService/HID resources without revoking the authentication tunnel.
     public func stopTouchMedia() async throws {
-        if Self.usesOwnedXCTest { try await stopOwnedAutomation(); return }
+        if usesOwnedXCTest { try await stopOwnedAutomation(); return }
         videoPump?.cancel(); videoPump = nil
         let decoder = videoDecoder; videoDecoder = nil; videoDecodeFailure = nil
         _ = try await operation(11)
@@ -246,7 +251,7 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
     /// request drain before sending this session's explicit media-stop request.
     /// The caller owns the outer deadline and always calls close afterwards.
     public func stopTouchMediaWhenIdle() async throws -> Bool {
-        if Self.usesOwnedXCTest { automationStopping = true }
+        if usesOwnedXCTest { automationStopping = true }
         defer { automationStopping = false }
         videoPump?.cancel(); videoPump = nil
         videoDecoder = nil; videoDecodeFailure = nil
@@ -258,7 +263,7 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         try Task.checkCancellation()
         let hadConfirmedStart = mediaStartCompleted
         try await stopTouchMedia()
-        return Self.usesOwnedXCTest ? automationStopConfirmed : hadConfirmedStart
+        return usesOwnedXCTest ? automationStopConfirmed : hadConfirmedStart
     }
     /// Snapshot the continuously decoded video picture, independent of input history.
     public func captureVideoJPEG() async throws -> Data {
@@ -272,10 +277,10 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         guard CGImageDestinationFinalize(destination) else { throw NativeBackendError.malformedEvent }
         return output as Data
     }
-    /// A fresh screenshot and its coordinate-space identity. iOS 26 returns PNG;
+    /// A fresh screenshot and its coordinate-space identity. XCTest returns PNG;
     /// DisplayService returns JPEG. Callers must use the snapshot's MIME type.
     public func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
-        if Self.usesOwnedXCTest { return try await captureOwnedAutomationSnapshot() }
+        if usesOwnedXCTest { return try await captureOwnedAutomationSnapshot() }
         guard ready, handle != 0, let decoder = videoDecoder else { throw NativeBackendError.closed }
         videoSnapshotDiagnostics = nil
         let token = handle, began = ContinuousClock.now
@@ -325,7 +330,7 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
     /// Lightweight input guard: never compresses another image. Unknown/pending
     /// geometry fails closed, including a reset not yet consumed by the video pump.
     public func currentVideoGeometry() async throws -> NativeVideoGeometry? {
-        if Self.usesOwnedXCTest { return try await currentOwnedAutomationGeometry() }
+        if usesOwnedXCTest { return try await currentOwnedAutomationGeometry() }
         guard ready, handle != 0, let decoder = videoDecoder else { throw NativeBackendError.closed }
         let token = handle, deadline = ContinuousClock.now.advanced(by: .milliseconds(250))
         repeat {
@@ -389,18 +394,18 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
     public func videoDiagnosticKeyframe() async -> Data? { await videoDecoder?.diagnosticKeyframe() }
     #endif
     public func tapDelivery(x: UInt16, y: UInt16) async throws -> InputDelivery {
-        if Self.usesOwnedXCTest { return try await deliverOwnedTouch(x: x, y: y, endX: x, endY: y, durationMS: 0) }
+        if usesOwnedXCTest { return try await deliverOwnedTouch(x: x, y: y, endX: x, endY: y, durationMS: 0) }
         _ = try await operation(4, x: x, y: y); return .reportsWrittenVisualEffectUnverified
     }
     public func tap(x: UInt16, y: UInt16) async throws { _ = try await tapDelivery(x: x, y: y) }
     public func dragDelivery(fromX: UInt16, fromY: UInt16, toX: UInt16, toY: UInt16, durationMS: UInt16) async throws -> InputDelivery {
         guard (100...2000).contains(durationMS) else { throw NativeBackendError.malformedEvent }
-        if Self.usesOwnedXCTest { return try await deliverOwnedTouch(x: fromX, y: fromY, endX: toX, endY: toY, durationMS: durationMS) }
+        if usesOwnedXCTest { return try await deliverOwnedTouch(x: fromX, y: fromY, endX: toX, endY: toY, durationMS: durationMS) }
         _ = try await operation(6, x: fromX, y: fromY, drag: (toX, toY, durationMS))
         return .reportsWrittenVisualEffectUnverified
     }
     public func home() async throws {
-        if Self.usesOwnedXCTest {
+        if usesOwnedXCTest {
             guard mediaStartCompleted else { throw NativeBackendError.closed }
             guard supportedControlActions.contains(.home) else { throw NativeBackendError.unsupportedControlAction }
             _ = try await deliverOwnedNonCoordinate(text: nil); return
@@ -412,7 +417,7 @@ public enum NativeControlAction: String, Sendable, CaseIterable {
         _ = try await operation(9, payload: JSONSerialization.data(withJSONObject: ["bundle_id": bundleID, "arguments": arguments]))
     }
     public func typeText(_ text: String) async throws {
-        if Self.usesOwnedXCTest {
+        if usesOwnedXCTest {
             guard mediaStartCompleted else { throw NativeBackendError.closed }
             guard supportedControlActions.contains(.textInput) else { throw NativeBackendError.unsupportedControlAction }
             guard !text.isEmpty, text.utf8.count <= 8192, !text.utf8.contains(0) else { throw NativeBackendError.malformedEvent }

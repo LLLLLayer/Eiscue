@@ -8,6 +8,26 @@ public enum DeviceConnectionMethod: String, Codable, Sendable, CaseIterable {
     case usbBoard
 }
 
+/// Developer-services control selection for local VPN and USB network routes.
+/// Automatic resolves once per connection; explicit choices never fall back.
+public enum DeviceControlBackend: String, Codable, Sendable, CaseIterable {
+    case automatic
+    case coreDevice
+    case xcTest
+
+    public func resolved(on version: OperatingSystemVersion) -> Self {
+        self == .automatic ? (version.majorVersion >= 27 ? .coreDevice : .xcTest) : self
+    }
+
+    public func isAvailable(on version: OperatingSystemVersion) -> Bool {
+        switch resolved(on: version) {
+        case .automatic: false
+        case .coreDevice: version.majorVersion >= 27
+        case .xcTest: version.majorVersion >= 26
+        }
+    }
+}
+
 public struct LocalVPNConfiguration: Codable, Sendable, Equatable {
     public var localAddress: String
     public var peerAddress: String
@@ -54,6 +74,7 @@ public enum DevicePairingEvent: Sendable, Equatable {
 public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
     case unsupported, notConnected, busy, noIdentity, invalidIdentity, pairingAlreadyExists
     case systemPairingUnavailable
+    case backendUnavailable(DeviceControlBackend)
     case staleFrame, invalidCoordinates, invalidDuration, invalidText, invalidBundleID
     case keychain(Int32)
     case connection(String)
@@ -72,6 +93,8 @@ public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
         case .invalidIdentity: String(localized: "device.error.invalid-identity", defaultValue: "The pairing identity is invalid or incomplete. A completed version 1 RemotePairing identity is required.", bundle: .module)
         case .pairingAlreadyExists: String(localized: "device.error.pairing-exists", defaultValue: "Pairing is already saved. Remove it locally before pairing again.", bundle: .module)
         case .systemPairingUnavailable: String(localized: "device.error.system-pairing-unavailable", defaultValue: "Pairing from Settings requires iOS 27 or later. On iOS 26, import a compatible RemotePairing file created on a computer.", bundle: .module)
+        case .backendUnavailable(.coreDevice): String(localized: "device.error.core-device-unavailable", defaultValue: "CoreDevice control requires iOS 27 or later. Select XCTest on iOS 26.", bundle: .module)
+        case .backendUnavailable(.automatic), .backendUnavailable(.xcTest): String(localized: "device.error.xctest-unavailable", defaultValue: "XCTest control requires iOS 26 or later.", bundle: .module)
         case .staleFrame: String(localized: "device.error.stale-frame", defaultValue: "The screenshot expired, was used, or belongs to an old connection. Take a new screenshot before acting.", bundle: .module)
         case .invalidCoordinates: String(localized: "device.error.invalid-coordinates", defaultValue: "Coordinates must be inside the current screenshot.", bundle: .module)
         case .invalidDuration: String(localized: "device.error.invalid-duration", defaultValue: "Swipe duration must be between 0.1 and 2 seconds.", bundle: .module)

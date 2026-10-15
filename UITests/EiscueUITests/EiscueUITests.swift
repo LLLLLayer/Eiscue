@@ -76,6 +76,65 @@ final class EiscueUITests: XCTestCase {
     }
 
     @MainActor
+    func testControlBackendChoicesFollowSystemAndPersist() {
+        var app = launch()
+        openDevice(in: app)
+        let usesCoreDevice = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+        let picker = app.buttons["deviceControlBackendPicker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertEqual(picker.value as? String, usesCoreDevice ? "自动 · DisplayService" : "自动 · XCTest")
+        picker.tap()
+        let coreDevice = app.buttons["deviceControlBackendChoice_coreDevice"]
+        let xcTest = app.buttons["deviceControlBackendChoice_xcTest"]
+        XCTAssertTrue(coreDevice.waitForExistence(timeout: 5))
+        XCTAssertEqual(coreDevice.isEnabled, usesCoreDevice)
+        XCTAssertTrue(xcTest.isEnabled)
+        if !usesCoreDevice { XCTAssertTrue(app.staticTexts["需要 iOS 27 或更新版本。"].exists) }
+        xcTest.tap()
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertEqual(picker.value as? String, "XCTest")
+
+        app.terminate()
+        app = launch(reset: false)
+        openDevice(in: app)
+        let restored = app.buttons["deviceControlBackendPicker"]
+        XCTAssertEqual(restored.value as? String, "XCTest")
+        restored.tap()
+        if usesCoreDevice {
+            app.buttons["deviceControlBackendChoice_coreDevice"].tap()
+            XCTAssertEqual(restored.value as? String, "DisplayService")
+            restored.tap()
+        }
+        app.buttons["deviceControlBackendChoice_automatic"].tap()
+        XCTAssertEqual(restored.value as? String, usesCoreDevice ? "自动 · DisplayService" : "自动 · XCTest")
+    }
+
+    @MainActor
+    func testControlBackendIsSharedByNetworkRoutesAndHiddenForBluetooth() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
+        openDevice(in: app)
+        let backend = app.buttons["deviceControlBackendPicker"]
+        XCTAssertEqual(backend.label, "Control method")
+        backend.tap()
+        app.buttons["deviceControlBackendChoice_xcTest"].tap()
+        for route in ["usbBoard", "bluetoothBoard", "localVPN"] {
+            app.buttons["deviceConnectionMethodPicker"].tap()
+            app.buttons["deviceConnectionChoice_\(route)"].tap()
+            if route == "bluetoothBoard" {
+                XCTAssertTrue(backend.waitForNonExistence(timeout: 5))
+            } else {
+                XCTAssertTrue(backend.waitForExistence(timeout: 5))
+                XCTAssertEqual(backend.value as? String, "XCTest")
+            }
+        }
+        XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists, "Choosing a backend must not start a connection.")
+    }
+
+    @MainActor
     func testBoardStopNoticeStaysVisibleAcrossNavigationAndScrolling() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--board-stop-notice-fixture",

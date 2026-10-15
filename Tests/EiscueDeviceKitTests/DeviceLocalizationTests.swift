@@ -28,6 +28,11 @@ import Testing
         #expect(unknown.isDeliveryUnknown)
         #expect(unknown.localizedDescription.contains("receipt-unconfirmed"))
         #expect(!unknown.localizedDescription.contains("%@"))
+        for (backend, key) in [(DeviceControlBackend.coreDevice, "device.error.core-device-unavailable"), (.xcTest, "device.error.xctest-unavailable")] {
+            let expected = NSLocalizedString(key, bundle: .module, value: "MISSING RESOURCE", comment: "")
+            #expect(DeviceControlError.backendUnavailable(backend).errorDescription == expected)
+            #expect(!expected.contains("MISSING RESOURCE"))
+        }
     }
 
     @Test(arguments: ["en", "zh-Hans"])

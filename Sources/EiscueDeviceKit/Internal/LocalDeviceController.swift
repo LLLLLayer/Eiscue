@@ -167,19 +167,29 @@ import OSLog
     }
 
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws {
+        try await connectLocalVPN(configuration: configuration, backend: .automatic)
+    }
+
+    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws {
         guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
         let vpn: VPNLoopbackConfiguration
         do { vpn = try VPNLoopbackConfiguration(localAddress: configuration.localAddress, peerAddress: configuration.peerAddress) }
         catch { throw Self.convert(error) }
-        try await connect(method: .localVPN, vpn: vpn)
+        try await connect(method: .localVPN, vpn: vpn, backend: backend)
     }
 
     func connectUSBBoard() async throws {
-        try await connect(method: .usbBoard, vpn: nil)
+        try await connectUSBBoard(backend: .automatic)
     }
 
-    private func connect(method: DeviceConnectionMethod, vpn: VPNLoopbackConfiguration?) async throws {
+    func connectUSBBoard(backend: DeviceControlBackend) async throws {
+        try await connect(method: .usbBoard, vpn: nil, backend: backend)
+    }
+
+    private func connect(method: DeviceConnectionMethod, vpn: VPNLoopbackConfiguration?, backend: DeviceControlBackend) async throws {
         guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
+        let resolvedBackend = backend.resolved(on: dependencies.operatingSystemVersion)
+        guard resolvedBackend.isAvailable(on: dependencies.operatingSystemVersion) else { throw DeviceControlError.backendUnavailable(resolvedBackend) }
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
         guard var data = try identityStore.load() else { throw DeviceControlError.noIdentity }
         defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
@@ -202,7 +212,7 @@ import OSLog
         case .localVPN: String(localized: "device.status.discovering", defaultValue: "Finding the local VPN connection", bundle: .module)
         case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB network board", bundle: .module)
         }
-        let service = dependencies.makeSession()
+        let service = dependencies.makeSession(resolvedBackend)
         services = service
         defer {
             if epoch == token {

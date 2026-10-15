@@ -30,6 +30,114 @@ import Testing
         await #expect(throws: DeviceControlError.unsupported) { try await client.pressKey(.search, frameID: UUID()) }
     }
 
+    @Test func backendChoicesResolveWithoutChangingExplicitSelections() throws {
+        #expect(Set(DeviceControlBackend.allCases) == [.automatic, .coreDevice, .xcTest])
+        for backend in DeviceControlBackend.allCases {
+            #expect(try JSONDecoder().decode(DeviceControlBackend.self, from: JSONEncoder().encode(backend)) == backend)
+        }
+        for major in [25, 26, 27, 28] {
+            let version = OperatingSystemVersion(majorVersion: major, minorVersion: 0, patchVersion: 0)
+            #expect(DeviceControlBackend.automatic.resolved(on: version) == (major >= 27 ? .coreDevice : .xcTest))
+            #expect(DeviceControlBackend.coreDevice.resolved(on: version) == .coreDevice)
+            #expect(DeviceControlBackend.xcTest.resolved(on: version) == .xcTest)
+            #expect(DeviceControlBackend.automatic.isAvailable(on: version) == (major >= 26))
+            #expect(DeviceControlBackend.coreDevice.isAvailable(on: version) == (major >= 27))
+            #expect(DeviceControlBackend.xcTest.isAvailable(on: version) == (major >= 26))
+        }
+    }
+
+    @Test(arguments: [DeviceControlBackend.coreDevice, .xcTest])
+    func existingCustomControllersRejectExplicitBackendsWithoutConnecting(backend: DeviceControlBackend) async {
+        let controller = MethodRecordingController()
+        let client = DeviceClient(controller: controller)
+        await #expect(throws: DeviceControlError.unsupported) { try await client.connectLocalVPN(backend: backend) }
+        await #expect(throws: DeviceControlError.unsupported) { try await client.connectUSBBoard(backend: backend) }
+        await #expect(throws: DeviceControlError.unsupported) { try await client.connect(method: .localVPN, backend: backend) }
+        await #expect(throws: DeviceControlError.unsupported) { try await client.connect(method: .usbBoard, backend: backend) }
+        #expect(await controller.methods.isEmpty)
+    }
+
+    @Test func publicConnectionMethodsForwardBackendChoicesToSupportingControllers() async throws {
+        let controller = BackendRecordingController()
+        let client = DeviceClient(controller: controller)
+        let configuration = LocalVPNConfiguration(localAddress: "10.8.1.1", peerAddress: "10.8.0.1")
+        try await client.connect(method: .localVPN, configuration: configuration, backend: .xcTest)
+        try await client.connect(method: .usbBoard, backend: .coreDevice)
+        try await client.connectLocalVPN(configuration: configuration, backend: .coreDevice)
+        try await client.connectUSBBoard(backend: .xcTest)
+        try await client.connectLocalVPN()
+        try await client.connectUSBBoard()
+        #expect(await controller.backends == [.xcTest, .coreDevice, .coreDevice, .xcTest, .automatic, .automatic])
+        #expect(await controller.configurations == [configuration, configuration, .defaults])
+    }
+
+    @Test(arguments: [DeviceConnectionMethod.localVPN, .usbBoard], [26, 27, 28])
+    func automaticBackendResolvesOnceWhenCreatingTheSession(method: DeviceConnectionMethod, major: Int) async throws {
+        let fixture = try ConnectionFixture(majorVersion: major)
+        let client = fixture.client()
+        try await client.connect(method: method)
+        #expect(fixture.sessionBackends == [major >= 27 ? .coreDevice : .xcTest])
+        #expect(fixture.session.mediaStarts == 1)
+        await client.disconnect()
+    }
+
+    @Test(arguments: [DeviceConnectionMethod.localVPN, .usbBoard])
+    func explicitBackendReachesTheSessionAndRetainsTaskReleaseContracts(method: DeviceConnectionMethod) async throws {
+        for (major, backend) in [(26, DeviceControlBackend.xcTest), (27, .xcTest), (27, .coreDevice)] {
+            let fixture = try ConnectionFixture(majorVersion: major)
+            let client = fixture.client()
+            try await client.connect(method: method, backend: backend)
+            #expect(fixture.sessionBackends == [backend])
+            let frame = try await client.captureScreenshot()
+            try await client.finishTask()
+            #expect(!fixture.session.closed && fixture.session.mediaStops == 0)
+            await #expect(throws: DeviceControlError.staleFrame) {
+                try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: frame.frameID)
+            }
+            await client.disconnect()
+            #expect(fixture.session.mediaStops == 1 && fixture.session.closed)
+        }
+    }
+
+    @Test(arguments: [DeviceConnectionMethod.localVPN, .usbBoard])
+    func unavailableBackendIsRejectedBeforeIdentityDiscoveryOrSessionCreation(method: DeviceConnectionMethod) async throws {
+        for (major, backend) in [(26, DeviceControlBackend.coreDevice), (25, .xcTest), (25, .automatic)] {
+            let fixture = try ConnectionFixture(majorVersion: major)
+            let resolved = backend.resolved(on: fixture.operatingSystemVersion)
+            await #expect(throws: DeviceControlError.backendUnavailable(resolved)) {
+                try await fixture.client().connect(method: method, backend: backend)
+            }
+            #expect(fixture.store.loadCalls == 0)
+            #expect(fixture.sessionBackends.isEmpty)
+            #expect(fixture.vpnFactoryCalls == 0 && fixture.boardFactoryCalls == 0)
+            #expect(fixture.session.vpnConnections == 0 && fixture.session.boardConnections == 0)
+        }
+    }
+
+    @Test(arguments: [DeviceConnectionMethod.localVPN, .usbBoard], [DeviceControlBackend.coreDevice, .xcTest])
+    func selectedBackendFailureNeverFallsBack(method: DeviceConnectionMethod, backend: DeviceControlBackend) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27)
+        fixture.session.mediaFailure = NativeBackendError.touchPreparationFailure(stage: 10, cause: 4)
+        let client = fixture.client()
+        await #expect(throws: (any Error).self) { try await client.connect(method: method, backend: backend) }
+        #expect(fixture.sessionBackends == [backend])
+        #expect(fixture.session.vpnConnections + fixture.session.boardConnections == 1)
+        #expect(fixture.session.mediaStarts == 1 && fixture.session.closed)
+        #expect(fixture.vpnFactoryCalls == (method == .localVPN ? 1 : 0))
+        #expect(fixture.boardFactoryCalls == (method == .usbBoard ? 1 : 0))
+        guard case .unavailable = await client.status() else { Issue.record("A failed backend cannot grant control readiness"); return }
+    }
+
+    @Test func liveSessionMappingKeepsBackendFixedForItsLifetime() throws {
+        for (backend, native) in [(DeviceControlBackend.coreDevice, NativeControlBackend.coreDevice), (.xcTest, .xcTest)] {
+            let session = try #require(LocalDeviceConnectionDependencies.live.makeSession(backend) as? NativeDeveloperServices)
+            #expect(session.controlBackend == native)
+            session.close()
+            #expect(session.controlBackend == native)
+            #expect(session.supportedControlActions.isEmpty)
+        }
+    }
+
     @Test func boardConnectionReusesIdentityAndNeverCreatesVPNDiscovery() async throws {
         let fixture = try ConnectionFixture()
         let client = fixture.client()
@@ -324,16 +432,28 @@ private actor VPNOnlyController: DeviceController {
     func status() async -> DeviceStatus { .unavailable(reason: "synthetic") }
     func connectLocalVPN(configuration: LocalVPNConfiguration) async throws {}
 }
+private actor BackendRecordingController: DeviceController {
+    var backends: [DeviceControlBackend] = []
+    var configurations: [LocalVPNConfiguration] = []
+    func status() async -> DeviceStatus { .unavailable(reason: "synthetic") }
+    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws {
+        backends.append(backend); configurations.append(configuration)
+    }
+    func connectUSBBoard(backend: DeviceControlBackend) async throws { backends.append(backend) }
+}
 
 @MainActor private final class ConnectionFixture {
     let board: TestBoardDiscovery
     let vpn = TestVPNDiscovery()
     let session: TestDeviceSession
     let store: TestConnectionIdentityStore
+    let operatingSystemVersion: OperatingSystemVersion
+    var sessionBackends: [DeviceControlBackend] = []
     var vpnFactoryCalls = 0
     var boardFactoryCalls = 0
     private var controller: LocalDeviceController?
-    init() throws {
+    init(majorVersion: Int = 26) throws {
+        operatingSystemVersion = OperatingSystemVersion(majorVersion: majorVersion, minorVersion: 0, patchVersion: 0)
         board = TestBoardDiscovery(candidate: try boardCandidate())
         session = try TestDeviceSession()
         store = TestConnectionIdentityStore(data: try JSONSerialization.data(withJSONObject: [
@@ -347,7 +467,8 @@ private actor VPNOnlyController: DeviceController {
         if let controller { return DeviceClient(controller: controller) }
         let dependencies = LocalDeviceConnectionDependencies(
             supportsPhysicalDevice: true,
-            makeSession: { [self] in session },
+            operatingSystemVersion: operatingSystemVersion,
+            makeSession: { [self] backend in sessionBackends.append(backend); return session },
             makeVPNDiscovery: { [self] in vpnFactoryCalls += 1; return vpn },
             makeBoardDiscovery: { [self] in boardFactoryCalls += 1; return board }
         )
@@ -360,8 +481,10 @@ private actor VPNOnlyController: DeviceController {
 private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecked Sendable {
     private let lock = NSLock()
     private var data: Data?
+    private var loads = 0
+    var loadCalls: Int { lock.withLock { loads } }
     init(data: Data) { self.data = data }
-    func load() throws -> Data? { lock.withLock { data } }
+    func load() throws -> Data? { lock.withLock { loads += 1; return data } }
     func save(_ data: Data) throws { lock.withLock { self.data = data } }
     func remove() throws { lock.withLock { data = nil } }
 }

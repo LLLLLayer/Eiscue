@@ -272,10 +272,13 @@ extension AppModel {
         let proof = OwnedDeviceCheckState.shared
         let destination = URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json")
         let arguments = ProcessInfo.processInfo.arguments
+        let backend = deviceControlBackend
         let smoke = arguments.contains("--owned-device-check") && arguments.contains("--owned-device-smoke")
         var report: [String: Any] = ["version": 5, "kind": smoke ? "smoke" : "full",
             "state": "started", "phase": "preparation", "completedSteps": [String](),
-            "connectionMethod": DeviceConnectionMethod.localVPN.rawValue, "localTunnelConnectedAtStart": localTunnel.isConnected,
+            "connectionMethod": DeviceConnectionMethod.localVPN.rawValue, "controlBackend": backend.rawValue,
+            "effectiveControlBackend": backend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion).rawValue,
+            "localTunnelConnectedAtStart": localTunnel.isConnected,
             "disconnectVerification": "localOnly"]
         if smoke { report["plannedSteps"] = ["connect_1", "screenshot_1", "tap_1", "post_tap_screenshot_1", "disconnect_1"] }
         var completedSteps: [String] = []
@@ -310,7 +313,7 @@ extension AppModel {
                 // returns only after identity verification, developer readiness
                 // and media startup.
                 requiresDisconnect = true
-                try await deviceClient.connect(method: .localVPN)
+                try await deviceClient.connect(method: .localVPN, backend: backend)
                 guard case .ready(let capabilities) = await deviceClient.status() else {
                     throw DeviceControlError.notConnected
                 }

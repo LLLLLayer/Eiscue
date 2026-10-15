@@ -692,10 +692,10 @@
         "change": "Remove the Wi-Fi hotspot board transport and /30 subnet selection; retain USB /24 interface validation."
       },
       "../Sources/PhoneAgentNCM/NativeDeveloperServices.swift": {
-        "sha256": "fc7f4ec761d75ee46c910892fd9db7551141c22681f95eb17eecb102520aac7d",
+        "sha256": "7e76fed122859c619df53a99f86cc8378cae0d71e6a843d5459d019d048d2e30",
         "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/NativeDeveloperServices.swift",
         "modified": true,
-        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport. Validate DisplayService input geometry against the latest assembled-picture decode cursor instead of the RTCP-confirmed screenshot cursor, so incoming animation packets alone do not reject input; retain decoder catch-up and generation checks."
+        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport. Validate DisplayService input geometry against the latest assembled-picture decode cursor instead of the RTCP-confirmed screenshot cursor, so incoming animation packets alone do not reject input; retain decoder catch-up and generation checks. Capture an explicit CoreDevice or owned XCTest control backend at session initialization; retain automatic iOS 26 XCTest / iOS 27+ CoreDevice defaults and use the immutable selection for screenshot, input, geometry and cleanup. Swift-only selection change; native archive contents and ABI are unchanged."
       },
       "src/relay.rs": {
         "sha256": "94fe98b4d2cda66eed0a48eced9346d7d00e89f171c0e62256fb619dc14e29e0",

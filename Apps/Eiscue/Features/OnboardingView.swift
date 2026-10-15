@@ -46,6 +46,7 @@ struct OnboardingView: View {
                         if model.deviceConnectionMethod == .bluetoothBoard {
                             BluetoothBoardSetupView()
                         } else {
+                            DeviceControlBackendPicker()
                             DeveloperConnectionSetupView()
                         }
                     }

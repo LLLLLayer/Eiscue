@@ -11,6 +11,7 @@
 "device.backend.touch-not-ready" = "Device control could not start. Chat is still available.";
 "device.backend.transport-failed" = "Device connection lost. Reconnect the device.";
 "device.error.busy" = "The device is busy. Wait for the current operation to finish.";
+"device.error.core-device-unavailable" = "CoreDevice control requires iOS 27 or later. Select XCTest on iOS 26.";
 "device.error.delivery-unknown" = "The action may have reached the device. Do not repeat it. %@ Reconnect and view the screen to check the result.";
 "device.error.invalid-bundle-id" = "The app bundle ID is invalid.";
 "device.error.invalid-coordinates" = "Coordinates must be inside the current screenshot.";
@@ -24,6 +25,7 @@
 "device.error.system-pairing-unavailable" = "Pairing from Settings requires iOS 27 or later. On iOS 26, import a compatible RemotePairing file created on a computer.";
 "device.error.stale-frame" = "The screenshot expired, was used, or belongs to an old connection. Take a new screenshot before acting.";
 "device.error.unsupported" = "Local device control needs a physical iOS device. This connection is unavailable on simulators and Macs.";
+"device.error.xctest-unavailable" = "XCTest control requires iOS 26 or later.";
 "device.media.invalid-image" = "The screen image is invalid.";
 "device.media.previous-release-unconfirmed" = "The previous screen connection may still be active. Check the system’s remote-control status before reconnecting.";
 "device.media.start-incomplete" = "Screen connection did not finish starting. Its closure is unconfirmed; check the system’s remote-control status.";

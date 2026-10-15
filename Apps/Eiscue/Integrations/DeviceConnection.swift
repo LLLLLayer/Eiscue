@@ -8,12 +8,12 @@ enum DevicePairingSupport {
 }
 
 enum DeviceMicrophonePolicy {
-    static func blocksDictation(method: DeviceConnectionMethod?, isConnected: Bool,
+    static func blocksDictation(method: DeviceConnectionMethod?, backend: DeviceControlBackend?, isConnected: Bool,
                                 on version: OperatingSystemVersion) -> Bool {
-        guard isConnected, version.majorVersion >= 27 else { return false }
+        guard isConnected, version.majorVersion >= 27, backend == .coreDevice else { return false }
         switch method {
         case .localVPN, .usbBoard:
-            // Both routes start the same DisplayService session on iOS 27.
+            // CoreDevice uses DisplayService on either network route.
             // Remote-muted input was observed on the local-VPN test phone;
             // the USB network relay shares that backend, but is not mic-tested.
             return true
@@ -27,12 +27,19 @@ enum DeviceMicrophonePolicy {
 
 extension AppModel {
     var isDictationBlockedByDeviceConnection: Bool {
-        DeviceMicrophonePolicy.blocksDictation(method: activeDeviceConnectionMethod, isConnected: isDeviceReady,
+        DeviceMicrophonePolicy.blocksDictation(method: activeDeviceConnectionMethod, backend: activeDeviceControlBackend,
+                                               isConnected: isDeviceReady,
                                                on: ProcessInfo.processInfo.operatingSystemVersion)
     }
 
     var supportsSystemPairing: Bool {
         DevicePairingSupport.supportsSystemPairing(on: ProcessInfo.processInfo.operatingSystemVersion)
+    }
+
+    var canChangeDeviceControlBackend: Bool {
+        !isRunning && !needsRecovery && pausedRun == nil && !isChangingDeviceConnectionMethod &&
+        !isSaving && !isStopping && !isPairing && !isManagingTunnel && !isStoppingTunnel &&
+        !isImportingAttachments && (!isConnecting || deviceConnectionTask != nil)
     }
 
     func startLocalTunnel() async {
@@ -142,6 +149,7 @@ extension AppModel {
         catch { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
         if deviceConnectionMethod == .bluetoothBoard, !isConnecting {
             activeDeviceConnectionMethod = isBluetoothConnected ? .bluetoothBoard : nil
+            activeDeviceControlBackend = nil
             if isBluetoothConnected, !isBoardHardwareStopped { boardHardwareStopPending = false }
             if isDeviceReady {
                 deviceConnectionError = nil
@@ -155,10 +163,12 @@ extension AppModel {
     func connectDevice() async {
         guard !isBusy, !isConnecting else { return }
         let method = deviceConnectionMethod
+        let backend = deviceControlBackend
         guard method != .localVPN || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
         let operationID = UUID(); deviceOperationID = operationID
         isConnecting = true; activeDeviceConnectionMethod = method; deviceConnectionError = nil
-        if method == .localVPN, ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
+        activeDeviceControlBackend = method == .bluetoothBoard ? nil : backend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion)
+        if method == .localVPN, activeDeviceControlBackend == .xcTest {
             connectionMessage = String(localized: "connection.automationAuthorization")
         } else {
             connectionMessage = switch method {
@@ -168,17 +178,17 @@ extension AppModel {
             }
         }
         let client = deviceClient
-        let task = Task { try await client.connect(method: method, configuration: .defaults) }
+        let task = Task { try await client.connect(method: method, configuration: .defaults, backend: backend) }
         deviceConnectionTask = task
         defer {
             if deviceOperationID == operationID {
                 isConnecting = false; deviceConnectionTask = nil
-                if !isDeviceReady { activeDeviceConnectionMethod = nil }
+                if !isDeviceReady { activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil }
             }
         }
         do {
             try await task.value
-            guard deviceOperationID == operationID, deviceConnectionMethod == method else { return }
+            guard deviceOperationID == operationID, deviceConnectionMethod == method, deviceControlBackend == backend else { return }
             deviceConnectionError = nil
             await refreshDeviceStatus()
             // Completing discovery/diagnostics is not a control capability.
@@ -196,10 +206,11 @@ extension AppModel {
     func enableDeviceControl() async {
         guard !isBusy, !isChangingDeviceConnectionMethod else { return }
         let method = deviceConnectionMethod
+        let backend = deviceControlBackend
         if method == .localVPN, !localTunnel.isConnected {
             await startLocalTunnel()
         }
-        guard deviceConnectionMethod == method else { return }
+        guard deviceConnectionMethod == method, deviceControlBackend == backend else { return }
         await connectDevice()
     }
 
@@ -231,6 +242,24 @@ extension AppModel {
         }
     }
 
+    func selectDeviceControlBackend(_ backend: DeviceControlBackend) async {
+        guard backend != deviceControlBackend, canChangeDeviceControlBackend else { return }
+        guard backend.isAvailable(on: ProcessInfo.processInfo.operatingSystemVersion) else {
+            deviceConnectionError = DeviceControlError.backendUnavailable(backend).localizedDescription
+            return
+        }
+        isChangingDeviceConnectionMethod = true
+        defer { isChangingDeviceConnectionMethod = false }
+        if deviceConnectionMethod != .bluetoothBoard {
+            await disconnectDevice(stopChatRun: false, stopReason: String(localized: "device.backend.changed", table: "Connections"))
+        }
+        deviceControlBackend = backend
+        if deviceConnectionMethod != .bluetoothBoard {
+            deviceConnectionError = nil
+            connectionMessage = String(localized: "device.backend.changed", table: "Connections")
+        }
+    }
+
     func disconnectDevice(expectedPairingID: UUID? = nil, stopChatRun: Bool = true,
                           stopReason: String = String(localized: "connection.disconnected")) async {
         guard expectedPairingID == nil || expectedPairingID == pairingLeaseID else { return }
@@ -249,6 +278,7 @@ extension AppModel {
 
     func releaseDeviceConnection() async {
         activeDeviceConnectionMethod = nil
+        activeDeviceControlBackend = nil
         let pending = deviceConnectionTask
         deviceConnectionTask = nil
         pending?.cancel()
@@ -275,6 +305,7 @@ extension AppModel {
         deviceConnectionError = nil
         isPairing = true; pairingCode = nil
         activeDeviceConnectionMethod = .localVPN
+        activeDeviceControlBackend = nil
         connectionMessage = String(localized: "connection.preparingPairing")
         let id = UUID(); pairingLeaseID = id; deviceOperationID = id
         pairingTask = Task {
