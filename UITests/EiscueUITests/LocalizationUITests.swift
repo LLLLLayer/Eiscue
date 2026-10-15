@@ -53,7 +53,7 @@ final class LocalizationUITests: XCTestCase {
         XCTAssertEqual(app.buttons["newConversationButton"].label, "New conversation")
         closeSidebar(in: app)
         openSettings(in: app)
-        XCTAssertEqual(app.buttons["runHistoryNavigationLink"].label, "All tasks")
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "runHistoryNavigationLink").firstMatch.exists)
         assertSettingsSections(["Assistant", "General", "About", "Debug"], savedConversationsTitle: "Saved conversations", in: app)
         XCTAssertTrue(app.buttons["appLanguageSettingsButton"].exists)
         XCTAssertTrue(app.buttons["appLanguageSettingsButton"].label.contains("English"))
@@ -80,7 +80,7 @@ final class LocalizationUITests: XCTestCase {
     func testChineseBackgroundSettingsUseResourcesWithoutRequestingPermission() {
         let app = launch(language: "zh-Hans", locale: "zh_CN")
         openSettings(in: app)
-        XCTAssertEqual(app.buttons["runHistoryNavigationLink"].label, "全部任务")
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "runHistoryNavigationLink").firstMatch.exists)
         assertSettingsSections(["助手", "通用", "关于", "调试"], savedConversationsTitle: "已保存的对话", in: app)
         app.buttons["taskStatusSettingsButton"].tap()
         let toggle = app.switches["taskNotificationsToggle"]

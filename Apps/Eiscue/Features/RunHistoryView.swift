@@ -2,15 +2,16 @@ import SwiftUI
 
 struct RunHistoryView: View {
     @Environment(AppModel.self) private var model
-    var conversationID: UUID? = nil
+    let conversationID: UUID?
 
     private var records: [RunRecord] {
+        guard let conversationID else { return [] }
         var result = model.runs
         if let active = model.activeRun {
             result.removeAll { $0.id == active.id }
             result.append(active)
         }
-        return result.filter { conversationID == nil || $0.conversationID == conversationID }
+        return result.filter { $0.conversationID == conversationID }
             .sorted { $0.startedAt > $1.startedAt }
     }
 
@@ -51,7 +52,7 @@ struct RunHistoryView: View {
             }
         }
         .background(EiscueStyle.background)
-        .navigationTitle(conversationID == nil ? String(localized: "runs.title") : String(localized: "runs.conversationTitle"))
+        .navigationTitle(String(localized: "runs.conversationTitle"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

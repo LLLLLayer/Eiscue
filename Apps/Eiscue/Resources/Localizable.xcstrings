@@ -3306,23 +3306,6 @@
         }
       }
     },
-    "runs.title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Task history"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "任务记录"
-          }
-        }
-      }
-    },
     "scope.chat": {
       "extractionState": "manual",
       "localizations": {

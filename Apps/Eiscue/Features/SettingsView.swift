@@ -36,12 +36,6 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("skillsNavigationLink")
                 NavigationLink {
-                    RunHistoryView()
-                } label: {
-                    SettingsRowLabel(String(localized: "settings.runs", table: "Runtime"), systemImage: "clock.arrow.circlepath")
-                }
-                .accessibilityIdentifier("runHistoryNavigationLink")
-                NavigationLink {
                     StickerGalleryView()
                 } label: {
                     SettingsRowLabel(String(localized: "composer.stickers", table: "Composer"), systemImage: "face.smiling")

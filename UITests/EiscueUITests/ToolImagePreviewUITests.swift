@@ -164,8 +164,17 @@ final class ToolImagePreviewUITests: XCTestCase {
         XCTAssertTrue(step.isHittable); step.tap()
         let images = app.buttons.matching(identifier: "runToolImageThumbnail")
         XCTAssertTrue(images.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["runToolCoordinates"].label.contains("284"))
+        let coordinates = app.descendants(matching: .any).matching(identifier: "runToolCoordinates").firstMatch
+        // The iPad task sheet lazily creates the row below the source image.
+        for _ in 0..<4 where !coordinates.exists {
+            app.collectionViews.allElementsBoundByIndex.last(where: \.isHittable)?.swipeUp()
+        }
+        XCTAssertTrue(coordinates.waitForExistence(timeout: 3))
+        XCTAssertTrue(coordinates.label.contains("284"))
         attach(app, name: "Run detail — input screenshot with tap marker")
+        for _ in 0..<4 where !images.firstMatch.isHittable {
+            app.collectionViews.allElementsBoundByIndex.last(where: \.isHittable)?.swipeDown()
+        }
         images.firstMatch.tap()
         XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].waitForExistence(timeout: 3))
         let viewer = app.descendants(matching: .any)["toolActivityImageViewer"].firstMatch

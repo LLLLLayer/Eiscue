@@ -384,8 +384,8 @@ final class EiscueUITests: XCTestCase {
     @MainActor
     func testRunHistoryIsEmptyBeforeFirstRun() throws {
         let app = launch()
-        openSettings(in: app)
-        app.buttons["runHistoryNavigationLink"].tap()
+        app.buttons["conversationMenuButton"].tap()
+        app.buttons["conversationRunHistoryButton"].tap()
         XCTAssertTrue(app.staticTexts["还没有任务记录"].waitForExistence(timeout: 5))
     }
 }

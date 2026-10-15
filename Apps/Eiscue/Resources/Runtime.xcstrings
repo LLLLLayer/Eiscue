@@ -970,23 +970,6 @@
         }
       }
     },
-    "settings.runs": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All tasks"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全部任务"
-          }
-        }
-      }
-    },
     "settings.assistant": {
       "extractionState": "manual",
       "localizations": {
