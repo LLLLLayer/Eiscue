@@ -3,18 +3,25 @@
 <style>
   svg { --outline:#213347; --front:#abe8f7; --top:#e0faff; --side:#63bacc; --eye:#407887; --tuft:#454545; }
   .face { stroke:var(--outline); stroke-width:4.5; stroke-linejoin:round; }
+  .head-group { --head-yaw:4deg; --head-tilt:.8deg; transform-box:fill-box; transform-origin:center; animation:turn 9s ease-in-out infinite; }
   .gaze { animation:look 9s ease-in-out infinite; }
   .open-eyes { transform-box:fill-box; transform-origin:center; animation:blink 4.8s linear infinite; }
-  .closed-eyes { display:none; }
+  .closed-eyes,.concerned-eyes { display:none; }
   [data-state="asleep"] .open-eyes { display:none; }
   [data-state="asleep"] .closed-eyes { display:inline; }
-  [data-state="asleep"] .gaze { animation:none; }
-  [data-state="connecting"] .gaze { animation-duration:4s; }
+  [data-state="asleep"] .gaze,[data-state="asleep"] .head-group { animation:none; }
+  [data-state="connecting"] .gaze { animation-duration:4s; transform:translateX(8px); }
+  [data-state="connecting"] .head-group { --head-yaw:8deg; --head-tilt:1.6deg; animation-duration:4s; }
+  [data-state="failed"] .open-eyes { display:none; animation:none; }
+  [data-state="failed"] .concerned-eyes { display:inline; }
+  [data-state="failed"] .gaze,[data-state="failed"] .head-group { animation:none; }
   @keyframes blink { 0%,80%,87%,100% { transform:scaleY(1) } 84% { transform:scaleY(.08) } }
   @keyframes look { 0%,100% { transform:translateX(0) } 25% { transform:translateX(4px) } 75% { transform:translateX(-4px) } }
-  @media (prefers-reduced-motion:reduce) { .gaze,.open-eyes { animation:none; } }
+  @keyframes turn { 0%,100% { transform:perspective(600px) rotateY(0deg) rotateZ(0deg) } 25% { transform:perspective(600px) rotateY(var(--head-yaw)) rotateZ(var(--head-tilt)) } 75% { transform:perspective(600px) rotateY(calc(-1 * var(--head-yaw))) rotateZ(calc(-1 * var(--head-tilt))) } }
+  @media (prefers-reduced-motion:reduce) { .head-group,.gaze,.open-eyes { animation:none !important; } }
 </style>
 
+<g class="head-group">
 <g class="face">
   <path fill="var(--top)" d="M40 70Q65 41 95 39Q106 36 118 39L200 55Q213 57 215 65L180 87Z"/>
   <path fill="var(--side)" d="M180 87L215 65Q221 108 211 166Q209 182 177 196Z"/>
@@ -24,9 +31,14 @@
 <g fill="white" opacity=".8"><ellipse cx="51" cy="92.5" rx="6" ry="9.5"/><ellipse cx="61" cy="107.5" rx="3" ry="4.5"/></g>
 <g class="gaze" fill="none" stroke="var(--eye)" stroke-width="4" stroke-linecap="round">
   <g class="open-eyes"><ellipse cx="77" cy="133" rx="12" ry="19"/><ellipse cx="139" cy="141" rx="12" ry="19"/></g>
+  <g class="concerned-eyes" stroke-width="6">
+    <path d="M63 116Q77 115 89 106M127 114Q139 123 153 124"/>
+    <g fill="var(--eye)" stroke="none"><ellipse cx="77" cy="137" rx="7" ry="11"/><ellipse cx="139" cy="145" rx="7" ry="11"/></g>
+  </g>
   <path class="closed-eyes" d="M65 133Q77 143 89 133M127 141Q139 151 151 141"/>
 </g>
 <path fill="var(--top)" d="M108 157L122 172L107 183L94 170Z"/>
 <path fill="var(--side)" opacity=".6" d="M108 157L107 183L94 170Z"/>
 <path fill="none" stroke="var(--eye)" stroke-width="3.5" stroke-linejoin="round" d="M108 157L122 172L107 183L94 170Z"/>
+</g>
 </svg>

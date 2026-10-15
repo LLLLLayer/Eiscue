@@ -13,18 +13,19 @@ enum EiscueHeadStyle: String, CaseIterable, Identifiable {
 }
 
 enum EiscueHeadState: String, CaseIterable, Identifiable {
-    case asleep, awake, looking
+    case asleep, awake, looking, concerned
     var id: String { rawValue }
     var title: String {
         switch self {
         case .asleep: String(localized: "mascot.state.asleep", table: "Mascot")
         case .awake: String(localized: "mascot.state.awake", table: "Mascot")
         case .looking: String(localized: "mascot.state.looking", table: "Mascot")
+        case .concerned: String(localized: "mascot.state.concerned", table: "Mascot")
         }
     }
 }
 
-/// Small vector artwork; disconnected faces do not keep an animation clock running.
+/// Small vector artwork; disconnected and failed faces keep a static expression.
 struct EiscueHeadView: View {
     var style: EiscueHeadStyle = .ice
     let state: EiscueHeadState
@@ -33,21 +34,25 @@ struct EiscueHeadView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var appearedAt = Date.now
 
-    private var animates: Bool { state != .asleep && !reduceMotion && scenePhase == .active }
+    private var animates: Bool { (state == .awake || state == .looking) && !reduceMotion && scenePhase == .active }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !animates)) { timeline in
+            let elapsed = animates ? timeline.date.timeIntervalSince(appearedAt) : 0
+            let turn = animates ? sin(elapsed * (state == .looking ? 1.5 : 0.65)) : 0
             Canvas { context, size in
-                let elapsed = animates ? timeline.date.timeIntervalSince(appearedAt) : 0
                 let blinkPhase = elapsed.truncatingRemainder(dividingBy: 4.8)
                 let openness = state == .asleep ? 0 : 1 - max(0, 1 - abs(blinkPhase - 4.1) / 0.14)
-                let gaze = animates ? sin(elapsed * (state == .looking ? 1.5 : 0.65)) * (state == .looking ? 6 : 3) : 0
+                let gaze = animates ? turn * (state == .looking ? 6 : 3)
+                    : state == .looking ? 8 : 0
                 let scale = min(size.width / 240, size.height / 220)
                 var drawing = context
                 drawing.translateBy(x: (size.width - 240 * scale) / 2, y: (size.height - 220 * scale) / 2)
                 drawing.scaleBy(x: scale, y: scale)
                 draw(in: &drawing, openness: openness, gaze: gaze)
             }
+            .rotation3DEffect(.degrees(turn * (state == .looking ? 8 : 4)), axis: (x: 0, y: 1, z: 0), perspective: 0.2)
+            .rotationEffect(.degrees(turn * (state == .looking ? 1.6 : 0.8)))
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Eiscue")
@@ -102,8 +107,38 @@ struct EiscueHeadView: View {
             context.fill(Path(ellipseIn: CGRect(x: 58, y: 103, width: 6, height: 9)), with: .color(.white.opacity(monochrome ? 0.25 : 0.8)))
         }
 
-        for center in [CGPoint(x: 77 + gaze, y: 133), CGPoint(x: 139 + gaze, y: 141)] {
-            if openness < 0.15 {
+        for (index, center) in [CGPoint(x: 77 + gaze, y: 133), CGPoint(x: 139 + gaze, y: 141)].enumerated() {
+            if state == .concerned {
+                // Filled eyes and broad inner-raised brows stay legible at 32 pt.
+                let rect = CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 22)
+                context.fill(style == .pixel ? Path(rect) : Path(ellipseIn: rect), with: .color(eye))
+                var brow = Path()
+                if index == 0 {
+                    brow.move(to: CGPoint(x: center.x - 14, y: center.y - 17))
+                    if style == .pixel {
+                        brow.addLine(to: CGPoint(x: center.x - 2, y: center.y - 17))
+                        brow.addLine(to: CGPoint(x: center.x - 2, y: center.y - 22))
+                        brow.addLine(to: CGPoint(x: center.x + 12, y: center.y - 22))
+                        brow.addLine(to: CGPoint(x: center.x + 12, y: center.y - 27))
+                    } else {
+                        brow.addQuadCurve(to: CGPoint(x: center.x + 12, y: center.y - 27),
+                                          control: CGPoint(x: center.x, y: center.y - 18))
+                    }
+                } else {
+                    brow.move(to: CGPoint(x: center.x - 12, y: center.y - 27))
+                    if style == .pixel {
+                        brow.addLine(to: CGPoint(x: center.x - 12, y: center.y - 22))
+                        brow.addLine(to: CGPoint(x: center.x, y: center.y - 22))
+                        brow.addLine(to: CGPoint(x: center.x, y: center.y - 17))
+                        brow.addLine(to: CGPoint(x: center.x + 14, y: center.y - 17))
+                    } else {
+                        brow.addQuadCurve(to: CGPoint(x: center.x + 14, y: center.y - 17),
+                                          control: CGPoint(x: center.x, y: center.y - 18))
+                    }
+                }
+                context.stroke(brow, with: .color(eye), style: StrokeStyle(lineWidth: 6, lineCap: .round,
+                    lineJoin: style == .pixel ? .miter : .round))
+            } else if openness < 0.15 {
                 var closed = Path()
                 closed.move(to: CGPoint(x: center.x - 12, y: center.y))
                 if style == .pixel {

@@ -42,29 +42,21 @@ extension AppModel {
 
 struct DeviceConnectionIndicator: View {
     let state: ConnectionIndicatorState
-    let isIPad: Bool
+
+    private var expression: EiscueHeadState {
+        switch state {
+        case .unpaired, .paired: .asleep
+        case .connecting: .looking
+        case .ready: .awake
+        case .failed: .concerned
+        }
+    }
+
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Image(systemName: isIPad ? "ipad" : "iphone.gen3")
-                .font(.system(size: 20, weight: .medium))
-                .frame(width: 24, height: 24)
-                .foregroundStyle(.primary)
-            Group {
-                switch state {
-                case .ready: Image(systemName: "checkmark")
-                case .failed: Image(systemName: "exclamationmark")
-                case .unpaired, .paired: Image(systemName: "xmark")
-                case .connecting:
-                    ProgressView().tint(state.color).controlSize(.mini)
-                        .scaleEffect(0.7).frame(width: 10, height: 10)
-                }
-            }
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(state.color)
-                .frame(width: 14, height: 14)
-                .background(state.color.opacity(0.22), in: Circle())
-                .overlay { Circle().strokeBorder(state.color.opacity(0.42), lineWidth: 0.5) }
-                .offset(x: 5, y: 2)
-        }.accessibilityHidden(true)
+        EiscueHeadView(state: expression)
+            .frame(width: 32, height: 32)
+            // Keep the toolbar's standard glyph metrics aligned with the image viewer's close button.
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
     }
 }

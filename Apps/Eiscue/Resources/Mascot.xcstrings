@@ -103,6 +103,23 @@
         }
       }
     },
+    "mascot.state.concerned": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接失败"
+          }
+        }
+      }
+    },
     "mascot.gallery.title": {
       "extractionState": "manual",
       "localizations": {

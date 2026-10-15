@@ -77,7 +77,7 @@ struct AssistantView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: AppDestination.device) {
-                    DeviceConnectionIndicator(state: model.connectionIndicator, isIPad: model.device.platform == .iPadOS)
+                    DeviceConnectionIndicator(state: model.connectionIndicator)
                 }
                 .accessibilityLabel("common.device")
                 .accessibilityValue(model.connectionIndicator.title)
