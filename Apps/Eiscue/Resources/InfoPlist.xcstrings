@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn your speech into message text."
+            "value": "Turn speech into message text and check microphone input when requested."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将你说的话转换为消息文字。"
+            "value": "将语音转换为消息文字，并在你发起检查时检测麦克风输入。"
           }
         }
       }

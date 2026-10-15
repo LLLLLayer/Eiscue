@@ -106,6 +106,20 @@ struct SettingsView: View {
             .listRowBackground(EiscueStyle.surface)
 
             Section {
+                NavigationLink {
+                    ConnectionRepairView()
+                } label: {
+                    SettingsRowLabel(String(localized: "connectionRepair.title", table: "Connections"), systemImage: "wrench.and.screwdriver")
+                }
+                .accessibilityIdentifier("connectionRepairNavigationLink")
+            } header: {
+                Text("connectionRepair.settingsSection", tableName: "Connections")
+                    .font(.caption)
+                    .accessibilityIdentifier("settingsTroubleshootingSectionHeader")
+            }
+            .listRowBackground(EiscueStyle.surface)
+
+            Section {
                 NavigationLink { AboutView() } label: {
                     SettingsRowLabel(String(localized: "settings.about", table: "Runtime"), systemImage: "info.circle")
                 }

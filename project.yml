@@ -39,7 +39,7 @@ targets:
           - $(PRODUCT_BUNDLE_IDENTIFIER).agent.continued-processing
         NSCameraUsageDescription: "Take photos to add to your messages."
         NSBluetoothAlwaysUsageDescription: "Connect to a development board to control this device over Bluetooth."
-        NSMicrophoneUsageDescription: "Turn your speech into message text."
+        NSMicrophoneUsageDescription: "Turn speech into message text and check microphone input when requested."
         NSSpeechRecognitionUsageDescription: "Transcribe speech on this device. Messages are sent only when you tap Send."
         NSLocalNetworkUsageDescription: "Connect to this device for control through the local VPN or a development board."
         CFBundleLocalizations: [en, zh-Hans]

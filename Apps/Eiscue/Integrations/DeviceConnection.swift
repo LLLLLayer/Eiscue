@@ -142,7 +142,7 @@ extension AppModel {
         restoration.isValid && dictationDeviceRestoration === restoration &&
         deviceOperationID == restoration.operationID && currentScenePhase == .active &&
         deviceConnectionMethod == restoration.method && deviceControlBackend == restoration.preference &&
-        !isRunning && !needsRecovery && pausedRun == nil
+        !isRunning && !isRepairingDeviceConnection && !needsRecovery && pausedRun == nil
     }
 
     private func restoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) async -> String? {
@@ -192,7 +192,7 @@ extension AppModel {
     }
 
     var canChangeDeviceControlBackend: Bool {
-        !isRunning && !needsRecovery && pausedRun == nil && !isChangingDeviceConnectionMethod &&
+        !isRunning && !isRepairingDeviceConnection && !needsRecovery && pausedRun == nil && !isChangingDeviceConnectionMethod &&
         !isSaving && !isStopping && !isPairing && !isManagingTunnel && !isStoppingTunnel &&
         !isImportingAttachments && (!isConnecting || deviceConnectionTask != nil)
     }
@@ -213,7 +213,7 @@ extension AppModel {
 
     func stopLocalTunnel() async {
         await cancelDictationDeviceRestoration()
-        guard !isStoppingTunnel else { return }
+        guard !isStoppingTunnel, !isRepairingDeviceConnection else { return }
         isStoppingTunnel = true
         defer { isStoppingTunnel = false }
         // Stop is available while the system is still authorizing or starting.
@@ -376,7 +376,7 @@ extension AppModel {
 
     func selectDeviceConnectionMethod(_ method: DeviceConnectionMethod) async {
         await cancelDictationDeviceRestoration()
-        guard method != deviceConnectionMethod, !isChangingDeviceConnectionMethod,
+        guard method != deviceConnectionMethod, !isChangingDeviceConnectionMethod, !isRepairingDeviceConnection,
               !isSaving, !isStopping, !isManagingTunnel, !isStoppingTunnel, !isImportingAttachments else { return }
         isChangingDeviceConnectionMethod = true
         defer { isChangingDeviceConnectionMethod = false }

@@ -44,7 +44,7 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to this device for control through the local VPN or a development board.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Turn your speech into message text.</string>
+	<string>Turn speech into message text and check microphone input when requested.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Transcribe speech on this device. Messages are sent only when you tap Send.</string>
 	<key>UIBackgroundModes</key>

@@ -87,6 +87,8 @@ final class AppModel {
     var activeDeviceControlBackend: DeviceControlBackend?
     var isChangingDeviceConnectionMethod = false
     var isConnecting = false
+    var isRepairingDeviceConnection = false
+    @ObservationIgnored var deviceConnectionRepair: DeviceConnectionRepairSession?
     var isPairing = false
     var isManagingTunnel = false
     var isStoppingTunnel = false
@@ -249,7 +251,7 @@ final class AppModel {
         showsOnboarding = false
     }
     var isRunning: Bool { activeRun != nil }
-    var isBusy: Bool { isSaving || isRunning || isPairing || isStopping || isConnecting || isChangingDeviceConnectionMethod || isManagingTunnel || isStoppingTunnel || isImportingAttachments }
+    var isBusy: Bool { isSaving || isRunning || isPairing || isStopping || isConnecting || isRepairingDeviceConnection || isChangingDeviceConnectionMethod || isManagingTunnel || isStoppingTunnel || isImportingAttachments }
     var canSend: Bool { !isLoading && !isBusy && dictationDeviceRestoration == nil && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty) }
     var canAddAttachments: Bool { !isLoading && !isBusy && draftAttachments.count < MessageAttachments.maximumCount }
     var isDeviceReady: Bool { if case .ready = deviceStatus { true } else { false } }

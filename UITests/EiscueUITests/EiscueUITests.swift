@@ -362,6 +362,26 @@ final class EiscueUITests: XCTestCase {
     }
 
     @MainActor
+    func testConnectionRepairIsAvailableWithoutStartingAMicrophoneCheck() throws {
+        let app = launch()
+        openSettings(in: app)
+        let repair = app.buttons["connectionRepairNavigationLink"]
+        reveal(repair, in: app)
+        repair.tap()
+        let start = app.buttons["connectionRepairButton"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        XCTAssertTrue(start.isEnabled)
+        XCTAssertFalse(app.otherElements["connectionRepairProgress"].exists)
+        XCTAssertFalse(app.otherElements["connectionRepairResult"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Connection repair — before user action"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(repair.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testRunHistoryIsEmptyBeforeFirstRun() throws {
         let app = launch()
         openSettings(in: app)
