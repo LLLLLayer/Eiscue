@@ -249,7 +249,7 @@ struct AssistantView: View {
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 28) {
-            EiscueHeadView(state: model.isDeviceReady ? .awake : (model.isConnecting || model.isPairing ? .looking : .asleep))
+            Image("StickerWave").resizable().scaledToFit()
                 .frame(width: 112, height: 112).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 12) {
                 Text("assistant.welcome")

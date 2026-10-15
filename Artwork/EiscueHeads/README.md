@@ -32,7 +32,8 @@ on browser animation support.
 
 The app draws matching native vector studies in
 `Apps/Eiscue/Features/EiscueHeadView.swift`, without a web view or video decoder.
-The welcome and device views use actual connection readiness. The sticker gallery
+The device button and device page use actual connection readiness. The chat welcome
+keeps the static `StickerWave` illustration. The sticker gallery
 has an explicit preview selector; it does not change the device connection.
 The disconnected head keeps its closed eyes and slow turn. Native animation
 pauses when failed, backgrounded, or Reduce
