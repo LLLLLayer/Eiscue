@@ -33,6 +33,53 @@ final class ToolImagePreviewUITests: XCTestCase {
         }
     }
 
+    @MainActor func testFittedImageShortDragSnapsBackAndDownwardSwipeDismisses() {
+        let app = launch()
+        app.buttons["toolActivityDisclosureButton"].tap()
+        let thumbnail = app.buttons["toolActivityImageThumbnail"]
+        XCTAssertTrue(thumbnail.waitForExistence(timeout: 5))
+        thumbnail.tap()
+        let viewer = app.descendants(matching: .any)["toolActivityImageViewer"].firstMatch
+        XCTAssertTrue(viewer.waitForExistence(timeout: 5))
+        let originalFrame = viewer.frame
+        let start = viewer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 24)),
+                    withVelocity: .slow, thenHoldForDuration: 0.5)
+        XCTAssertTrue(viewer.exists, "A short, slow drag must leave the fitted image open.")
+        XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].isHittable)
+        XCTAssertEqual(viewer.frame.minY, originalFrame.minY, accuracy: 2)
+        XCTAssertEqual(viewer.frame.height, originalFrame.height, accuracy: 2)
+        attach(app, name: "Tool image — short drag returned to fitted position")
+        swipeImageVertically(viewer)
+        XCTAssertTrue(viewer.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(thumbnail.isHittable)
+    }
+
+    @MainActor func testZoomedImagePansBeforeResetAllowsSwipeDismissal() {
+        let app = launch()
+        app.buttons["toolActivityDisclosureButton"].tap()
+        let thumbnail = app.buttons["toolActivityImageThumbnail"]
+        XCTAssertTrue(thumbnail.waitForExistence(timeout: 5))
+        thumbnail.tap()
+        let viewer = app.descendants(matching: .any)["toolActivityImageViewer"].firstMatch
+        XCTAssertTrue(viewer.waitForExistence(timeout: 5))
+        viewer.doubleTap()
+        swipeImageVertically(viewer)
+        XCTAssertTrue(viewer.exists, "A vertical pan of a zoomed image must not dismiss the viewer.")
+        XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].isHittable)
+        attach(app, name: "Tool image — zoomed vertical pan remains open")
+        viewer.doubleTap()
+        viewer.pinch(withScale: 2, velocity: 1)
+        swipeImageVertically(viewer)
+        XCTAssertTrue(viewer.exists, "A vertical pan after pinch zoom must not dismiss the viewer.")
+        XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].isHittable)
+        attach(app, name: "Tool image — pinch zoom vertical pan remains open")
+        viewer.doubleTap()
+        swipeImageVertically(viewer, up: true)
+        XCTAssertTrue(viewer.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(thumbnail.isHittable)
+    }
+
     @MainActor func testMetadataAndErrorsStayCollapsedAndFootersOnlyShowTime() {
         let app = launch()
         let rows = app.descendants(matching: .any).matching(identifier: "toolActivityRow")
@@ -90,9 +137,13 @@ final class ToolImagePreviewUITests: XCTestCase {
         attach(app, name: "Run detail — input screenshot with tap marker")
         images.firstMatch.tap()
         XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].waitForExistence(timeout: 3))
+        let viewer = app.descendants(matching: .any)["toolActivityImageViewer"].firstMatch
+        XCTAssertTrue(viewer.waitForExistence(timeout: 3))
         attach(app, name: "Run detail — fullscreen marked screenshot")
-        app.buttons["closeToolImagePreviewButton"].tap()
+        swipeImageVertically(viewer)
+        XCTAssertTrue(viewer.waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.buttons["closeToolImagePreviewButton"].waitForNonExistence(timeout: 3))
+        XCTAssertTrue(images.firstMatch.isHittable)
         for _ in 0..<4 where !app.descendants(matching: .any)["runToolOutput"].firstMatch.isHittable { app.swipeUp() }
         XCTAssertTrue(app.descendants(matching: .any)["runToolInput"].firstMatch.exists)
         XCTAssertTrue(app.descendants(matching: .any)["runToolOutput"].firstMatch.label.contains("22222222"))
@@ -107,6 +158,12 @@ final class ToolImagePreviewUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["toolActivityDisclosureButton"].waitForExistence(timeout: 10))
         return app
+    }
+
+    @MainActor private func swipeImageVertically(_ viewer: XCUIElement, up: Bool = false) {
+        let start = viewer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.78 : 0.3))
+        let end = viewer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.3 : 0.78))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
     }
 
     @MainActor private func attach(_ app: XCUIApplication, name: String) {
