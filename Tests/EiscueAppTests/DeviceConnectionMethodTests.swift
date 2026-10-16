@@ -501,6 +501,82 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertEqual(calls.pairingMutations, 0)
     }
 
+    func testChoosingTheEffectiveAutomaticBackendKeepsTheActiveSessionAndObservation() async throws {
+        for major in [26, 27] {
+            let version = OperatingSystemVersion(majorVersion: major, minorVersion: 0, patchVersion: 0)
+            let fixture = try Fixture(savedMethod: "usbBoard", operatingSystemVersion: version)
+            let model = fixture.model
+            await model.connectDevice()
+            let frame = DeviceScreenshot(width: 4, height: 4, mimeType: "image/png", data: Data())
+            model.screenshot = frame
+            let operationID = model.deviceOperationID
+            let message = model.connectionMessage
+            let backend = DeviceControlBackend.automatic.resolved(on: version)
+            await model.selectDeviceControlBackend(backend)
+            XCTAssertEqual(model.deviceControlBackend, backend)
+            XCTAssertEqual(fixture.preferences.string(forKey: "deviceControlBackend"), backend.rawValue)
+            XCTAssertEqual(model.activeDeviceControlBackend, backend)
+            XCTAssertEqual(model.activeDeviceConnectionMethod, .usbBoard)
+            XCTAssertEqual(model.screenshot?.frameID, frame.frameID)
+            XCTAssertEqual(model.deviceOperationID, operationID)
+            XCTAssertEqual(model.connectionMessage, message)
+            XCTAssertTrue(model.isDeviceReady)
+            XCTAssertFalse(model.isConnecting || model.isChangingDeviceConnectionMethod)
+            let calls = await fixture.controller.calls()
+            XCTAssertEqual(calls.backends, [.automatic])
+            XCTAssertEqual(calls.disconnects, 0)
+            XCTAssertEqual(calls.pairingMutations, 0)
+            await model.disconnectDevice()
+        }
+    }
+
+    func testChoosingTheEffectiveBackendKeepsAPendingConnection() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true,
+            operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
+        let model = fixture.model
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        let operationID = model.deviceOperationID
+        await model.selectDeviceControlBackend(.coreDevice)
+        XCTAssertEqual(model.deviceOperationID, operationID)
+        XCTAssertEqual(model.deviceControlBackend, .coreDevice)
+        XCTAssertTrue(model.isConnecting)
+        await fixture.controller.completePendingConnection()
+        await pending.value
+        XCTAssertTrue(model.isDeviceReady)
+        XCTAssertFalse(model.isConnecting)
+        XCTAssertEqual(model.activeDeviceControlBackend, .coreDevice)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.backends, [.automatic])
+        XCTAssertEqual(calls.disconnects, 0)
+        XCTAssertEqual(calls.cancelledConnections, 0)
+        await model.disconnectDevice()
+    }
+
+    func testDisconnectedBackendChangeReleasesTheClientWithoutEnteringConnecting() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsDisconnect: true,
+            operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
+        let model = fixture.model
+        let operationID = model.deviceOperationID
+        let switching = Task { await model.selectDeviceControlBackend(.xcTest) }
+        try await waitUntil { await fixture.controller.calls().disconnects == 1 }
+        XCTAssertFalse(model.isConnecting)
+        XCTAssertTrue(model.isChangingDeviceConnectionMethod)
+        XCTAssertFalse(model.canChangeDeviceControlBackend)
+        XCTAssertEqual(model.deviceControlBackend, .automatic)
+        XCTAssertEqual(model.deviceOperationID, operationID)
+        await fixture.controller.completePendingDisconnect()
+        await switching.value
+        XCTAssertEqual(model.deviceControlBackend, .xcTest)
+        XCTAssertNil(model.activeDeviceConnectionMethod)
+        XCTAssertNil(model.activeDeviceControlBackend)
+        XCTAssertFalse(model.isConnecting || model.isChangingDeviceConnectionMethod)
+        let calls = await fixture.controller.calls()
+        XCTAssertTrue(calls.methods.isEmpty)
+        XCTAssertEqual(calls.disconnects, 1)
+        XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
     func testUnknownBackendDefaultsToAutomaticAndSavedExplicitChoiceIsPreserved() throws {
         let unknown = try Fixture(savedBackend: "future-backend")
         XCTAssertEqual(unknown.model.deviceControlBackend, .automatic)
@@ -510,9 +586,11 @@ final class DeviceConnectionMethodTests: XCTestCase {
     }
 
     func testBackendSwitchReleasesBeforeSavingAndBlocksCompetingChanges() async throws {
-        let fixture = try Fixture(savedMethod: "usbBoard", suspendsDisconnect: true)
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsDisconnect: true,
+            operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
         let model = fixture.model
         await model.connectDevice()
+        model.deviceStatus = .unavailable(reason: "Session temporarily unavailable")
         model.screenshot = DeviceScreenshot(width: 4, height: 4, mimeType: "image/png", data: Data())
         let switching = Task { await model.selectDeviceControlBackend(.xcTest) }
         try await waitUntil { await fixture.controller.calls().disconnects == 1 }
@@ -537,11 +615,12 @@ final class DeviceConnectionMethodTests: XCTestCase {
     }
 
     func testBackendSwitchCancelsPendingConnectionAndReconnectUsesNewChoice() async throws {
-        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true,
+            operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
         let model = fixture.model
         let pending = Task { await model.connectDevice() }
         try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
-        XCTAssertEqual(model.activeDeviceControlBackend, DeviceControlBackend.automatic.resolved(on: ProcessInfo.processInfo.operatingSystemVersion))
+        XCTAssertEqual(model.activeDeviceControlBackend, .coreDevice)
         XCTAssertTrue(model.canChangeDeviceControlBackend)
         await model.selectDeviceControlBackend(.xcTest)
         await pending.value
@@ -615,7 +694,8 @@ final class DeviceConnectionMethodTests: XCTestCase {
     }
 
     func testLegacyInjectedControllerKeepsAutomaticBehaviorAndRejectsExplicitSelection() async throws {
-        let fixture = try Fixture(savedMethod: "usbBoard")
+        let fixture = try Fixture(savedMethod: "usbBoard",
+            operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
         let controller = LegacyAppConnectionController()
         fixture.model.deviceClient = DeviceClient(controller: controller)
         await fixture.model.connectDevice()

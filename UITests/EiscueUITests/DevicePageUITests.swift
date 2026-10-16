@@ -19,7 +19,9 @@ final class DevicePageUITests: XCTestCase {
         let initialStatusFrame = ready.frame
         let subtitle = app.staticTexts["deviceVPNUsage"]
         let disconnect = app.buttons["disconnectDeviceButton"]
-        let pairing = app.buttons["devicePairingSetupButton"]
+        let permission = app.switches["deviceControlToggle"]
+        let method = app.buttons["deviceConnectionMethodPicker"]
+        let backend = app.buttons["deviceControlBackendPicker"]
         XCTAssertTrue(subtitle.exists)
         XCTAssertTrue(subtitle.label.contains("VPN"))
         XCTAssertTrue(disconnect.isHittable)
@@ -29,22 +31,18 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertFalse(app.otherElements["deviceAdvancedOptions"].exists)
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
-        XCTAssertTrue(pairing.isHittable)
-        XCTAssertTrue(pairing.label.contains("已保存"))
-        XCTAssertEqual(pairing.value as? String, "已收起")
-        XCTAssertFalse(app.buttons["removePairingButton"].exists,
-                       "Saved pairing details start collapsed in every connection state.")
+        XCTAssertTrue(permission.isHittable)
+        XCTAssertLessThan(permission.frame.maxY, method.frame.minY)
+        XCTAssertLessThan(method.frame.maxY, backend.frame.minY + 1)
+        XCTAssertLessThan(backend.frame.maxY, ready.frame.minY)
+        XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
+        XCTAssertFalse(app.buttons["preparePairingButton"].exists)
+        let removePairing = app.buttons["removePairingButton"]
+        XCTAssertTrue(removePairing.exists)
+        XCTAssertFalse(removePairing.isEnabled, "Pairing stays visible, but a ready connection must be disconnected before pairing again.")
         XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists,
                        "A ready device should not repeat the initial computer setup.")
         saveScreenshot(app, name: "Device-Ready-Compact")
-
-        pairing.tap()
-        let removePairing = app.buttons["removePairingButton"]
-        XCTAssertTrue(removePairing.waitForExistence(timeout: 5))
-        XCTAssertFalse(removePairing.isEnabled, "Pairing remains accessible, but a ready connection must be disconnected before pairing again.")
-        XCTAssertEqual(pairing.value as? String, "已展开")
-        pairing.tap()
-        XCTAssertTrue(removePairing.waitForNonExistence(timeout: 5))
 
         let preview = app.buttons["deviceScreenPreviewButton"]
         revealDeviceElement(preview, in: app)
@@ -56,27 +54,24 @@ final class DevicePageUITests: XCTestCase {
             app.scrollViews.firstMatch.swipeDown()
         }
         assertUnchangedFrame(ready, from: initialStatusFrame, context: "Return to the initial scroll position before comparing settings")
-        let settings = [app.buttons["deviceConnectionMethodPicker"], app.buttons["deviceControlBackendPicker"],
-                        pairing, app.switches["deviceControlToggle"]]
+        let settings = [permission, method, backend]
         for setting in settings { XCTAssertTrue(setting.exists) }
         let frames = settings.map(\.frame)
         XCTAssertLessThan(settings[0].frame.maxY, settings[1].frame.minY + 1)
-        XCTAssertLessThan(settings[1].frame.maxY, pairing.frame.minY + 1)
-        XCTAssertLessThan(pairing.frame.maxY, settings[3].frame.minY)
+        XCTAssertLessThan(settings[1].frame.maxY, settings[2].frame.minY + 1)
         XCTAssertTrue(disconnect.isHittable)
         disconnect.tap()
         XCTAssertTrue(app.buttons["connectDeviceButton"].waitForExistence(timeout: 5))
         XCTAssertEqual(ready.label, "未连接")
-        XCTAssertTrue(pairing.label.contains("已保存"))
-        XCTAssertEqual(pairing.value as? String, "已收起")
+        XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
+        XCTAssertFalse(app.buttons["preparePairingButton"].exists)
         for (setting, frame) in zip(settings, frames) {
             assertUnchangedFrame(setting, from: frame, context: "Disconnect keeps \(setting.identifier) in place")
         }
         XCTAssertFalse(preview.exists)
         XCTAssertFalse(app.buttons["deviceProbeButton"].exists)
         saveScreenshot(app, name: "Device-Disconnected-Compact")
-        pairing.tap()
-        XCTAssertTrue(removePairing.waitForExistence(timeout: 5))
+        XCTAssertTrue(removePairing.exists)
         XCTAssertTrue(removePairing.isEnabled)
     }
 
@@ -151,6 +146,7 @@ final class DevicePageUITests: XCTestCase {
         let picker = app.buttons["deviceConnectionMethodPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         XCTAssertEqual(picker.value as? String, "App 内连接")
+        XCTAssertLessThan(app.switches["deviceControlToggle"].frame.maxY, picker.frame.minY)
         picker.tap()
         let appMethod = app.buttons["deviceConnectionChoice_localVPN"]
         let bluetooth = app.buttons["deviceConnectionChoice_bluetoothBoard"]
@@ -166,21 +162,15 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertEqual(usb.label, "ESP32-S3 USB 网卡")
         appMethod.tap()
         XCTAssertTrue(appMethod.waitForNonExistence(timeout: 5))
-        XCTAssertEqual(picker.value as? String, "App 内连接")
+        waitForValue("App 内连接", of: picker)
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
-        let pairing = app.buttons["devicePairingSetupButton"]
-        XCTAssertTrue(pairing.exists)
-        XCTAssertEqual(pairing.value as? String, "已收起")
-        XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists)
-        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
-        XCTAssertFalse(app.buttons["startPairingButton"].exists)
+        XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
+        XCTAssertFalse(app.buttons["preparePairingButton"].exists)
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
         XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
         XCTAssertFalse(app.buttons["deviceProbeButton"].exists, "An unready route must not expose the input check.")
         XCTAssertFalse(app.buttons["deviceConnectionOptionsMenu"].exists)
-        saveScreenshot(app, name: "Device-Unpaired-Compact")
-        app.buttons["preparePairingButton"].tap()
-        XCTAssertEqual(pairing.value as? String, "已展开")
+        saveScreenshot(app, name: "Device-Unpaired-Inline")
         XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
             XCTAssertTrue(app.buttons["startPairingButton"].exists)
@@ -189,9 +179,6 @@ final class DevicePageUITests: XCTestCase {
             XCTAssertTrue(app.buttons["copyComputerPairingCommandButton"].exists)
             XCTAssertFalse(app.buttons["startPairingButton"].exists)
         }
-        pairing.tap()
-        XCTAssertEqual(pairing.value as? String, "已收起")
-
         openSettings(in: app)
         let debugToggle = app.switches["debugToolsToggle"]
         for _ in 0..<3 where !debugToggle.isHittable { app.swipeUp() }
@@ -203,7 +190,7 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertTrue(bluetooth.waitForExistence(timeout: 5))
         bluetooth.tap()
         XCTAssertTrue(bluetooth.waitForNonExistence(timeout: 5))
-        XCTAssertEqual(picker.value as? String, "ESP32-C3 / S3 键鼠")
+        waitForValue("ESP32-C3 / S3 键鼠", of: picker)
         XCTAssertTrue(app.buttons["bluetoothVerifyButton"].exists,
                       "Required first calibration stays available with diagnostics hidden.")
         XCTAssertFalse(app.staticTexts["deviceDebugSectionTitle"].exists)
@@ -239,30 +226,36 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertTrue((appearance.label + (appearance.value as? String ?? "")).contains("Dark"))
         openDevice(in: app)
 
-        let pairing = app.buttons["devicePairingSetupButton"]
-        let prepare = app.buttons["preparePairingButton"]
+        let permission = app.switches["deviceControlToggle"]
+        let method = app.buttons["deviceConnectionMethodPicker"]
         XCTAssertEqual(app.staticTexts["deviceConnectionStatus"].label, "Not paired")
-        XCTAssertEqual(pairing.value as? String, "Collapsed")
-        XCTAssertTrue(prepare.isHittable)
-        XCTAssertFalse(app.buttons["startPairingButton"].exists)
-        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
+        XCTAssertTrue(permission.isHittable)
+        XCTAssertLessThan(permission.frame.maxY, method.frame.minY)
+        XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
+        XCTAssertFalse(app.buttons["preparePairingButton"].exists)
+        XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         let viewport = "\(Int(app.frame.width))x\(Int(app.frame.height))"
         saveScreenshot(app, name: "Device-English-Dark-Unpaired-\(viewport)")
 
-        prepare.tap()
-        XCTAssertEqual(pairing.value as? String, "Expanded")
         let startPairing = app.buttons["startPairingButton"]
         XCTAssertTrue(startPairing.waitForExistence(timeout: 5))
         revealDeviceElement(startPairing, in: app)
         XCTAssertEqual(startPairing.label, "Start pairing")
         XCTAssertTrue(startPairing.isEnabled)
-        XCTAssertTrue(app.navigationBars["Device"].exists, "Preparation expands in the same device page.")
+        XCTAssertTrue(app.navigationBars["Device"].exists, "System pairing is directly available on the device page.")
         XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists)
         XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists)
         XCTAssertFalse(app.staticTexts["pairingCode"].exists)
         saveScreenshot(app, name: "Device-English-Dark-System-Pairing-\(viewport)")
         #endif
+    }
+
+    @MainActor
+    private func waitForValue(_ value: String, of element: XCUIElement,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed, file: file, line: line)
     }
 
     @MainActor

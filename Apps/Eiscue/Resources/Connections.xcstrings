@@ -1601,40 +1601,6 @@
         }
       }
     },
-    "device.pairing.title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设备配对"
-          }
-        }
-      }
-    },
-    "device.pairing.saved": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Saved"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已保存"
-          }
-        }
-      }
-    },
     "device.pairing.required": {
       "extractionState": "manual",
       "localizations": {
@@ -1648,91 +1614,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "尚未配对"
-          }
-        }
-      }
-    },
-    "device.pairing.setup": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Set up"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置配对"
-          }
-        }
-      }
-    },
-    "device.pairing.expanded": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expanded"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已展开"
-          }
-        }
-      }
-    },
-    "device.pairing.collapsed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Collapsed"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已收起"
-          }
-        }
-      }
-    },
-    "device.pairing.disconnectFirst": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disconnect before pairing again."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请先断开连接，再重新配对。"
-          }
-        }
-      }
-    },
-    "device.pairing.connectAfterImport": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "After importing, tap Connect at the top of this page and follow the system prompts."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "导入后，点页面顶部的“连接”，按系统提示完成授权。"
           }
         }
       }
@@ -1784,23 +1665,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "通过 ESP32-S3 USB 网卡连接。"
-          }
-        }
-      }
-    },
-    "device.pairing.received": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ready to import"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "待导入"
           }
         }
       }

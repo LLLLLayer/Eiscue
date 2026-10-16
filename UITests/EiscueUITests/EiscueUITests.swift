@@ -73,6 +73,18 @@ final class EiscueUITests: XCTestCase {
         let picker = app.buttons["deviceConnectionMethodPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         XCTAssertEqual(picker.value as? String, "App 内连接")
+        let permission = app.switches["deviceControlToggle"]
+        XCTAssertTrue(permission.isHittable)
+        XCTAssertLessThan(permission.frame.maxY, picker.frame.minY)
+        XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
+        XCTAssertFalse(app.buttons["preparePairingButton"].exists)
+    }
+
+    @MainActor
+    private func waitForValue(_ value: String, of element: XCUIElement,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed, file: file, line: line)
     }
 
     @MainActor
@@ -80,33 +92,56 @@ final class EiscueUITests: XCTestCase {
         var app = launch()
         openDevice(in: app)
         let usesCoreDevice = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+        let expectedDefault = usesCoreDevice ? "DisplayService" : "XCTest"
         let picker = app.buttons["deviceControlBackendPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        XCTAssertEqual(picker.value as? String, usesCoreDevice ? "自动 · DisplayService" : "自动 · XCTest")
+        waitForValue(expectedDefault, of: picker)
+        let status = app.staticTexts["deviceConnectionStatus"]
+        let statusLabel = status.label
+        let elements = [app.switches["deviceControlToggle"], app.buttons["deviceConnectionMethodPicker"], picker, status]
+        let frames = elements.map(\.frame)
+        XCTAssertLessThan(elements[0].frame.maxY, elements[1].frame.minY)
+        XCTAssertLessThan(elements[1].frame.maxY, picker.frame.minY + 1)
+        XCTAssertLessThan(picker.frame.maxY, status.frame.minY)
         picker.tap()
         let coreDevice = app.buttons["deviceControlBackendChoice_coreDevice"]
         let xcTest = app.buttons["deviceControlBackendChoice_xcTest"]
         XCTAssertTrue(coreDevice.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "deviceControlBackendChoice_")).count, 2)
+        XCTAssertFalse(app.buttons["deviceControlBackendChoice_automatic"].exists)
         XCTAssertEqual(coreDevice.isEnabled, usesCoreDevice)
         XCTAssertTrue(xcTest.isEnabled)
         if !usesCoreDevice { XCTAssertTrue(app.staticTexts["需要 iOS 27 或更新版本。"].exists) }
+        let selected = usesCoreDevice ? coreDevice : xcTest
+        XCTAssertEqual(selected.value as? String, "已选用")
+        selected.tap()
+        XCTAssertTrue(selected.waitForNonExistence(timeout: 5))
+        waitForValue(expectedDefault, of: picker)
+        XCTAssertEqual(status.label, statusLabel)
+        XCTAssertFalse(app.staticTexts["deviceConnectionMessage"].exists)
+        for (element, frame) in zip(elements, frames) {
+            assertUnchangedFrame(element, from: frame, context: "Selecting the effective backend keeps \(element.identifier) in place")
+        }
+
+        picker.tap()
+        XCTAssertTrue(xcTest.waitForExistence(timeout: 5))
         xcTest.tap()
-        XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        XCTAssertEqual(picker.value as? String, "XCTest")
+        XCTAssertTrue(xcTest.waitForNonExistence(timeout: 5))
+        waitForValue("XCTest", of: picker)
 
         app.terminate()
         app = launch(reset: false)
         openDevice(in: app)
         let restored = app.buttons["deviceControlBackendPicker"]
-        XCTAssertEqual(restored.value as? String, "XCTest")
-        restored.tap()
+        waitForValue("XCTest", of: restored)
         if usesCoreDevice {
-            app.buttons["deviceControlBackendChoice_coreDevice"].tap()
-            XCTAssertEqual(restored.value as? String, "DisplayService")
             restored.tap()
+            let choice = app.buttons["deviceControlBackendChoice_coreDevice"]
+            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            choice.tap()
+            XCTAssertTrue(choice.waitForNonExistence(timeout: 5))
+            waitForValue("DisplayService", of: restored)
         }
-        app.buttons["deviceControlBackendChoice_automatic"].tap()
-        XCTAssertEqual(restored.value as? String, usesCoreDevice ? "自动 · DisplayService" : "自动 · XCTest")
     }
 
     @MainActor
@@ -120,15 +155,27 @@ final class EiscueUITests: XCTestCase {
         let backend = app.buttons["deviceControlBackendPicker"]
         XCTAssertEqual(backend.label, "Control method")
         backend.tap()
-        app.buttons["deviceControlBackendChoice_xcTest"].tap()
+        let xcTest = app.buttons["deviceControlBackendChoice_xcTest"]
+        XCTAssertTrue(xcTest.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "deviceControlBackendChoice_")).count, 2)
+        XCTAssertFalse(app.buttons["deviceControlBackendChoice_automatic"].exists)
+        xcTest.tap()
+        XCTAssertTrue(xcTest.waitForNonExistence(timeout: 5))
+        waitForValue("XCTest", of: backend)
+        let method = app.buttons["deviceConnectionMethodPicker"]
         for route in ["usbBoard", "bluetoothBoard", "localVPN"] {
-            app.buttons["deviceConnectionMethodPicker"].tap()
-            app.buttons["deviceConnectionChoice_\(route)"].tap()
+            method.tap()
+            let choice = app.buttons["deviceConnectionChoice_\(route)"]
+            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            let selection = choice.label
+            choice.tap()
+            XCTAssertTrue(choice.waitForNonExistence(timeout: 5))
+            waitForValue(selection, of: method)
             if route == "bluetoothBoard" {
                 XCTAssertTrue(backend.waitForNonExistence(timeout: 5))
             } else {
                 XCTAssertTrue(backend.waitForExistence(timeout: 5))
-                XCTAssertEqual(backend.value as? String, "XCTest")
+                waitForValue("XCTest", of: backend)
             }
         }
         XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists, "Choosing a backend must not start a connection.")
@@ -170,12 +217,6 @@ final class EiscueUITests: XCTestCase {
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
         XCTAssertFalse(app.buttons["检查点击和输入"].exists)
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
-        let pairing = app.buttons["devicePairingSetupButton"]
-        XCTAssertEqual(pairing.value as? String, "已收起")
-        XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists)
-        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
-        pairing.tap()
-        XCTAssertEqual(pairing.value as? String, "已展开")
         let setupAction = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
             ? app.buttons["startPairingButton"] : app.buttons["copyComputerPairingCommandButton"]
         reveal(setupAction, in: app)
@@ -302,15 +343,7 @@ final class EiscueUITests: XCTestCase {
         XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
         XCTAssertFalse(app.staticTexts["localTunnelStatus"].exists)
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
-        let pairing = app.buttons["devicePairingSetupButton"]
-        XCTAssertEqual(pairing.value as? String, "已收起")
-        XCTAssertFalse(app.buttons["startPairingButton"].exists)
-        XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists)
-        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
-        let prepare = app.buttons["preparePairingButton"]
-        XCTAssertTrue(prepare.isHittable)
-        prepare.tap()
-        XCTAssertEqual(pairing.value as? String, "已展开")
+        XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 {
             XCTAssertFalse(app.buttons["startPairingButton"].exists)
             let copyCommand = app.buttons["copyComputerPairingCommandButton"]
@@ -322,7 +355,7 @@ final class EiscueUITests: XCTestCase {
             reveal(startPairing, in: app)
             XCTAssertTrue(startPairing.isEnabled)
         }
-        XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists, "Opening preparation must not start the VPN or pairing.")
+        XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists, "Showing inline preparation must not start the VPN or pairing.")
         XCTAssertFalse(app.staticTexts["pairingCode"].exists)
         #endif
     }
@@ -338,11 +371,7 @@ final class EiscueUITests: XCTestCase {
         let app = launch()
         openDevice(in: app)
         assertInAppConnection(in: app)
-        let pairing = app.buttons["devicePairingSetupButton"]
-        XCTAssertEqual(pairing.value as? String, "已收起")
-        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
-        pairing.tap()
-        XCTAssertEqual(pairing.value as? String, "已展开")
+        XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         let guidance = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "USB", "开发者模式")).firstMatch
         reveal(guidance, in: app)
         XCTAssertTrue(guidance.label.contains("USB"))

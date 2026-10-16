@@ -62,10 +62,10 @@ The connection, screen sharing and calibration must all remain valid. Disconnect
 | --- | --- | --- | --- |
 | Bluetooth board (C3 / S3) | ReplayKit / BLE HID | Bluetooth pairing, AssistiveTouch, screen sharing and calibration; no computer-generated pairing file or DDI | No |
 | S3 USB input | ReplayKit / USB HID; control commands still use Bluetooth | As above, plus a USB connection with the phone acting as host | No |
-| In-app connection (default, local VPN) | Choose Automatic, DisplayService or XCTest | USB identity setup on iOS 26 or system pairing on iOS 27+, plus developer environment / DDI | Yes |
+| In-app connection (default, local VPN) | Choose DisplayService or XCTest | USB identity setup on iOS 26 or system pairing on iOS 27+, plus developer environment / DDI | Yes |
 | S3 USB network adapter | As above, through a USB NCM relay | As above, plus a USB host connection and network adapter configuration | No |
 
-**Control method** is separate from the connection route and pairing. In-app and USB network connections offer **Automatic**, **DisplayService (CoreDevice)** and **XCTest**. Automatic uses XCTest on iOS 26 and DisplayService on iOS 27+. DisplayService remains visible but disabled on iOS 26 with “Requires iOS 27 or later”; updating Eiscue alone cannot enable it. Changing the method releases the current connection, keeps the pairing identity, and requires reconnecting; there is no automatic fallback. Explicit XCTest on iOS 27 is integrated but still needs physical-device acceptance.
+**Control method** is separate from the connection route and pairing. In-app and USB network connections offer **DisplayService (CoreDevice)** and **XCTest**. The initial selection is XCTest on iOS 26 and DisplayService on iOS 27+; existing Automatic preferences display their resolved method. DisplayService remains visible but disabled on iOS 26 with “Requires iOS 27 or later”; updating Eiscue alone cannot enable it. Selecting the current method retains the session. Switching to a different method releases the current connection, keeps the pairing identity, and requires reconnecting; there is no automatic fallback. Explicit XCTest on iOS 27 is integrated but still needs physical-device acceptance.
 
 The former C3 Wi-Fi hotspot relay has been removed. An old saved selection resets to the default In-app connection without starting it; choose and connect a supported route explicitly.
 

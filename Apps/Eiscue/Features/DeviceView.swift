@@ -6,7 +6,6 @@ struct DeviceView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var showsPairingSetup = false
     @State private var hasRequestedConnection = false
     @State private var importsIdentity = false
     @State private var confirmsForget = false
@@ -22,13 +21,13 @@ struct DeviceView: View {
         Group {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    deviceHeader
-                    if model.deviceConnectionMethod != .bluetoothBoard { connectionCard }
-                    connectionSettings
-                    if model.deviceConnectionMethod == .bluetoothBoard { BluetoothBoardSetupView() }
                     section(title: text("device.section.usage")) {
                         SurfaceCard { deviceControlPermission }
                     }
+                    deviceHeader
+                    connectionSettings
+                    if model.deviceConnectionMethod == .bluetoothBoard { BluetoothBoardSetupView() }
+                    else { connectionCard }
                     #if DEBUG
                     if model.showsDebugTools && model.isDeviceReady { debugSection }
                     #endif
@@ -51,15 +50,11 @@ struct DeviceView: View {
                 }
             }
             .onChange(of: model.deviceConnectionMethod) { _, _ in
-                showsPairingSetup = false
                 hasRequestedConnection = false
             }
             .onChange(of: model.deviceControlBackend) { _, _ in hasRequestedConnection = false }
             .onChange(of: model.isDeviceReady) { _, ready in
                 if ready { hasRequestedConnection = false }
-            }
-            .onChange(of: model.hasPairingIdentity) { _, saved in
-                if saved { showsPairingSetup = false }
             }
             .fileImporter(isPresented: $importsIdentity, allowedContentTypes: [.json, .data]) { result in
                 if case .success(let url) = result { Task { await model.importPairingIdentity(url) } }
@@ -163,35 +158,10 @@ struct DeviceView: View {
                 if model.deviceConnectionMethod != .bluetoothBoard {
                     Divider().padding(.horizontal, 16)
                     DeviceControlBackendPicker(embedded: true)
-                    Divider().padding(.horizontal, 16)
-                    pairingSetupRow
-                    if showsPairingSetup {
-                        Divider().padding(.horizontal, 16)
-                        pairingSetup.padding(16)
-                    }
                 }
             }
             .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 18))
         }
-    }
-
-    private var pairingSetupRow: some View {
-        Button { showsPairingSetup.toggle() } label: {
-            HStack(spacing: 12) {
-                Text(text("device.pairing.title")).fontWeight(.medium)
-                Spacer(minLength: 8)
-                Text(text(model.hasPairingIdentity ? "device.pairing.saved" : (model.hasTransferredPairingIdentity ? "device.pairing.received" : "device.pairing.required")))
-                    .foregroundStyle(.secondary)
-                Image(systemName: showsPairingSetup ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
-            .font(.subheadline).foregroundStyle(.primary)
-            .frame(minHeight: 28).padding(16).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("devicePairingSetupButton")
-        .accessibilityValue(text(showsPairingSetup ? "device.pairing.expanded" : "device.pairing.collapsed"))
     }
 
     private var connectionTitle: String {
@@ -233,14 +203,20 @@ struct DeviceView: View {
                     Text(code).font(.system(.largeTitle, design: .monospaced).weight(.bold))
                         .textSelection(.enabled).accessibilityIdentifier("pairingCode")
                 }
-                if model.isPairing {
-                    Text(String(localized: "setup.systemPairingDetail", table: "Onboarding"))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
                 if showsConnectionMessage { connectionMessage }
                 if !isConnecting && !model.isDeviceReady && model.deviceConnectionMethod == .localVPN
                     && (model.localTunnel.isConnected || model.localTunnel.isTransitioning) {
                     disconnectButton
+                }
+                Divider()
+                if model.hasPairingIdentity {
+                    Button(String(localized: "setup.pairAgain", table: "Onboarding")) { confirmsForget = true }
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .buttonStyle(.plain).frame(minHeight: 44)
+                        .disabled(model.isBusy || model.isDeviceReady || isConnecting)
+                        .accessibilityIdentifier("removePairingButton")
+                } else {
+                    pairingSetup
                 }
             }
         }
@@ -262,63 +238,50 @@ struct DeviceView: View {
             }
             .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
             .disabled(model.isBusy).accessibilityIdentifier("connectDeviceButton")
-        } else {
-            Button(text("device.pairing.setup")) { showsPairingSetup = true }
-                .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
-                .disabled(model.isBusy).accessibilityIdentifier("preparePairingButton")
+        } else if usesSystemPairing {
+            Button("device.startPairing") {
+                hasRequestedConnection = true
+                Task {
+                    if !model.localTunnel.isConnected { await model.startLocalTunnel() }
+                    if model.localTunnel.isConnected { model.startPairing() }
+                }
+            }
+            .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
+            .disabled(model.isBusy).accessibilityIdentifier("startPairingButton")
         }
     }
 
-    @ViewBuilder private var pairingSetup: some View {
+    private var pairingSetup: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if model.hasPairingIdentity {
-                Text(String(localized: "setup.savedPairingDetail", table: "Onboarding"))
-                    .font(.caption).foregroundStyle(.secondary)
-                Button(String(localized: "setup.pairAgain", table: "Onboarding")) { confirmsForget = true }
-                    .buttonStyle(.glass).controlSize(.small)
-                    .disabled(model.isBusy || model.isDeviceReady || isConnecting)
-                    .accessibilityIdentifier("removePairingButton")
-                if model.isDeviceReady {
-                    Text(text("device.pairing.disconnectFirst")).font(.caption).foregroundStyle(.secondary)
-                }
-            } else {
-                if usesSystemPairing {
+            if usesSystemPairing {
+                if !isConnecting {
                     Text(String(localized: "setup.inlineSystemPreparation", table: "Onboarding"))
                         .font(.subheadline).foregroundStyle(.secondary)
-                    Text(String(localized: "setup.systemPairingDetail", table: "Onboarding"))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("device.startPairing") {
-                        hasRequestedConnection = true
-                        showsPairingSetup = false
-                        Task {
-                            if !model.localTunnel.isConnected { await model.startLocalTunnel() }
-                            if model.localTunnel.isConnected { model.startPairing() }
-                        }
-                    }
-                    .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
-                    .disabled(model.isBusy).accessibilityIdentifier("startPairingButton")
-                } else {
-                    ComputerPairingHelpView()
-                    PairingSetupStepTitle(number: 4, title: String(localized: "setup.stepImportTitle", table: "Onboarding"))
-                    Text(String(localized: model.hasTransferredPairingIdentity ? "setup.inlineTransferReady" : "setup.stepImportWaiting", table: "Onboarding"))
-                        .font(.caption).foregroundStyle(.secondary)
                 }
-                if model.hasTransferredPairingIdentity {
-                    Button("device.importTransferredPairing") {
-                        Task { await model.importTransferredPairingIdentity() }
-                    }
-                    .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
-                    .disabled(model.isBusy).accessibilityIdentifier("importTransferredPairingButton")
-                }
-                Button(String(localized: "setup.chooseExistingFile", table: "Onboarding")) { importsIdentity = true }
-                    .buttonStyle(.glass).disabled(model.isBusy)
-                    .accessibilityIdentifier("importPairingIdentityButton")
-                if !usesSystemPairing {
-                    PairingSetupStepTitle(number: 5, title: String(localized: "setup.stepConnectTitle", table: "Onboarding"))
-                    Text(text("device.pairing.connectAfterImport")).font(.caption).foregroundStyle(.secondary)
-                }
-                routeRequirements
+                Text(String(localized: "setup.systemPairingDetail", table: "Onboarding"))
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                ComputerPairingHelpView()
+                PairingSetupStepTitle(number: 4, title: String(localized: "setup.stepImportTitle", table: "Onboarding"))
+                Text(String(localized: model.hasTransferredPairingIdentity ? "setup.inlineTransferReady" : "setup.stepImportWaiting", table: "Onboarding"))
+                    .font(.caption).foregroundStyle(.secondary)
             }
+            if model.hasTransferredPairingIdentity {
+                Button("device.importTransferredPairing") {
+                    Task { await model.importTransferredPairingIdentity() }
+                }
+                .buttonStyle(.glassProminent).foregroundStyle(EiscueStyle.onAccent)
+                .disabled(model.isBusy).accessibilityIdentifier("importTransferredPairingButton")
+            }
+            Button(String(localized: "setup.chooseExistingFile", table: "Onboarding")) { importsIdentity = true }
+                .buttonStyle(.glass).disabled(model.isBusy)
+                .accessibilityIdentifier("importPairingIdentityButton")
+            if !usesSystemPairing {
+                PairingSetupStepTitle(number: 5, title: String(localized: "setup.stepConnectTitle", table: "Onboarding"))
+                Text(String(localized: "setup.stepConnectAfterImport", table: "Onboarding"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            routeRequirements
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -476,6 +439,7 @@ struct DeviceConnectionMethodPicker: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsMethods = false
+    @State private var pendingMethod: DeviceConnectionMethod?
 
     private let methods: [DeviceConnectionMethod] = [.localVPN, .bluetoothBoard, .usbBoard]
     private var canChange: Bool {
@@ -485,14 +449,16 @@ struct DeviceConnectionMethodPicker: View {
 
     var body: some View {
         picker
-        .sheet(isPresented: $showsMethods) {
+        .sheet(isPresented: $showsMethods, onDismiss: {
+            guard let method = pendingMethod else { return }
+            pendingMethod = nil
+            Task { await model.selectDeviceConnectionMethod(method) }
+        }) {
             NavigationStack {
                 List(methods, id: \.self) { method in
                     Button {
-                        Task {
-                            await model.selectDeviceConnectionMethod(method)
-                            if model.deviceConnectionMethod == method { showsMethods = false }
-                        }
+                        pendingMethod = method == model.deviceConnectionMethod ? nil : method
+                        showsMethods = false
                     } label: {
                         HStack(spacing: 14) {
                             Image(systemName: method.selectionSymbol).font(.title3).frame(width: 28)
@@ -560,12 +526,11 @@ struct DeviceControlBackendPicker: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsBackends = false
+    @State private var pendingBackend: DeviceControlBackend?
+    private let backends: [DeviceControlBackend] = [.coreDevice, .xcTest]
     private var systemVersion: OperatingSystemVersion { ProcessInfo.processInfo.operatingSystemVersion }
-    private var selection: String {
-        if model.deviceControlBackend == .automatic {
-            String(localized: "device.backend.automaticValue \(model.deviceControlBackend.resolved(on: systemVersion).selectionTitle)", table: "Connections")
-        } else { model.deviceControlBackend.selectionTitle }
-    }
+    private var selectedBackend: DeviceControlBackend { model.deviceControlBackend.resolved(on: systemVersion) }
+    private var selection: String { selectedBackend.selectionTitle }
 
     var body: some View {
         Button { showsBackends = true } label: {
@@ -592,15 +557,17 @@ struct DeviceControlBackendPicker: View {
         .accessibilityLabel(String(localized: "device.backend.title", table: "Connections"))
         .accessibilityValue(selection)
         .accessibilityIdentifier("deviceControlBackendPicker")
-        .sheet(isPresented: $showsBackends) {
+        .sheet(isPresented: $showsBackends, onDismiss: {
+            guard let backend = pendingBackend else { return }
+            pendingBackend = nil
+            Task { await model.selectDeviceControlBackend(backend) }
+        }) {
             NavigationStack {
-                List(DeviceControlBackend.allCases, id: \.self) { backend in
+                List(backends, id: \.self) { backend in
                     let available = backend.isAvailable(on: systemVersion)
                     Button {
-                        Task {
-                            await model.selectDeviceControlBackend(backend)
-                            if model.deviceControlBackend == backend { showsBackends = false }
-                        }
+                        pendingBackend = backend
+                        showsBackends = false
                     } label: {
                         HStack(spacing: 14) {
                             Image(systemName: backend.selectionSymbol).font(.title3).frame(width: 28)
@@ -610,14 +577,14 @@ struct DeviceControlBackendPicker: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 0)
-                            if model.deviceControlBackend == backend {
+                            if selectedBackend == backend {
                                 Image(systemName: "checkmark").font(.body.weight(.semibold)).accessibilityHidden(true)
                             }
                         }
                         .foregroundStyle(.primary).padding(.vertical, 8).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).disabled(!available || !model.canChangeDeviceControlBackend)
-                    .accessibilityValue(model.deviceControlBackend == backend ? String(localized: "device.connection.selected", table: "Connections") : "")
+                    .accessibilityValue(selectedBackend == backend ? String(localized: "device.connection.selected", table: "Connections") : "")
                     .accessibilityIdentifier("deviceControlBackendChoice_\(backend.rawValue)")
                     .listRowBackground(EiscueStyle.surface)
                 }

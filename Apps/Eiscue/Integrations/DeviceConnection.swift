@@ -351,7 +351,8 @@ extension AppModel {
         }
         do {
             try await task.value
-            guard deviceOperationID == operationID, deviceConnectionMethod == method, deviceControlBackend == backend else { return }
+            guard deviceOperationID == operationID, deviceConnectionMethod == method,
+                  deviceControlBackend.resolved(on: deviceOperatingSystemVersion) == backend.resolved(on: deviceOperatingSystemVersion) else { return }
             deviceConnectionError = nil
             await refreshDeviceStatus()
             // Completing discovery/diagnostics is not a control capability.
@@ -414,16 +415,25 @@ extension AppModel {
             deviceConnectionError = DeviceControlError.backendUnavailable(backend).localizedDescription
             return
         }
+        let currentBackend = activeDeviceControlBackend ?? deviceControlBackend.resolved(on: deviceOperatingSystemVersion)
+        if deviceConnectionMethod == .bluetoothBoard || backend.resolved(on: deviceOperatingSystemVersion) == currentBackend {
+            deviceControlBackend = backend
+            return
+        }
         isChangingDeviceConnectionMethod = true
         defer { isChangingDeviceConnectionMethod = false }
-        if deviceConnectionMethod != .bluetoothBoard {
+        let hasSession = activeDeviceConnectionMethod != nil || activeDeviceControlBackend != nil ||
+            deviceConnectionTask != nil || isConnecting || isDeviceReady
+        if hasSession {
             await disconnectDevice(stopChatRun: false, stopReason: String(localized: "device.backend.changed", table: "Connections"))
+        } else {
+            // Unavailable clients may still hold partial sessions. Release them
+            // without presenting a disconnected preference change as connecting.
+            await releaseDeviceConnection()
         }
         deviceControlBackend = backend
-        if deviceConnectionMethod != .bluetoothBoard {
-            deviceConnectionError = nil
-            connectionMessage = String(localized: "device.backend.changed", table: "Connections")
-        }
+        deviceConnectionError = nil
+        connectionMessage = String(localized: "device.backend.changed", table: "Connections")
     }
 
     func disconnectDevice(expectedPairingID: UUID? = nil, stopChatRun: Bool = true,

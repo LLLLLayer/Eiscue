@@ -62,10 +62,10 @@
 | --- | --- | --- | --- |
 | 蓝牙开发板（C3 / S3） | ReplayKit / BLE HID | 蓝牙配对、辅助触控、共享与校准；不需要电脑配对文件或 DDI | 否 |
 | S3 USB 输入 | ReplayKit / USB HID，控制命令仍走蓝牙 | 同上，另需手机作为 USB 主机连接开发板 | 否 |
-| App 内连接（默认，本地 VPN） | 可选自动、DisplayService 或 XCTest | iOS 26 电脑 USB 身份建立，或 iOS 27 起系统配对；另需开发者环境 / DDI | 是 |
+| App 内连接（默认，本地 VPN） | 可选 DisplayService 或 XCTest | iOS 26 电脑 USB 身份建立，或 iOS 27 起系统配对；另需开发者环境 / DDI | 是 |
 | S3 USB 网卡 | 同上，经 USB NCM 中继 | 同上，另需 USB 主机连接与网卡配置 | 否 |
 
-**控制方式**与连接通道、配对分开选择。App 内连接和 USB 网卡中继提供**自动、DisplayService（CoreDevice）、XCTest**。自动模式在 iOS 26 使用 XCTest，iOS 27 起使用 DisplayService；iOS 26 仍显示 DisplayService 入口，但不可选，并标注“需要 iOS 27 或更新版本”，仅更新 App 不能启用。切换方式会释放当前连接、保留配对身份，需要重新连接，不会自动回退。iOS 27 手动选择 XCTest 已接入，实际设备控制仍待真机验收。
+**控制方式**与连接通道、配对分开选择。App 内连接和 USB 网卡中继提供 **DisplayService（CoreDevice）、XCTest**。首次默认选择在 iOS 26 为 XCTest、iOS 27 起为 DisplayService；旧的自动选项直接显示其实际方式。iOS 26 仍显示 DisplayService 入口，但不可选，并标注“需要 iOS 27 或更新版本”，仅更新 App 不能启用。选择当前实际使用的方式会保留连接。切换到另一种方式会释放当前连接、保留配对身份，需要重新连接，不会自动回退。iOS 27 手动选择 XCTest 已接入，实际设备控制仍待真机验收。
 
 原 C3 Wi-Fi 热点中继已移除。旧的已保存选项会回到默认的 App 内连接，但不会自动启动；请手动选择并连接仍支持的路线。
 
