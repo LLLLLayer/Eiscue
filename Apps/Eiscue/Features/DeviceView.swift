@@ -440,40 +440,32 @@ struct DeviceConnectionMethodPicker: View {
             pendingMethod = nil
             Task { await model.selectDeviceConnectionMethod(method) }
         }) {
-            NavigationStack {
-                List(methods, id: \.self) { method in
+            DeviceSelectionSheet(title: String(localized: "device.connectionMethod")) {
+                ForEach(methods, id: \.self) { method in
                     Button {
                         pendingMethod = method == model.deviceConnectionMethod ? nil : method
                         showsMethods = false
                     } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: method.selectionSymbol).font(.title3).frame(width: 28)
+                            Image(systemName: method.selectionSymbol).font(.system(size: 22)).frame(width: 28)
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(method.selectionTitle).font(.body.weight(.medium))
                                 Text(method.selectionDetail).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer(minLength: 0)
                             if model.deviceConnectionMethod == method {
-                                Image(systemName: "checkmark").font(.body.weight(.semibold)).accessibilityHidden(true)
+                                Image(systemName: "checkmark").font(.system(size: 17, weight: .semibold)).accessibilityHidden(true)
                             }
                         }
-                        .foregroundStyle(.primary).padding(.vertical, 8).contentShape(Rectangle())
+                        .foregroundStyle(.primary).padding(16).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).disabled(!canChange)
                     .accessibilityLabel(method.selectionTitle).accessibilityHint(method.selectionDetail)
                     .accessibilityValue(model.deviceConnectionMethod == method ? String(localized: "device.connection.selected", table: "Connections") : "")
                     .accessibilityIdentifier("deviceConnectionChoice_\(method.rawValue)")
-                    .listRowBackground(EiscueStyle.surface)
-                }
-                .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(EiscueStyle.background)
-                .navigationTitle("device.connectionMethod").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("common.done") { showsMethods = false }
-                    }
+                    if method != methods.last { Divider().padding(.leading, 58) }
                 }
             }
-            .presentationDetents([.fraction(0.65), .large]).presentationDragIndicator(.visible)
         }
     }
 
@@ -548,15 +540,15 @@ struct DeviceControlBackendPicker: View {
             pendingBackend = nil
             Task { await model.selectDeviceControlBackend(backend) }
         }) {
-            NavigationStack {
-                List(backends, id: \.self) { backend in
+            DeviceSelectionSheet(title: String(localized: "device.backend.title", table: "Connections")) {
+                ForEach(backends, id: \.self) { backend in
                     let available = backend.isAvailable(on: systemVersion)
                     Button {
                         pendingBackend = backend
                         showsBackends = false
                     } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: backend.selectionSymbol).font(.title3).frame(width: 28)
+                            Image(systemName: backend.selectionSymbol).font(.system(size: 22)).frame(width: 28)
                             VStack(alignment: .leading, spacing: 5) {
                                 Text(backend.selectionTitle).font(.body.weight(.medium))
                                 Text(available ? backend.selectionDetail : String(localized: "device.backend.requiresUpgrade", table: "Connections"))
@@ -564,27 +556,57 @@ struct DeviceControlBackendPicker: View {
                             }
                             Spacer(minLength: 0)
                             if selectedBackend == backend {
-                                Image(systemName: "checkmark").font(.body.weight(.semibold)).accessibilityHidden(true)
+                                Image(systemName: "checkmark").font(.system(size: 17, weight: .semibold)).accessibilityHidden(true)
                             }
                         }
-                        .foregroundStyle(.primary).padding(.vertical, 8).contentShape(Rectangle())
+                        .foregroundStyle(.primary).padding(16).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain).disabled(!available || !model.canChangeDeviceControlBackend)
                     .accessibilityValue(selectedBackend == backend ? String(localized: "device.connection.selected", table: "Connections") : "")
                     .accessibilityIdentifier("deviceControlBackendChoice_\(backend.rawValue)")
-                    .listRowBackground(EiscueStyle.surface)
-                }
-                .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(EiscueStyle.background)
-                .navigationTitle(String(localized: "device.backend.title", table: "Connections"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("common.done") { showsBackends = false }
-                    }
+                    if backend != backends.last { Divider().padding(.leading, 58) }
                 }
             }
-            .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
+    }
+}
+
+private struct DeviceSelectionSheet<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+    @Environment(\.dismiss) private var dismiss
+    @State private var contentHeight: CGFloat = 240
+    @State private var headerHeight: CGFloat = 80
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text(title).font(.headline).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Button("common.done", systemImage: "xmark") { dismiss() }
+                    .labelStyle(.iconOnly).font(.system(size: 17, weight: .semibold))
+                    .buttonStyle(.glass).buttonBorderShape(.circle).controlSize(.regular)
+                    .accessibilityIdentifier("deviceSelectionDoneButton")
+            }
+            .padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 16)
+            .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { headerHeight = $0 }
+            ScrollView {
+                VStack(spacing: 0) { content }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(EiscueStyle.surface, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(.horizontal, 20).padding(.bottom, 12)
+                    .onGeometryChange(for: CGFloat.self) { ceil($0.size.height) } action: { contentHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .frame(idealHeight: headerHeight + contentHeight)
+        .background(EiscueStyle.background)
+        // Measure the rows, not the scroll viewport. The system adds its safe area
+        // and caps the detent on small screens; oversized text remains scrollable.
+        .presentationDetents([.height(headerHeight + contentHeight)])
+        .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        .presentationDragIndicator(.visible)
     }
 }
 
