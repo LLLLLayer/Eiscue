@@ -37,9 +37,7 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertLessThan(backend.frame.maxY, ready.frame.minY)
         XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
         XCTAssertFalse(app.buttons["preparePairingButton"].exists)
-        let removePairing = app.buttons["removePairingButton"]
-        XCTAssertTrue(removePairing.exists)
-        XCTAssertFalse(removePairing.isEnabled, "Pairing stays visible, but a ready connection must be disconnected before pairing again.")
+        XCTAssertFalse(app.buttons["removePairingButton"].exists)
         XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists,
                        "A ready device should not repeat the initial computer setup.")
         saveScreenshot(app, name: "Device-Ready-Compact")
@@ -71,8 +69,7 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertFalse(preview.exists)
         XCTAssertFalse(app.buttons["deviceProbeButton"].exists)
         saveScreenshot(app, name: "Device-Disconnected-Compact")
-        XCTAssertTrue(removePairing.exists)
-        XCTAssertTrue(removePairing.isEnabled)
+        XCTAssertFalse(app.buttons["removePairingButton"].exists)
     }
 
     @MainActor
@@ -166,6 +163,7 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
         XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
         XCTAssertFalse(app.buttons["preparePairingButton"].exists)
+        XCTAssertFalse(app.buttons["removePairingButton"].exists)
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
         XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
         XCTAssertFalse(app.buttons["deviceProbeButton"].exists, "An unready route must not expose the input check.")

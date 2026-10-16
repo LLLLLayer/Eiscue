@@ -8,6 +8,8 @@ struct ConnectionRepairView: View {
     @State private var checkTask: Task<Void, Never>?
     @State private var connectionResult: DeviceConnectionRepairResult?
     @State private var microphoneResult: MicrophoneCheckController.Result?
+    @State private var confirmsForget = false
+    @State private var pairingResetError: String?
 
     var body: some View {
         List {
@@ -78,6 +80,26 @@ struct ConnectionRepairView: View {
                 }
                 .listRowBackground(EiscueStyle.surface)
             }
+
+            if model.hasPairingIdentity {
+                Section {
+                    Button { confirmsForget = true } label: {
+                        Label(text("connectionRepair.resetPairing"), systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .foregroundStyle(.primary)
+                    .disabled(!canResetPairing)
+                    .accessibilityIdentifier("removePairingButton")
+                    if let pairingResetError {
+                        Text(pairingResetError).font(.caption).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("connectionRepair.pairingSection", tableName: "Connections").font(.caption)
+                } footer: {
+                    Text(model.isDeviceReady ? "connectionRepair.disconnectBeforeReset" : "connectionRepair.resetPairingDetail",
+                         tableName: "Connections")
+                }
+                .listRowBackground(EiscueStyle.surface)
+            }
         }
         .listStyle(.insetGrouped)
         .listSectionSpacing(.compact)
@@ -85,10 +107,27 @@ struct ConnectionRepairView: View {
         .background(EiscueStyle.background)
         .navigationTitle(text("connectionRepair.title"))
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(String(localized: "setup.pairAgainConfirm", table: "Onboarding"), isPresented: $confirmsForget, titleVisibility: .visible) {
+            Button("device.removeIdentity", role: .destructive) {
+                Task {
+                    guard canResetPairing else { return }
+                    pairingResetError = nil
+                    await model.forgetPairingIdentity()
+                    pairingResetError = model.deviceConnectionError
+                }
+            }
+            .disabled(!canResetPairing)
+        } message: {
+            Text(String(localized: "setup.pairAgainDetail", table: "Onboarding"))
+        }
         .onDisappear(perform: cancelCheck)
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { cancelCheck() }
         }
+    }
+
+    private var canResetPairing: Bool {
+        model.hasPairingIdentity && checkTask == nil && !model.isBusy && !model.isDeviceReady && !model.isConnecting
     }
 
     private func resultRow(title: String, detail: String, systemImage: String, identifier: String) -> some View {

@@ -8,7 +8,6 @@ struct DeviceView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var hasRequestedConnection = false
     @State private var importsIdentity = false
-    @State private var confirmsForget = false
     #if DEBUG
     @State private var showsProbe = false
     @State private var previewImage: UIImage?
@@ -67,13 +66,6 @@ struct DeviceView: View {
             }
             .modifier(BluetoothInputCheckPresentation(showsValidation: $showsBluetoothValidation, confirmsUSBPhone: $confirmsUSBPhone))
             #endif
-            .confirmationDialog(String(localized: "setup.pairAgainConfirm", table: "Onboarding"), isPresented: $confirmsForget, titleVisibility: .visible) {
-                Button("device.removeIdentity", role: .destructive) {
-                    Task { await model.forgetPairingIdentity() }
-                }
-            } message: {
-                Text(String(localized: "setup.pairAgainDetail", table: "Onboarding"))
-            }
         }
     }
 
@@ -208,14 +200,8 @@ struct DeviceView: View {
                     && (model.localTunnel.isConnected || model.localTunnel.isTransitioning) {
                     disconnectButton
                 }
-                Divider()
-                if model.hasPairingIdentity {
-                    Button(String(localized: "setup.pairAgain", table: "Onboarding")) { confirmsForget = true }
-                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                        .buttonStyle(.plain).frame(minHeight: 44)
-                        .disabled(model.isBusy || model.isDeviceReady || isConnecting)
-                        .accessibilityIdentifier("removePairingButton")
-                } else {
+                if !model.hasPairingIdentity {
+                    Divider()
                     pairingSetup
                 }
             }

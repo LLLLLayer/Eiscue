@@ -1199,13 +1199,81 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connection & microphone"
+            "value": "Connection repair"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接与麦克风"
+            "value": "连接修复"
+          }
+        }
+      }
+    },
+    "connectionRepair.pairingSection": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对"
+          }
+        }
+      }
+    },
+    "connectionRepair.resetPairing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset pairing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置配对"
+          }
+        }
+      }
+    },
+    "connectionRepair.resetPairingDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use only if pairing no longer works. Set it up again from the device page after resetting."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在配对失效时使用。重置后，请回到设备页重新配对。"
+          }
+        }
+      }
+    },
+    "connectionRepair.disconnectBeforeReset": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect on the device page before resetting pairing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在设备页断开连接，再重置配对。"
           }
         }
       }

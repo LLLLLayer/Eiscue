@@ -78,6 +78,7 @@ final class EiscueUITests: XCTestCase {
         XCTAssertLessThan(permission.frame.maxY, picker.frame.minY)
         XCTAssertFalse(app.buttons["devicePairingSetupButton"].exists)
         XCTAssertFalse(app.buttons["preparePairingButton"].exists)
+        XCTAssertFalse(app.buttons["removePairingButton"].exists)
     }
 
     @MainActor
@@ -428,12 +429,75 @@ final class EiscueUITests: XCTestCase {
         XCTAssertTrue(start.isEnabled)
         XCTAssertFalse(app.otherElements["connectionRepairProgress"].exists)
         XCTAssertFalse(app.otherElements["connectionRepairResult"].exists)
+        let removePairing = app.buttons["removePairingButton"]
+        XCTAssertFalse(removePairing.exists, "Reset is available only when a pairing identity is saved.")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Connection repair — before user action"
         screenshot.lifetime = .keepAlways
         add(screenshot)
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(repair.waitForExistence(timeout: 5))
+
+        app.terminate()
+        app.launchArguments.append("--local-device-ready-fixture")
+        app.launch()
+        XCTAssertTrue(app.staticTexts["devicePairingComplete"].waitForExistence(timeout: 10))
+        XCTAssertFalse(removePairing.exists)
+        openSettings(in: app)
+        reveal(repair, in: app)
+        repair.tap()
+        XCTAssertTrue(removePairing.waitForExistence(timeout: 5))
+        XCTAssertFalse(removePairing.isEnabled, "Disconnect ready control before resetting pairing.")
+        XCTAssertFalse(app.otherElements["connectionRepairProgress"].exists)
+        XCTAssertFalse(app.otherElements["connectionRepairResult"].exists)
+
+        openDevice(in: app)
+        app.buttons["disconnectDeviceButton"].tap()
+        XCTAssertTrue(app.buttons["connectDeviceButton"].waitForExistence(timeout: 5))
+        XCTAssertFalse(removePairing.exists)
+        openSettings(in: app)
+        reveal(repair, in: app)
+        repair.tap()
+        reveal(removePairing, in: app)
+        XCTAssertTrue(removePairing.isEnabled)
+        removePairing.tap()
+        let confirmRemoval = app.buttons["移除配对"].firstMatch
+        XCTAssertTrue(confirmRemoval.waitForExistence(timeout: 5))
+        let cancel = app.buttons["取消"].firstMatch
+        if cancel.isHittable {
+            cancel.tap()
+        } else {
+            // iOS 26 may omit Cancel from a popover; dismiss outside it.
+            let dismiss = app.otherElements["PopoverDismissRegion"]
+            let popover = app.popovers.firstMatch
+            XCTAssertTrue(dismiss.exists)
+            XCTAssertTrue(popover.exists)
+            let bounds = dismiss.frame.intersection(app.frame.insetBy(dx: 16, dy: 60))
+            let frame = popover.frame.insetBy(dx: -8, dy: -8)
+            let candidates = [
+                CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: frame.minY - bounds.minY),
+                CGRect(x: bounds.minX, y: frame.maxY, width: bounds.width, height: bounds.maxY - frame.maxY),
+                CGRect(x: bounds.minX, y: bounds.minY, width: frame.minX - bounds.minX, height: bounds.height),
+                CGRect(x: frame.maxX, y: bounds.minY, width: bounds.maxX - frame.maxX, height: bounds.height)
+            ].filter { $0.size.width > 0 && $0.size.height > 0 }
+                .map { $0.intersection(bounds) }.filter { !$0.isNull && !$0.isEmpty }
+            let target = try XCTUnwrap(candidates.max(by: { $0.width * $0.height < $1.width * $1.height }),
+                                      "The pairing confirmation has no reachable dismissal region")
+            let point = CGPoint(x: target.midX, y: target.midY)
+            XCTAssertTrue(bounds.contains(point))
+            XCTAssertFalse(frame.contains(point))
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+        }
+        XCTAssertTrue(confirmRemoval.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(removePairing.exists)
+        XCTAssertTrue(removePairing.isEnabled)
+        XCTAssertFalse(app.otherElements["connectionRepairProgress"].exists)
+        XCTAssertFalse(app.otherElements["connectionRepairResult"].exists)
+        openDevice(in: app)
+        XCTAssertTrue(app.buttons["connectDeviceButton"].waitForExistence(timeout: 5),
+                      "Cancelling reset must preserve the saved pairing.")
+        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
+        XCTAssertFalse(removePairing.exists)
     }
 
     @MainActor
