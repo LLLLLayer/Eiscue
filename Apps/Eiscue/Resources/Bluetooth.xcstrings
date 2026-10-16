@@ -41,13 +41,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use an ESP32-C3 or ESP32-S3 board with Eiscue keyboard and mouse firmware. Power it from a charger or computer; Bluetooth input needs no cable to your device."
+            "value": "Power an ESP32-C3 or ESP32-S3 board with Eiscue keyboard and mouse firmware from a charger or computer."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用装有 Eiscue 键鼠固件的 ESP32-C3 或 ESP32-S3 开发板，接充电器或电脑供电。蓝牙输入无需接线到手机或 iPad。"
+            "value": "将装有 Eiscue 键鼠固件的 ESP32-C3 或 ESP32-S3 开发板接充电器或电脑供电。"
           }
         }
       }
@@ -58,13 +58,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn on AssistiveTouch in Settings → Accessibility → Touch. Keep Bluetooth on and tap Pair when prompted."
+            "value": "Enable AssistiveTouch in Settings → Accessibility → Touch. Turn on Bluetooth and tap Pair when prompted."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启「设置 → 辅助功能 → 触控 → 辅助触控」。保持蓝牙开启，出现提示时点「配对」。"
+            "value": "在「设置 → 辅助功能 → 触控」开启辅助触控，打开蓝牙并确认配对。"
           }
         }
       }
@@ -75,7 +75,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect the board"
+            "value": "Connect board"
           }
         },
         "zh-Hans": {
@@ -92,13 +92,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect board"
+            "value": "Connect"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "连接开发板"
+            "value": "连接"
           }
         }
       }
@@ -132,7 +132,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "断开连接"
+            "value": "断开"
           }
         }
       }
@@ -143,13 +143,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Share your screen"
+            "value": "Share screen"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启屏幕共享"
+            "value": "共享屏幕"
           }
         }
       }
@@ -160,13 +160,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tap the recording icon, then Start Broadcast. During device tasks, Eiscue sends screenshots to your AI service as needed. No audio is recorded."
+            "value": "Tap the recording icon, then Start Broadcast. Device tasks send screenshots to your AI service as needed. No audio is recorded."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点录屏图标，再点「开始直播」。设备任务中会按需发送截图给你配置的 AI 服务，不采集音频。"
+            "value": "点录屏图标，再点「开始直播」。任务中按需向你的 AI 服务发送截图，不采集音频。"
           }
         }
       }
@@ -177,13 +177,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stop screen sharing"
+            "value": "Stop sharing"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "停止屏幕共享"
+            "value": "停止共享"
           }
         }
       }
@@ -211,13 +211,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check device control"
+            "value": "Check input"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检查设备操作"
+            "value": "检查输入"
           }
         }
       }
@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Checks taps and typing. Leave the screen untouched. Check again after rotating or reconnecting."
+            "value": "Checks taps and typing; keep the screen untouched. Repeat after rotation or reconnection."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检查点击和文字输入，期间请勿触屏。旋转设备或重新连接后需再次检查。"
+            "value": "检查点击和输入时请勿触屏；旋转或重连后需重查。"
           }
         }
       }
@@ -500,13 +500,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect the S3 USB/OTG port to your iPhone or iPad; COM/UART is for a computer. Lightning devices need a powered USB host adapter, such as a camera adapter. A regular Lightning to USB-C cable will not work. Commands still use Bluetooth."
+            "value": "Connect S3 USB/OTG to your iPhone or iPad; COM/UART is for a computer. Lightning needs a powered USB camera or host adapter; a regular Lightning to USB-C cable won’t work. Keep Bluetooth on for commands."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将 S3 的 USB／OTG 口接到 iPhone 或 iPad；COM／UART 口用于电脑。Lightning 设备需用带 USB 插口的相机／主机转接器，并给转接器供电；普通 Lightning 转 USB-C 线不适用。指令仍通过蓝牙传输。"
+            "value": "将 S3 USB／OTG 口接到 iPhone 或 iPad，COM／UART 口供电脑使用。Lightning 需用 USB 相机／主机转接器并接电源，普通 Lightning 转 USB-C 线不可用。指令通过蓝牙传输。"
           }
         }
       }
@@ -534,13 +534,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "For first-time S3 setup, restart the board and connect within one minute. No configuration file is needed."
+            "value": "First S3 setup: restart the board, then connect within one minute."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "S3 首次设置时，给开发板重新通电，并在一分钟内连接。无需配置文件。"
+            "value": "S3 首次设置：重新通电，并在一分钟内连接。"
           }
         }
       }
@@ -636,13 +636,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The board shows expressions and progress. Press OK to stop. Release, then hold OK to unlock; reconnect and check again."
+            "value": "Press OK to stop. Release, then hold to unlock; reconnect and check again."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开发板显示表情和进展。按 OK 停止；松开后长按解锁，再重新连接并检查。"
+            "value": "按 OK 停止；松开后长按解锁，再重新连接并检查。"
           }
         }
       }

@@ -757,13 +757,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI can operate the device when connected and ready. Turn off for chat only."
+            "value": "AI can operate your device when ready. Turn off for chat only."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备就绪后，AI 可按你的要求操作。关闭后仅对话。"
+            "value": "就绪后可操作设备，关闭后仅对话。"
           }
         }
       }
@@ -774,13 +774,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "End the current task before changing this setting."
+            "value": "End the task to change this setting."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请先结束当前任务，再修改此设置。"
+            "value": "结束当前任务后可修改。"
           }
         }
       }
@@ -808,13 +808,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses the VPN connection. Other VPNs cannot stay active."
+            "value": "Uses the VPN connection; other VPNs cannot run."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "占用系统 VPN 通道，不能同时使用其他 VPN。"
+            "value": "占用 VPN 通道，无法同时使用其他 VPN。"
           }
         }
       }
@@ -893,13 +893,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "ESP32-C3 / S3 input"
+            "value": "ESP32 input"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "ESP32-C3 / S3 键鼠"
+            "value": "ESP32 键鼠"
           }
         }
       }
@@ -910,13 +910,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "ESP32-S3 USB network"
+            "value": "S3 USB network"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "ESP32-S3 USB 网卡"
+            "value": "S3 USB 网卡"
           }
         }
       }
@@ -927,13 +927,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No extra hardware; uses the system VPN connection."
+            "value": "Uses VPN; no extra hardware."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无需额外硬件，占用系统 VPN 通道。"
+            "value": "无需额外硬件，占用 VPN 通道。"
           }
         }
       }
@@ -944,13 +944,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bluetooth keeps Wi-Fi and VPN free; S3 also offers USB input."
+            "value": "C3/S3 Bluetooth input; S3 also supports USB. No VPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "蓝牙通信，不占 Wi-Fi 或 VPN；S3 可选 USB 输入。"
+            "value": "C3/S3 蓝牙输入，S3 可用 USB；不占 VPN。"
           }
         }
       }
@@ -961,13 +961,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB network relay; requires pairing setup, uses no VPN."
+            "value": "USB network relay; pairing required, no VPN."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "USB 网卡中继，需配对准备，不占用 VPN。"
+            "value": "USB 网卡中继，需配对，不占 VPN。"
           }
         }
       }
@@ -1114,13 +1114,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "CoreDevice screen streaming and touch input."
+            "value": "Live screen and touch input."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "CoreDevice 屏幕串流与触控。"
+            "value": "实时屏幕与触控。"
           }
         }
       }
@@ -1131,13 +1131,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "In-app automation with screenshots and touch input."
+            "value": "Screenshots and touch input."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "App 内自动化，支持截图与触控。"
+            "value": "截图与触控。"
           }
         }
       }
@@ -1726,13 +1726,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect through the ESP32-S3 USB network."
+            "value": "Connects through USB networking."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过 ESP32-S3 USB 网卡连接。"
+            "value": "通过 USB 网卡连接。"
           }
         }
       }
@@ -1743,13 +1743,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finish the setup below"
+            "value": "Finish setup"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请完成下方设置"
+            "value": "请完成设置"
           }
         }
       }

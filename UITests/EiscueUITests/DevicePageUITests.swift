@@ -156,7 +156,7 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertLessThan(bluetooth.frame.minY, usb.frame.minY)
         XCTAssertEqual(appMethod.value as? String, "已选用")
         XCTAssertNotEqual(bluetooth.value as? String, "已选用")
-        XCTAssertEqual(usb.label, "ESP32-S3 USB 网卡")
+        XCTAssertEqual(usb.label, "S3 USB 网卡")
         appMethod.tap()
         XCTAssertTrue(appMethod.waitForNonExistence(timeout: 5))
         waitForValue("App 内连接", of: picker)
@@ -188,7 +188,7 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertTrue(bluetooth.waitForExistence(timeout: 5))
         bluetooth.tap()
         XCTAssertTrue(bluetooth.waitForNonExistence(timeout: 5))
-        waitForValue("ESP32-C3 / S3 键鼠", of: picker)
+        waitForValue("ESP32 键鼠", of: picker)
         XCTAssertTrue(app.buttons["bluetoothVerifyButton"].exists,
                       "Required first calibration stays available with diagnostics hidden.")
         XCTAssertFalse(app.staticTexts["deviceDebugSectionTitle"].exists)
@@ -198,7 +198,7 @@ final class DevicePageUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
         openDevice(in: app)
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
-        XCTAssertEqual(picker.value as? String, "ESP32-C3 / S3 键鼠",
+        XCTAssertEqual(picker.value as? String, "ESP32 键鼠",
                        "The initial in-app default must not replace a saved connection choice.")
     }
 
