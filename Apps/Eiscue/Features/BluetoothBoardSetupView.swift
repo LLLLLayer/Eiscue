@@ -4,6 +4,7 @@ import UIKit
 
 struct BluetoothBoardSetupView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsValidation = false
     @State private var confirmsUSBPhone = false
 
@@ -14,7 +15,10 @@ struct BluetoothBoardSetupView: View {
             }
             SurfaceCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    step("1", "bluetooth.connectTitle", complete: model.isBluetoothConnected)
+                    stepHeader("1", "bluetooth.connectTitle", complete: model.isBluetoothConnected,
+                               stacksActions: model.isConnecting) {
+                        connectionActions
+                    }
                     Picker(text("bluetooth.inputRoute"), selection: Binding(
                         get: { model.bluetoothInputRoute },
                         set: { route in Task { await model.selectBluetoothInputRoute(route) } }
@@ -30,69 +34,43 @@ struct BluetoothBoardSetupView: View {
                         Text(text("bluetooth.assistiveTouch")).font(.caption).foregroundStyle(.secondary)
                         Text(text("bluetooth.firstS3Connection")).font(.caption).foregroundStyle(.secondary)
                     }
-                    if model.isBluetoothConnected {
-                        if model.hasBoardCompanionDisplay {
-                            Label(text("bluetooth.companionHint"), systemImage: "display")
-                                .font(.caption).foregroundStyle(.secondary)
-                                .accessibilityIdentifier("boardCompanionHint")
-                        }
-                        Button(text("bluetooth.disconnect")) { Task { await model.disconnectDevice() } }
-                            .buttonStyle(.glass).accessibilityIdentifier("bluetoothDisconnectButton")
-                    } else {
-                        Button { Task { await model.enableDeviceControl() } } label: {
-                            HStack {
-                                if model.isConnecting { ProgressView().tint(EiscueStyle.onAccent) }
-                                Text(text(connectionLabel))
-                            }
-                        }
-                        .buttonStyle(.glassProminent)
-                        .foregroundStyle(EiscueStyle.onAccent)
-                        .disabled(model.isBusy)
-                        .accessibilityIdentifier("bluetoothConnectButton")
-                        if model.isConnecting {
-                            Button(String(localized: "common.cancel")) { Task { await model.disconnectDevice() } }
-                                .buttonStyle(.glass)
-                        }
+                    if model.isBluetoothConnected && model.hasBoardCompanionDisplay {
+                        Label(text("bluetooth.companionHint"), systemImage: "display")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("boardCompanionHint")
                     }
                 }
             }
             SurfaceCard {
                 VStack(alignment: .leading, spacing: 12) {
-                    step("2", "bluetooth.shareTitle", complete: model.isBluetoothScreenShared)
+                    stepHeader("2", "bluetooth.shareTitle", complete: model.isBluetoothScreenShared) {
+                        screenSharingAction
+                    }
                     if !model.isBluetoothScreenShared {
                         Text(text("bluetooth.shareDetail")).font(.subheadline).foregroundStyle(.secondary)
                     }
-                    if model.isBluetoothScreenShared {
-                        Button(text("bluetooth.stopSharing")) {
-                            Task {
-                                if model.isRunning, model.activeRun?.scope != .chat { await model.stop() }
-                                do { try model.bluetoothController.stopSharing() }
-                                catch { model.errorMessage = error.localizedDescription }
-                                await model.refreshDeviceStatus()
-                            }
-                        }.buttonStyle(.glass)
-                    } else {
-                        HStack(spacing: 12) {
-                            ScreenBroadcastPicker().frame(width: 52, height: 52)
-                                .accessibilityIdentifier("bluetoothScreenShareButton")
-                            Text(text("bluetooth.shareButtonHint")).font(.subheadline)
-                        }
-                    }
                 }
             }
-            if !model.isBluetoothPointerVerified {
-                SurfaceCard {
-                    VStack(alignment: .leading, spacing: 12) {
-                        step("3", "bluetooth.verifyTitle", complete: false)
-                        Text(text("bluetooth.verifyDetail"))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                        Button(text("bluetooth.verifyButton")) {
-                            if model.bluetoothInputRoute == .usb { confirmsUSBPhone = true }
-                            else { showsValidation = true }
-                        }
-                            .buttonStyle(.glass)
+            SurfaceCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    stepHeader("3", "bluetooth.verifyTitle", complete: model.isBluetoothPointerVerified) {
+                        if model.isBluetoothPointerVerified {
+                            Text(text("bluetooth.validationCompleteTitle"))
+                                .font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("bluetoothCalibrationComplete")
+                        } else {
+                            Button(text("bluetooth.verifyButton")) {
+                                if model.bluetoothInputRoute == .usb { confirmsUSBPhone = true }
+                                else { showsValidation = true }
+                            }
+                            .buttonStyle(.glass).controlSize(.small).frame(minHeight: 44)
                             .disabled(!model.isBluetoothConnected || !model.isBluetoothScreenShared || model.isBoardHardwareStopped || model.isBusy)
                             .accessibilityIdentifier("bluetoothVerifyButton")
+                        }
+                    }
+                    if !model.isBluetoothPointerVerified {
+                        Text(text("bluetooth.verifyDetail"))
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -107,6 +85,67 @@ struct BluetoothBoardSetupView: View {
             }
         }
         .modifier(BluetoothInputCheckPresentation(showsValidation: $showsValidation, confirmsUSBPhone: $confirmsUSBPhone))
+    }
+
+    private var connectionActions: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            if model.isBluetoothConnected {
+                Button(text("bluetooth.disconnect")) { Task { await model.disconnectDevice() } }
+                    .buttonStyle(.glass).frame(minHeight: 44)
+                    .accessibilityIdentifier("bluetoothDisconnectButton")
+            } else {
+                Button { Task { await model.enableDeviceControl() } } label: {
+                    HStack(spacing: 8) {
+                        if model.isConnecting { ProgressView().tint(EiscueStyle.onAccent) }
+                        Text(text(connectionLabel))
+                    }
+                }
+                .buttonStyle(.glassProminent).frame(minHeight: 44)
+                .foregroundStyle(EiscueStyle.onAccent)
+                .disabled(model.isBusy)
+                .accessibilityIdentifier("bluetoothConnectButton")
+                if model.isConnecting {
+                    Button(String(localized: "common.cancel")) { Task { await model.disconnectDevice() } }
+                        .buttonStyle(.glass).frame(minHeight: 44)
+                }
+            }
+        }
+        .controlSize(.small)
+    }
+
+    @ViewBuilder private var screenSharingAction: some View {
+        if model.isBluetoothScreenShared {
+            Button(text("bluetooth.stopSharing")) {
+                Task {
+                    if model.isRunning, model.activeRun?.scope != .chat { await model.stop() }
+                    do { try model.bluetoothController.stopSharing() }
+                    catch { model.errorMessage = error.localizedDescription }
+                    await model.refreshDeviceStatus()
+                }
+            }
+            .buttonStyle(.glass).controlSize(.small).frame(minHeight: 44)
+        } else {
+            ScreenBroadcastPicker().frame(width: 52, height: 52)
+                .accessibilityLabel(text("bluetooth.shareButtonHint"))
+                .accessibilityIdentifier("bluetoothScreenShareButton")
+        }
+    }
+
+    private func stepHeader<Actions: View>(_ number: String, _ key: String, complete: Bool,
+                                          stacksActions: Bool = false, @ViewBuilder actions: () -> Actions) -> some View {
+        let stacked = dynamicTypeSize.isAccessibilitySize || stacksActions
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            step(number, key, complete: complete)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            actions().fixedSize(horizontal: !stacked, vertical: true)
+        }
+        .frame(minHeight: 52, alignment: .leading)
     }
 
     private var connectionLabel: String {
@@ -125,7 +164,8 @@ struct BluetoothBoardSetupView: View {
                 else { Text(number).font(.caption.weight(.semibold).monospacedDigit()) }
             }.frame(width: 28, height: 28).accessibilityHidden(true)
             Text(text(key)).font(.subheadline.weight(.semibold))
-            Spacer(minLength: 0)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("bluetoothSetupStep\(number)")
         }.foregroundStyle(.primary)
     }
     private func text(_ key: String) -> String { NSLocalizedString(key, tableName: "Bluetooth", comment: "") }

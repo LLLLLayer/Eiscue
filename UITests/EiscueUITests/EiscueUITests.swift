@@ -170,9 +170,16 @@ final class EiscueUITests: XCTestCase {
         XCTAssertFalse(app.buttons["startLocalTunnelButton"].exists)
         XCTAssertFalse(app.buttons["检查点击和输入"].exists)
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
-        let copyCommand = app.buttons["copyComputerPairingCommandButton"]
-        reveal(copyCommand, in: app)
-        XCTAssertTrue(copyCommand.isEnabled)
+        let pairing = app.buttons["devicePairingSetupButton"]
+        XCTAssertEqual(pairing.value as? String, "已收起")
+        XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists)
+        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
+        pairing.tap()
+        XCTAssertEqual(pairing.value as? String, "已展开")
+        let setupAction = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            ? app.buttons["startPairingButton"] : app.buttons["copyComputerPairingCommandButton"]
+        reveal(setupAction, in: app)
+        XCTAssertTrue(setupAction.isEnabled)
         XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
         // Verification tools appear only once device control is ready.
         XCTAssertFalse(app.buttons["检查点击和输入"].exists)
@@ -295,13 +302,27 @@ final class EiscueUITests: XCTestCase {
         XCTAssertFalse(app.buttons["connectDeviceButton"].exists)
         XCTAssertFalse(app.staticTexts["localTunnelStatus"].exists)
         XCTAssertFalse(app.buttons["deviceConnectionHelpButton"].exists)
+        let pairing = app.buttons["devicePairingSetupButton"]
+        XCTAssertEqual(pairing.value as? String, "已收起")
+        XCTAssertFalse(app.buttons["startPairingButton"].exists)
+        XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists)
+        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
+        let prepare = app.buttons["preparePairingButton"]
+        XCTAssertTrue(prepare.isHittable)
+        prepare.tap()
+        XCTAssertEqual(pairing.value as? String, "已展开")
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 {
             XCTAssertFalse(app.buttons["startPairingButton"].exists)
             let copyCommand = app.buttons["copyComputerPairingCommandButton"]
             reveal(copyCommand, in: app)
             XCTAssertTrue(copyCommand.isEnabled)
             XCTAssertTrue(app.buttons["importPairingIdentityButton"].exists)
+        } else {
+            let startPairing = app.buttons["startPairingButton"]
+            reveal(startPairing, in: app)
+            XCTAssertTrue(startPairing.isEnabled)
         }
+        XCTAssertFalse(app.buttons["disconnectDeviceButton"].exists, "Opening preparation must not start the VPN or pairing.")
         XCTAssertFalse(app.staticTexts["pairingCode"].exists)
         #endif
     }
@@ -317,6 +338,11 @@ final class EiscueUITests: XCTestCase {
         let app = launch()
         openDevice(in: app)
         assertInAppConnection(in: app)
+        let pairing = app.buttons["devicePairingSetupButton"]
+        XCTAssertEqual(pairing.value as? String, "已收起")
+        XCTAssertFalse(app.buttons["importPairingIdentityButton"].exists)
+        pairing.tap()
+        XCTAssertEqual(pairing.value as? String, "已展开")
         let guidance = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "USB", "开发者模式")).firstMatch
         reveal(guidance, in: app)
         XCTAssertTrue(guidance.label.contains("USB"))

@@ -221,6 +221,10 @@ extension AppModel {
         if activeDeviceConnectionMethod == .localVPN || isPairing {
             await disconnectDevice(stopChatRun: false, stopReason: String(localized: "connection.localStopping"))
         }
+        #if DEBUG
+        // This fixture has an in-memory control session and no system VPN.
+        if DebugDevicePageFixture.isEnabled { return }
+        #endif
         do { try await localTunnel.stop() }
         catch { errorMessage = error.localizedDescription }
     }
