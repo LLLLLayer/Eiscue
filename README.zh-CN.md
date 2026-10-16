@@ -65,7 +65,7 @@
 | App 内连接（默认，本地 VPN） | 可选 DisplayService 或 XCTest | iOS 26 电脑 USB 身份建立，或 iOS 27 起系统配对；另需开发者环境 / DDI | 是 |
 | S3 USB 网卡 | 同上，经 USB NCM 中继 | 同上，另需 USB 主机连接与网卡配置 | 否 |
 
-**控制方式**与连接通道、配对分开选择。App 内连接和 USB 网卡中继提供 **DisplayService（CoreDevice）、XCTest**。首次默认选择在 iOS 26 为 XCTest、iOS 27 起为 DisplayService；旧的自动选项直接显示其实际方式。iOS 26 仍显示 DisplayService 入口，但不可选，并标注“需要 iOS 27 或更新版本”，仅更新 App 不能启用。选择当前实际使用的方式会保留连接。切换到另一种方式会释放当前连接、保留配对身份，需要重新连接，不会自动回退。iOS 27 手动选择 XCTest 已接入，实际设备控制仍待真机验收。
+**控制方式**与连接通道、配对分开选择。App 内连接和 USB 网卡中继提供 **DisplayService（CoreDevice）、XCTest**。首次默认选择在 iOS 26 为 XCTest、iOS 27 起为 DisplayService；旧的自动选项直接显示其实际方式。iOS 26 仍显示 DisplayService 入口，但不可选，并标注“需要 iOS 27 或更新版本”，仅更新 App 不能启用。选择当前实际使用的方式会保留连接。切换到另一种方式会释放当前连接、保留配对身份，需要重新连接，不会自动回退。2026-10-17 已在 iPhone 12 mini / iOS 27 上通过本地 VPN 完成 XCTest 前台连接、截图、自有测试按钮点击和清理检查；跨 App 与后台 XCTest 任务仍待验收。
 
 原 C3 Wi-Fi 热点中继已移除。旧的已保存选项会回到默认的 App 内连接，但不会自动启动；请手动选择并连接仍支持的路线。
 
@@ -111,6 +111,8 @@ Eiscue App（SwiftUI，iOS 26+）
 | --- | --- | --- |
 | [EiscueAgentKit](Sources/EiscueAgentKit/AgentClient.swift) | Agent、工具、事件和会话存储；内部通过 JavaScriptCore 运行 PiDurableKit，每个会话一个 SQLite | `AgentClient(engine:)`，也可注册自己的 Swift 工具 |
 | [EiscueDeviceKit](Sources/EiscueDeviceKit/DeviceClient.swift) | 连接、观察、动作和能力状态 | `DeviceClient(controller:)` |
+
+集成 DeviceKit XCTest 后端的 App 需在真机 target 的 `LD_RUNPATH_SEARCH_PATHS` 中保留继承路径，并添加 `/System/Developer/usr/lib` 和 `/Developer/usr/lib`。Xcode 27 的开发镜像通过这些路径加载 Testing 互操作依赖。Eiscue 已在 `project.yml` 配置；Apple 测试库从已挂载 DDI 动态加载，不随 App 打包。
 
 公开 API 不暴露 PiDurableKit 或 actell 类型。贡献与维护规则见 [AGENTS.md](AGENTS.md)。
 

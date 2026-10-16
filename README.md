@@ -65,7 +65,7 @@ The connection, screen sharing and calibration must all remain valid. Disconnect
 | In-app connection (default, local VPN) | Choose DisplayService or XCTest | USB identity setup on iOS 26 or system pairing on iOS 27+, plus developer environment / DDI | Yes |
 | S3 USB network adapter | As above, through a USB NCM relay | As above, plus a USB host connection and network adapter configuration | No |
 
-**Control method** is separate from the connection route and pairing. In-app and USB network connections offer **DisplayService (CoreDevice)** and **XCTest**. The initial selection is XCTest on iOS 26 and DisplayService on iOS 27+; existing Automatic preferences display their resolved method. DisplayService remains visible but disabled on iOS 26 with “Requires iOS 27 or later”; updating Eiscue alone cannot enable it. Selecting the current method retains the session. Switching to a different method releases the current connection, keeps the pairing identity, and requires reconnecting; there is no automatic fallback. Explicit XCTest on iOS 27 is integrated but still needs physical-device acceptance.
+**Control method** is separate from the connection route and pairing. In-app and USB network connections offer **DisplayService (CoreDevice)** and **XCTest**. The initial selection is XCTest on iOS 26 and DisplayService on iOS 27+; existing Automatic preferences display their resolved method. DisplayService remains visible but disabled on iOS 26 with “Requires iOS 27 or later”; updating Eiscue alone cannot enable it. Selecting the current method retains the session. Switching to a different method releases the current connection, keeps the pairing identity, and requires reconnecting; there is no automatic fallback. On 2026-10-17, explicit XCTest over the local VPN passed a foreground connection, screenshot, owned-button tap and cleanup smoke check on iPhone 12 mini / iOS 27. Cross-app and background XCTest tasks still need acceptance.
 
 The former C3 Wi-Fi hotspot relay has been removed. An old saved selection resets to the default In-app connection without starting it; choose and connect a supported route explicitly.
 
@@ -111,6 +111,8 @@ The two Kits are independent Swift package libraries with no dependency on one a
 | --- | --- | --- |
 | [EiscueAgentKit](Sources/EiscueAgentKit/AgentClient.swift) | Agents, tools, events and conversation storage; internally runs PiDurableKit through JavaScriptCore, with one SQLite database per conversation | `AgentClient(engine:)`; custom Swift tools can also be registered |
 | [EiscueDeviceKit](Sources/EiscueDeviceKit/DeviceClient.swift) | Connection, observation, actions and capability status | `DeviceClient(controller:)` |
+
+Apps integrating DeviceKit’s XCTest backend must include `/System/Developer/usr/lib` and `/Developer/usr/lib` in the device target’s `LD_RUNPATH_SEARCH_PATHS`, retaining inherited paths. Xcode 27’s developer image uses these paths for Testing interop dependencies. Eiscue configures this in `project.yml`; Apple’s test libraries are loaded from the mounted DDI and are not bundled.
 
 Public APIs do not expose PiDurableKit or actell types. Contribution and maintenance rules are in [AGENTS.md](AGENTS.md).
 

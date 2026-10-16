@@ -37,6 +37,7 @@ static BOOL validTextBytes(const uint8_t *utf8, size_t length) {
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
+#import <os/log.h>
 #include <math.h>
 
 @interface EiscueOwnedAutomation : NSObject
@@ -99,21 +100,47 @@ static void orientationChanged(id receiver, SEL selector, NSInteger orientation)
 }
 static BOOL loadFrameworks(void) {
     if (NSClassFromString(@"XCTRunnerDaemonSession") && NSClassFromString(@"XCPointerEventPath")) return YES;
-    for (NSString *prefix in @[@"/System/Developer/Library", @"/Developer/Library"]) {
+    NSUInteger root = 0;
+    for (NSString *prefix in @[@"/System/Developer", @"/Developer"]) {
         // Load dependencies by their developer-image paths before their @rpath
-        // consumers. A normal App has no test Runner framework search path.
-        for (NSString *relative in @[@"PrivateFrameworks/DTXConnectionServices.framework/DTXConnectionServices",
-                                    @"PrivateFrameworks/XCTestSupport.framework/XCTestSupport",
-                                    @"PrivateFrameworks/XCTAutomationSupport.framework/XCTAutomationSupport",
-                                    @"PrivateFrameworks/XCTestCore.framework/XCTestCore",
-                                    @"Frameworks/XCUIAutomation.framework/XCUIAutomation",
-                                    @"PrivateFrameworks/XCUIAutomation.framework/XCUIAutomation",
-                                    @"Frameworks/XCTest.framework/XCTest"]) {
+        // consumers. Xcode 27 also needs Testing's interop dylib in usr/lib;
+        // a normal App has neither of the test Runner's developer search paths.
+        NSUInteger library = 0;
+        for (NSString *relative in @[@"usr/lib/lib_TestingInterop.dylib",
+                                    @"Library/Frameworks/Testing.framework/Testing",
+                                    @"Library/PrivateFrameworks/DTXConnectionServices.framework/DTXConnectionServices",
+                                    @"Library/PrivateFrameworks/XCTestSupport.framework/XCTestSupport",
+                                    @"Library/PrivateFrameworks/XCTAutomationSupport.framework/XCTAutomationSupport",
+                                    @"Library/PrivateFrameworks/XCTestCore.framework/XCTestCore",
+                                    @"Library/Frameworks/XCUIAutomation.framework/XCUIAutomation",
+                                    @"Library/PrivateFrameworks/XCUIAutomation.framework/XCUIAutomation",
+                                    @"Library/Frameworks/XCTest.framework/XCTest"]) {
             NSString *path = [prefix stringByAppendingPathComponent:relative];
-            if ([[NSFileManager defaultManager] fileExistsAtPath:path])
-                (void)dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
+            BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:path];
+            void *handle = NULL;
+            unsigned int reason = 0;
+            if (exists) {
+                dlerror();
+                handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);
+                if (!handle) {
+                    const char *error = dlerror();
+                    // Never publish raw loader diagnostics: only fixed categories.
+                    reason = error && strstr(error, "Library not loaded: @rpath/lib_TestingInterop.dylib") ? 5 :
+                             error && strstr(error, "Library not loaded") ? 1 :
+                             error && strstr(error, "Symbol not found") ? 2 :
+                             error && strstr(error, "code signature") ? 3 : 4;
+                }
+            }
+            os_log_info(OS_LOG_DEFAULT, "Eiscue automation loader root=%lu library=%lu exists=%d loaded=%d reason=%u",
+                        (unsigned long)root, (unsigned long)library, exists, handle != NULL, reason);
+#if DEBUG
+            fprintf(stderr, "Eiscue automation loader root=%lu library=%lu exists=%d loaded=%d reason=%u\n",
+                    (unsigned long)root, (unsigned long)library, exists, handle != NULL, reason);
+#endif
+            library++;
         }
         if (NSClassFromString(@"XCTRunnerDaemonSession") && NSClassFromString(@"XCPointerEventPath")) return YES;
+        root++;
     }
     return NO;
 }

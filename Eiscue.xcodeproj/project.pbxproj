@@ -1432,6 +1432,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) @executable_path/Frameworks /System/Developer/usr/lib /Developer/usr/lib";
 				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1458,6 +1459,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) @executable_path/Frameworks /System/Developer/usr/lib /Developer/usr/lib";
 				PRODUCT_BUNDLE_IDENTIFIER = org.eiscue.app;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";

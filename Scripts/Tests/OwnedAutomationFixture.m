@@ -3,13 +3,20 @@
 // loading developer frameworks or contacting any device. The script changes
 // only the platform guard and UIKit notification imports in its source copy.
 #import <Foundation/Foundation.h>
+#include <dlfcn.h>
+static void *fixtureDlopen(const char *path, int mode);
+static Class fixtureClassFromString(NSString *name);
 // Compile the production public UIKit setter against a process-local fake.
 // No NSPasteboard or real system clipboard is accessed by this fixture.
 @interface UIPasteboard : NSObject
 @property(copy) NSString *string;
 + (UIPasteboard *)generalPasteboard;
 @end
+#define dlopen fixtureDlopen
+#define NSClassFromString fixtureClassFromString
 #import "OwnedAutomationUnderTest.m"
+#undef NSClassFromString
+#undef dlopen
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -92,10 +99,101 @@ static EiscueFixturePendingConnection *newPendingConnection(void) {
 static NSUInteger invalidFactoryCalls, invalidObjectInvalidations;
 static IMP originalFileExists;
 static id invalidFactoryObject;
+typedef NS_ENUM(NSUInteger, FixtureLoaderMode) {
+    FixtureLoaderInactive, FixtureLoaderModern, FixtureLoaderLegacy, FixtureLoaderFailed
+};
+static FixtureLoaderMode loaderMode;
+static NSString *loaderRoot;
+static NSMutableArray<NSString *> *loaderAttempts;
+static BOOL loaderInteropReady, loaderTestingReady, loaderRunnerReady, loaderPointerReady;
+static int loaderHandle;
+static BOOL loaderPath(NSString *path, NSString *relative) {
+    return [path isEqualToString:[loaderRoot stringByAppendingPathComponent:relative]];
+}
+static Class fixtureClassFromString(NSString *name) {
+    if (loaderMode != FixtureLoaderInactive) {
+        if ([name isEqualToString:@"XCTRunnerDaemonSession"]) return loaderRunnerReady ? NSObject.class : Nil;
+        if ([name isEqualToString:@"XCPointerEventPath"]) return loaderPointerReady ? NSObject.class : Nil;
+    }
+    return NSClassFromString(name);
+}
+static void *fixtureDlopen(const char *path, int mode) {
+    // No host developer library may load, even if another fixture unexpectedly
+    // reaches this path. Model dependency failures rather than inspecting a list.
+    CHECK(loaderMode != FixtureLoaderInactive && path);
+    CHECK(mode == (RTLD_NOW | RTLD_GLOBAL));
+    NSString *value=[NSString stringWithUTF8String:path]; CHECK(value);
+    [loaderAttempts addObject:value];
+    if (loaderMode == FixtureLoaderFailed) return NULL;
+    CHECK([value hasPrefix:[loaderRoot stringByAppendingString:@"/"]]);
+    if (loaderPath(value,@"usr/lib/lib_TestingInterop.dylib")) loaderInteropReady=YES;
+    else if (loaderPath(value,@"Library/Frameworks/Testing.framework/Testing")) {
+        if (!loaderInteropReady) return NULL;
+        loaderTestingReady=YES;
+    } else if (loaderPath(value,@"Library/PrivateFrameworks/XCTestCore.framework/XCTestCore")) {
+        if (loaderMode == FixtureLoaderModern && (!loaderInteropReady || !loaderTestingReady)) return NULL;
+        loaderRunnerReady=YES;
+    } else if (loaderPath(value,@"Library/Frameworks/XCUIAutomation.framework/XCUIAutomation") ||
+               loaderPath(value,@"Library/PrivateFrameworks/XCUIAutomation.framework/XCUIAutomation")) {
+        if (!loaderRunnerReady) return NULL;
+        loaderPointerReady=YES;
+    }
+    return &loaderHandle;
+}
 static BOOL fixtureFileExists(id receiver, SEL selector, NSString *path) {
+    if (loaderMode != FixtureLoaderInactive) {
+        if (loaderMode == FixtureLoaderFailed)
+            return [path hasPrefix:@"/System/Developer/"] || [path hasPrefix:@"/Developer/"];
+        if (![path hasPrefix:[loaderRoot stringByAppendingString:@"/"]]) return NO;
+        if (loaderMode == FixtureLoaderLegacy &&
+            (loaderPath(path,@"usr/lib/lib_TestingInterop.dylib") ||
+             loaderPath(path,@"Library/Frameworks/Testing.framework/Testing"))) return NO;
+        return YES;
+    }
     if ([path isEqualToString:@"/System/Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework"])
         return YES;
     return ((BOOL (*)(id,SEL,NSString *))originalFileExists)(receiver,selector,path);
+}
+static void resetLoader(FixtureLoaderMode mode, NSString *root) {
+    loaderMode=mode; loaderRoot=root; loaderAttempts=[NSMutableArray new];
+    loaderInteropReady=NO; loaderTestingReady=NO; loaderRunnerReady=NO; loaderPointerReady=NO;
+}
+static void loaderFixtures(void) {
+    Method fileExists=class_getInstanceMethod(NSFileManager.class,@selector(fileExistsAtPath:));
+    originalFileExists=method_setImplementation(fileExists,(IMP)fixtureFileExists);
+    @try {
+        for (NSString *root in @[@"/System/Developer", @"/Developer"]) {
+            resetLoader(FixtureLoaderModern,root);
+            CHECK(loadFrameworks() && loaderInteropReady && loaderTestingReady && loaderRunnerReady && loaderPointerReady);
+            NSUInteger interop=[loaderAttempts indexOfObject:[root stringByAppendingPathComponent:@"usr/lib/lib_TestingInterop.dylib"]];
+            NSUInteger testing=[loaderAttempts indexOfObject:[root stringByAppendingPathComponent:@"Library/Frameworks/Testing.framework/Testing"]];
+            NSUInteger core=[loaderAttempts indexOfObject:[root stringByAppendingPathComponent:@"Library/PrivateFrameworks/XCTestCore.framework/XCTestCore"]];
+            CHECK(interop != NSNotFound && testing != NSNotFound && core != NSNotFound && interop < testing && testing < core);
+            NSUInteger loaded=loaderAttempts.count;
+            CHECK(loadFrameworks() && loaderAttempts.count==loaded);
+        }
+        // Earlier DDIs need neither optional dependency; missing files must not
+        // prevent their XCTest classes from becoming available.
+        resetLoader(FixtureLoaderLegacy,@"/System/Developer");
+        CHECK(loadFrameworks() && loaderRunnerReady && loaderPointerReady);
+        CHECK(!loaderInteropReady && !loaderTestingReady);
+        CHECK(![loaderAttempts containsObject:[loaderRoot stringByAppendingPathComponent:@"usr/lib/lib_TestingInterop.dylib"]]);
+        CHECK(![loaderAttempts containsObject:[loaderRoot stringByAppendingPathComponent:@"Library/Frameworks/Testing.framework/Testing"]]);
+        resetLoader(FixtureLoaderFailed,nil);
+        CHECK(!loadFrameworks() && !loaderRunnerReady && !loaderPointerReady && loaderAttempts.count>0);
+        BOOL triedSystem=NO, triedLegacy=NO;
+        for (NSString *path in loaderAttempts) {
+            triedSystem |= [path hasPrefix:@"/System/Developer/"];
+            triedLegacy |= [path hasPrefix:@"/Developer/"];
+        }
+        CHECK(triedSystem && triedLegacy);
+        // A failed attempt must not poison a later retry after preparation.
+        resetLoader(FixtureLoaderModern,@"/System/Developer");
+        CHECK(loadFrameworks() && loaderRunnerReady && loaderPointerReady);
+    } @finally {
+        loaderMode=FixtureLoaderInactive; loaderRoot=nil; loaderAttempts=nil;
+        method_setImplementation(fileExists,originalFileExists);
+    }
 }
 static void noopObjectSetter(id receiver, SEL selector, id value) {}
 static void noopBoolSetter(id receiver, SEL selector, BOOL value) {}
@@ -463,7 +561,7 @@ static void screenshotFixtures(void) {
 }
 int main(void) { @autoreleasepool {
     alarm(15); // A missing async callback must terminate this host fixture.
-    CHECK(NSThread.isMainThread); installFixtures(); environmentAndPendingFixtures(); invalidFactoryFixture(); screenshotFixtures(); resetOwner();
+    CHECK(NSThread.isMainThread); loaderFixtures(); installFixtures(); environmentAndPendingFixtures(); invalidFactoryFixture(); screenshotFixtures(); resetOwner();
     // Exact local SDK Home payload and receipt identity; no automatic retry.
     CHECK(eiscue_automation_home(18,1,7)==EISCUE_AUTOMATION_CLOSED);
     CHECK(eiscue_automation_home(19,1,6)==EISCUE_AUTOMATION_GEOMETRY && submissions==0);
@@ -600,5 +698,5 @@ int main(void) { @autoreleasepool {
     }
     eiscue_automation_abort(19);
     alarm(0);
-    printf("PASS: %lu owned home/text/touch/screenshot checks (UTF-8, geometry, receipts, unknown delivery, abort)\n", (unsigned long)checks);
+    printf("PASS: %lu owned loader/home/text/touch/screenshot checks (dependencies, UTF-8, geometry, receipts, unknown delivery, abort)\n", (unsigned long)checks);
 } return 0; }

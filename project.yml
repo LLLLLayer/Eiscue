@@ -67,6 +67,9 @@ targets:
         DEVELOPMENT_TEAM: Q2T8TN4ZW6
         CODE_SIGN_ENTITLEMENTS: Apps/Eiscue/Eiscue.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
+        # XCTestCore in the Xcode 27 DDI references Testing interop via @rpath.
+        # Use the mounted developer image; never embed Apple's test libraries.
+        LD_RUNPATH_SEARCH_PATHS[sdk=iphoneos*]: "$(inherited) @executable_path/Frameworks /System/Developer/usr/lib /Developer/usr/lib"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Eiscue
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
