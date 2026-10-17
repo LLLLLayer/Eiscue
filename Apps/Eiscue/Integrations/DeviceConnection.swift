@@ -28,29 +28,6 @@ enum DeviceMicrophonePolicy {
     }
 }
 
-@MainActor
-final class DictationDeviceRestoration {
-    let id: UUID
-    let operationID: UUID
-    let method: DeviceConnectionMethod
-    let preference: DeviceControlBackend
-    let backend: DeviceControlBackend
-    let client: DeviceClient
-    var releaseTask: Task<Void, Never>?
-    var finishTask: Task<String?, Never>?
-    var releaseFinished = false
-    var releaseConfirmed = false
-    var isFinishing = false
-    var isRestoring = false
-    var isValid = true
-
-    init(id: UUID, operationID: UUID, method: DeviceConnectionMethod, preference: DeviceControlBackend,
-         backend: DeviceControlBackend, client: DeviceClient) {
-        self.id = id; self.operationID = operationID; self.method = method; self.preference = preference
-        self.backend = backend; self.client = client
-    }
-}
-
 enum DictationDevicePreparationError: LocalizedError {
     case busy, releaseUnconfirmed
     var errorDescription: String? {
@@ -68,141 +45,24 @@ extension AppModel {
                                                on: deviceOperatingSystemVersion)
     }
 
-    func prepareDeviceForDictation(id: UUID) async throws {
-        let previous = dictationDeviceRestoration
-        invalidateDictationDeviceRestoration()
-        dictationPreparationID = id
-        await previous?.releaseTask?.value
-        _ = await previous?.finishTask?.value
-        try Task.checkCancellation()
-        guard dictationPreparationID == id, currentScenePhase == .active else { throw CancellationError() }
-        guard !isBusy else { throw DictationDevicePreparationError.busy }
-        guard isDictationBlockedByDeviceConnection,
-              let method = activeDeviceConnectionMethod, let backend = activeDeviceControlBackend else { return }
-        guard !needsRecovery, pausedRun == nil else { throw DictationDevicePreparationError.busy }
-
-        let operationID = UUID(); deviceOperationID = operationID
-        let restoration = DictationDeviceRestoration(id: id, operationID: operationID, method: method,
-            preference: deviceControlBackend, backend: backend, client: deviceClient)
-        dictationDeviceRestoration = restoration
-        isConnecting = true
-        activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil; screenshot = nil
-        deviceStatus = .unavailable(reason: String(localized: "connection.disconnected", table: "Runtime"))
-        // The release belongs to the connection, so cancelling a gesture must
-        // still wait for media teardown before restoring or starting a new one.
-        restoration.releaseTask = Task {
-            restoration.releaseConfirmed = await restoration.client.disconnectAndConfirmRelease()
-            let status = await restoration.client.status()
-            if deviceOperationID == operationID {
-                deviceStatus = status; isConnecting = false
-                if case .unavailable(let reason) = status { connectionMessage = reason }
-            }
-            // Keep our pending release recognizable until the busy state settles,
-            // so the UI does not cancel preparation before it receives this error.
-            if !restoration.releaseConfirmed { restoration.isValid = false }
-            restoration.releaseFinished = true
-            if !restoration.isValid, restoration.finishTask == nil,
-               dictationDeviceRestoration === restoration { dictationDeviceRestoration = nil }
-        }
-        await restoration.releaseTask?.value
-        try Task.checkCancellation()
-        guard restoration.releaseConfirmed else { throw DictationDevicePreparationError.releaseUnconfirmed }
-        guard dictationPreparationID == id, restoration.isValid, !restoration.isFinishing,
-              dictationDeviceRestoration === restoration, deviceOperationID == operationID,
-              currentScenePhase == .active else { throw CancellationError() }
-    }
-
-    func finishDeviceDictation(id: UUID, reconnect: Bool = true) async -> String? {
-        if dictationPreparationID == id { dictationPreparationID = nil }
-        guard let restoration = dictationDeviceRestoration, restoration.id == id else { return nil }
-        restoration.isFinishing = true
-        if !reconnect {
-            restoration.isValid = false
-            if restoration.isRestoring, deviceOperationID == restoration.operationID { deviceConnectionTask?.cancel() }
-        }
-        if let task = restoration.finishTask { return await task.value }
-        let task = Task { await restoreDeviceAfterDictation(restoration) }
-        restoration.finishTask = task
-        return await task.value
-    }
-
-    func invalidateDictationDeviceRestoration() {
-        dictationPreparationID = nil
-        guard let restoration = dictationDeviceRestoration else { return }
-        restoration.isValid = false
-        if restoration.isRestoring, deviceOperationID == restoration.operationID { deviceConnectionTask?.cancel() }
-        if restoration.releaseFinished, restoration.finishTask == nil { dictationDeviceRestoration = nil }
-    }
-
-    private func cancelDictationDeviceRestoration() async {
-        let restoration = dictationDeviceRestoration
-        invalidateDictationDeviceRestoration()
-        await restoration?.releaseTask?.value
-        _ = await restoration?.finishTask?.value
-    }
-
-    private func canRestoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) -> Bool {
-        restoration.isValid && dictationDeviceRestoration === restoration &&
-        deviceOperationID == restoration.operationID && currentScenePhase == .active &&
-        deviceConnectionMethod == restoration.method && deviceControlBackend == restoration.preference &&
-        !isRunning && !isRepairingDeviceConnection && !needsRecovery && pausedRun == nil
-    }
-
-    private func restoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) async -> String? {
-        await restoration.releaseTask?.value
-        defer {
-            if dictationDeviceRestoration === restoration { dictationDeviceRestoration = nil }
-            if deviceOperationID == restoration.operationID {
-                isConnecting = false; deviceConnectionTask = nil
-                if !isDeviceReady { activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil }
-            }
-        }
-        guard canRestoreDeviceAfterDictation(restoration) else { return nil }
-        let failure = String(localized: "speech.deviceReconnectFailed", table: "Speech")
-        guard restoration.method != .localVPN || localTunnel.isConnected else {
-            deviceConnectionError = failure; connectionMessage = failure
-            return failure
-        }
-        restoration.isRestoring = true
-        isConnecting = true
-        activeDeviceConnectionMethod = restoration.method; activeDeviceControlBackend = restoration.backend
-        let task = Task {
-            try await restoration.client.connect(method: restoration.method, configuration: .defaults, backend: restoration.backend)
-            try Task.checkCancellation()
-        }
-        deviceConnectionTask = task
-        do {
-            try await task.value
-            let status = await restoration.client.status()
-            if canRestoreDeviceAfterDictation(restoration), case .ready = status {
-                deviceStatus = status; deviceConnectionError = nil
-                connectionMessage = String(localized: "connection.ready")
-                return nil
-            }
-        } catch { /* Release partial or cancelled media before another command can proceed. */ }
-        await restoration.client.disconnect()
-        if deviceOperationID == restoration.operationID {
-            deviceStatus = await restoration.client.status()
-            activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil; screenshot = nil
-        }
-        guard canRestoreDeviceAfterDictation(restoration) else { return nil }
-        deviceConnectionError = failure; connectionMessage = failure
-        return failure
-    }
+    func prepareDeviceForDictation(id: UUID) async throws { try await dictationSession.prepareDeviceForDictation(id: id) }
+    func finishDeviceDictation(id: UUID, reconnect: Bool = true) async -> String? { await dictationSession.finishDeviceDictation(id: id, reconnect: reconnect) }
+    func invalidateDictationDeviceRestoration() { dictationSession.invalidateDictationDeviceRestoration() }
+    private func cancelDictationDeviceRestoration() async { await dictationSession.cancelDictationDeviceRestoration() }
 
     var supportsSystemPairing: Bool {
         DevicePairingSupport.supportsSystemPairing(on: deviceOperatingSystemVersion)
     }
 
     var canChangeDeviceControlBackend: Bool {
-        !isRunning && !isRepairingDeviceConnection && !needsRecovery && pausedRun == nil && !isChangingDeviceConnectionMethod &&
-        !isSaving && !isStopping && !isPairing && !isManagingTunnel && !isStoppingTunnel &&
-        !isImportingAttachments && (!isConnecting || deviceConnectionTask != nil)
+        !isRunning && !needsRecovery && pausedRun == nil && canChangeDeviceRoute
     }
 
     func startLocalTunnel() async {
         await cancelDictationDeviceRestoration()
-        guard !isBusy, deviceConnectionMethod == .localVPN else { return }
+        guard !isBusy, deviceConnectionMethod == .localVPN,
+              let lease = try? deviceSession.acquire(.setup) else { return }
+        defer { lease.release() }
         isManagingTunnel = true
         deviceConnectionError = nil
         defer { isManagingTunnel = false }
@@ -214,9 +74,9 @@ extension AppModel {
         } catch { deviceConnectionError = error.localizedDescription; errorMessage = error.localizedDescription }
     }
 
-    func stopLocalTunnel() async {
+    func stopLocalTunnel(borrowing parentLease: DeviceLease? = nil) async {
         await cancelDictationDeviceRestoration()
-        guard !isStoppingTunnel, !isRepairingDeviceConnection else { return }
+        guard !isDeviceRunActive, !isStoppingTunnel, !isRepairingDeviceConnection else { return }
         isStoppingTunnel = true
         defer { isStoppingTunnel = false }
         // Stop is available while the system is still authorizing or starting.
@@ -228,6 +88,15 @@ extension AppModel {
         // This fixture has an in-memory control session and no system VPN.
         if DebugDevicePageFixture.isEnabled { return }
         #endif
+        let lease: DeviceLease?
+        if let parentLease {
+            guard deviceSession.owner == parentLease.owner else { return }
+            lease = nil
+        } else {
+            guard let acquired = try? deviceSession.acquire(.setup) else { return }
+            lease = acquired
+        }
+        defer { lease?.release() }
         do { try await localTunnel.stop() }
         catch { errorMessage = error.localizedDescription }
     }
@@ -241,7 +110,9 @@ extension AppModel {
 
     func selectBluetoothInputRoute(_ route: BluetoothBoardInputRoute) async {
         await cancelDictationDeviceRestoration()
-        guard route != bluetoothInputRoute, deviceConnectionMethod == .bluetoothBoard, !isBusy else { return }
+        guard route != bluetoothInputRoute, deviceConnectionMethod == .bluetoothBoard, !isBusy,
+              let lease = try? deviceSession.acquire(.setup) else { return }
+        defer { lease.release() }
         isChangingDeviceConnectionMethod = true
         defer { isChangingDeviceConnectionMethod = false }
         await disconnectDevice(stopChatRun: false, stopReason: String(localized: "bluetooth.outputChanged", table: "Bluetooth"))
@@ -262,16 +133,16 @@ extension AppModel {
                 guard let self else { return }
                 guard deviceConnectionMethod == .bluetoothBoard else { continue }
                 bluetoothRevision += 1
-                let wasReady = isDeviceReady
+                await bluetoothController.refreshScreenState()
+                handleBluetoothSessionChange()
+                if deviceSession.owner == nil { _ = await deviceClient.probe() }
                 await refreshDeviceStatus()
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") {
                     recordBluetoothSetupSnapshot()
                 }
                 #endif
-                if wasReady && !isDeviceReady, let run = activeRun, run.scope != .chat {
-                    await stop(expectedRunID: run.id, reason: String(localized: "bluetooth.stopped", table: "Bluetooth"))
-                }
+                handleBluetoothSessionChange()
             }
         }
     }
@@ -309,12 +180,11 @@ extension AppModel {
 
     func refreshDeviceStatus() async {
         defer { syncBoardCompanion() }
-        deviceStatus = await deviceClient.status()
-        do { hasPairingIdentity = try await deviceClient.hasPairingIdentity() }
+        let identity = deviceSession.identity
+        guard await deviceSession.refreshStatus(expected: identity, transportConnected: deviceConnectionMethod == .bluetoothBoard ? isBluetoothConnected : nil) else { return }
+        do { hasPairingIdentity = deviceClient.networkSetup == nil ? false : try await deviceClient.hasPairingIdentity() }
         catch { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
         if deviceConnectionMethod == .bluetoothBoard, !isConnecting {
-            activeDeviceConnectionMethod = isBluetoothConnected ? .bluetoothBoard : nil
-            activeDeviceControlBackend = nil
             if isBluetoothConnected, !isBoardHardwareStopped { boardHardwareStopPending = false }
             if isDeviceReady {
                 deviceConnectionError = nil
@@ -327,14 +197,12 @@ extension AppModel {
 
     func connectDevice() async {
         await cancelDictationDeviceRestoration()
-        guard !isBusy, !isConnecting else { return }
-        let method = deviceConnectionMethod
-        let backend = deviceControlBackend
+        guard !isBusy, !deviceSession.isBusy, deviceConnectionTask == nil else { return }
+        let method = deviceConnectionMethod, backend = deviceControlBackend
         guard method != .localVPN || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
-        let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true; activeDeviceConnectionMethod = method; deviceConnectionError = nil
-        activeDeviceControlBackend = method == .bluetoothBoard ? nil : backend.resolved(on: deviceOperatingSystemVersion)
-        if method == .localVPN, activeDeviceControlBackend == .xcTest {
+        let operationID = UUID()
+        deviceConnectionError = nil
+        if method == .localVPN, backend.resolved(on: deviceOperatingSystemVersion) == .xcTest {
             connectionMessage = String(localized: "connection.automationAuthorization")
         } else {
             connectionMessage = switch method {
@@ -343,27 +211,23 @@ extension AppModel {
             case .usbBoard: String(localized: "connection.boardDiscovering")
             }
         }
-        let client = deviceClient
-        let task = Task { try await client.connect(method: method, configuration: .defaults, backend: backend) }
-        deviceConnectionTask = task
-        defer {
-            if deviceOperationID == operationID {
-                isConnecting = false; deviceConnectionTask = nil
-                if !isDeviceReady { activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil }
-            }
+        let task = Task {
+            _ = try await deviceSession.connect(method: method, backend: backend, id: operationID)
         }
+        deviceConnectionTask = task
+        defer { if deviceOperationID == operationID { deviceConnectionTask = nil } }
         do {
             try await task.value
-            guard deviceOperationID == operationID, deviceConnectionMethod == method,
-                  deviceControlBackend.resolved(on: deviceOperatingSystemVersion) == backend.resolved(on: deviceOperatingSystemVersion) else { return }
+            guard deviceOperationID == operationID else { return }
             deviceConnectionError = nil
-            await refreshDeviceStatus()
-            // Completing discovery/diagnostics is not a control capability.
-            if isDeviceReady { connectionMessage = String(localized: "connection.ready") }
-            else if case .unavailable(let reason) = deviceStatus { connectionMessage = reason }
+            connectionMessage = isDeviceReady ? String(localized: "connection.ready") : {
+                if case .unavailable(let reason) = deviceStatus { reason } else { "" }
+            }()
         } catch is CancellationError {
             if deviceOperationID == operationID { connectionMessage = String(localized: "connection.disconnected", table: "Runtime") }
-        } catch { if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
+        } catch {
+            if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
+        }
         guard deviceOperationID == operationID else { return }
         await refreshDeviceStatus()
     }
@@ -384,23 +248,19 @@ extension AppModel {
 
     func selectDeviceConnectionMethod(_ method: DeviceConnectionMethod) async {
         await cancelDictationDeviceRestoration()
-        guard DeviceBuildCapabilities.methods.contains(method), method != deviceConnectionMethod, !isChangingDeviceConnectionMethod, !isRepairingDeviceConnection,
-              !isSaving, !isStopping, !isManagingTunnel, !isStoppingTunnel, !isImportingAttachments else { return }
+        guard DeviceBuildCapabilities.methods.contains(method), method != deviceConnectionMethod, canChangeDeviceRoute,
+              let lease = try? deviceSession.acquire(.setup, cancellingConnection: true) else { return }
+        defer { lease.release() }
         isChangingDeviceConnectionMethod = true
         defer { isChangingDeviceConnectionMethod = false }
         await disconnectDevice(stopChatRun: false, stopReason: String(localized: "connection.methodChanged"))
         // Stop only Eiscue's owned tunnel when leaving this method, making room
         // for another VPN. LocalTunnelManager never adopts another app's VPN.
         if deviceConnectionMethod == .localVPN, (localTunnel.isConnected || localTunnel.isTransitioning) {
-            await stopLocalTunnel()
+            await stopLocalTunnel(borrowing: lease)
         }
-        if method == .bluetoothBoard {
-            networkDeviceClient = deviceClient
-            deviceClient = DeviceClient(controller: bluetoothController)
-        } else if deviceConnectionMethod == .bluetoothBoard {
-            deviceClient = networkDeviceClient ?? DeviceBuildCapabilities.makeClient()
-            networkDeviceClient = nil
-        }
+        do { try await deviceSession.switchRoute(to: method, owner: .setup) }
+        catch { deviceConnectionError = error.localizedDescription; return }
         deviceConnectionMethod = method
         await refreshDeviceStatus()
         deviceConnectionError = nil
@@ -420,9 +280,13 @@ extension AppModel {
         }
         let currentBackend = activeDeviceControlBackend ?? deviceControlBackend.resolved(on: deviceOperatingSystemVersion)
         if deviceConnectionMethod == .bluetoothBoard || backend.resolved(on: deviceOperatingSystemVersion) == currentBackend {
+            do { try await deviceSession.selectBackend(backend) }
+            catch { deviceConnectionError = error.localizedDescription; return }
             deviceControlBackend = backend
             return
         }
+        guard let lease = try? deviceSession.acquire(.setup, cancellingConnection: true) else { return }
+        defer { lease.release() }
         isChangingDeviceConnectionMethod = true
         defer { isChangingDeviceConnectionMethod = false }
         let hasSession = activeDeviceConnectionMethod != nil || activeDeviceControlBackend != nil ||
@@ -434,6 +298,8 @@ extension AppModel {
             // without presenting a disconnected preference change as connecting.
             await releaseDeviceConnection()
         }
+        do { try await deviceSession.selectBackend(backend, owner: .setup) }
+        catch { deviceConnectionError = error.localizedDescription; return }
         deviceControlBackend = backend
         deviceConnectionError = nil
         connectionMessage = String(localized: "device.backend.changed", table: "Connections")
@@ -443,28 +309,41 @@ extension AppModel {
                           stopReason: String = String(localized: "connection.disconnected")) async {
         guard expectedPairingID == nil || expectedPairingID == pairingLeaseID else { return }
         await cancelDictationDeviceRestoration()
-        let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true
-        defer { if deviceOperationID == operationID { isConnecting = false } }
+        let operationID = UUID()
         let oldLease = pairingLeaseID
+        let oldDeviceLease = pairingDeviceLease
+        pairingDeviceLease = nil
+        let pendingPairing = pairingTask
         pairingLeaseID = nil
-        pairingTask?.cancel(); pairingTask = nil
+        pendingPairing?.cancel(); pairingTask = nil
         if let id = oldLease { background.end(taskID: id, success: false) }
-        if let run = activeRun, stopChatRun || run.scope != .chat { await stop(expectedRunID: run.id, reason: stopReason) }
-        await releaseDeviceConnection()
+        if let run = activeRun, stopChatRun || run.scope != .chat {
+            await stop(expectedRunID: run.id, reason: stopReason)
+            _ = await runCoordinator.stopAndWait(runID: run.id)
+        }
+        await releaseDeviceConnection(operationID: operationID)
+        await pendingPairing?.value
+        oldDeviceLease?.release()
         guard deviceOperationID == operationID else { return }
         isPairing = false; pairingCode = nil; screenshot = nil
     }
 
-    func releaseDeviceConnection() async {
-        await cancelDictationDeviceRestoration()
-        activeDeviceConnectionMethod = nil
-        activeDeviceControlBackend = nil
+    func releaseDeviceConnection(client captured: DeviceClient? = nil, operationID: UUID? = nil) async {
+        let target = captured ?? deviceClient
+        if target.device !== deviceClient.device {
+            await target.disconnect()
+            return
+        }
+        if captured == nil { await cancelDictationDeviceRestoration() }
         let pending = deviceConnectionTask
-        deviceConnectionTask = nil
-        pending?.cancel()
-        await deviceClient.disconnect()
+        deviceConnectionTask = nil; pending?.cancel()
+        do { _ = try await deviceSession.releaseConnection(owner: deviceSession.owner, id: operationID ?? UUID()) }
+        catch {
+            await target.disconnect()
+            deviceConnectionError = error.localizedDescription
+        }
         if let pending { _ = await pending.result }
+        guard target.device === deviceClient.device else { return }
         screenshot = nil
         await refreshDeviceStatus()
         if case .unavailable(let reason) = deviceStatus { connectionMessage = reason }
@@ -484,13 +363,19 @@ extension AppModel {
             return
         }
         guard localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalBeforePairing"); return }
+        guard let deviceLease = try? deviceSession.acquire(.setup) else { return }
+        let id = UUID()
+        guard let operation = try? deviceSession.beginSetup(owner: deviceLease.owner, id: id) else { deviceLease.release(); return }
+        pairingDeviceLease = deviceLease
         deviceConnectionError = nil
         isPairing = true; pairingCode = nil
-        activeDeviceConnectionMethod = .localVPN
-        activeDeviceControlBackend = nil
         connectionMessage = String(localized: "connection.preparingPairing")
-        let id = UUID(); pairingLeaseID = id; deviceOperationID = id
+        pairingLeaseID = id
         pairingTask = Task {
+            defer {
+                deviceSession.completeSetup(operation, transportConnected: false)
+                if pairingDeviceLease?.id == deviceLease.id { deviceLease.release(); pairingDeviceLease = nil }
+            }
             do {
                 try await background.begin(taskID: id, title: String(localized: "connection.pairingTitle"),
                                            subtitle: PairingStatusPresentation.preparing.subtitle,
@@ -528,16 +413,16 @@ extension AppModel {
             guard pairingLeaseID == id else { return }
             isPairing = false; pairingCode = nil; pairingLeaseID = nil
             await refreshDeviceStatus()
-            if !isDeviceReady { activeDeviceConnectionMethod = nil }
         }
     }
 
     func importPairingIdentity(_ url: URL) async {
         await cancelDictationDeviceRestoration()
-        guard !isBusy else { return }
-        let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true
-        defer { if deviceOperationID == operationID { isConnecting = false } }
+        guard !isBusy, let lease = try? deviceSession.acquire(.setup) else { return }
+        defer { lease.release() }
+        let operationID = UUID()
+        guard let operation = try? deviceSession.beginSetup(owner: lease.owner, id: operationID) else { return }
+        defer { deviceSession.completeSetup(operation, transportConnected: false) }
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -553,12 +438,13 @@ extension AppModel {
 
     func forgetPairingIdentity() async {
         await cancelDictationDeviceRestoration()
-        guard !isBusy else { return }
-        let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true
-        defer { if deviceOperationID == operationID { isConnecting = false } }
-        await releaseDeviceConnection()
-        guard deviceOperationID == operationID else { return }
+        guard !isBusy, let lease = try? deviceSession.acquire(.setup) else { return }
+        defer { lease.release() }
+        let operationID = UUID()
+        await releaseDeviceConnection(operationID: operationID)
+        guard deviceOperationID == operationID,
+              let operation = try? deviceSession.beginSetup(owner: lease.owner, id: operationID) else { return }
+        defer { deviceSession.completeSetup(operation, transportConnected: false) }
         do {
             try await deviceClient.removePairingIdentity()
             guard deviceOperationID == operationID else { return }
@@ -571,10 +457,11 @@ extension AppModel {
 
     #if DEBUG
     func previewScreenshot() async {
-        guard !isBusy, isDeviceReady else { return }
-        let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true
-        defer { if deviceOperationID == operationID { isConnecting = false } }
+        guard !isBusy, isDeviceReady, let lease = try? deviceSession.acquire(.setup) else { return }
+        defer { lease.release() }
+        let operationID = UUID()
+        guard let operation = try? deviceSession.beginSetup(owner: lease.owner, id: operationID) else { return }
+        defer { deviceSession.completeSetup(operation) }
         do {
             let frame = try await deviceClient.captureScreenshot()
             guard deviceOperationID == operationID else { return }

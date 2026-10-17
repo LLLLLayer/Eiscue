@@ -7,6 +7,7 @@ actor RunBudget {
     private var verificationDue = false
     private var stopped = false
     private(set) var failure: AgentError?
+    private(set) var terminalCause: StopCause?
     init(limit: Int, verificationCost: Int? = nil) {
         self.limit = limit
         self.verificationCost = verificationCost
@@ -36,7 +37,8 @@ actor RunBudget {
     func complete(isVerification: Bool, verifiesSideEffects: Bool, isError: Bool) {
         if isVerification || verifiesSideEffects, !isError { verificationDue = false }
     }
-    func pause(_ reason: String) { if failure == nil { failure = .toolExecutionPaused(reason) } }
+    func pause(_ reason: AgentPauseReason) { if failure == nil { failure = .toolExecutionPaused(reason) } }
+    func outcomeUnknown(toolName: String) { if terminalCause == nil { terminalCause = .outcomeUnknown(toolName: toolName) } }
     func reachLimit() { if failure == nil { failure = .toolLimitReached } }
 
     func verificationReminder() -> String? {
@@ -47,6 +49,7 @@ actor RunBudget {
 
     func check() throws {
         try Task.checkCancellation()
+        if terminalCause != nil { throw RuntimeStopSignal.outcomeUnknown }
         if stopped { throw CancellationError() }
         if let failure { throw failure }
     }

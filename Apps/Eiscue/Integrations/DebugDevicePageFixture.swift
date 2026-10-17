@@ -36,7 +36,8 @@ extension AppModel {
         bluetoothMonitor?.cancel(); bluetoothMonitor = nil
         localTunnel.onDisconnect = nil
         let saved = ProcessInfo.processInfo.arguments.contains("--onboarding-saved-pairing-fixture")
-        let client = DeviceClient(controller: OnboardingPairingFixtureController(hasIdentity: saved))
+        let route = OnboardingPairingFixtureController(hasIdentity: saved)
+        let client = DeviceClient(actuator: route, networkSetup: route)
         // Both sides of the route switch remain in memory; this fixture must not
         // read a pairing Keychain item or connect to any device.
         deviceClient = client
@@ -72,9 +73,10 @@ extension AppModel {
             }
         }
         let speechFixture = DebugDevicePageFixture.isSpeechEnabled
-        let client = DeviceClient(controller: DevicePageFixtureController(imageData: image.pngData()!,
+        let route = DevicePageFixtureController(imageData: image.pngData()!,
             allowsReconnection: speechFixture, failsReconnection: DebugDevicePageFixture.failsSpeechReconnection,
-            delaysReconnection: DebugDevicePageFixture.delaysSpeechReconnection))
+            delaysReconnection: DebugDevicePageFixture.delaysSpeechReconnection)
+        let client = DeviceClient(actuator: route, networkSetup: route)
         deviceClient = client
         networkDeviceClient = client
         // Exercise the same CoreDevice media handoff without a simulator VPN.
@@ -92,17 +94,30 @@ extension AppModel {
     }
 }
 
-private actor OnboardingPairingFixtureController: DeviceController {
+private actor OnboardingPairingFixtureController: DeviceActuator, NetworkRouteSetup {
     private var hasIdentity: Bool
 
     init(hasIdentity: Bool) { self.hasIdentity = hasIdentity }
 
-    func status() async -> DeviceStatus { .unavailable(reason: String(localized: "connection.disconnected", table: "Runtime")) }
+    func cachedStatus() async -> DeviceStatus { .unavailable(reason: String(localized: "connection.disconnected", table: "Runtime")) }
     func hasPairingIdentity() async throws -> Bool { hasIdentity }
     func removePairingIdentity() async throws { hasIdentity = false }
+    func importPairingIdentity(_ data: Data) async throws { hasIdentity = true }
+    func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws { throw DeviceControlError.notConnected }
+    func connectUSBBoard(backend: DeviceControlBackend) async throws { throw DeviceControlError.notConnected }
+    func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data { Data() }
+    func probe() async -> DeviceStatus { await cachedStatus() }
+    func capture() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
+    func frameState() async throws -> DeviceFrameState { throw DeviceControlError.notConnected }
+    func perform(_ action: EiscueDeviceCore.DeviceAction, frame: FrameGrant) async throws -> SubmissionResult { .notSubmitted(.notConnected) }
+    func releaseInput() async throws {}
+    func disconnect() async -> ReleaseConfirmation { .confirmed }
+    func listApplications() async throws -> [DeviceApplication] { [] }
 }
 
-private actor DevicePageFixtureController: DeviceController {
+private actor DevicePageFixtureController: DeviceActuator, NetworkRouteSetup {
     private let imageData: Data
     private let allowsReconnection: Bool
     private let failsReconnection: Bool
@@ -116,13 +131,23 @@ private actor DevicePageFixtureController: DeviceController {
         self.delaysReconnection = delaysReconnection
     }
 
-    func status() async -> DeviceStatus {
+    func cachedStatus() async -> DeviceStatus {
         connected ? .ready(capabilities: [.screenshot, .tap, .swipe, .textInput]) : .unavailable(reason: "Fixture disconnected")
     }
 
     func hasPairingIdentity() async throws -> Bool { true }
-    func disconnect() async { connected = false }
-    func disconnectAndConfirmRelease() async -> Bool { await disconnect(); return true }
+    func disconnect() async -> ReleaseConfirmation { connected = false; return .confirmed }
+    func probe() async -> DeviceStatus { await cachedStatus() }
+    func importPairingIdentity(_ data: Data) async throws {}
+    func removePairingIdentity() async throws {}
+    func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data { Data() }
+    func releaseInput() async throws {}
+    func perform(_ action: EiscueDeviceCore.DeviceAction, frame: FrameGrant) async throws -> SubmissionResult { .notSubmitted(.capabilityUnavailable(action.capability)) }
+    private let geometry = DeviceFrameGeometry(sessionID: UUID(), revision: "fixture", width: 320, height: 640)
+    func frameState() async throws -> DeviceFrameState { DeviceFrameState(geometry: geometry, isLive: connected) }
+    func listApplications() async throws -> [DeviceApplication] { [] }
 
     func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws {
         try await reconnect(backend: backend)
@@ -139,9 +164,9 @@ private actor DevicePageFixtureController: DeviceController {
         connected = true
     }
 
-    func captureScreenshot() async throws -> DeviceScreenshot {
+    func capture() async throws -> DeviceScreenshot {
         guard connected else { throw DeviceControlError.notConnected }
-        return DeviceScreenshot(width: 320, height: 640, mimeType: "image/png", data: imageData)
+        return DeviceScreenshot(width: 320, height: 640, mimeType: "image/png", data: imageData, geometry: geometry)
     }
 }
 #endif

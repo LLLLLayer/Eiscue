@@ -168,7 +168,7 @@ import XCTest
         XCTAssertEqual(stored.first?.messages, [message, reply])
     }
 
-    func testContinuingPausedRunCreatesNewRequestAndPreservesOriginalScope() async throws {
+    func testContinuingPausedRunRequiresPermissionAndPreservesOriginalScope() async throws {
         let fixture = try RecoveryFixture()
         defer { fixture.cleanUp() }
         let message = AgentMessage(role: .user, text: "Open display settings")
@@ -188,6 +188,11 @@ import XCTest
         model.modelSettings.supportsImages = true
         model.currentScenePhase = .background // Stop before credentials/provider access.
         await model.continueInterruptedRun()
+        XCTAssertEqual(model.runs.map(\.id), [paused.id])
+        XCTAssertEqual(model.selectedConversation?.messages, [message])
+        XCTAssertEqual(model.errorMessage, String(localized: "run.enable_control_first", table: "Runtime"))
+        model.allowsDeviceControl = true; model.errorMessage = nil
+        await model.continueInterruptedRun()
         let next = try XCTUnwrap(model.runs.first)
         XCTAssertNotEqual(next.requestID, message.id)
         XCTAssertEqual(next.scope, .control)
@@ -197,6 +202,64 @@ import XCTest
         XCTAssertEqual(model.selectedConversation?.messages.last?.id, next.requestID)
         XCTAssertEqual(model.selectedConversation?.messages.last?.text, String(localized: "run.paused.resume_prompt", table: "Runtime"))
         XCTAssertNil(model.pausedRun)
+    }
+
+    func testRecoveryRebuildsStaleAcceptedCacheFromMissingSQLiteAdmission() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "The host cache claimed acceptance")
+        let conversation = Conversation(title: "Stale accepted cache", messages: [message], pendingRequestID: message.id)
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation)
+        var record = RunRecord(id: UUID(), conversationID: conversation.id, requestID: message.id, startedAt: Date(),
+                               scope: .chat, model: "fixture", skill: nil, state: .interrupted, detail: "", events: [])
+        record.submission = .accepted
+        try await model.journal.save(record); model.runs = [record]
+
+        for _ in 0..<2 { await model.recoverSelectedConversation() }
+
+        XCTAssertEqual(model.runs.first?.submission, .pending)
+        XCTAssertEqual(model.selectedConversation?.pendingRequestID, message.id)
+        XCTAssertTrue(model.unsubmittedMessageIDs.contains(message.id))
+        XCTAssertTrue(model.needsRecovery)
+        let saved = try await model.journal.load().records
+        XCTAssertEqual(saved.first?.submission, .pending)
+    }
+
+    func testSQLiteAdmissionRepairsPendingCacheWithoutInferringItFromVisibleMessages() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "Durably admitted, compacted from the visible runtime view")
+        let conversation = Conversation(title: "Durable admission", messages: [message], pendingRequestID: message.id)
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation, acceptedRequestIDs: [message.id])
+        var record = RunRecord(id: UUID(), conversationID: conversation.id, requestID: message.id, startedAt: Date(),
+                               scope: .chat, model: "fixture", skill: nil, state: .completed, detail: "", events: [])
+        record.submission = .pending
+        try await model.journal.save(record); model.runs = [record]
+
+        await model.recoverSelectedConversation()
+
+        XCTAssertEqual(model.runs.first?.submission, .accepted)
+        XCTAssertNil(model.selectedConversation?.pendingRequestID)
+        XCTAssertFalse(model.unsubmittedMessageIDs.contains(message.id))
+        XCTAssertFalse(model.needsRecovery)
+        XCTAssertEqual(model.selectedConversation?.messages, [message])
+    }
+
+    func testVisibleRuntimeMessageDoesNotOverrideMissingDurableAdmission() async throws {
+        let fixture = try RecoveryFixture()
+        defer { fixture.cleanUp() }
+        let message = AgentMessage(role: .user, text: "Visible content is not an admission receipt")
+        let conversation = Conversation(title: "No receipt", messages: [message], pendingRequestID: message.id)
+        try await fixture.store.save(conversation)
+        let model = fixture.model(conversation, runtime: [message], acceptedRequestIDs: [])
+
+        await model.recoverSelectedConversation()
+
+        XCTAssertEqual(model.selectedConversation?.pendingRequestID, message.id)
+        XCTAssertTrue(model.unsubmittedMessageIDs.contains(message.id))
+        XCTAssertTrue(model.needsRecovery)
     }
 
     func testOrphanedChatRetryDoesNotInheritEarlierControlTaskScope() async throws {
@@ -300,11 +363,12 @@ private actor SuspendedConversationStore: ConversationRepository {
         preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
         store = JSONConversationRepository(fileURL: directory.appendingPathComponent("conversations.json"))
     }
-    func model(_ conversation: Conversation, runtime: [AgentMessage] = []) -> AppModel {
+    func model(_ conversation: Conversation, runtime: [AgentMessage] = [], acceptedRequestIDs: Set<UUID>? = nil) -> AppModel {
         let model = AppModel(storageDirectory: directory, preferences: preferences, repository: store)
         model.isLoading = false; model.agentAvailability = .ready; model.hapticsEnabled = false
         model.conversations = [conversation]; model.selectedConversationID = conversation.id
-        model.agent = AgentClient(engine: RecoveryEngine(messages: runtime))
+        model.configuredAgent = AgentClient(engine: RecoveryEngine(messages: runtime,
+            acceptedRequestIDs: acceptedRequestIDs ?? Set(runtime.filter { $0.role == .user }.map(\.id))))
         return model
     }
     func cleanUp() {
@@ -313,10 +377,15 @@ private actor SuspendedConversationStore: ConversationRepository {
     }
 }
 
+/// Read-only runtime snapshot injection. This fixture never admits requests.
 private struct RecoveryEngine: AgentEngine {
     let messages: [AgentMessage]
-    var availability: AgentAvailability { get async { .ready } }
-    func recover(conversationID: UUID) async throws -> AgentRecovery { AgentRecovery(messages: messages, hasInterruptedRun: false) }
+    let acceptedRequestIDs: Set<UUID>
+    var availability: AgentAvailability { get async { .unconfigured } }
+    func recover(conversationID: UUID) async throws -> AgentRecovery {
+        AgentRecovery(messages: messages, hasInterruptedRun: false, acceptedRequestIDs: acceptedRequestIDs)
+    }
+    func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? { nil }
     func run(request: AgentRequest) async throws -> AsyncThrowingStream<AgentEvent, Error> { throw AgentError.unconfigured }
     func cancel() async throws {}
     func cancel(conversationID: UUID) async throws {}

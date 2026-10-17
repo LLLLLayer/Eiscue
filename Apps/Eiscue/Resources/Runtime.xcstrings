@@ -1581,6 +1581,142 @@
           }
         }
       }
+    },
+    "run.enable_control_first": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable device control before continuing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先打开设备控制，再继续任务。"
+          }
+        }
+      }
+    },
+    "run.missing_record_chat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task record is missing. Continuing will only chat, without viewing or operating your device."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到这条消息的任务记录。继续时只会聊天，不会查看或操作设备。"
+          }
+        }
+      }
+    },
+    "run.outcome_unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action result unconfirmed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作结果未确认"
+          }
+        }
+      }
+    },
+    "run.unknown_action": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device action"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备操作"
+          }
+        }
+      }
+    },
+    "run.unknown_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The last action was sent, but its result could not be confirmed. The device connection has been released. Check your screen before reconnecting and continuing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最后一步操作已发出，但无法确认是否生效，设备连接已释放。请先查看手机屏幕，确认后重新连接并继续。"
+          }
+        }
+      }
+    },
+    "run.unknown_continue": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I checked, continue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我已确认，继续"
+          }
+        }
+      }
+    },
+    "run.unknown_notification": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task stopped: the last action result is unconfirmed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务已停止：最后一步操作结果未确认。"
+          }
+        }
+      }
+    },
+    "run.cleanup_failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection cleanup was not confirmed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未能确认连接清理完成。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

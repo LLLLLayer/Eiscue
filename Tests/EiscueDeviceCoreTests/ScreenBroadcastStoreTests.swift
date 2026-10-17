@@ -5,6 +5,33 @@ import Testing
 @testable import EiscueDeviceCore
 
 @Suite struct ScreenBroadcastStoreTests {
+    @Test func swipeGeometryChecksStatWithoutRereadingTheFrame() throws {
+        let fixture = try BroadcastStoreFixture()
+        defer { fixture.cleanUp() }
+        let session = try fixture.store.beginSession()
+        let jpeg = Data([0xff, 0xd8]) + Data(repeating: 1, count: 1_490_000) + Data([0xff, 0xd9])
+        try fixture.store.publish(jpegData: jpeg, width: 1600, height: 900, orientation: .right, sessionID: session)
+        _ = try fixture.store.readCurrentFrame()
+        let baseline = fixture.store.readMetrics
+        let started = ContinuousClock.now
+        for _ in 0..<34 {
+            #expect(fixture.store.state().isActive)
+            _ = try fixture.store.readCurrentFrame()
+        }
+        let elapsed = started.duration(to: .now)
+        let after = fixture.store.readMetrics
+        #expect(after.decodeCount == baseline.decodeCount)
+        #expect(after.decodedBytes == baseline.decodedBytes)
+        #expect(after.statCount == baseline.statCount + 68)
+        print("ReplayKit swipe cache fixture: checks=68 decodedBytes=0 elapsed=\(elapsed)")
+        try fixture.store.publish(jpegData: jpeg, width: 900, height: 1600, orientation: .left, sessionID: session)
+        #expect(fixture.store.state().width == 900)
+        #expect(fixture.store.readMetrics.decodeCount == after.decodeCount + 1)
+        try fixture.store.setPaused(true, sessionID: session)
+        #expect(!fixture.store.state().isActive)
+        #expect(throws: ScreenBroadcastError.self) { try fixture.store.readCurrentFrame() }
+    }
+
     @Test func anIdenticalPublicationKeepsADelayedObservationCurrent() async throws {
         let fixture = try BroadcastStoreFixture()
         defer { fixture.cleanUp() }
@@ -19,10 +46,10 @@ import Testing
         #expect(current.frame.frameID == observed.frame.frameID)
         #expect(current.frame.capturedAt > observed.frame.capturedAt)
         #expect(current.frame.capturedUptime > observed.frame.capturedUptime + ScreenBroadcastStore.maximumFrameAge)
-        #expect(BluetoothFrameAuthority.permits(decisionIssuedUptime: observed.confirmedUptime,
+        #expect(FrameGrant.permits(decisionIssuedUptime: observed.confirmedUptime,
             currentConfirmedUptime: current.confirmedUptime, now: ProcessInfo.processInfo.systemUptime))
         // Identity reuse alone cannot extend the broadcast's liveness window.
-        #expect(!BluetoothFrameAuthority.permits(decisionIssuedUptime: observed.confirmedUptime,
+        #expect(!FrameGrant.permits(decisionIssuedUptime: observed.confirmedUptime,
             currentConfirmedUptime: current.confirmedUptime,
             now: current.confirmedUptime + ScreenBroadcastStore.maximumFrameAge + 0.01))
     }
@@ -50,7 +77,7 @@ import Testing
         #expect(changed != original)
         let current = try fixture.store.readCurrentFrame()
         let now = ProcessInfo.processInfo.systemUptime
-        #expect(BluetoothFrameAuthority.permits(decisionIssuedUptime: now - 5,
+        #expect(FrameGrant.permits(decisionIssuedUptime: now - 5,
             currentConfirmedUptime: current.confirmedUptime, now: now))
     }
 

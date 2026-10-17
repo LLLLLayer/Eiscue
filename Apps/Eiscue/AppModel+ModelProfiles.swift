@@ -36,7 +36,7 @@ extension AppModel {
         modelCredentialRevision &+= 1
         persistModelProfiles(profiles, selectedID: profile.id, data: data)
         hasAPIKey = true
-        agent = AgentClient(configuration: configuration, storageDirectory: runtimeDirectory)
+        configuredAgent = agentFactory(configuration, runtimeDirectory, [])
         agentAvailability = .ready
         return profile.id
     }
@@ -49,8 +49,8 @@ extension AppModel {
         let data = try JSONEncoder().encode(ModelProfileState(profiles: modelProfiles, selectedID: id))
         persistModelProfiles(modelProfiles, selectedID: id, data: data)
         hasAPIKey = key.map { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? false
-        agent = configuration.map { AgentClient(configuration: $0, storageDirectory: runtimeDirectory) }
-            ?? AgentClient(storageDirectory: runtimeDirectory)
+        configuredAgent = configuration.map { agentFactory($0, runtimeDirectory, []) }
+            ?? agentFactory(nil, runtimeDirectory, [])
         agentAvailability = configuration == nil ? .unconfigured : .ready
     }
 
@@ -92,13 +92,13 @@ extension AppModel {
     func refreshAgentConfiguration() throws {
         // Clear the old provider before a Keychain failure can leave it usable
         // behind newly selected settings.
-        agent = AgentClient(storageDirectory: runtimeDirectory)
+        configuredAgent = agentFactory(nil, runtimeDirectory, [])
         agentAvailability = .unconfigured
         hasAPIKey = false
         guard let key = try selectedModelAPIKey(), !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         hasAPIKey = true
         guard let configuration = try? modelSettings.configuration(apiKey: key) else { return }
-        agent = AgentClient(configuration: configuration, storageDirectory: runtimeDirectory)
+        configuredAgent = agentFactory(configuration, runtimeDirectory, [])
         agentAvailability = .ready
     }
 

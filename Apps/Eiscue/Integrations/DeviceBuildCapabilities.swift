@@ -15,9 +15,14 @@ enum DeviceBuildCapabilities {
     static let defaultMethod: DeviceConnectionMethod = .localVPN
     #endif
 
+    @MainActor private static func makeHIDClient() -> DeviceClient {
+        let controller = BluetoothDeviceController()
+        return DeviceClient(actuator: controller, hidSetup: controller)
+    }
+
     @MainActor static func makeClient() -> DeviceClient {
         #if EISCUE_HID_ONLY
-        DeviceClient(controller: BluetoothDeviceController())
+        { let hid = BluetoothDeviceController(); return DeviceClient(actuator: hid, hidSetup: hid) }()
         #else
         DeviceClient()
         #endif

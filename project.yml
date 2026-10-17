@@ -225,6 +225,7 @@ targets:
     platform: iOS
     sources:
       - path: Tests/EiscueAppTests
+      - path: Tests/EiscueAgentKitTests/Support/ContractFakeEngine.swift
       - path: Apps/EiscueTunnel/PacketReflector.swift
       - path: Apps/Shared
     dependencies:

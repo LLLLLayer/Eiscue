@@ -51,7 +51,7 @@ extension AppModel {
                                                     result: .image(image, mimeType: "image/png")),
                                  activityID: "preview:image", conversationID: conversation.id)
         toolImagePreviews.record(AgentToolCompletion(call: .init(id: "error", name: DeviceToolSpec.screenshot.rawValue, arguments: [:]),
-                                                    result: .init(content: [.image(data: image, mimeType: "image/png")], isError: true)),
+                                                    result: .init(content: [.image(data: image, mimeType: "image/png")], outcome: .failed)),
                                  activityID: "preview:error", conversationID: conversation.id)
         toolImagePreviews.markUnavailable(activityID: "preview:old", conversationID: conversation.id)
         if ProcessInfo.processInfo.arguments.contains("--run-tool-detail-fixture") {
@@ -65,6 +65,37 @@ extension AppModel {
                                      activityID: "preview:tap", conversationID: conversation.id)
         }
         conversations = [conversation]; runs = [record]; selectedConversationID = conversation.id
+    }
+
+    /// The terminal state comes from a fake engine; no model, device or tool runs.
+    func installUnknownOutcomeFixture() async {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+              ProcessInfo.processInfo.arguments.contains("--unknown-outcome-fixture") else { return }
+        bluetoothMonitor?.cancel(); bluetoothMonitor = nil
+        localTunnel.onDisconnect = nil
+        let user = AgentMessage(role: .user, text: "UNKNOWN_OUTCOME_FIXTURE_REQUEST")
+        let conversation = Conversation(title: "Unknown outcome fixture", messages: [user])
+        let engine = UnknownOutcomeFixtureEngine(user: user)
+        do {
+            let events = try await engine.run(request: .init(conversationID: conversation.id, requestID: user.id, prompt: user.text))
+            var cause: StopCause?
+            for try await event in events {
+                if case .finished(.stopped(let stop)) = event { cause = stop }
+            }
+            guard let cause else { return }
+            var record = RunRecord(id: UUID(), conversationID: conversation.id, requestID: user.id, startedAt: .now,
+                                   scope: .control, model: "UI fixture", skill: nil, state: .outcomeUnknown,
+                                   endedAt: .now, detail: String(localized: "run.unknown_detail", table: "Runtime"), events: [])
+            record.submission = .accepted; record.stopCause = cause
+            try await repository.save(conversation); try await journal.save(record)
+            conversations = [conversation]; runs = [record]; selectedConversationID = conversation.id
+            interruptedConversationIDs = [conversation.id]
+            configuredAgent = AgentClient(engine: engine); agentAvailability = .ready
+            allowsDeviceControl = true
+            deviceStatus = .unavailable(reason: String(localized: "connection.disconnected", table: "Runtime"))
+            activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil
+            errorMessage = nil
+        } catch { errorMessage = safeError(error) }
     }
 
     private static func toolPreviewFixtureImage() -> Data {
@@ -104,11 +135,30 @@ extension AppModel {
                 return .error("Unexpected fixture path")
             }
             if values["path"] == .string("pause.txt") {
-                throw AgentError.toolExecutionPaused(String(localized: "toolError.noProgress"))
+                throw AgentError.toolExecutionPaused(.noProgress)
             }
             guard values["path"] == .string("fixture.txt") else { return .error("Unexpected fixture path") }
             return .text("Fixture document content")
         }]
     }
+}
+@MainActor private final class UnknownOutcomeFixtureEngine: AgentEngine {
+    let user: AgentMessage
+    init(user: AgentMessage) { self.user = user }
+    var availability: AgentAvailability { get async { .ready } }
+    func run(request: AgentRequest) async throws -> AsyncThrowingStream<AgentEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.requestAccepted(request.requestID))
+            continuation.yield(.finished(.stopped(.outcomeUnknown(toolName: DeviceToolSpec.tap.rawValue))))
+            continuation.finish()
+        }
+    }
+    func recover(conversationID: UUID) async throws -> AgentRecovery {
+        .init(messages: [user], hasInterruptedRun: false, acceptedRequestIDs: [user.id])
+    }
+    func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? { nil }
+    func cancel() async throws {}
+    func cancel(conversationID: UUID) async throws {}
+    func removeConversation(id: UUID) async throws {}
 }
 #endif

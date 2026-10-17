@@ -14,6 +14,7 @@ public struct AgentTool: Sendable {
     /// A side-effect tool that also observes its result before returning success.
     /// It remains unsafe to replay and reserves at least two budget units.
     public let verifiesSideEffects: Bool
+    public let contextImagePolicy: AgentContextImagePolicy
     public let execute: @Sendable (AgentJSONValue) async throws -> AgentToolResult
 
     public init(
@@ -22,6 +23,7 @@ public struct AgentTool: Sendable {
         isVerification: Bool = false,
         executionCost: Int = 1,
         verifiesSideEffects: Bool = false,
+        contextImagePolicy: AgentContextImagePolicy = .keepAll,
         execute: @escaping @Sendable (AgentJSONValue) async throws -> AgentToolResult
     ) {
         self.name = name
@@ -31,6 +33,7 @@ public struct AgentTool: Sendable {
         self.isVerification = isVerification
         self.executionCost = executionCost
         self.verifiesSideEffects = verifiesSideEffects
+        self.contextImagePolicy = contextImagePolicy
         self.execute = execute
     }
 }
@@ -40,13 +43,29 @@ public enum AgentToolContent: Sendable, Equatable {
     case image(data: Data, mimeType: String)
 }
 
+public enum AgentToolOutcome: String, Codable, Sendable, Equatable {
+    case succeeded, failed, notExecuted, unknown, interrupted
+}
+
+/// Tools sharing a latest-image limit share one request-context budget. Durable results are never trimmed.
+public enum AgentContextImagePolicy: Sendable, Equatable {
+    case keepAll
+    case latest(Int)
+}
+
+public enum AgentToolError: Error, Sendable, Equatable {
+    case outcomeUnknown
+    case paused(AgentPauseReason)
+}
+
 public struct AgentToolResult: Sendable, Equatable {
     public let content: [AgentToolContent]
-    public let isError: Bool
+    public let outcome: AgentToolOutcome
+    public var isError: Bool { outcome != .succeeded }
 
-    public init(content: [AgentToolContent], isError: Bool = false) {
+    public init(content: [AgentToolContent], outcome: AgentToolOutcome = .succeeded) {
         self.content = content
-        self.isError = isError
+        self.outcome = outcome
     }
 
     public var text: String {
@@ -54,7 +73,7 @@ public struct AgentToolResult: Sendable, Equatable {
     }
 
     public static func text(_ text: String) -> Self { .init(content: [.text(text)]) }
-    public static func error(_ text: String) -> Self { .init(content: [.text(text)], isError: true) }
+    public static func error(_ text: String) -> Self { .init(content: [.text(text)], outcome: .failed) }
     public static func image(_ data: Data, mimeType: String, caption: String? = nil) -> Self {
         var content: [AgentToolContent] = []
         if let caption { content.append(.text(caption)) }

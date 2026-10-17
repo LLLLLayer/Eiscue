@@ -5,7 +5,7 @@
 "agent.configuration.invalid-context" = "模型上下文和输出长度配置无效。";
 "agent.configuration.invalid-storage" = "Agent 存储目录必须是本地文件地址。";
 "agent.configuration.invalid-tools" = "工具名称不能重复，参数必须是 JSON Schema 对象。";
-"agent.configuration.invalid-url" = "请输入有效的 HTTP 或 HTTPS 模型服务地址。";
+"agent.configuration.invalid-url" = "请输入有效的 HTTPS 模型服务地址，不含凭据、查询参数或片段。";
 "agent.configuration.missing-model" = "请输入模型 ID。";
 "agent.conversation.new-title" = "新对话";
 "agent.error.busy" = "任务正在运行，请先停止或等待结束。";
@@ -29,3 +29,12 @@
 "agent.configuration.invalid-tool-cost" = "工具执行额度必须大于零。包含结果检查的操作必须至少预留两个额度。";
 
 "agent.storage.deletion-pending" = "此对话正在删除。请重新打开对话列表以完成清理。";
+
+"agent.pause.no-progress" = "任务未能继续取得进展，已暂停。";
+"agent.pause.verification-unavailable" = "无法核查最后一步操作。请重新观察后再继续。";
+"agent.pause.connection-lost" = "设备连接已断开。请重新连接后再继续。";
+"agent.pause.host-requested" = "任务已暂停。请检查进展后再继续。";
+"agent.tool.outcome-unknown" = "操作结果未确认。请确认可见结果后再继续。";
+"agent.tool.not-executed" = "任务已停止，此操作未执行。";
+"agent.storage.corrupt-conversations" = "部分会话无法读取，原始文件已保留：%@";
+"agent.configuration.invalid-image-limit" = "图片上下文数量上限不能为负数。";

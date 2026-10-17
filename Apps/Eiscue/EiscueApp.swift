@@ -52,6 +52,10 @@ struct EiscueApp: App {
                         model.installToolImagePreviewFixture()
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+                       ProcessInfo.processInfo.arguments.contains("--unknown-outcome-fixture") {
+                        await model.installUnknownOutcomeFixture()
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                        ProcessInfo.processInfo.arguments.contains("--board-stop-notice-fixture") {
                         await model.selectDeviceConnectionMethod(.bluetoothBoard)
                         model.handleBoardHardwareStop()

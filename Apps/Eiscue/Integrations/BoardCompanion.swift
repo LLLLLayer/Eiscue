@@ -41,16 +41,13 @@ extension AppModel {
         let reason = String(localized: "bluetooth.hardwareStopped", table: "Bluetooth")
         // Stopping a run disconnects BLE. Keep the explanation visible until a
         // new connection confirms that the physical stop has been released.
+        deviceSession.handle(.hardwareStopped, expected: deviceSession.identity, status: .unavailable(reason: reason))
         boardHardwareStopPending = true
         screenshot = nil
-        deviceStatus = .unavailable(reason: reason)
         deviceConnectionError = reason
         connectionMessage = reason
         bluetoothRevision += 1
         companionTerminal = nil
         syncBoardCompanion()
-        guard let runID = activeRun?.id else { return }
-        deviceTools?.stop()
-        Task { [weak self] in await self?.stop(expectedRunID: runID, reason: reason) }
     }
 }

@@ -48,6 +48,28 @@ import XCTest
         XCTAssertNotNil(model.errorMessage)
         XCTAssertEqual(try Data(contentsOf: file), original, "Loading never replaces a damaged store.")
     }
+
+    func testDamagedConversationRecordReportsFailureWhileHealthyHistoryLoads() async throws {
+        let fixture = try LoadFixture()
+        defer { fixture.cleanUp() }
+        let file = fixture.directory.appendingPathComponent("conversations.json")
+        let repository = JSONConversationRepository(fileURL: file)
+        let healthy = Conversation(title: "Readable", messages: [.init(role: .user, text: "Keep my history")])
+        let damaged = Conversation(title: "Damaged")
+        try await repository.save(healthy); try await repository.save(damaged)
+        let record = file.appendingPathExtension("store").appendingPathComponent(damaged.id.uuidString.lowercased() + ".json")
+        let original = Data("{partial conversation".utf8)
+        try original.write(to: record)
+
+        let model = AppModel(storageDirectory: fixture.directory, preferences: fixture.preferences)
+        await model.load()
+
+        XCTAssertEqual(model.conversations, [healthy])
+        XCTAssertNotNil(model.errorMessage, "Corrupt IDs must be reported instead of silently shortening the list.")
+        XCTAssertFalse(model.skills.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: record), original)
+        XCTAssertFalse(model.isLoading)
+    }
 }
 
 @MainActor private struct LoadFixture {

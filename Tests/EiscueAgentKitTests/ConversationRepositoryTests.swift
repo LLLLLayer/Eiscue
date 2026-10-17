@@ -177,7 +177,9 @@ import EiscueAgentKit
     try FileManager.default.removeItem(at: #require(blobs.first))
     let record = store.appendingPathComponent(conversation.id.uuidString.lowercased() + ".json")
     let original = try Data(contentsOf: record)
-    await #expect(throws: (any Error).self) { try await repository.load() }
+    let loaded = try await repository.loadResult()
+    #expect(loaded.conversations.isEmpty)
+    #expect(loaded.corruptIDs == [conversation.id])
     await #expect(throws: (any Error).self) { try await repository.save(conversation) }
     #expect(try Data(contentsOf: record) == original)
 }
@@ -266,9 +268,11 @@ import EiscueAgentKit
     #expect(try Data(contentsOf: directory.fileURL) == pendingManifest)
     for _ in 0..<2 {
         let reopened = JSONConversationRepository(fileURL: directory.fileURL)
-        await #expect(throws: (any Error).self) { try await reopened.load() }
+        let result = try await reopened.loadResult()
+        #expect(result.conversations.isEmpty)
+        #expect(result.corruptIDs == [second.id])
+        #expect(result.maintenanceFailure != nil)
         await #expect(throws: ConversationStoreError.deletionPending) { try await reopened.save(first) }
-        await #expect(throws: (any Error).self) { try await reopened.save(Conversation(title: "Must wait for cleanup")) }
         #expect(try Data(contentsOf: directory.fileURL) == pendingManifest)
         #expect(try await reopened.storageMetrics().attachmentBytes == attachment.byteCount)
         #expect(try Data(contentsOf: directory.fileURL.appendingPathExtension("legacy-v1")) == original)
@@ -307,7 +311,7 @@ import EiscueAgentKit
     #expect(!FileManager.default.fileExists(atPath: directory.fileURL.appendingPathExtension("legacy-v1").path))
 }
 
-@Test func repeatedCleanupFailureKeepsReadableRecordsAndBlocksNewMutations() async throws {
+@Test func repeatedCleanupFailureKeepsReadableRecordsAndBlocksConflictingMutations() async throws {
     let directory = try StoreDirectory()
     defer { directory.remove() }
     let removed = Conversation(title: "Delete")
@@ -322,13 +326,15 @@ import EiscueAgentKit
     let obstruction = store.appendingPathComponent("blobs").appendingPathComponent(String(repeating: "a", count: 64))
     try FileManager.default.createDirectory(at: obstruction, withIntermediateDirectories: true)
     await #expect(throws: (any Error).self) { try await repository.delete(id: removed.id) }
-    #expect(!FileManager.default.fileExists(atPath: store.appendingPathComponent(removed.id.uuidString.lowercased() + ".json").path))
+    #expect(FileManager.default.fileExists(atPath: store.appendingPathComponent(removed.id.uuidString.lowercased() + ".json").path), "No data is reclaimed until all inputs validate.")
     let pending = try Data(contentsOf: directory.fileURL)
     for _ in 0..<2 {
         let reopened = JSONConversationRepository(fileURL: directory.fileURL)
-        await #expect(throws: (any Error).self) { try await reopened.load() }
+        let result = try await reopened.loadResult()
+        #expect(result.conversations == [remaining])
+        #expect(result.corruptIDs.isEmpty)
+        #expect(result.maintenanceFailure != nil)
         await #expect(throws: ConversationStoreError.deletionPending) { try await reopened.save(removed) }
-        await #expect(throws: (any Error).self) { try await reopened.save(Conversation(title: "New")) }
         await #expect(throws: (any Error).self) { try await reopened.delete(id: remaining.id) }
         #expect(try Data(contentsOf: remainingURL) == intact)
         #expect(try Data(contentsOf: directory.fileURL) == pending)
@@ -339,6 +345,118 @@ import EiscueAgentKit
     #expect(try await reopened.load() == [remaining])
     let manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: directory.fileURL)) as? [String: Any])
     #expect(manifest["pendingDeletionIDs"] == nil)
+}
+
+@Test func damagedConversationIsIsolatedWhileHealthySavesKeepItsBytes() async throws {
+    let directory = try StoreDirectory()
+    defer { directory.remove() }
+    let repository = JSONConversationRepository(fileURL: directory.fileURL)
+    let damaged = Conversation(title: "Damaged")
+    var healthy = Conversation(title: "Healthy")
+    try await repository.save(damaged); try await repository.save(healthy)
+    let record = directory.fileURL.appendingPathExtension("store").appendingPathComponent(damaged.id.uuidString.lowercased() + ".json")
+    let original = Data("{partial record".utf8)
+    try original.write(to: record)
+    let loaded = try await repository.loadResult()
+    #expect(loaded.conversations == [healthy])
+    #expect(loaded.corruptIDs == [damaged.id])
+    #expect(try await repository.load() == [healthy])
+    healthy.title = "Still saving"
+    try await repository.save(healthy)
+    let added = Conversation(title: "Another healthy conversation")
+    try await repository.save(added)
+    #expect(try await Set(repository.load().map(\.id)) == Set([healthy.id, added.id]))
+    await #expect(throws: (any Error).self) { try await repository.save(damaged) }
+    #expect(try Data(contentsOf: record) == original)
+}
+
+@Test func saveChecksBlobSizeAndLoadStillDetectsSameSizeCorruption() async throws {
+    let directory = try StoreDirectory()
+    defer { directory.remove() }
+    let repository = JSONConversationRepository(fileURL: directory.fileURL)
+    let attachment = AgentAttachment(name: "photo.png", mimeType: "image/png", content: .image(Data(repeating: 5, count: 4096)))
+    var conversation = Conversation(messages: [.init(role: .user, text: "", attachments: [attachment])])
+    try await repository.save(conversation)
+    let blobs = directory.fileURL.appendingPathExtension("store").appendingPathComponent("blobs")
+    let blob = try #require(FileManager.default.contentsOfDirectory(at: blobs, includingPropertiesForKeys: nil).first)
+    let tampered = Data(repeating: 6, count: attachment.byteCount)
+    try tampered.write(to: blob)
+    conversation.title = "Metadata-only validation on save"
+    try await repository.save(conversation)
+    let result = try await repository.loadResult()
+    #expect(result.conversations.isEmpty)
+    #expect(result.corruptIDs == [conversation.id])
+    #expect(try Data(contentsOf: blob) == tampered)
+    let record = directory.fileURL.appendingPathExtension("store").appendingPathComponent(conversation.id.uuidString.lowercased() + ".json")
+    let recordBytes = try Data(contentsOf: record)
+    try Data([6]).write(to: blob)
+    await #expect(throws: (any Error).self) { try await repository.save(conversation) }
+    #expect(try Data(contentsOf: record) == recordBytes)
+}
+
+@Test func pendingCleanupDefersUnverifiedDataAndAllowsUnrelatedSaves() async throws {
+    let directory = try StoreDirectory()
+    defer { directory.remove() }
+    let repository = JSONConversationRepository(fileURL: directory.fileURL)
+    let removed = Conversation(title: "Delete")
+    let damaged = Conversation(title: "Corrupt")
+    var healthy = Conversation(title: "Healthy")
+    for conversation in [removed, damaged, healthy] { try await repository.save(conversation) }
+    let record = directory.fileURL.appendingPathExtension("store").appendingPathComponent(damaged.id.uuidString.lowercased() + ".json")
+    let damagedBytes = Data("partial".utf8)
+    try damagedBytes.write(to: record)
+    await #expect(throws: (any Error).self) { try await repository.delete(id: removed.id) }
+    healthy.title = "Updated during pending cleanup"
+    try await repository.save(healthy)
+    let added = Conversation(title: "New during pending cleanup")
+    try await repository.save(added)
+    let reopened = JSONConversationRepository(fileURL: directory.fileURL)
+    let result = try await reopened.loadResult()
+    #expect(Set(result.conversations.map(\.id)) == Set([healthy.id, added.id]))
+    #expect(result.corruptIDs == [damaged.id])
+    #expect(result.maintenanceFailure != nil)
+    #expect(try Data(contentsOf: record) == damagedBytes)
+    await #expect(throws: ConversationStoreError.deletionPending) { try await reopened.save(removed) }
+}
+
+@Test func reclamationSweepsVerifiedOrphanRecordsAndTheirBlobs() async throws {
+    let directory = try StoreDirectory()
+    defer { directory.remove() }
+    let repository = JSONConversationRepository(fileURL: directory.fileURL)
+    let attachment = AgentAttachment(name: "orphan", mimeType: "text/plain", content: .text("orphan bytes"))
+    let removed = Conversation(title: "Explicit deletion")
+    let orphan = Conversation(messages: [.init(role: .user, text: "", attachments: [attachment])])
+    let healthy = Conversation(title: "Keep")
+    for conversation in [removed, orphan, healthy] { try await repository.save(conversation) }
+    var manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: directory.fileURL)) as? [String: Any])
+    manifest["conversationIDs"] = [removed.id.uuidString, healthy.id.uuidString]
+    try JSONSerialization.data(withJSONObject: manifest).write(to: directory.fileURL)
+    let orphanURL = directory.fileURL.appendingPathExtension("store").appendingPathComponent(orphan.id.uuidString.lowercased() + ".json")
+    try await repository.delete(id: removed.id)
+    #expect(try await repository.load() == [healthy])
+    #expect(!FileManager.default.fileExists(atPath: orphanURL.path))
+    #expect(try await repository.storageMetrics().attachmentBytes == 0)
+}
+
+@Test func unverifiedOrphanPreventsEveryReclamationAndIsPreserved() async throws {
+    let directory = try StoreDirectory()
+    defer { directory.remove() }
+    let repository = JSONConversationRepository(fileURL: directory.fileURL)
+    let removed = Conversation(title: "Explicit deletion")
+    let healthy = Conversation(title: "Keep")
+    try await repository.save(removed); try await repository.save(healthy)
+    let store = directory.fileURL.appendingPathExtension("store")
+    let orphanURL = store.appendingPathComponent(UUID().uuidString.lowercased() + ".json")
+    let orphanBytes = Data("{damaged orphan".utf8)
+    try orphanBytes.write(to: orphanURL)
+    let orphanID = try #require(UUID(uuidString: orphanURL.deletingPathExtension().lastPathComponent))
+    await #expect(throws: (any Error).self) { try await repository.save(Conversation(id: orphanID, title: "Must not replace orphan data")) }
+    await #expect(throws: (any Error).self) { try await repository.delete(id: removed.id) }
+    #expect(try Data(contentsOf: orphanURL) == orphanBytes)
+    #expect(FileManager.default.fileExists(atPath: store.appendingPathComponent(removed.id.uuidString.lowercased() + ".json").path))
+    let result = try await repository.loadResult()
+    #expect(result.conversations == [healthy])
+    #expect(result.maintenanceFailure != nil)
 }
 
 private func legacyData(_ conversations: [Conversation]) throws -> Data {

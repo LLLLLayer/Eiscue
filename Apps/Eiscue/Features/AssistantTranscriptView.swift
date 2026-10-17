@@ -73,10 +73,23 @@ struct AssistantTranscriptView<Welcome: View>: View {
     }
 
     @ViewBuilder private var runStatus: some View {
-        if model.activeRun == nil, model.needsRecovery {
+        if model.activeRun == nil, let run = model.selectedRuns.first, run.state == .outcomeUnknown {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(String(localized: "run.outcome_unknown", table: "Runtime"), systemImage: "questionmark.circle")
+                    .font(.subheadline.weight(.medium))
+                Text(run.unknownActionTitle).font(.caption.weight(.medium))
+                Text(String(localized: "run.unknown_detail", table: "Runtime")).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button(String(localized: "run.unknown_continue", table: "Runtime")) { Task { await model.continueInterruptedRun() } }
+                        .buttonStyle(.glassProminent).accessibilityIdentifier("confirmUnknownRunButton")
+                    Button("assistant.endTask") { Task { await model.abandonInterruptedRun() } }
+                        .buttonStyle(.glass).accessibilityIdentifier("endUnknownRunButton")
+                }.disabled(model.isBusy)
+            }.padding(.vertical, 8).accessibilityElement(children: .contain).accessibilityIdentifier("unknownRunStatus")
+        } else if model.activeRun == nil, model.needsRecovery {
             VStack(alignment: .leading, spacing: 10) {
                 Label("assistant.interrupted", systemImage: "pause.circle").font(.subheadline.weight(.medium))
-                Text("assistant.recoveryDetail").font(.caption).foregroundStyle(.secondary)
+                Text(model.continuationNotice ?? String(localized: "assistant.recoveryDetail")).font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("assistant.resume") { Task { await model.continueInterruptedRun() } }
                         .buttonStyle(.glassProminent).accessibilityIdentifier("resumeRunButton")

@@ -121,14 +121,18 @@ struct BluetoothBoardSetupView: View {
             Button(text("bluetooth.stopSharing")) {
                 Task {
                     if model.isRunning, model.activeRun?.scope != .chat { await model.stop() }
-                    do { try model.bluetoothController.stopSharing() }
+                    guard let lease = try? model.deviceSession.acquire(.setup) else { return }
+                    defer { lease.release() }
+                    do { try await model.bluetoothController.stopSharing() }
                     catch { model.errorMessage = error.localizedDescription }
+                    model.handleBluetoothSessionChange()
                     await model.refreshDeviceStatus()
                 }
             }
             .buttonStyle(.glass).controlSize(.small).frame(minHeight: 44)
         } else {
             ScreenBroadcastPicker().frame(width: 52, height: 52)
+                .disabled(model.deviceSession.isBusy)
                 .accessibilityLabel(text("bluetooth.shareButtonHint"))
                 .accessibilityIdentifier("bluetoothScreenShareButton")
         }
@@ -185,7 +189,7 @@ struct BluetoothInputCheckPresentation: ViewModifier {
             .fullScreenCover(isPresented: $showsValidation, onDismiss: {
                 Task { await model.refreshDeviceStatus(); model.bluetoothRevision += 1 }
             }) {
-                BluetoothPointerValidation(controller: model.bluetoothController) { showsValidation = false }
+                BluetoothPointerValidation(model: model) { showsValidation = false }
                     .ignoresSafeArea().interactiveDismissDisabled()
             }
     }
@@ -208,15 +212,40 @@ struct BoardHardwareStopNotice: View {
     }
 }
 
+@MainActor
+final class BluetoothCalibrationOwnership {
+    let lease: DeviceLease
+    private var cleanupTask: Task<Void, Never>?
+
+    init(session: DeviceSession) throws {
+        lease = try session.acquire(.setup)
+        lease.client.device.invalidate()
+    }
+    func finish(after operation: Task<Void, Never>?, cleanup: @escaping @MainActor () async -> Void) async {
+        if cleanupTask == nil {
+            let lease = lease
+            cleanupTask = Task {
+                await operation?.value
+                await cleanup()
+                lease.release()
+            }
+        }
+        await cleanupTask?.value
+    }
+}
+
 private struct BluetoothPointerValidation: UIViewControllerRepresentable {
-    let controller: BluetoothDeviceController
+    let model: AppModel
     let onClose: () -> Void
     func makeUIViewController(context: Context) -> BluetoothPointerValidationController {
-        BluetoothPointerValidationController(controller: controller, onClose: onClose)
+        BluetoothPointerValidationController(model: model, onClose: onClose)
     }
     func updateUIViewController(_ uiViewController: BluetoothPointerValidationController, context: Context) {
         uiViewController.overrideUserInterfaceStyle = context.environment.colorScheme == .dark ? .dark : .light
         uiViewController.view.tintColor = .label
+    }
+    static func dismantleUIViewController(_ controller: BluetoothPointerValidationController, coordinator: ()) {
+        controller.finishPresentation(close: false)
     }
 }
 
@@ -224,6 +253,9 @@ private struct BluetoothPointerValidation: UIViewControllerRepresentable {
 private final class BluetoothPointerValidationController: UIViewController {
     private let controller: BluetoothDeviceController
     private let onClose: () -> Void
+    private let onCleanupError: (Error) -> Void
+    private let ownership: BluetoothCalibrationOwnership?
+    private let acquisitionFailure: Error?
     private let target = UIButton(type: .custom)
     private let symbol = UIImageView()
     private let heading = UILabel()
@@ -240,9 +272,18 @@ private final class BluetoothPointerValidationController: UIViewController {
     private var stableOrientation = UIInterfaceOrientation.unknown
     private var finished = false
     private var failed = false
+    private var calibrationCancelled = false
+    private var ending = false
 
-    init(controller: BluetoothDeviceController, onClose: @escaping () -> Void) {
-        self.controller = controller; self.onClose = onClose
+    init(model: AppModel, onClose: @escaping () -> Void) {
+        controller = model.bluetoothController; self.onClose = onClose
+        onCleanupError = { [weak model] in model?.errorMessage = $0.localizedDescription }
+        do {
+            guard model.deviceConnectionMethod == .bluetoothBoard, model.isBluetoothConnected,
+                  model.isBluetoothScreenShared, !model.isBusy else { throw DeviceControlError.busy }
+            ownership = try BluetoothCalibrationOwnership(session: model.deviceSession)
+            acquisitionFailure = nil
+        } catch { ownership = nil; acquisitionFailure = error }
         super.init(nibName: nil, bundle: nil)
         isModalInPresentation = true
     }
@@ -335,13 +376,12 @@ private final class BluetoothPointerValidationController: UIViewController {
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        guard task == nil else { return }
+        guard task == nil, !ending else { return }
         task = Task { [weak self] in await self?.run() }
     }
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        task?.cancel()
-        if !finished { Task { await controller.cancelCalibration() } }
+        finishPresentation(close: false)
     }
     @objc private func observedTouch(_ button: UIButton, event: UIEvent) {
         guard armed, let touch = event.allTouches?.first else { return }
@@ -350,25 +390,42 @@ private final class BluetoothPointerValidationController: UIViewController {
         armed = false
     }
     @objc private func interrupted() {
-        guard !finished else { return }
-        task?.cancel()
+        finishPresentation(close: true)
     }
     @objc private func closeTapped() {
+        finishPresentation(close: true)
+    }
+    func finishPresentation(close shouldClose: Bool) {
+        ending = true
         task?.cancel()
         Task {
-            if !finished { await controller.cancelCalibration() }
-            onClose()
+            await ownership?.finish(after: task) { [self] in
+                if finished {
+                    do { try await ownership?.lease.client.finishTask() }
+                    catch { onCleanupError(error) }
+                }
+                else { await cancelCalibration() }
+                field.resignFirstResponder()
+            }
+            if shouldClose { onClose() }
         }
+    }
+    private func cancelCalibration() async {
+        guard ownership != nil, !calibrationCancelled else { return }
+        calibrationCancelled = true
+        await controller.cancelCalibration()
     }
     private func requireVisible() throws {
         try Task.checkCancellation()
-        guard view.window != nil, UIApplication.shared.applicationState == .active,
+        guard !ending, view.window != nil, UIApplication.shared.applicationState == .active,
               view.bounds == stableBounds, view.window?.windowScene?.effectiveGeometry.interfaceOrientation == stableOrientation else {
             throw DeviceControlError.connection(text("bluetooth.validationInterrupted"))
         }
     }
     private func run() async {
         do {
+            if let acquisitionFailure { throw acquisitionFailure }
+            guard ownership != nil else { throw DeviceControlError.busy }
             try await Task.sleep(for: .milliseconds(500))
             stableBounds = view.bounds
             stableOrientation = view.window?.windowScene?.effectiveGeometry.interfaceOrientation ?? .unknown
@@ -392,7 +449,7 @@ private final class BluetoothPointerValidationController: UIViewController {
                 progress.setProgress(Float(touches.count) / 5, animated: true)
                 try await Task.sleep(for: .milliseconds(150))
             }
-            try controller.completeCalibration(observed: touches)
+            try await controller.completeCalibration(observed: touches)
             heading.text = text("bluetooth.validationInputTitle")
             symbol.image = UIImage(systemName: "keyboard")
             view.setNeedsLayout()
@@ -400,7 +457,7 @@ private final class BluetoothPointerValidationController: UIViewController {
             // Clipboard + HID paste is checked through the actual text field.
             field.becomeFirstResponder()
             try await Task.sleep(for: .milliseconds(650))
-            let image = try await controller.captureScreenshot()
+            let image = try await controller.capture()
             let expected = "Eiscue 你好 " + String(Int.random(in: 1000...9999))
             try requireVisible()
             try await controller.pasteCalibrationText(expected, frameID: image.frameID)
@@ -410,7 +467,7 @@ private final class BluetoothPointerValidationController: UIViewController {
             }
             guard field.text == expected else { throw DeviceControlError.connection(text("bluetooth.keyboardFailed")) }
             try requireVisible()
-            try controller.markKeyboardVerified()
+            try await controller.markKeyboardVerified()
             field.resignFirstResponder()
             finished = true
             heading.text = text("bluetooth.validationCompleteTitle")
@@ -422,7 +479,7 @@ private final class BluetoothPointerValidationController: UIViewController {
             view.setNeedsLayout()
         } catch {
             armed = false
-            await controller.cancelCalibration()
+            await cancelCalibration()
             field.resignFirstResponder()
             failed = true; field.isHidden = true; progress.isHidden = true
             statusScroll.isUserInteractionEnabled = true
@@ -438,6 +495,7 @@ private final class BluetoothPointerValidationController: UIViewController {
         }
     }
     private func saveReport(passed: Bool) {
+        guard ownership != nil else { return }
         let report: [String: Any] = ["passed": passed, "timestamp": Date().timeIntervalSince1970,
             "pointCount": touches.count, "points": touches.map { ["x": $0.x, "y": $0.y] },
             "width": view.bounds.width, "height": view.bounds.height, "keyboardVerified": passed,

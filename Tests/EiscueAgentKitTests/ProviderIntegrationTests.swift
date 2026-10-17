@@ -63,8 +63,10 @@ struct ProviderIntegrationTests {
             try await root.write(EntryDraft(kind: .toolResult, model: [.toolResult(result)]))
         }
         try await harness.close()
+        let imagePolicy = AgentTool(name: "device_screenshot", description: "Observe", parameters: ["type": "object"],
+                                   mayHaveSideEffects: false, contextImagePolicy: .latest(2)) { _ in .text("Unused") }
         let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
-            modelFactory: { (models, model) }))
+            tools: [imagePolicy], modelFactory: { (models, model) }))
         for try await _ in try await client.run(request: .init(conversationID: id, prompt: "Continue")) {}
         let request = try #require(ProviderFixtureProtocol.requests.withLock {
             $0.last { $0.authorization == "Bearer \(configuration.apiKey)" || $0.apiKey == configuration.apiKey }
@@ -81,7 +83,7 @@ struct ProviderIntegrationTests {
         let savedRoot = try await reopened.root()
         let saved = String(decoding: try encoder.encode(try await savedRoot.view().messages), as: UTF8.self)
         for bytes in images { #expect(saved.contains(bytes.base64EncodedString())) }
-        #expect(!saved.contains("Older device screenshot omitted"))
+        #expect(!saved.contains("Older tool image omitted"))
         try await reopened.close()
     }
 
@@ -156,7 +158,7 @@ struct ProviderIntegrationTests {
         let arguments = OSAllocatedUnfairLock(initialState: [AgentJSONValue]())
         let probe = AgentTool(name: "device_screenshot", description: "Observe a fixture step",
             parameters: ["type": "object", "properties": ["step": ["type": "integer"]], "required": ["step"], "additionalProperties": false],
-            mayHaveSideEffects: false) { value in
+            mayHaveSideEffects: false, contextImagePolicy: .latest(2)) { value in
                 arguments.withLock { $0.append(value) }
                 return .image(Data(repeating: UInt8(arguments.withLock { $0.count }), count: 1024), mimeType: "image/png", caption: "Observed fixture step")
             }

@@ -13,12 +13,22 @@ public actor JSONConversationRepository: ConversationRepository {
 
     public init(fileURL: URL) { self.fileURL = fileURL }
 
-    public func load() throws -> [Conversation] {
+    public func load() async throws -> [Conversation] {
+        try await loadResult().conversations
+    }
+
+    public func loadResult() async throws -> ConversationLoadResult {
         switch try readDocument() {
-        case .legacy(let conversations, _): return conversations.sorted(by: Self.recentFirst)
+        case .legacy(let conversations, _): return .init(conversations: conversations.sorted(by: Self.recentFirst))
         case .manifest(var manifest):
-            try resumePendingDeletions(&manifest)
-            return try manifest.conversationIDs.map(readConversation).sorted(by: Self.recentFirst)
+            var failure: String?
+            do { try resumePendingDeletions(&manifest) } catch { failure = error.localizedDescription }
+            var conversations: [Conversation] = [], corruptIDs: [UUID] = []
+            for id in manifest.conversationIDs {
+                do { conversations.append(try readConversation(id)) } catch { corruptIDs.append(id) }
+            }
+            return .init(conversations: conversations.sorted(by: Self.recentFirst), corruptIDs: corruptIDs,
+                         maintenanceFailure: failure)
         }
     }
 
@@ -28,10 +38,14 @@ public actor JSONConversationRepository: ConversationRepository {
         guard manifest.pendingDeletionIDs?.contains(conversation.id) != true else {
             throw ConversationStoreError.deletionPending
         }
-        try resumePendingDeletions(&manifest)
+        // Reclamation has a wider validation boundary than an individual save.
+        // Its durable pending list survives while healthy conversations keep working.
+        try? resumePendingDeletions(&manifest)
         let exists = manifest.conversationIDs.contains(conversation.id)
         // Do not silently replace a damaged record or one whose blobs are missing.
-        if exists { _ = try readConversation(conversation.id) }
+        if exists || FileManager.default.fileExists(atPath: conversationURL(conversation.id).path) {
+            _ = try readRecord(conversation.id, verifyBlobs: false)
+        }
         try writeConversation(conversation)
         if !exists {
             manifest.conversationIDs.append(conversation.id)
@@ -46,6 +60,8 @@ public actor JSONConversationRepository: ConversationRepository {
             guard conversations.contains(where: { $0.id == id }) else { return }
             manifest = try migrateIfNeeded()
         case .manifest(var current):
+            // Keep deletion ordering explicit: a second deletion waits until the
+            // first can safely reclaim its complete input.
             try resumePendingDeletions(&current)
             guard current.conversationIDs.contains(id) else { return }
             manifest = current
@@ -60,8 +76,6 @@ public actor JSONConversationRepository: ConversationRepository {
 
     private func resumePendingDeletions(_ manifest: inout Manifest) throws {
         guard !(manifest.pendingDeletionIDs ?? []).isEmpty else { return }
-        // Surface validation/cleanup errors. The protocol has no partial-load
-        // diagnostics, so returning a shortened or empty history would hide them.
         try finishDeletion(&manifest)
     }
 
@@ -69,21 +83,36 @@ public actor JSONConversationRepository: ConversationRepository {
         var referenced = Set<String>()
         for id in manifest.conversationIDs {
             // Validate every remaining record and blob before reclaiming any data.
-            _ = try readConversation(id)
-            let record = try JSONDecoder().decode(StoredConversation.self, from: Data(contentsOf: conversationURL(id)))
+            let record = try readRecord(id, verifyBlobs: true)
             referenced.formUnion(record.messages.flatMap(\.attachments).map(\.digest))
         }
-        for id in manifest.pendingDeletionIDs ?? [] { try removeIfPresent(conversationURL(id)) }
-        // A pre-migration rollback must not bring back explicitly deleted history.
-        try removeIfPresent(legacyURL)
+        let records = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey])
+        let unreferencedRecords = records.filter {
+            $0.pathExtension == "json" && UUID(uuidString: $0.deletingPathExtension().lastPathComponent).map {
+                !manifest.conversationIDs.contains($0)
+            } == true
+        }
+        // Interrupted writes can leave a record outside the manifest. Validate
+        // these too before removing anything; damaged data is never garbage.
+        for url in unreferencedRecords {
+            guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent), url.lastPathComponent == conversationURL(id).lastPathComponent else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            _ = try readRecord(id, verifyBlobs: true)
+        }
         let blobs = directory.appendingPathComponent("blobs")
         let files: [URL]
         do { files = try FileManager.default.contentsOfDirectory(at: blobs, includingPropertiesForKeys: [.isRegularFileKey]) }
         catch CocoaError.fileReadNoSuchFile { files = [] }
-        for file in files where !referenced.contains(file.lastPathComponent) && Self.isDigest(file.lastPathComponent) {
-            guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw CocoaError(.fileReadCorruptFile) }
-            try removeIfPresent(file)
+        let unreferencedBlobs = files.filter { !referenced.contains($0.lastPathComponent) && Self.isDigest($0.lastPathComponent) }
+        for file in unreferencedBlobs {
+            try requireRegularFile(file)
+            guard Self.digest(try Data(contentsOf: file)) == file.lastPathComponent else { throw CocoaError(.fileReadCorruptFile) }
         }
+        // All validation finishes before the first destructive operation.
+        for file in unreferencedRecords { try removeIfPresent(file) }
+        try removeIfPresent(legacyURL)
+        for file in unreferencedBlobs { try removeIfPresent(file) }
         manifest.pendingDeletionIDs = nil
         try writeManifest(manifest)
     }
@@ -175,7 +204,7 @@ public actor JSONConversationRepository: ConversationRepository {
                 let digest = Self.digest(data)
                 let url = blobURL(digest)
                 if FileManager.default.fileExists(atPath: url.path) {
-                    guard try Data(contentsOf: url) == data else { throw CocoaError(.fileReadCorruptFile) }
+                    try validateBlob(digest, byteCount: data.count, verifyContents: false)
                 } else {
                     try write(data, to: url)
                 }
@@ -191,13 +220,10 @@ public actor JSONConversationRepository: ConversationRepository {
     }
 
     private func readConversation(_ id: UUID) throws -> Conversation {
-        let record = try JSONDecoder().decode(StoredConversation.self, from: Data(contentsOf: conversationURL(id)))
-        guard record.version == 1 else { throw ConversationStoreError.unsupportedVersion(record.version) }
-        guard record.id == id else { throw CocoaError(.fileReadCorruptFile) }
+        let record = try readRecord(id, verifyBlobs: false)
         let messages = try record.messages.map { message in
             let attachments = try message.attachments.map { attachment in
                 // A persisted digest is a filename, so validate it before resolving any path.
-                guard Self.isDigest(attachment.digest) else { throw CocoaError(.fileReadCorruptFile) }
                 let data = try Data(contentsOf: blobURL(attachment.digest))
                 guard data.count == attachment.byteCount, Self.digest(data) == attachment.digest else {
                     throw CocoaError(.fileReadCorruptFile)
@@ -217,6 +243,41 @@ public actor JSONConversationRepository: ConversationRepository {
         }
         return Conversation(id: record.id, title: record.title, messages: messages, createdAt: record.createdAt,
                             updatedAt: record.updatedAt, pendingRequestID: record.pendingRequestID)
+    }
+
+    private func readRecord(_ id: UUID, verifyBlobs: Bool) throws -> StoredConversation {
+        let url = conversationURL(id)
+        try requireRegularFile(url)
+        let record = try JSONDecoder().decode(StoredConversation.self, from: Data(contentsOf: url))
+        guard record.version == 1 else { throw ConversationStoreError.unsupportedVersion(record.version) }
+        guard record.id == id else { throw CocoaError(.fileReadCorruptFile) }
+        for attachment in record.messages.flatMap(\.attachments) {
+            guard attachment.kind == "image" || attachment.kind == "text" else { throw CocoaError(.fileReadCorruptFile) }
+            let data = try validateBlob(attachment.digest, byteCount: attachment.byteCount, verifyContents: verifyBlobs)
+            if verifyBlobs, attachment.kind == "text", let data, String(data: data, encoding: .utf8) == nil {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        }
+        return record
+    }
+
+    @discardableResult
+    private func validateBlob(_ digest: String, byteCount: Int, verifyContents: Bool) throws -> Data? {
+        guard Self.isDigest(digest), byteCount >= 0 else { throw CocoaError(.fileReadCorruptFile) }
+        let url = blobURL(digest)
+        try requireRegularFile(url)
+        guard try url.resourceValues(forKeys: [.fileSizeKey]).fileSize == byteCount else { throw CocoaError(.fileReadCorruptFile) }
+        if verifyContents {
+            let data = try Data(contentsOf: url)
+            guard data.count == byteCount, Self.digest(data) == digest else { throw CocoaError(.fileReadCorruptFile) }
+            return data
+        }
+        return nil
+    }
+
+    private func requireRegularFile(_ url: URL) throws {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isRegularFile == true, values.isSymbolicLink != true else { throw CocoaError(.fileReadCorruptFile) }
     }
 
     private func blobURL(_ digest: String) -> URL {

@@ -642,7 +642,11 @@ public enum NativeControlBackend: Sendable, Equatable {
         }
         #endif
         guard before == after else { throw NativeBackendError.coordinateSpaceChanged }
-        let png = try NCMXCTestImage.uprightPNG(encodedPNG)
+        let png = try await NCMXCTestImage.uprightPNGOffMain(encodedPNG)
+        try Task.checkCancellation()
+        guard ready, handle == token, automationLease == lease, !automationStopping else { throw NativeBackendError.closed }
+        let current = try await refreshOwnedScreen(lease: lease, token: token)
+        guard current == after else { throw NativeBackendError.coordinateSpaceChanged }
         let layout = try NCMXCTestLayout(png: png, screen: after)
         automationLayout = layout
         let geometry = automationGeometry.update(lease: lease, layout: layout)
@@ -843,6 +847,15 @@ struct NCMXCTestScreenState: Equatable {
 }
 
 enum NCMXCTestImage {
+    /// ImageIO can decode/reencode the entire raster when rotating. Keep that
+    /// pure work outside the session actor, and discard a cancelled result.
+    static func uprightPNGOffMain(_ data: Data,
+        transform: @escaping @Sendable (Data) throws -> Data = { try NCMXCTestImage.uprightPNG($0) }) async throws -> Data {
+        try Task.checkCancellation()
+        let result = try await Task.detached(priority: .userInitiated) { try transform(data) }.value
+        try Task.checkCancellation()
+        return result
+    }
     /// XCTest keeps native raster pixels and writes the display rotation into
     /// PNG orientation metadata. Tools need upright pixels, not a viewer-only
     /// rotation; normalize once before binding screenshot coordinates.

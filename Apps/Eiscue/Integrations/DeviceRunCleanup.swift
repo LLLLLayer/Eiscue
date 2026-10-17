@@ -14,7 +14,7 @@ enum DeviceRunCleanup {
         // A legacy or incomplete record cannot opt into connection retention.
         let safePause = run.state == .paused && run.submission == .accepted
             && run.pauseReason != nil && run.pauseReason != .connection
-        guard !disconnectAfterTask, !stopRequested, run.state == .completed || safePause || unusedModelFailure else {
+        guard run.cleanupFailure == nil, deviceTools?.hasUnknownOutcome != true, !disconnectAfterTask, !stopRequested, run.state == .completed || safePause || unusedModelFailure else {
             await disconnect()
             return
         }

@@ -32,6 +32,10 @@ final class DeviceConnectionRepairTests: XCTestCase {
         XCTAssertNil(model.activeDeviceControlBackend)
         XCTAssertNil(model.screenshot)
         XCTAssertFalse(model.isDeviceReady)
+        XCTAssertEqual(model.deviceSession.owner, .repair)
+        XCTAssertEqual(model.deviceSession.state, .idle(route: .localVPN))
+        XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertThrowsError(try model.deviceSession.acquire(.run(UUID())))
 
         await model.connectDevice()
         await model.enableDeviceControl()
@@ -54,6 +58,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
 
         model.finishDeviceConnectionRepair()
         XCTAssertFalse(model.isBusy)
+        XCTAssertNil(model.deviceSession.owner)
         XCTAssertTrue(model.canSend)
         XCTAssertNotNil(model.bluetoothMonitor)
         model.bluetoothMonitor?.cancel(); model.bluetoothMonitor = nil
@@ -64,8 +69,8 @@ final class DeviceConnectionRepairTests: XCTestCase {
         let result = await fixture.model.repairDeviceConnection()
         XCTAssertEqual(result, .released)
         let calls = await fixture.controller.calls()
-        XCTAssertEqual(calls.disconnects, 1)
-        XCTAssertEqual(calls.confirmedReleases, 0)
+        XCTAssertEqual(calls.disconnects, 0)
+        XCTAssertEqual(calls.confirmedReleases, 1, "The shared actuator returns release evidence; HID repair must ignore an unconfirmed network-media result.")
         XCTAssertEqual(calls.connections, 0)
         fixture.model.finishDeviceConnectionRepair()
     }
@@ -74,7 +79,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
         for confirmed in [true, false] {
             let fixture = try RepairFixture(method: .bluetoothBoard, connected: false)
             let network = RepairController(connected: true, releaseConfirmed: confirmed)
-            fixture.model.networkDeviceClient = DeviceClient(controller: network)
+            fixture.model.networkDeviceClient = DeviceClient(actuator: network, networkSetup: network)
             let result = await fixture.model.repairDeviceConnection()
             XCTAssertEqual(result, confirmed ? .released : .unconfirmed)
             let calls = await network.calls()
@@ -101,17 +106,61 @@ final class DeviceConnectionRepairTests: XCTestCase {
             XCTAssertEqual(result, .unconfirmed)
             XCTAssertTrue(fixture.model.isRepairingDeviceConnection)
             XCTAssertNil(fixture.model.activeDeviceConnectionMethod)
+            XCTAssertTrue(fixture.model.deviceSession.hasUnconfirmedRelease)
             let calls = await fixture.controller.calls()
             XCTAssertEqual(calls.connections, 0)
             fixture.model.finishDeviceConnectionRepair()
         }
     }
 
+    func testConfirmedRepairAfterUnconfirmedDictationReleaseAllowsANewRunOnlyAfterMicrophoneTeardown() async throws {
+        let fixture = try RepairFixture()
+        let model = fixture.model, dictationID = UUID()
+        await fixture.controller.setReleaseConfirmed(false)
+        do { try await model.prepareDeviceForDictation(id: dictationID); XCTFail("Unconfirmed media cannot authorize capture.") }
+        catch DictationDevicePreparationError.releaseUnconfirmed { }
+        _ = await model.finishDeviceDictation(id: dictationID)
+        XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertNil(model.deviceSession.owner)
+        XCTAssertThrowsError(try model.deviceSession.acquire(.run(UUID())))
+
+        await fixture.controller.setReleaseConfirmed(true)
+        let result = await model.repairDeviceConnection()
+        XCTAssertEqual(result, .notConnected, "The current disconnected client cannot prove release of an orphan session.")
+        XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertEqual(model.deviceSession.owner, .repair)
+        XCTAssertThrowsError(try model.deviceSession.acquire(.run(UUID())))
+        model.finishDeviceConnectionRepair()
+        let run = try model.deviceSession.acquire(.run(UUID()))
+        run.release()
+        XCTAssertNil(model.deviceSession.owner)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.confirmedReleases, 2); XCTAssertEqual(calls.connections, 0)
+    }
+
+    func testIdleRepairKeepsReleaseProgressHiddenWhileRetainingTheRepairClaim() async throws {
+        let fixture = try RepairFixture(connected: false, suspendsRelease: true)
+        let repair = Task { await fixture.model.repairDeviceConnection() }
+        try await waitForRelease(fixture.controller)
+        XCTAssertEqual(fixture.model.deviceSession.owner, .repair)
+        XCTAssertTrue(fixture.model.deviceSession.isTransitioning)
+        XCTAssertFalse(fixture.model.isConnecting)
+        await fixture.controller.completeRelease()
+        let result = await repair.value
+        XCTAssertEqual(result, .notConnected)
+        fixture.model.finishDeviceConnectionRepair()
+    }
+
     func testRepairRejectsLoadingBackgroundConnectionAndSpeechPreparation() async throws {
         let blockers: [(AppModel) -> Void] = [
             { $0.isLoading = true }, { $0.currentScenePhase = .background },
             { $0.isSaving = true }, { $0.isPairing = true }, { $0.isConnecting = true },
-            { $0.isManagingTunnel = true }, { $0.isStopping = true },
+            { $0.isManagingTunnel = true },
+            { model in
+                model.runCoordinator.publish(RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: .now,
+                    scope: .control, model: "fixture", skill: nil, state: .running, detail: "", events: []))
+                model.runCoordinator.updateSnapshot { $0.isCancelling = true }
+            },
             { $0.dictationPreparationID = UUID() },
             { model in
                 model.dictationDeviceRestoration = DictationDeviceRestoration(id: UUID(), operationID: UUID(),
@@ -138,7 +187,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
             let run = RunRecord(id: UUID(), conversationID: conversationID, requestID: UUID(), startedAt: .now,
                 scope: .control, model: "fixture", skill: nil, state: state, detail: "", events: [])
             model.selectedConversationID = conversationID
-            if state == .running { model.activeRun = run }
+            if state == .running { model.runCoordinator.publish(run) }
             else { model.runs = [run] }
             if state == .interrupted { model.interruptedConversationIDs.insert(conversationID) }
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -255,7 +304,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
         model = AppModel(storageDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(suite),
             preferences: preferences, credentialStore: CredentialStore(service: suite),
             operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
-        model.deviceClient = DeviceClient(controller: controller)
+        model.deviceClient = DeviceClient(actuator: controller, networkSetup: controller)
         model.networkDeviceClient = nil
         model.isLoading = false; model.hasPairingIdentity = true
         if connected {
@@ -268,9 +317,11 @@ final class DeviceConnectionRepairTests: XCTestCase {
     deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
 }
 
-private actor RepairController: DeviceController {
+private actor RepairController: DeviceFixtureActuator {
+    var fixtureObservedFrameID: UUID?
+    var fixtureGeometry: DeviceFrameGeometry?
     private var connected: Bool
-    private let releaseConfirmed: Bool
+    private var releaseConfirmed: Bool
     private let staysConnected: Bool
     private let suspendsRelease: Bool
     private var pendingRelease: CheckedContinuation<Void, Never>?
@@ -299,8 +350,8 @@ private actor RepairController: DeviceController {
         connections += 1; connected = true
     }
     func connectBluetoothBoard() async throws { connections += 1; connected = true }
-    func disconnect() async { disconnects += 1; connected = staysConnected }
-    func disconnectAndConfirmRelease() async -> Bool {
+    func fixtureDisconnect() async { disconnects += 1; connected = staysConnected }
+    func fixtureDisconnectAndConfirmRelease() async -> Bool {
         confirmedReleases += 1
         if suspendsRelease { await withCheckedContinuation { pendingRelease = $0 } }
         releaseWasCancelled = Task.isCancelled
@@ -308,6 +359,7 @@ private actor RepairController: DeviceController {
         return releaseConfirmed
     }
     func hasPendingRelease() -> Bool { pendingRelease != nil }
+    func setReleaseConfirmed(_ value: Bool) { releaseConfirmed = value }
     func completeRelease() { pendingRelease?.resume(); pendingRelease = nil }
     func calls() -> (disconnects: Int, confirmedReleases: Int, connections: Int, pairingMutations: Int, releaseWasCancelled: Bool) {
         (disconnects, confirmedReleases, connections, pairingMutations, releaseWasCancelled)

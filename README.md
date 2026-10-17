@@ -47,7 +47,7 @@ Model service URLs must use HTTPS. OpenAI-compatible services usually include `/
 
 Select the `EiscueHID` scheme for a separate app containing only ESP32 BLE / USB HID with ReplayKit. It defaults to ESP32 input, uses `org.eiscue.hid` and `group.org.eiscue.hid`, and embeds only its own broadcast extension. Its package graph and compiled artifacts exclude the developer-services backend, XCTest bridge and VPN extension; choosing Bluetooth in the full `Eiscue` app does not remove those components. Model settings, conversations and sharing permissions are separate between the two apps. An S3 authentication key enrolled by one app is not automatically available to the other; existing enrollment is never silently replaced. This build separation is not an App Store approval or a new artwork/license grant.
 
-For another host app, depend on the `EiscueHIDKit` product, `import EiscueDeviceCore`, and construct `DeviceClient(controller: BluetoothDeviceController())`. The full `EiscueDeviceKit` product keeps `DeviceClient()` and `DeviceClient(identityStore:)` compatible. Check the build boundary with `python3 Scripts/check-hid-boundary.py --app <path-to-EiscueHID.app>`.
+For another host app, depend on the `EiscueHIDKit` product, `import EiscueDeviceCore`, and construct `let board = BluetoothDeviceController(); let client = DeviceClient(actuator: board, hidSetup: board)`. The full `EiscueDeviceKit` product keeps `DeviceClient()` and `DeviceClient(identityStore:)` compatible. Check the build boundary with `python3 Scripts/check-hid-boundary.py --app <path-to-EiscueHID.app>`.
 
 ### Let the AI operate the device
 
@@ -102,11 +102,12 @@ The C3 companion display shows only fixed phases, expressions and step counts, n
 ```text
 Eiscue App (SwiftUI, iOS 26+)
 ├── Conversations, model settings, attachments, speech, skills, run journal, background execution
-├── RunCoordinator: admission, execution, cancellation, cleanup and final publication
+├── RunCoordinator / RunSession: per-run engine, device ownership, cleanup and awaited completion
+├── DeviceSession / DictationSession: connection state, ownership and recording handoff
 ├── DeviceToolSpec / DeviceToolSession: shared tool catalog → DeviceDecision
 ├── DeviceTaskRunner: permissions, budgets, serialized execution, post-action observation
 ├── EiscueAgentKit: agent / tool / event protocols, with an internal PiDurableKit adapter
-└── EiscueDeviceCore: DeviceController, injected DeviceClient, BLE / USB HID + ReplayKit
+└── EiscueDeviceCore: DeviceActuator, GuardedDevice, injected DeviceClient, BLE / USB HID + ReplayKit
     ├── EiscueHIDKit product: Core only
     └── EiscueDeviceKit facade: Core + developer services / default client
 
@@ -119,7 +120,7 @@ The Agent and Device libraries have no dependency on one another. The two Device
 | Kit | Responsibilities | Replacement interface |
 | --- | --- | --- |
 | [EiscueAgentKit](Sources/EiscueAgentKit/AgentClient.swift) | Agents, tools, events and conversation storage; internally runs PiDurableKit through JavaScriptCore, with one SQLite database per conversation | `AgentClient(engine:)`; custom Swift tools can also be registered |
-| [EiscueDeviceKit](Sources/EiscueDeviceCore/DeviceClient.swift) | Connection, observation, actions and capability status | `DeviceClient(controller:)` |
+| [EiscueDeviceKit](Sources/EiscueDeviceCore/DeviceClient.swift) | Connection, observation, actions and capability status | `DeviceClient(actuator:networkSetup:hidSetup:)` |
 
 Apps integrating DeviceKit’s XCTest backend must include `/System/Developer/usr/lib` and `/Developer/usr/lib` in the device target’s `LD_RUNPATH_SEARCH_PATHS`, retaining inherited paths. Xcode 27’s developer image uses these paths for Testing interop dependencies. Eiscue configures this in `project.yml`; Apple’s test libraries are loaded from the mounted DDI and are not bundled.
 
@@ -163,21 +164,22 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 To retain a check's output without masking its exit status, run `bash Scripts/run-logged-check.sh .build/<unique-name>.log <command> [arguments...]`. Existing logs are preserved; a failed check still returns a nonzero exit code.
 
-Architecture and UI follow-up on **2026-10-17**, with isolated model fixtures and no real-device operations:
+Architecture iteration on **2026-10-17**, using separate Xcode 26.3 / Swift 6.2.4 and Xcode 27 / Swift 6.4 builds. No physical device, board or real model was used in this round:
 
 | Check | Result |
 | --- | --- |
-| Swift Kits | Xcode 26.3: 180 passed / 19 suites. Xcode 27: 178 passed before the final two deletion-recovery regression tests were added |
-| App unit tests | 318 passed on iPad / iOS 26.3.1 using Xcode 27 |
-| Full iPhone UI, iOS 26.3.1 | 59 passed, 13 skipped, 0 failed |
-| Full iPhone UI, iOS 27.0 | 63 passed, 9 skipped, 0 failed; 7 affected speech/sidebar cases also passed after the final view-expression split |
-| iPad sidebar, conversations and sharing | 10 passed, 1 layout-specific skip, 0 failed |
-| HID-only app | 3 unit tests passed; Release simulator build and dependency, symbol, entitlement and extension checks passed; unsigned device build and linkage checks passed |
-| Test helpers | 18 passed; fixture-port follow-up 4 passed; generated project reproduced without drift |
+| Swift Kits | 209 passed on each toolchain |
+| App unit tests, iOS 26.3.1 | 426 passed, 0 failed |
+| App unit tests, iOS 27.0 | 425 passed, 1 platform-specific skip, 0 failed |
+| Connection / onboarding / dictation / unknown-outcome UI, iOS 26.3.1 | 10 passed, 5 iOS 27-only skips, 0 failed |
+| Same focused UI, iOS 27.0 | 15 passed; both systems repeated the 2 unknown-outcome cases after the final coordinator error-classification fix |
+| Release app builds | Full and HID-only apps built with both Xcode versions; HID dependency graph and artifact boundary audits passed |
+| HID app unit tests | 3 passed on the final source |
+| Generated project | Regenerated without drift |
 
-All listed successful commands returned exit 0. Hardware-only, opposite-OS and layout-specific skips are not passes. Onboarding and Save to Files completed on both iPhone OS versions, including exact-byte file readback. The HID device build was unsigned, so it does not verify signing or phone behavior. CI workflow and local gate scripts are committed; remote runners and branch protection still require configuration.
+Successful commands return exit 0; skips are not passes. Logs and result bundles remain local under `.build/`. Current checks are focused UI coverage, not another full UI-suite run. At the preceding `c4fc538` baseline, full iPhone UI passed on both systems (iOS 26: 59 passed / 13 skipped; iOS 27: 63 passed / 9 skipped), and iPad sidebar/conversation/sharing checks had 10 passes / 1 layout skip. Those historical results do not certify later changes.
 
-The earlier `f4972f5` baseline had 6 UI failures on iOS 27 and 2 on iOS 26. Shared sidebar queries, OS-specific onboarding assertions and system Files navigation have since been corrected. Earlier baselines and failed intermediate runs remain in the local validation record. Simulator and host checks do not establish physical-device acceptance.
+Hardware acceptance is explicitly deferred: C3/S3 calibration and ReplayKit, physical rotation, in-flight cancellation, external connection loss and CoreDevice microphone handoff still need device checks. CI workflow and local gate scripts are committed; remote runners and branch protection require separate configuration. Earlier failures and intermediate runs remain in the local validation record.
 
 ### Physical-device notes
 
@@ -210,11 +212,11 @@ Builds do not open serial ports or flash hardware. Flashing depends on the firmw
 
 ## Permissions, data and privacy
 
-Conversation storage uses a small manifest, one record per conversation and shared SHA-256 attachment blobs. Version 1 data migrates on the first write with an exact backup; the first explicit deletion retires that backup and reclaims unreferenced blobs. Interrupted deletion cleanup resumes on load or subsequent writes. Original documents remain available for byte-exact sharing. New runtime metadata references attachment content instead of copying it again; old SQLite entries are kept readable.
+Conversation storage uses a small manifest, one record per conversation and shared SHA-256 attachment blobs. Loading isolates corrupt conversations and reports their IDs; incomplete validation defers collection and preserves the original data. Run journals append numbered, checksummed events and generate terminal summaries; legacy records remain readable. SQLite admission rebuilds submission caches, while host journals retain explicit abandonment of unsubmitted requests. Version 1 data migrates on the first write with an exact backup; the first explicit deletion retires that backup and reclaims unreferenced blobs. Interrupted deletion cleanup resumes on load or subsequent writes. Original documents remain available for byte-exact sharing. New runtime metadata references attachment content instead of copying it again; old SQLite entries are kept readable.
 
 Model requests include only the two newest device screenshots; text/tool-call IDs and provider signatures remain intact, and user photos are unaffected. Full historical screenshots remain in the conversation SQLite for inspection until conversation deletion. `Runtime/` is excluded from device backups; conversations and original attachments retain their existing backup behavior. Run records include the system-instruction version.
 
-- A task's permission scope is fixed when it starts; plain chat registers no tools. Device tools are exposed only for capabilities supported by the active backend. Actions are bound to the latest valid screenshot and consume it once. Commands are not automatically resent when delivery is uncertain.
+- A task's permission scope is fixed when it starts; plain chat registers no tools. Device tools are exposed only for capabilities supported by the active backend. Actions are bound to the latest valid screenshot and consume it once. Unknown delivery stops execution and releases the connection. The conversation shows an unconfirmed action; continuing requires checking the screen, reconnecting and explicitly continuing, with no action retry button. Device continuations recheck permission and readiness; route switching stays unavailable until device-task cleanup ends.
 - Lack of progress or reaching the step limit pauses the task. Choosing **Continue** starts a new request and observes again. Recovery after interruption is read-only and never resumes automatically. Imported skills are Markdown instructions only; they cannot expand permissions or execute scripts.
 - Conversations, runtime SQLite databases, run journals, skills and attachments live in the app sandbox under `Application Support/Eiscue/`. API keys and pairing private keys stay in device-only Keychain items, never in UserDefaults, logs or exported reports.
 - The ReplayKit extension keeps only the latest JPEG frame (longest side ≤ 1600 px) in a file-protected App Group, with no recording history or audio capture. **Both observation tools and automatic post-action observation return screenshots to the model**; starting screen sharing or opening a manual preview does not upload frames. Tool history may persist screenshots in the conversation's SQLite database, which is removed when that conversation is deleted.

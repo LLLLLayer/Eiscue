@@ -428,13 +428,16 @@ struct DeviceConnectionMethodPicker: View {
     @State private var pendingMethod: DeviceConnectionMethod?
 
     private let methods = DeviceBuildCapabilities.methods
-    private var canChange: Bool {
-        !model.isChangingDeviceConnectionMethod && !model.isSaving && !model.isStopping
-            && !model.isManagingTunnel && !model.isStoppingTunnel && !model.isImportingAttachments
-    }
+    private var canChange: Bool { model.canChangeDeviceRoute }
 
     var body: some View {
-        picker
+        VStack(alignment: .leading, spacing: 6) {
+            picker
+            if model.isDeviceRunActive {
+                Text(String(localized: "connection.stop_to_switch", table: "Connections"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
         .sheet(isPresented: $showsMethods, onDismiss: {
             guard let method = pendingMethod else { return }
             pendingMethod = nil

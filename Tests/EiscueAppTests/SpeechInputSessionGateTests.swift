@@ -40,6 +40,51 @@ final class SpeechInputSessionGateTests: XCTestCase {
     }
 }
 
+final class SpeechInputControllerLifetimeTests: XCTestCase {
+    @MainActor func testRepeatedLastReleaseFromMainQueueOutsideASwiftTask() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                for _ in 0..<128 {
+                    autoreleasepool {
+                        var controller: SpeechInputController? = SpeechInputController(dependencies: .init(
+                            authorize: {}, startRecognition: { _, _ in }, isForeground: { true }))
+                        weak let released = controller
+                        controller = nil
+                        XCTAssertNil(released)
+                    }
+                }
+                continuation.resume()
+            }
+        }
+    }
+
+    @MainActor func testLastReleaseFromBackgroundTaskPreservesItsTaskLocalContext() async {
+        let holder = SpeechControllerReleaseHolder(SpeechInputController(dependencies: .init(
+            authorize: {}, startRecognition: { _, _ in }, isForeground: { true })))
+        weak let released = holder.controller
+        await SpeechLifetimeTaskLocal.$value.withValue("release-context") {
+            await Task.detached {
+                SpeechLifetimeTaskLocal.$value.withValue("background-release") {
+                    holder.release()
+                    XCTAssertEqual(SpeechLifetimeTaskLocal.value, "background-release")
+                }
+            }.value
+            XCTAssertEqual(SpeechLifetimeTaskLocal.value, "release-context")
+        }
+        for _ in 0..<20 where released != nil { await Task.yield() }
+        XCTAssertNil(released)
+        XCTAssertNil(SpeechLifetimeTaskLocal.value)
+    }
+}
+
+private enum SpeechLifetimeTaskLocal { @TaskLocal static var value: String? }
+
+private final class SpeechControllerReleaseHolder: @unchecked Sendable {
+    private(set) var controller: SpeechInputController?
+    init(_ controller: SpeechInputController) { self.controller = controller }
+    func release() { controller = nil }
+}
+
 @MainActor
 final class SpeechInputControllerStartupTests: XCTestCase {
     func testStoppingOrCancellingClearsAudioFeedbackBeforeLeavingRecording() async throws {

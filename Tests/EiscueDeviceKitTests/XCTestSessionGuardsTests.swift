@@ -108,6 +108,35 @@ import Testing
         }
     }
 
+    @Test @MainActor func screenshotConversionLeavesMainActorAndPreservesRotatedPixels() async throws {
+        let encoded = try quadrantImage(orientation: 6)
+        let upright = try await NCMXCTestImage.uprightPNGOffMain(encoded) { data in
+            #expect(!Thread.isMainThread)
+            return try NCMXCTestImage.uprightPNG(data)
+        }
+        let pixels = try decodedQuadrants(upright)
+        #expect(pixels.width == 20 && pixels.height == 12 && pixels.orientation == 1)
+        #expect(pixels.corners == [Self.blue, Self.red, Self.yellow, Self.green])
+    }
+
+    @Test @MainActor func cancellationDuringPNGConversionCannotPublishItsLateResult() async throws {
+        let encoded = try quadrantImage(orientation: 6)
+        let started = AsyncStream<Void>.makeStream()
+        let release = DispatchSemaphore(value: 0)
+        let operation = Task {
+            try await NCMXCTestImage.uprightPNGOffMain(encoded) { data in
+                started.continuation.yield()
+                release.wait()
+                return try NCMXCTestImage.uprightPNG(data)
+            }
+        }
+        var iterator = started.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        operation.cancel(); release.signal()
+        await #expect(throws: CancellationError.self) { _ = try await operation.value }
+        started.continuation.finish()
+    }
+
     @Test(arguments: [2, 4, 5, 7]) func mirroredScreenshotIsRejected(_ orientation: Int) throws {
         let encoded = try quadrantImage(orientation: orientation)
         let source = try #require(CGImageSourceCreateWithData(encoded as CFData, nil))

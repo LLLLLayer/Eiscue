@@ -20,7 +20,7 @@ extension AppModel {
         guard let token = toolImagePreviews.beginLoading(activityID: activity.id, conversationID: run.conversationID) else { return }
         let callID = String(activity.id.dropFirst(prefix.count))
         do {
-            let reader = agent ?? AgentClient(storageDirectory: runtimeDirectory)
+            let reader = configuredAgent ?? agentFactory(nil, runtimeDirectory, [])
             let result = try await reader.toolResult(conversationID: run.conversationID, requestID: run.requestID, toolCallID: callID)
             try Task.checkCancellation()
             let matched = result?.call.id == callID && result?.call.name == activity.name ? result : nil

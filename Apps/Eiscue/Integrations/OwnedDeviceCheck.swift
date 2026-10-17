@@ -423,7 +423,7 @@ extension AppModel {
                         totalUnitCount: 4, onExpiration: { expired.withLock { $0 = true } })
                     backgroundCheckID = leaseID
                     save("home")
-                    try await deviceClient.home()
+                    try await deviceClient.home(frameID: beforeHome.frame.frameID)
                     try await Task.sleep(for: .milliseconds(300))
                     guard currentScenePhase == .background else { throw DeviceControlError.connection("Home did not background the App") }
                     report["homeVerified"] = true
@@ -446,7 +446,8 @@ extension AppModel {
                     }
                     guard background.isExecuting, !expired.withLock({ $0 }) else { throw BackgroundExecution.Failure.expired }
                     save("launch")
-                    try await deviceClient.launchApplication(bundleID: "org.eiscue.app")
+                    let launchFrame = try await deviceClient.captureScreenshot()
+                    try await deviceClient.launchApplication(bundleID: "org.eiscue.app", frameID: launchFrame.frameID)
                     let launchDeadline = ContinuousClock.now.advanced(by: .seconds(4))
                     while currentScenePhase != .active, ContinuousClock.now < launchDeadline {
                         try await Task.sleep(for: .milliseconds(50))

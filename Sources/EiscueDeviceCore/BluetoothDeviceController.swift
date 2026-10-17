@@ -1,25 +1,12 @@
 import Foundation
 
-enum BluetoothFrameAuthority {
-    static func permits(decisionIssuedUptime: TimeInterval, currentConfirmedUptime: TimeInterval,
-                        now: TimeInterval) -> Bool {
-        let decisionAge = now - decisionIssuedUptime, confirmedAge = now - currentConfirmedUptime
-        guard decisionAge.isFinite, decisionAge >= 0, decisionAge < 30,
-              confirmedAge.isFinite, confirmedAge >= 0 else { return false }
-        // Stream liveness and model decision age are independent. New screen
-        // content alone does not revoke a decision; the model assesses it using
-        // the post-action observation. Session/geometry gates remain in consume.
-        return confirmedAge <= ScreenBroadcastStore.maximumFrameAge
-    }
-}
-
 #if os(iOS)
 import UIKit
 
 /// BLE input and user-authorized ReplayKit observation. The host presents the
 /// system broadcast picker and an owned calibration surface before enabling AI.
 @MainActor
-public final class BluetoothDeviceController: DeviceController {
+public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
     public let board: BluetoothBoardClient
     public var onChange: (@MainActor () -> Void)?
     public var onHardwareStop: (@MainActor (BluetoothHardwareStopEvent) -> Void)?
@@ -32,7 +19,7 @@ public final class BluetoothDeviceController: DeviceController {
     private var store: ScreenBroadcastStore?
     private var calibration: Calibration?
     private var calibrationFrame: ObservedFrame?
-    private var latest: (frame: ObservedFrame, issuedUptime: TimeInterval)?
+    private var calibrationObservation: (frame: ObservedFrame, issuedUptime: TimeInterval)?
     private weak var calibrationWindow: UIWindow?
     private weak var calibrationView: UIView?
     private var calibrationViewport: Viewport?
@@ -43,7 +30,13 @@ public final class BluetoothDeviceController: DeviceController {
     private var keyboardVerified = false
     private var absoluteAvailable = false
     private var navigationAvailable = false
+    private var probeFailure: DeviceControlError?
+    private var geometryRevision = UUID()
+    private var observedGeometry: (session: UUID, orientation: ScreenBroadcastOrientation, width: Int, height: Int)?
     private var lastDispatchedUptime: TimeInterval = -.infinity
+    private var cachedScreenState: ScreenBroadcastState?
+    private var cachedScreenUptime: TimeInterval = -.infinity
+    private var screenReadToken = UUID()
 
     public init(board: BluetoothBoardClient = BluetoothBoardClient(), screenStore: ScreenBroadcastStore? = nil) {
         self.board = board; store = screenStore
@@ -67,7 +60,15 @@ public final class BluetoothDeviceController: DeviceController {
 
     public func updateCompanionStatus(_ status: BluetoothCompanionStatus) { board.updateCompanionStatus(status) }
 
-    public var screenState: ScreenBroadcastState? { try? screenStore().state() }
+    public var screenState: ScreenBroadcastState? {
+        guard UIApplication.shared.isProtectedDataAvailable else { return nil }
+        guard let cachedScreenState else { return nil }
+        guard cachedScreenState.isActive,
+              ProcessInfo.processInfo.systemUptime - cachedScreenUptime > ScreenBroadcastStore.maximumFrameAge else { return cachedScreenState }
+        return ScreenBroadcastState(phase: .stale, sessionID: cachedScreenState.sessionID,
+            updatedAt: cachedScreenState.updatedAt, frameID: cachedScreenState.frameID,
+            orientation: cachedScreenState.orientation, width: cachedScreenState.width, height: cachedScreenState.height)
+    }
     public var isInputReady: Bool { isConnected && !isHardwareStopLatched && absoluteAvailable && keyboardAvailable }
     public var isPointerVerified: Bool {
         guard !isHardwareStopLatched, !isCalibrating, let calibration, let state = screenState else { return false }
@@ -75,35 +76,12 @@ public final class BluetoothDeviceController: DeviceController {
             && state.width == calibration.width && state.height == calibration.height
     }
 
-    public func status() async -> DeviceStatus {
+    public func cachedStatus() async -> DeviceStatus {
         guard !isHardwareStopLatched else { return .unavailable(reason: BluetoothBoardError.hardwareStopped.localizedDescription) }
         guard isConnected else { return .unavailable(reason: message("bluetooth.connect")) }
-        if releaseToken == nil, !isCalibrating, operations.beginStatus() {
-            defer { operations.endStatus() }
-            let token = epoch
-            do {
-                let receipt = try await board.command(opcode: 7)
-                try requireEpoch(token)
-                absoluteAvailable = receipt.emittedReports & 1 != 0
-                keyboardAvailable = receipt.emittedReports & 2 != 0
-                if outputInfo != nil {
-                    let info = try await readOutputInfo(token: token)
-                    guard info.selectedRoute == inputRoute else { throw DeviceControlError.connection(message("bluetooth.outputMismatch")) }
-                    navigationAvailable = info.supportsNavigation
-                }
-                guard absoluteAvailable && keyboardAvailable else {
-                    clearCalibration(); onChange?()
-                    return .unavailable(reason: message(inputRoute == .usb ? "bluetooth.usbMissing" : "bluetooth.hidMissing"))
-                }
-            } catch {
-                if let failure = error as? BluetoothBoardError, failure == .authenticationFailed { board.disconnect() }
-                clearCalibration(); onChange?()
-                return .unavailable(reason: error.localizedDescription)
-            }
-        }
-        do {
-            guard try screenStore().state().isActive else { return .unavailable(reason: message("bluetooth.share")) }
-        } catch { return .unavailable(reason: error.localizedDescription) }
+        if let probeFailure { return .unavailable(reason: probeFailure.localizedDescription) }
+        guard isInputReady else { return .unavailable(reason: message(inputRoute == .usb ? "bluetooth.usbMissing" : "bluetooth.hidMissing")) }
+        guard screenState?.isActive == true else { return .unavailable(reason: message("bluetooth.share")) }
         guard isPointerVerified else { return .unavailable(reason: message("bluetooth.calibrate")) }
         var capabilities: Set<DeviceCapability> = [.screenshot, .tap, .swipe]
         if keyboardAvailable && keyboardVerified {
@@ -113,7 +91,28 @@ public final class BluetoothDeviceController: DeviceController {
         return .ready(capabilities: capabilities)
     }
 
-    public func hasPairingIdentity() async throws -> Bool { isConnected }
+    public func probe() async -> DeviceStatus {
+        await refreshScreenState()
+        guard isConnected, releaseToken == nil, !isCalibrating, operations.beginStatus() else { return await cachedStatus() }
+        defer { operations.endStatus() }
+        let token = epoch
+        do {
+            let receipt = try await board.command(opcode: 7)
+            try requireEpoch(token)
+            absoluteAvailable = receipt.emittedReports & 1 != 0
+            keyboardAvailable = receipt.emittedReports & 2 != 0
+            if outputInfo != nil {
+                let info = try await readOutputInfo(token: token)
+                guard info.selectedRoute == inputRoute else { throw DeviceControlError.serviceUnavailable(.input) }
+                navigationAvailable = info.supportsNavigation
+            }
+            guard absoluteAvailable && keyboardAvailable else { throw DeviceControlError.serviceUnavailable(.input) }
+            probeFailure = nil
+        } catch {
+            probeFailure = Self.convert(error); clearCalibration(); onChange?()
+        }
+        return await cachedStatus()
+    }
 
     /// Change only after release/disconnect. Reconnecting requires a fresh
     /// pointer/text check even if the next route uses the same physical board.
@@ -127,7 +126,7 @@ public final class BluetoothDeviceController: DeviceController {
     public func connectBluetoothBoard() async throws {
         guard !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
         try operations.beginExclusive(); defer { operations.endAction() }
-        epoch = UUID(); clearCalibration()
+        epoch = UUID(); clearCalibration(); probeFailure = nil
         let token = epoch
         do {
             try await board.connect()
@@ -167,11 +166,11 @@ public final class BluetoothDeviceController: DeviceController {
             isConnected = true; onChange?()
         } catch {
             if epoch == token { board.disconnect(); isConnected = false }
-            throw error
+            throw Self.convert(error)
         }
     }
 
-    public func disconnect() async {
+    public func disconnect() async -> ReleaseConfirmation {
         epoch = UUID(); clearCalibration(); isConnected = false
         let token = UUID(); releaseToken = token
         defer { if releaseToken == token { releaseToken = nil }; onChange?() }
@@ -182,72 +181,130 @@ public final class BluetoothDeviceController: DeviceController {
             client.disconnect()
         }.value
         try? store?.requestStop()
+        await refreshScreenState()
+        return .unconfirmed
     }
 
-    public func stopSharing() throws {
+    public func stopSharing() async throws {
+        guard !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
         epoch = UUID(); clearCalibration()
         let token = UUID(); releaseToken = token
-        Task { @MainActor in
-            await releaseHeldInput()
-            if releaseToken == token { releaseToken = nil }
-            onChange?()
-        }
-        try screenStore().requestStop(); onChange?()
+        defer { if releaseToken == token { releaseToken = nil }; onChange?() }
+        await releaseHeldInput()
+        try screenStore().requestStop()
+        await refreshScreenState()
     }
 
-    public func captureScreenshot() async throws -> DeviceScreenshot {
+    public func capture() async throws -> DeviceScreenshot {
         let requestedAt = ProcessInfo.processInfo.systemUptime
         try await beginAction(allowCalibration: true); defer { operations.endAction() }
         // Host progress can change its own UI between actions. Observe after
         // this request too, rather than returning a pre-update cached frame.
         let observation = try await freshFrame(after: max(lastDispatchedUptime, requestedAt), token: epoch)
-        latest = (observation, ProcessInfo.processInfo.systemUptime)
-        return observation.screenshot
+        calibrationObservation = (observation, ProcessInfo.processInfo.systemUptime)
+        let image = observation.screenshot
+        return DeviceScreenshot(frameID: image.frameID, capturedAt: image.capturedAt, width: image.width,
+            height: image.height, mimeType: image.mimeType, data: image.data, geometry: geometry(observation))
     }
 
-    /// End a user-started task without discarding the checked
-    /// connection. Only confirmed release permits preserving its calibration.
-    public func finishTask() async throws {
-        try await beginAction(); defer { operations.endAction() }
-        let token = epoch
-        latest = nil
+    public func releaseInput() async throws {
+        guard !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
+        calibrationObservation = nil
+        guard isConnected else { return }
+        try operations.beginExclusive(); defer { operations.endAction() }
+        try await BluetoothTaskInputRelease.run(release: {
+            _ = try await self.board.stop()
+            self.lastDispatchedUptime = ProcessInfo.processInfo.systemUptime
+        }, calibrationMatches: {
+            guard let calibration = self.calibration else { return nil }
+            guard let current = try? await self.observeOffMain() else { return false }
+            return calibration.matches(current)
+        }, invalidateCalibration: { self.clearCalibration(); self.onChange?() })
+    }
+
+    public func frameState() async throws -> DeviceFrameState {
+        guard isConnected, probeFailure == nil else { throw DeviceControlError.notConnected }
+        let current = try await observeOffMain()
+        return DeviceFrameState(geometry: geometry(current), isLive: true, confirmedUptime: current.observedUptime)
+    }
+
+    public func perform(_ action: DeviceAction, frame: FrameGrant) async throws -> SubmissionResult {
+        // Prove all route-specific admission failures before entering input.
         do {
-            _ = try await board.stop()
-            lastDispatchedUptime = ProcessInfo.processInfo.systemUptime
-            try requireEpoch(token)
-            guard let calibration, calibration.matches(try observe()) else { throw DeviceControlError.staleFrame }
-        } catch {
-            await disconnect()
-            throw error
-        }
+            try requireEpoch(epoch)
+            guard !operations.isBusy, releaseToken == nil, !isCalibrating else { throw DeviceControlError.busy }
+            let current = try await observeOffMain()
+            guard let calibration, calibration.matches(current),
+                  try await frameState().geometry == frame.geometry else { throw DeviceControlError.staleFrame }
+            for point in action.points { _ = try calibration.hidPoint(point, in: current.screenshot) }
+            guard action.capability != .home && action.capability != .launchApplication else {
+                throw DeviceControlError.capabilityUnavailable(action.capability)
+            }
+            if action.capability == .textInput || action.capability == .keyboardNavigation {
+                guard keyboardAvailable && keyboardVerified else { throw DeviceControlError.capabilityUnavailable(action.capability) }
+                if action.capability == .keyboardNavigation, !navigationAvailable { throw DeviceControlError.capabilityUnavailable(.keyboardNavigation) }
+            }
+        } catch { return .notSubmitted(Self.convert(error)) }
+        do {
+            switch action {
+            case .tap(let p): try await tap(at: p, frame: frame)
+            case .swipe(let from, let to, let duration): try await swipe(from: from, to: to, duration: duration, frame: frame)
+            case .typeText(let text): try await paste(text, frameID: frame.frameID, validation: false, grant: frame)
+            case .pressKey(let key): try await pressKey(key, frame: frame)
+            case .home, .launch: return .notSubmitted(.capabilityUnavailable(action.capability))
+            }
+            return .submitted
+        } catch { throw Self.convert(error) }
     }
 
-    public func tap(at point: DevicePoint, frameID: UUID) async throws {
+    public func listApplications() async throws -> [DeviceApplication] { throw DeviceControlError.capabilityUnavailable(.listApplications) }
+
+    private func geometry(_ frame: ObservedFrame) -> DeviceFrameGeometry {
+        let value = (session: frame.sessionID, orientation: frame.orientation, width: frame.screenshot.width, height: frame.screenshot.height)
+        if let old = observedGeometry,
+           old.session != value.session || old.orientation != value.orientation || old.width != value.width || old.height != value.height {
+            geometryRevision = UUID()
+        }
+        observedGeometry = value
+        return DeviceFrameGeometry(sessionID: epoch, revision: geometryRevision.uuidString, width: value.width, height: value.height)
+    }
+    private func mapping(for grant: FrameGrant) async throws -> (ObservedFrame, Calibration) {
+        let current = try await observeOffMain()
+        guard let calibration, calibration.matches(current), geometry(current) == grant.geometry else { throw DeviceControlError.staleFrame }
+        return (current, calibration)
+    }
+    private static func convert(_ error: Error) -> DeviceControlError {
+        if let error = error as? DeviceControlError { return error }
+        if let error = error as? BluetoothBoardError { return error.deviceControlError }
+        return .connectionLost
+    }
+
+    private func tap(at point: DevicePoint, frame: FrameGrant) async throws {
         try await beginAction(); defer { operations.endAction() }
-        let (frame, mapping) = try consume(frameID)
+        let (frame, mapping) = try await mapping(for: frame)
         let position = try mapping.hidPoint(point, in: frame.screenshot)
         let token = epoch
         try await absolute(position, pressed: false)
-        try requireCurrent(mapping, token: token)
+        try await requireCurrent(mapping, token: token)
         try await absolute(position, pressed: true)
         try await release(position, token: token)
     }
 
-    public func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frameID: UUID) async throws {
+    private func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frame: FrameGrant) async throws {
         let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
-        guard seconds.isFinite, (0.1...2).contains(seconds) else { throw DeviceControlError.invalidDuration }
+        guard duration >= DeviceInputValidation.minimumSwipeDuration, duration <= DeviceInputValidation.maximumSwipeDuration else { throw DeviceControlError.invalidDuration }
         try await beginAction(); defer { operations.endAction() }
-        let (frame, mapping) = try consume(frameID)
+        let (frame, mapping) = try await mapping(for: frame)
         let start = try mapping.hidPoint(from, in: frame.screenshot), end = try mapping.hidPoint(to, in: frame.screenshot)
         let token = epoch
         try await absolute(start, pressed: false)
         do {
-            try requireCurrent(mapping, token: token)
+            try await requireCurrent(mapping, token: token)
             try await absolute(start, pressed: true)
             let steps = max(2, Int(ceil(seconds / 0.06)))
             for step in 1...steps {
                 try await Task.sleep(for: .seconds(seconds / Double(steps)))
-                try requireCurrent(mapping, token: token)
+                try await requireCurrent(mapping, token: token)
                 let fraction = Double(step) / Double(steps)
                 let p = DevicePoint(x: start.x + (end.x-start.x)*fraction, y: start.y + (end.y-start.y)*fraction)
                 try await absolute(p, pressed: true)
@@ -260,46 +317,38 @@ public final class BluetoothDeviceController: DeviceController {
         }
     }
 
-    public func typeText(_ text: String, frameID: UUID) async throws {
-        try await paste(text, frameID: frameID, validation: false)
-    }
-
     /// Only available while the host's bound calibration target is visible.
     /// The host must observe the actual field value before markKeyboardVerified.
     public func pasteCalibrationText(_ text: String, frameID: UUID) async throws {
         try await paste(text, frameID: frameID, validation: true)
     }
 
-    private func paste(_ text: String, frameID: UUID, validation: Bool) async throws {
-        guard !text.isEmpty, text.utf8.count <= 8192 else { throw DeviceControlError.invalidText }
+    private func paste(_ text: String, frameID: UUID, validation: Bool, grant: FrameGrant? = nil) async throws {
+        try DeviceInputValidation.text(text)
         try await beginAction(allowCalibration: validation); defer { operations.endAction() }
-        let (_, mapping) = try consume(frameID)
-        guard keyboardAvailable, validation ? isCalibrating : keyboardVerified else { throw DeviceControlError.unsupported }
-        if validation { try checkCalibrationGeometry() }
+        let mapping: Calibration
+        if let grant { (_, mapping) = try await self.mapping(for: grant) }
+        else { (_, mapping) = try await consumeCalibrationObservation(frameID) }
+        guard keyboardAvailable, validation ? isCalibrating : keyboardVerified else { throw DeviceControlError.capabilityUnavailable(.textInput) }
+        if validation { try await checkCalibrationGeometry() }
         // Reading the pasteboard back fails while Eiscue is in the background,
         // which is the normal state during a cross-app task. A changed count
         // proves this write landed without reading any pasteboard content.
         let before = UIPasteboard.general.changeCount
         UIPasteboard.general.setItems([["public.utf8-plain-text": text]], options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)])
         guard UIPasteboard.general.changeCount != before else { throw DeviceControlError.connection(message("bluetooth.clipboard")) }
-        try requireCurrent(mapping, token: epoch)
+        try await requireCurrent(mapping, token: epoch)
         lastDispatchedUptime = ProcessInfo.processInfo.systemUptime
         defer { lastDispatchedUptime = ProcessInfo.processInfo.systemUptime }
         _ = try await board.command(opcode: 6, payload: [0x08, 0x19])
     }
 
-    public func home() async throws {
-        // Command-H is not a verified system Home action. Full Keyboard Access
-        // uses a separate command; a board ACK cannot verify that system setup.
-        throw DeviceControlError.unsupported
-    }
-
-    public func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {
+    private func pressKey(_ key: DeviceKeyboardAction, frame: FrameGrant) async throws {
         try await beginAction(); defer { operations.endAction() }
-        let (_, mapping) = try consume(frameID)
-        guard keyboardAvailable, keyboardVerified, navigationAvailable else { throw DeviceControlError.unsupported }
+        let (_, mapping) = try await mapping(for: frame)
+        guard keyboardAvailable, keyboardVerified, navigationAvailable else { throw DeviceControlError.capabilityUnavailable(.keyboardNavigation) }
         let token = epoch
-        try requireCurrent(mapping, token: token)
+        try await requireCurrent(mapping, token: token)
         switch key {
         case .search: try await sendKey(opcode: 6, payload: [0x08, 0x2C], token: token)
         case .enter: try await sendKey(opcode: 4, payload: [1], token: token)
@@ -348,28 +397,30 @@ public final class BluetoothDeviceController: DeviceController {
         guard isCalibrating, !operations.isBusy, releaseToken == nil, (0.1...0.9).contains(x), (0.1...0.9).contains(y) else { throw DeviceControlError.invalidCoordinates }
         try operations.beginExclusive(); defer { operations.endAction() }
         let token = epoch, p = DevicePoint(x: x, y: y)
-        try checkCalibrationGeometry()
+        try await checkCalibrationGeometry()
         try await absolute(p, pressed: false)
         try await Task.sleep(for: .milliseconds(180))
         try requireEpoch(token)
-        try checkCalibrationGeometry()
+        try await checkCalibrationGeometry()
         try await absolute(p, pressed: true)
         try await release(p, token: token)
     }
 
     /// Three corner samples fit an affine mapping, the fourth independently
     /// verifies it. Samples are normalized points observed by UIKit, not ACKs.
-    public func completeCalibration(observed: [DevicePoint]) throws {
+    public func completeCalibration(observed: [DevicePoint]) async throws {
         guard isCalibrating, !operations.isBusy, releaseToken == nil, observed.count == 4 else { throw DeviceControlError.invalidCoordinates }
-        try checkCalibrationGeometry()
+        try operations.beginExclusive(); defer { operations.endAction() }
+        try await checkCalibrationGeometry()
         guard let original = calibrationFrame else { throw DeviceControlError.staleFrame }
         calibration = try Calibration(observed: observed, frame: original)
         onChange?()
     }
 
-    public func markKeyboardVerified() throws {
+    public func markKeyboardVerified() async throws {
         guard isCalibrating, calibration != nil, !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
-        try checkCalibrationGeometry()
+        try operations.beginExclusive(); defer { operations.endAction() }
+        try await checkCalibrationGeometry()
         keyboardVerified = true; isCalibrating = false
         calibrationFrame = nil; calibrationWindow = nil; calibrationView = nil; calibrationViewport = nil
         onChange?()
@@ -383,13 +434,14 @@ public final class BluetoothDeviceController: DeviceController {
         onChange?()
     }
 
-    private func checkCalibrationGeometry() throws {
+    private func checkCalibrationGeometry() async throws {
         try Task.checkCancellation()
         guard isConnected, isCalibrating, releaseToken == nil,
               let window = calibrationWindow, let view = calibrationView,
               let binding = calibrationViewport,
               try Viewport(window: window, view: view) == binding else { throw DeviceControlError.staleFrame }
-        let current = try observe()
+        let token = epoch, current = try await observeOffMain()
+        try requireEpoch(token)
         guard let original = calibrationFrame, original.sessionID == current.sessionID,
               original.orientation == current.orientation,
               original.screenshot.width == current.screenshot.width,
@@ -400,12 +452,41 @@ public final class BluetoothDeviceController: DeviceController {
         do { let value = try ScreenBroadcastStore(); store = value; return value }
         catch { throw DeviceControlError.connection(message("bluetooth.appGroupUnavailable")) }
     }
-    /// The current screen. An unchanged screen keeps its earlier frame while the
-    /// extension heartbeat confirms that no newer content has been delivered.
-    private func observe() throws -> ObservedFrame {
+    /// UI accessors never open the App Group files. Owners can refresh screen
+    /// metadata without sending a BLE INFO command alongside input.
+    public func refreshScreenState() async {
+        let token = UUID(); screenReadToken = token
+        guard UIApplication.shared.isProtectedDataAvailable, let source = try? screenStore() else {
+            publishScreenState(nil, token: token); return
+        }
+        let state = await Task.detached(priority: .utility) { source.state() }.value
+        publishScreenState(state, token: token)
+    }
+    private func publishScreenState(_ state: ScreenBroadcastState?, token: UUID) {
+        guard screenReadToken == token else { return }
+        let previous = screenState
+        cachedScreenState = UIApplication.shared.isProtectedDataAvailable ? state : nil
+        cachedScreenUptime = ProcessInfo.processInfo.systemUptime
+        if previous != screenState { onChange?() }
+    }
+    private func observeOffMain() async throws -> ObservedFrame {
+        guard UIApplication.shared.isProtectedDataAvailable else { throw DeviceControlError.serviceUnavailable(.screen) }
         let source = try screenStore()
-        do { return ObservedFrame(try source.readCurrentFrame()) }
-        catch { throw DeviceControlError.connection(message("bluetooth.share")) }
+        let token = UUID(); screenReadToken = token
+        do {
+            let (frame, state) = try await Task.detached {
+                let reading = try source.readCurrentFrame(), value = reading.frame
+                let state = ScreenBroadcastState(phase: .active, sessionID: value.sessionID, updatedAt: reading.confirmedAt,
+                    frameID: value.frameID, orientation: value.orientation, width: value.width, height: value.height)
+                return (ObservedFrame(reading), state)
+            }.value
+            guard UIApplication.shared.isProtectedDataAvailable else { throw DeviceControlError.serviceUnavailable(.screen) }
+            publishScreenState(state, token: token)
+            return frame
+        } catch {
+            await refreshScreenState()
+            throw DeviceControlError.serviceUnavailable(.screen)
+        }
     }
     /// A frame captured after `uptime`, or an earlier frame the extension has
     /// confirmed unchanged for longer than its publish interval since then, so
@@ -414,7 +495,8 @@ public final class BluetoothDeviceController: DeviceController {
         let deadline = ProcessInfo.processInfo.systemUptime + 2.5
         while true {
             try requireEpoch(token)
-            let frame = try observe()
+            let frame = try await observeOffMain()
+            try requireEpoch(token)
             if frame.capturedUptime > uptime || frame.observedUptime > uptime + Self.unchangedScreenSettle { return frame }
             guard ProcessInfo.processInfo.systemUptime < deadline else { throw DeviceControlError.staleFrame }
             try await Task.sleep(for: .milliseconds(50))
@@ -430,18 +512,19 @@ public final class BluetoothDeviceController: DeviceController {
             guard releaseToken == nil, !isCalibrating || allowCalibration else { throw DeviceControlError.busy }
         } catch { operations.endAction(); throw error }
     }
-    private func consume(_ id: UUID) throws -> (ObservedFrame, Calibration) {
-        let decision = latest; latest = nil
-        // One capture authorizes one action: `latest` is cleared above, and the
-        // observation must postdate every input sent since it was taken.
+    private func consumeCalibrationObservation(_ id: UUID) async throws -> (ObservedFrame, Calibration) {
+        let decision = calibrationObservation; calibrationObservation = nil
+        // This is exclusively the owned UIKit calibration field; model actions
+        // consume GuardedDevice grants instead. Reuse the central age rule.
         guard let decision, decision.frame.screenshot.frameID == id,
               decision.frame.observedUptime > lastDispatchedUptime,
               let calibration, calibration.matches(decision.frame) else {
             throw DeviceControlError.staleFrame
         }
-        let frame = decision.frame, current = try observe()
+        let token = epoch, frame = decision.frame, current = try await observeOffMain()
+        try requireEpoch(token)
         guard calibration.matches(current),
-              BluetoothFrameAuthority.permits(decisionIssuedUptime: decision.issuedUptime,
+              FrameGrant.permits(decisionIssuedUptime: decision.issuedUptime,
                   currentConfirmedUptime: current.observedUptime, now: ProcessInfo.processInfo.systemUptime) else {
             throw DeviceControlError.staleFrame
         }
@@ -456,9 +539,11 @@ public final class BluetoothDeviceController: DeviceController {
         try requireConnectionEpoch(token)
         guard isConnected else { throw DeviceControlError.notConnected }
     }
-    private func requireCurrent(_ mapping: Calibration, token: UUID) throws {
+    private func requireCurrent(_ mapping: Calibration, token: UUID) async throws {
         try requireEpoch(token)
-        guard mapping.matches(try observe()) else { throw DeviceControlError.staleFrame }
+        let current = try await observeOffMain()
+        try requireEpoch(token)
+        guard mapping.matches(current) else { throw DeviceControlError.staleFrame }
     }
     private func absolute(_ point: DevicePoint, pressed: Bool) async throws {
         guard point.x.isFinite, point.y.isFinite, (0...1).contains(point.x), (0...1).contains(point.y) else { throw DeviceControlError.invalidCoordinates }
@@ -483,12 +568,13 @@ public final class BluetoothDeviceController: DeviceController {
         lastDispatchedUptime = ProcessInfo.processInfo.systemUptime
     }
     private func clearCalibration() {
-        calibration = nil; latest = nil; calibrationFrame = nil; isCalibrating = false; keyboardVerified = false
+        geometryRevision = UUID(); observedGeometry = nil
+        calibration = nil; calibrationObservation = nil; calibrationFrame = nil; isCalibrating = false; keyboardVerified = false
         calibrationWindow = nil; calibrationView = nil; calibrationViewport = nil
     }
     private func message(_ key: String) -> String { NSLocalizedString(key, tableName: "BluetoothControl", bundle: .module, comment: "") }
 
-    private struct ObservedFrame {
+    private struct ObservedFrame: Sendable {
         let screenshot: DeviceScreenshot
         let sessionID: UUID
         let orientation: ScreenBroadcastOrientation

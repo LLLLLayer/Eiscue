@@ -168,6 +168,7 @@ final class TaskNotificationManager {
         case .completed: String(localized: "notifications.task.completed", table: "Connections")
         case .paused: String(localized: "notifications.task.paused", table: "Connections")
         case .interrupted: String(localized: "notifications.task.interrupted", table: "Connections")
+        case .outcomeUnknown: String(localized: "run.unknown_notification", table: "Runtime")
         case .failed: String(localized: "notifications.task.failed", table: "Connections")
         case .preparing, .running: nil
         }

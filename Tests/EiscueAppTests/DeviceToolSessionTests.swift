@@ -13,7 +13,7 @@ final class DeviceToolSessionTests: XCTestCase {
             ("device_launch_app", .launchApplication, true), ("device_home", .home, true),
             ("device_press_key", .keyboardNavigation, true)
         ]
-        let client = DeviceClient(controller: RecordingDeviceController())
+        let client = DeviceClient(actuator: RecordingDeviceController())
         let allCapabilities = DeviceCapability.allCases
         for mask in 0..<(1 << allCapabilities.count) {
             let capabilities = Set(allCapabilities.enumerated().compactMap { index, capability in
@@ -32,7 +32,7 @@ final class DeviceToolSessionTests: XCTestCase {
     }
 
     func testEveryRegisteredActionDecodesArgumentsAndReturnsANewObservation() async throws {
-        let samples: [(String, AgentJSONValue, DeviceAction)] = [
+        let samples: [(String, AgentJSONValue, Eiscue.DeviceTaskAction)] = [
             ("device_tap", ["x": 12, "y": 34], .tap(DevicePoint(x: 12, y: 34))),
             ("device_swipe", ["fromX": 10, "fromY": 20, "toX": 30, "toY": 40, "duration": 0.5],
              .swipe(from: DevicePoint(x: 10, y: 20), to: DevicePoint(x: 30, y: 40), duration: 0.5)),
@@ -68,11 +68,11 @@ final class DeviceToolSessionTests: XCTestCase {
 
     func testChatExposesNoDeviceAccessAndObservationCannotMutateDevice() async throws {
         let controller = RecordingDeviceController()
-        let client = DeviceClient(controller: controller)
+        let client = DeviceClient(actuator: controller)
         let chat = DeviceToolSession(client: client, scope: .chat, timeoutSeconds: 30,
-                                     log: { _, _ in }, onUnknown: {})
+                                     log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {})
         let observation = DeviceToolSession(client: client, scope: .observe, timeoutSeconds: 30,
-                                            log: { _, _ in }, onUnknown: {})
+                                            log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {})
 
         XCTAssertTrue(chat.tools.isEmpty)
         XCTAssertTrue(observation.tools.allSatisfy { !$0.mayHaveSideEffects })
@@ -120,8 +120,8 @@ final class DeviceToolSessionTests: XCTestCase {
     func testMalformedFrameIDsUseTheSamePauseGateAndReleaseTheHold() async throws {
         let controller = RecordingDeviceController()
         var held = false
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                                        log: { _, _ in }, onUnknown: {}, onObservationWillCapture: { held = true },
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {}, onObservationWillCapture: { held = true },
                                         onActionFinished: { held = false })
         _ = try await tool("device_screenshot", in: session).execute([:])
         let tap = try tool("device_tap", in: session)
@@ -131,7 +131,7 @@ final class DeviceToolSessionTests: XCTestCase {
                 XCTFail("Malformed frame ID must be rejected.")
             } catch {
                 if index == 3 {
-                    guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected frame rejection pause.") }
+                    guard case .paused = error as? AgentToolError else { return XCTFail("Expected frame rejection pause.") }
                 }
             }
         }
@@ -145,8 +145,9 @@ final class DeviceToolSessionTests: XCTestCase {
         let controller = RecordingDeviceController()
         let stopped = expectation(description: "Host stops after losing the action acknowledgment")
         var logKinds: [String] = []
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                                        log: { kind, _ in
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { kind, detail in
+                                            await controller.fixtureLog(kind, detail)
                                             logKinds.append(kind)
                                             if kind == "action.acknowledged" { throw TestLogError.unavailable }
                                         }, onUnknown: { stopped.fulfill() })
@@ -159,7 +160,7 @@ final class DeviceToolSessionTests: XCTestCase {
             _ = try await tap.execute(tapArguments(frameID: frameID))
             XCTFail("The caller must learn that the durable acknowledgment failed.")
         } catch {
-            XCTAssertEqual(error as? TestLogError, .unavailable)
+            XCTAssertEqual(error as? AgentToolError, .outcomeUnknown)
         }
         await fulfillment(of: [stopped], timeout: 1)
         XCTAssertTrue(session.hasUnknownOutcome)
@@ -177,8 +178,9 @@ final class DeviceToolSessionTests: XCTestCase {
         let controller = RecordingDeviceController(tapFailure: unknown)
         let stopped = expectation(description: "Host stops even if the unknown-delivery log is lost")
         var attemptedUnknownLog = false
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                                        log: { kind, _ in
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { kind, detail in
+                                            await controller.fixtureLog(kind, detail)
                                             if kind == "action.unknown" {
                                                 attemptedUnknownLog = true
                                                 throw TestLogError.unavailable
@@ -193,7 +195,7 @@ final class DeviceToolSessionTests: XCTestCase {
             _ = try await tap.execute(tapArguments(frameID: frameID))
             XCTFail("Unknown delivery must remain visible to the caller.")
         } catch {
-            XCTAssertEqual(error as? DeviceControlError, unknown)
+            XCTAssertEqual(error as? AgentToolError, .outcomeUnknown)
         }
         await fulfillment(of: [stopped], timeout: 1)
         XCTAssertTrue(session.hasUnknownOutcome)
@@ -209,12 +211,12 @@ final class DeviceToolSessionTests: XCTestCase {
     func testHIDNavigationExposesOnlyAdvertisedCapabilitiesAndConsumesFrames() async throws {
         let controller = RecordingDeviceController()
         let capabilities: Set<DeviceCapability> = [.screenshot, .tap, .textInput, .home, .keyboardNavigation]
-        let session = DeviceToolSession(capabilities: capabilities, client: DeviceClient(controller: controller), scope: .control,
-                                        timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+        let session = DeviceToolSession(capabilities: capabilities, client: DeviceClient(actuator: controller), scope: .control,
+                                        timeoutSeconds: 30, log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {})
         XCTAssertNil(session.tools.first { $0.name == "device_launch_app" })
         XCTAssertNil(session.tools.first { $0.name == "device_list_apps" })
-        let observe = DeviceToolSession(capabilities: capabilities, client: DeviceClient(controller: controller), scope: .observe,
-                                        timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+        let observe = DeviceToolSession(capabilities: capabilities, client: DeviceClient(actuator: controller), scope: .observe,
+                                        timeoutSeconds: 30, log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {})
         XCTAssertNil(observe.tools.first { $0.name == "device_press_key" })
         let screenshot = try tool("device_screenshot", in: session)
         let press = try tool("device_press_key", in: session)
@@ -243,8 +245,8 @@ final class DeviceToolSessionTests: XCTestCase {
             XCTAssertEqual(tool.executionCost, 2)
             XCTAssertTrue(tool.verifiesSideEffects)
         }
-        let blind = DeviceToolSession(capabilities: [.tap, .home], client: DeviceClient(controller: controller),
-                                      scope: .control, timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+        let blind = DeviceToolSession(capabilities: [.tap, .home], client: DeviceClient(actuator: controller),
+                                      scope: .control, timeoutSeconds: 30, log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {})
         XCTAssertTrue(blind.tools.isEmpty)
     }
 
@@ -252,8 +254,8 @@ final class DeviceToolSessionTests: XCTestCase {
         let failure = DeviceControlError.deliveryUnknown("No navigation receipt")
         let controller = RecordingDeviceController(keyFailure: failure)
         let stopped = expectation(description: "Navigation uncertainty stops the host")
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                                        log: { _, _ in }, onUnknown: { stopped.fulfill() })
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: { stopped.fulfill() })
         let screenshot = try tool("device_screenshot", in: session)
         let press = try tool("device_press_key", in: session)
         _ = try await screenshot.execute([:])
@@ -262,7 +264,7 @@ final class DeviceToolSessionTests: XCTestCase {
         do {
             _ = try await press.execute(arguments)
             XCTFail("Unknown navigation must remain visible.")
-        } catch { XCTAssertEqual(error as? DeviceControlError, failure) }
+        } catch { XCTAssertEqual(error as? AgentToolError, .outcomeUnknown) }
         await fulfillment(of: [stopped], timeout: 1)
         await assertRejected(press, arguments: arguments)
         await assertRejected(screenshot, arguments: [:])
@@ -288,7 +290,7 @@ final class DeviceToolSessionTests: XCTestCase {
             _ = try await tap.execute(tapArguments(frameID: frame))
             XCTFail("A third identical tap must pause before dispatch.")
         } catch {
-            guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected a resumable pause, got \(error)") }
+            guard case .paused = error as? AgentToolError else { return XCTFail("Expected a resumable pause, got \(error)") }
         }
         XCTAssertFalse(session.hasUnknownOutcome)
         await assertRejected(screenshot, arguments: [:])
@@ -333,7 +335,7 @@ final class DeviceToolSessionTests: XCTestCase {
             } catch {
                 if attempt < 3 { XCTAssertEqual(error as? DeviceControlError, .staleFrame) }
                 else {
-                    guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected a pause after repeated stale frames, got \(error)") }
+                    guard case .paused = error as? AgentToolError else { return XCTFail("Expected a pause after repeated stale frames, got \(error)") }
                 }
             }
         }
@@ -345,8 +347,9 @@ final class DeviceToolSessionTests: XCTestCase {
         let controller = RecordingDeviceController()
         var held = false
         var releases = 0
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                                        log: { kind, _ in
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { kind, detail in
+                                            await controller.fixtureLog(kind, detail)
                                             if kind == "observation.captured" || kind == "action.acknowledged" { XCTAssertTrue(held) }
                                         }, onUnknown: {}, onObservationWillCapture: { held = true },
                                         onActionFinished: { held = false; releases += 1 })
@@ -367,8 +370,8 @@ final class DeviceToolSessionTests: XCTestCase {
     func testFailedScreenshotReleasesPresentationHold() async throws {
         let controller = RecordingDeviceController(screenshotFailure: .notConnected)
         var held = false
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                                        log: { _, _ in }, onUnknown: {}, onObservationWillCapture: { held = true },
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                                        log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {}, onObservationWillCapture: { held = true },
                                         onActionFinished: { held = false })
         let screenshot = try tool("device_screenshot", in: session)
         await assertRejected(screenshot, arguments: [:])
@@ -377,8 +380,8 @@ final class DeviceToolSessionTests: XCTestCase {
     }
 
     private func controlSession(_ controller: RecordingDeviceController) -> DeviceToolSession {
-        DeviceToolSession(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                          log: { _, _ in }, onUnknown: {})
+        DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                          log: { kind, detail in await controller.fixtureLog(kind, detail) }, onUnknown: {})
     }
 
     private func tool(_ name: String, in session: DeviceToolSession) throws -> AgentTool {
@@ -407,7 +410,9 @@ private enum TestLogError: Error, Equatable { case unavailable }
 
 /// The mock deliberately does not validate frame IDs: that responsibility is
 /// exercised at the App's tool boundary, independently of a real transport.
-private actor RecordingDeviceController: DeviceController {
+private actor RecordingDeviceController: DeviceFixtureActuator {
+    var fixtureObservedFrameID: UUID?
+    var fixtureGeometry: DeviceFrameGeometry?
     private let tapFailure: DeviceControlError?
     private let keyFailure: DeviceControlError?
     private let screenshotFailure: DeviceControlError?
@@ -416,14 +421,14 @@ private actor RecordingDeviceController: DeviceController {
     private var keyCount = 0
     private var frameID: UUID?
     private var screenshotData = Data([0x89, 0x50, 0x4E, 0x47])
-    private var recordedAction: DeviceAction?
+    private var recordedAction: Eiscue.DeviceTaskAction?
 
     init(tapFailure: DeviceControlError? = nil, keyFailure: DeviceControlError? = nil, screenshotFailure: DeviceControlError? = nil) {
         self.tapFailure = tapFailure; self.keyFailure = keyFailure
         self.screenshotFailure = screenshotFailure
     }
 
-    func status() async -> DeviceStatus { .ready(capabilities: [.screenshot, .tap]) }
+    func status() async -> DeviceStatus { .ready(capabilities: Set(DeviceCapability.allCases)) }
 
     func captureScreenshot() async throws -> DeviceScreenshot {
         screenshotCount += 1
@@ -439,7 +444,7 @@ private actor RecordingDeviceController: DeviceController {
         recordedAction = .tap(point)
     }
 
-    func latestFrameID() -> UUID? { frameID }
+    func latestFrameID() -> UUID? { fixtureObservedFrameID }
     func changeScreen(to data: Data) { screenshotData = data }
     func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {
         keyCount += 1
@@ -453,6 +458,6 @@ private actor RecordingDeviceController: DeviceController {
     func typeText(_ text: String, frameID: UUID) async throws { recordedAction = .typeText(text) }
     func launchApplication(bundleID: String) async throws { recordedAction = .launchApplication(bundleID) }
     func home() async throws { recordedAction = .home }
-    func lastAction() -> DeviceAction? { recordedAction }
+    func lastAction() -> Eiscue.DeviceTaskAction? { recordedAction }
     func counts() -> (screenshots: Int, taps: Int, keys: Int) { (screenshotCount, tapCount, keyCount) }
 }

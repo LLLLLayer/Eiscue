@@ -232,6 +232,8 @@ enum RunReport {
             lines.append(String(localized: "report.duration \(duration(from: run.startedAt, to: end))"))
         }
         if run.state == .paused, let reason = run.pauseReason { lines.append(reason.detail) }
+        if run.stopCause?.isOutcomeUnknown == true { lines.append(run.unknownActionTitle) }
+        if run.cleanupFailure != nil { lines.append(String(localized: "run.cleanup_failed", table: "Runtime")) }
         lines += ["", String(localized: "runs.log")]
         lines += run.events.map { "\($0.date.ISO8601Format())  \(eventTitle($0)) · \(eventSummary($0))" }
         lines += ["", String(localized: "runs.reportPrivacy")]
@@ -247,6 +249,7 @@ private extension RunState {
         case .completed: "checkmark.circle"
         case .paused: "pause.circle"
         case .interrupted: "pause.circle"
+        case .outcomeUnknown: "questionmark.circle"
         case .failed: "exclamationmark.circle"
         }
     }
@@ -257,6 +260,7 @@ private extension RunState {
         case .completed: String(localized: "run.completedDetail")
         case .paused: String(localized: "run.pausedDetail")
         case .interrupted: String(localized: "run.interruptedDetail")
+        case .outcomeUnknown: String(localized: "run.unknown_detail", table: "Runtime")
         case .failed: String(localized: "run.failedDetail")
         }
     }

@@ -58,7 +58,7 @@ final class ToolImagePreviewStoreTests: XCTestCase {
                              activities: [ToolActivity(id: "\(runID.uuidString):call:with:colons", name: "device_screenshot", endedAt: Date())])
         }
         let engine = ToolImageRecoveryEngine(conversationID: conversation.id, images: [requests[0]: image(width: 40), requests[1]: image(width: 80)])
-        model.agent = AgentClient(engine: engine)
+        model.configuredAgent = AgentClient(engine: engine)
         let first = try XCTUnwrap(model.runs[0].activities?.first)
         let second = try XCTUnwrap(model.runs[1].activities?.first)
         await model.loadToolImagePreviews(for: first)
@@ -97,7 +97,7 @@ final class ToolImagePreviewStoreTests: XCTestCase {
         let content: [AgentToolContent] = [.text("Actual result"), .image(data: image(), mimeType: "image/png")]
         let cases: [(String, AgentToolResult)] = [
             ("device_screenshot", .text("frameId=metadata-only")),
-            ("device_screenshot", .init(content: content, isError: true)),
+            ("device_screenshot", .init(content: content, outcome: .failed)),
             ("device_screenshot", .image(Data([0, 1, 2]), mimeType: "image/png")),
             ("device_screenshot", .image(image(), mimeType: "text/plain")),
             ("device_list_apps", .init(content: content)),
@@ -186,6 +186,7 @@ final class ToolImagePreviewStoreTests: XCTestCase {
     }
 }
 
+/// Read-only image-result snapshot injection; it cannot execute a run.
 private actor ToolImageRecoveryEngine: AgentEngine {
     let conversationID: UUID
     let images: [UUID: Data]

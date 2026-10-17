@@ -44,40 +44,42 @@ final class DeviceObservationImageTests: XCTestCase {
         let landscape = try screenshot(width: 3200, height: 1600)
         let last = try screenshot(width: 390, height: 844)
         let controller = ObservationImageController(frames: [portrait, landscape, last])
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control,
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control,
                                         timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
         let observe = try XCTUnwrap(session.tools.first { $0.name == "device_screenshot" })
         let tap = try XCTUnwrap(session.tools.first { $0.name == "device_tap" })
         let swipe = try XCTUnwrap(session.tools.first { $0.name == "device_swipe" })
         let first = try await observe.execute([:])
-        try assertImageResult(first, width: 800, height: 1600, frameID: portrait.frameID)
+        let portraitFrameID = try resultFrameID(first)
+        try assertImageResult(first, width: 800, height: 1600, frameID: portraitFrameID)
         let second = try await tap.execute([
-            "frameId": .string(portrait.frameID.uuidString), "x": 200, "y": 400
+            "frameId": .string(portraitFrameID.uuidString), "x": 200, "y": 400
         ])
-        try assertImageResult(second, width: 1600, height: 800, frameID: landscape.frameID)
+        let landscapeFrameID = try resultFrameID(second)
+        try assertImageResult(second, width: 1600, height: 800, frameID: landscapeFrameID)
         let third = try await swipe.execute([
-            "frameId": .string(landscape.frameID.uuidString), "fromX": 100, "fromY": 200,
+            "frameId": .string(landscapeFrameID.uuidString), "fromX": 100, "fromY": 200,
             "toX": 1400, "toY": 700, "duration": 0.5
         ])
-        try assertImageResult(third, width: 390, height: 844, frameID: last.frameID)
+        try assertImageResult(third, width: 390, height: 844, frameID: try resultFrameID(third))
 
         let recorded = await controller.snapshot()
         XCTAssertEqual(recorded.captures, 3, "Each input includes exactly one fresh verification.")
         XCTAssertEqual(recorded.taps.count, 1)
         let recordedTap = try XCTUnwrap(recorded.taps.first)
         XCTAssertEqual(recordedTap.point, DevicePoint(x: 400, y: 800))
-        XCTAssertEqual(recordedTap.frameID, portrait.frameID)
+        XCTAssertEqual(recordedTap.frameID, portraitFrameID)
         XCTAssertEqual(recorded.swipes.count, 1)
         let recordedSwipe = try XCTUnwrap(recorded.swipes.first)
         XCTAssertEqual(recordedSwipe.from, DevicePoint(x: 200, y: 400))
         XCTAssertEqual(recordedSwipe.to, DevicePoint(x: 2800, y: 1400))
         XCTAssertEqual(recordedSwipe.duration, .milliseconds(500))
-        XCTAssertEqual(recordedSwipe.frameID, landscape.frameID)
+        XCTAssertEqual(recordedSwipe.frameID, landscapeFrameID)
     }
 
     func testCoordinatesInsideNativeImageButOutsideModelImageNeverDispatch() async throws {
         let original = try screenshot(width: 1600, height: 3200)
-        let actions: [DeviceAction] = [
+        let actions: [Eiscue.DeviceTaskAction] = [
             .tap(.init(x: 800, y: 10)), .tap(.init(x: 10, y: 1600)),
             .swipe(from: .init(x: 800, y: 10), to: .init(x: 20, y: 20), duration: 0.5),
             .swipe(from: .init(x: 10, y: 10), to: .init(x: 20, y: 1600), duration: 0.5)
@@ -104,11 +106,13 @@ final class DeviceObservationImageTests: XCTestCase {
         let landscape = try screenshot(width: 3200, height: 1600)
         let controller = ObservationImageController(frames: [portrait, landscape])
         let runner = makeRunner(controller)
-        _ = try await runner.step(.observe)
+        let previous = try observation(await runner.step(.observe))
         let current = try observation(await runner.step(.observe))
-        XCTAssertEqual(current.frameID, landscape.frameID)
+        XCTAssertNotEqual(current.frameID, previous.frameID)
+        XCTAssertEqual(current.width, 1600)
+        XCTAssertEqual(current.height, 800)
         do {
-            _ = try await runner.step(.action(.tap(.init(x: 100, y: 100)), frameID: portrait.frameID))
+            _ = try await runner.step(.action(.tap(.init(x: 100, y: 100)), frameID: previous.frameID))
             XCTFail("An old image must not use the newest image's coordinate mapping.")
         } catch {
             guard case .frame = error as? DeviceTaskError else { return XCTFail("Expected stale frame rejection.") }
@@ -124,20 +128,20 @@ final class DeviceObservationImageTests: XCTestCase {
         let controller = ObservationImageController(frames: [original, corrupt])
         var held = false
         var presentation: [String] = []
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control,
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control,
                                         timeoutSeconds: 30, log: { _, _ in }, onUnknown: {},
                                         onObservationWillCapture: { held = true; presentation.append("hold") },
                                         onActionFinished: { held = false; presentation.append("release") })
         let observe = try XCTUnwrap(session.tools.first { $0.name == "device_screenshot" })
         let tap = try XCTUnwrap(session.tools.first { $0.name == "device_tap" })
-        _ = try await observe.execute([:])
+        let observation = try await observe.execute([:])
         XCTAssertTrue(held)
-        let input: AgentJSONValue = ["frameId": .string(original.frameID.uuidString), "x": 200, "y": 400]
+        let input: AgentJSONValue = ["frameId": .string(try resultFrameID(observation).uuidString), "x": 200, "y": 400]
         do {
             _ = try await tap.execute(input)
             XCTFail("A submitted input without a usable verification image must pause.")
         } catch {
-            guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected a terminating pause: \(error)") }
+            guard case .paused = error as? AgentToolError else { return XCTFail("Expected a terminating pause: \(error)") }
         }
         XCTAssertEqual(session.phase, .paused)
         XCTAssertEqual(session.pauseReason, .verificationUnavailable)
@@ -152,6 +156,12 @@ final class DeviceObservationImageTests: XCTestCase {
         XCTAssertEqual(recorded.taps.count, 1)
         XCTAssertTrue(recorded.swipes.isEmpty)
         XCTAssertEqual(recorded.captures, 2)
+    }
+
+    private func resultFrameID(_ result: AgentToolResult) throws -> UUID {
+        let prefix = try XCTUnwrap(result.text.range(of: "frameId="))
+        let value = result.text[prefix.upperBound...].prefix(while: { $0 != ";" })
+        return try XCTUnwrap(UUID(uuidString: String(value)))
     }
 
     private func screenshot(width: Int, height: Int) throws -> DeviceScreenshot {
@@ -190,7 +200,7 @@ final class DeviceObservationImageTests: XCTestCase {
     }
 
     private func makeRunner(_ controller: ObservationImageController) -> DeviceTaskRunner {
-        DeviceTaskRunner(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+        DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
                          log: { _, _ in }, onUnknown: {})
     }
 
@@ -204,7 +214,9 @@ final class DeviceObservationImageTests: XCTestCase {
 
 private enum ObservationImageFixtureError: Error { case unexpectedResult }
 
-private actor ObservationImageController: DeviceController {
+private actor ObservationImageController: DeviceFixtureActuator {
+    var fixtureObservedFrameID: UUID?
+    var fixtureGeometry: DeviceFrameGeometry?
     struct Tap: Sendable { let point: DevicePoint; let frameID: UUID }
     struct Swipe: Sendable { let from: DevicePoint; let to: DevicePoint; let duration: Duration; let frameID: UUID }
     private var frames: [DeviceScreenshot]

@@ -81,12 +81,12 @@ import XCTest
         for chat in chats { try await fixture.model.repository.save(chat) }
         for record in records { try await fixture.model.journal.save(record) }
         let runtimeFiles = try chats.map { try fixture.seedRuntime(for: $0.id) }
-        XCTAssertNil(fixture.model.agent)
+        XCTAssertNil(fixture.model.configuredAgent)
 
         await fixture.model.deleteConversations([chats[0].id, chats[2].id])
 
         XCTAssertNil(fixture.model.errorMessage)
-        XCTAssertNil(fixture.model.agent, "Deletion must not configure or open an agent session.")
+        XCTAssertNil(fixture.model.configuredAgent, "Deletion must not configure or open an agent session.")
         XCTAssertEqual(fixture.model.conversations.map(\.id), [chats[1].id])
         XCTAssertEqual(fixture.model.runs.map(\.id), [records[2].id])
         XCTAssertEqual(fixture.model.interruptedConversationIDs, [chats[1].id])

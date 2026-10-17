@@ -8,6 +8,17 @@ enum RuntimeToolHistory {
     private enum ReadError: Error { case unavailable, unsupportedSchema }
     private enum Binding { case text(String), integer(Int64) }
 
+    static func acceptedRequestIDs(at url: URL) throws -> Set<UUID> {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        var connection: OpaquePointer?
+        let status = sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
+        defer { sqlite3_close_v2(connection) }
+        guard status == SQLITE_OK, let connection else { throw ReadError.unavailable }
+        let records = try rows("SELECT record FROM submissions", in: connection)
+        return Set(try records.map { try JSONDecoder().decode(SubmissionRecord.self, from: $0) }
+            .filter { $0.type == .input }.compactMap { $0.requestId.flatMap(UUID.init(uuidString:)) })
+    }
+
     static func result(at url: URL, requestID: UUID, toolCallID: String) throws -> AgentToolCompletion? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         try Task.checkCancellation()
@@ -62,7 +73,7 @@ enum RuntimeToolHistory {
         guard calls.count == 1, results.count == 1, let call = calls.first, let result = results.first,
               call.name == result.toolName, entries[0].assistantMessage != nil, entries[1].toolResult != nil else { return nil }
         return AgentToolCompletion(call: AgentToolCall(id: call.id, name: call.name,
-            arguments: (try? AgentJSONValue.from(call.arguments)) ?? .object([:])), result: RuntimeMapping.result(result))
+            arguments: (try? AgentJSONValue.from(call.arguments)) ?? .object([:])), result: RuntimeMapping.result(result, entry: entries[1]))
     }
 
     private static func execute(_ sql: String, in connection: OpaquePointer) throws {

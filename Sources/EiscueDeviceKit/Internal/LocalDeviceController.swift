@@ -4,7 +4,7 @@ import ImageIO
 import OSLog
 @preconcurrency import PhoneAgentNCM
 
-@MainActor final class LocalDeviceController: NSObject, DeviceController, @preconcurrency NetServiceDelegate {
+@MainActor final class LocalDeviceController: NSObject, DeviceActuator, NetworkRouteSetup, @preconcurrency NetServiceDelegate {
     private let identityStore: any PairingIdentityStore
     private let dependencies: LocalDeviceConnectionDependencies
     private var services: (any LocalDeviceSession)?
@@ -20,7 +20,7 @@ import OSLog
     private var busy = false
     private var ready = false
     private var failure = String(localized: "device.status.not-connected", defaultValue: "Device not connected", bundle: EiscueDeviceResources.bundle)
-    private var frames = FrameLedger()
+    private var capturedGeometry: DeviceFrameGeometry?
     private var mediaReleaseTask: Task<Bool, Never>?
     private var mediaReleaseID: UUID?
     private var releaseUnconfirmed = false
@@ -32,11 +32,28 @@ import OSLog
         super.init()
     }
 
-    func status() async -> DeviceStatus {
+    func cachedStatus() async -> DeviceStatus {
         guard dependencies.supportsPhysicalDevice else { return .unavailable(reason: DeviceControlError.unsupported.localizedDescription) }
         guard ready, let services else { return .unavailable(reason: failure) }
         let capabilities = Set(services.supportedControlActions.compactMap { DeviceCapability(rawValue: $0.rawValue) })
         return .ready(capabilities: capabilities)
+    }
+
+    func probe() async -> DeviceStatus {
+        guard !busy, mediaRequested, let services else { return await cachedStatus() }
+        busy = true; let token = epoch
+        defer { if token == epoch { busy = false } }
+        do {
+            let geometry = try await services.currentVideoGeometry()
+            try ensureCurrent(token)
+            // XCTest has no coordinate space until its first screenshot. A nil
+            // geometry revokes an old grant but does not mean transport loss.
+            if geometry == nil { capturedGeometry = nil }
+            ready = true; failure = ""
+        } catch {
+            if epoch == token { ready = false; capturedGeometry = nil; failure = Self.message(error) }
+        }
+        return await cachedStatus()
     }
 
     func hasPairingIdentity() async throws -> Bool {
@@ -209,7 +226,7 @@ import OSLog
         let token = epoch
         busy = true
         failure = switch method {
-        case .bluetoothBoard: throw DeviceControlError.unsupported
+        case .bluetoothBoard: throw DeviceControlError.routeUnsupported(.bluetoothBoard)
         case .localVPN: String(localized: "device.status.discovering", defaultValue: "Finding the local VPN connection", bundle: EiscueDeviceResources.bundle)
         case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB network board", bundle: EiscueDeviceResources.bundle)
         }
@@ -225,7 +242,7 @@ import OSLog
             try await withTaskCancellationHandler {
                 let authorization = ExistingSessionAuthorization(verifyExistingIdentity: true, screen: true, screenVideoStream: true, input: true)
                 switch method {
-                case .bluetoothBoard: throw DeviceControlError.unsupported
+                case .bluetoothBoard: throw DeviceControlError.routeUnsupported(.bluetoothBoard)
                 case .localVPN:
                     guard let vpn else { throw LocalVPNError.invalidConfiguration }
                     let discovery = dependencies.makeVPNDiscovery()
@@ -299,22 +316,19 @@ import OSLog
     }
     #endif
 
-    func finishTask() async throws {
+    func releaseInput() async throws {
         guard !busy else { throw DeviceControlError.busy }
         // Native actions finish their press/release sequence before returning.
         // Drop the task's coordinates without closing the user's connection.
-        frames.invalidate()
+        capturedGeometry = nil
     }
 
-    func disconnect() async {
-        if let release = disconnectNow() { _ = await release.value }
-    }
-    func disconnectAndConfirmRelease() async -> Bool {
-        if let release = disconnectNow() { return await release.value }
-        return !releaseUnconfirmed
+    func disconnect() async -> ReleaseConfirmation {
+        if let release = disconnectNow() { return await release.value ? .confirmed : .unconfirmed }
+        return releaseUnconfirmed ? .unconfirmed : .confirmed
     }
     @discardableResult private func disconnectNow() -> Task<Bool, Never>? {
-        epoch = UUID(); ready = false; busy = false; frames.invalidate()
+        epoch = UUID(); ready = false; busy = false; capturedGeometry = nil
         pairingTask?.cancel(); pairingTask = nil
         pairing?.close(); pairing = nil
         pairingContinuation?.finish(throwing: CancellationError()); pairingContinuation = nil
@@ -350,7 +364,7 @@ import OSLog
         return mediaReleaseTask
     }
 
-    func captureScreenshot() async throws -> DeviceScreenshot {
+    func capture() async throws -> DeviceScreenshot {
         let token = epoch
         return try await operation { service in
             let snapshot = try await service.captureVideoJPEGWithGeometry()
@@ -366,56 +380,76 @@ import OSLog
             guard ["image/jpeg", "image/png"].contains(snapshot.mimeType) else {
                 throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The screen image is invalid.", bundle: EiscueDeviceResources.bundle))
             }
-            let frame = DeviceScreenshot(width: width, height: height, mimeType: snapshot.mimeType, data: data)
-            self.frames.record(frame, geometryID: snapshot.geometry.id)
+            let geometry = DeviceFrameGeometry(sessionID: token, revision: snapshot.geometry.id.uuidString, width: width, height: height)
+            let frame = DeviceScreenshot(width: width, height: height, mimeType: snapshot.mimeType, data: data, geometry: geometry)
+            self.capturedGeometry = geometry
             return frame
         }
     }
 
-    func tap(at point: DevicePoint, frameID: UUID) async throws {
-        try await operation { service in
-            let point = try await self.consumeFrame(service: service, id: frameID, points: [point])[0]
-            try await self.deliver { _ = try await service.tapDelivery(x: point.0, y: point.1) }
-        }
+    func frameState() async throws -> DeviceFrameState {
+        guard ready, let services else { throw DeviceControlError.notConnected }
+        guard let capturedGeometry else { throw DeviceControlError.staleFrame }
+        let token = epoch
+        let current: NativeVideoGeometry?
+        do { current = try await services.currentVideoGeometry(); try ensureCurrent(token) }
+        catch { throw Self.convert(error) }
+        guard let current else { self.capturedGeometry = nil; throw DeviceControlError.staleFrame }
+        let geometry = DeviceFrameGeometry(sessionID: token, revision: current.id.uuidString,
+                                          width: capturedGeometry.width, height: capturedGeometry.height)
+        return DeviceFrameState(geometry: geometry, isLive: true)
     }
 
-    func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frameID: UUID) async throws {
-        guard duration >= .milliseconds(100), duration <= .seconds(2) else { throw DeviceControlError.invalidDuration }
-        let value = duration.components
-        let milliseconds = UInt16(value.seconds * 1000 + value.attoseconds / 1_000_000_000_000_000)
-        try await operation { service in
-            let points = try await self.consumeFrame(service: service, id: frameID, points: [from, to])
-            try await self.deliver {
-                _ = try await service.dragDelivery(fromX: points[0].0, fromY: points[0].1, toX: points[1].0, toY: points[1].1, durationMS: milliseconds)
+    func perform(_ action: DeviceAction, frame: FrameGrant) async throws -> SubmissionResult {
+        let service: any LocalDeviceSession
+        do {
+            try Task.checkCancellation()
+            guard ready, let current = services else { throw DeviceControlError.notConnected }
+            guard !busy else { throw DeviceControlError.busy }
+            guard current.supportedControlActions.contains(where: { $0.rawValue == action.capability.rawValue }) else {
+                throw DeviceControlError.capabilityUnavailable(action.capability)
             }
+            let state = try await frameState()
+            guard state.geometry == frame.geometry else { throw DeviceControlError.staleFrame }
+            service = current
+        } catch { return .notSubmitted((Self.convert(error) as? DeviceControlError) ?? .connectionLost) }
+        busy = true; let token = epoch
+        defer { if token == epoch { busy = false } }
+        // GuardedDevice owns validation and single-use authority. Conversion is
+        // transport-specific; it uses exactly the geometry attached to the grant.
+        func point(_ point: DevicePoint) -> (UInt16, UInt16) {
+            (UInt16((point.x / Double(frame.geometry.width) * 65535).rounded()),
+             UInt16((point.y / Double(frame.geometry.height) * 65535).rounded()))
         }
-    }
-
-    func typeText(_ text: String) async throws { try await sendText(text, frameID: nil) }
-    func typeText(_ text: String, frameID: UUID) async throws { try await sendText(text, frameID: frameID) }
-    private func sendText(_ text: String, frameID: UUID?) async throws {
-        try DeviceInputValidation.text(text)
-        if ready, services?.supportedControlActions.contains(.textInput) == false { throw DeviceControlError.unsupported }
-        try await operation { service in
-            if let frameID { _ = try await self.consumeFrame(service: service, id: frameID, points: []) }
-            else { self.frames.invalidate() }
-            try await self.deliver { try await service.typeText(text) }
-        }
-    }
-
-    func launchApplication(bundleID: String) async throws {
-        try DeviceInputValidation.bundleID(bundleID)
-        try await operation { service in
-            self.frames.invalidate()
-            try await self.deliver { try await service.launchApplication(bundleID: bundleID, arguments: []) }
-        }
-    }
-
-    func home() async throws {
-        if ready, services?.supportedControlActions.contains(.home) == false { throw DeviceControlError.unsupported }
-        try await operation { service in
-            self.frames.invalidate()
-            try await self.deliver { try await service.home() }
+        do {
+            try await withTaskCancellationHandler {
+                switch action {
+                case .tap(let value):
+                    let p = point(value); _ = try await service.tapDelivery(x: p.0, y: p.1)
+                case .swipe(let from, let to, let duration):
+                    let a = point(from), b = point(to), value = duration.components
+                    let milliseconds = UInt16(value.seconds * 1000 + value.attoseconds / 1_000_000_000_000_000)
+                    _ = try await service.dragDelivery(fromX: a.0, fromY: a.1, toX: b.0, toY: b.1, durationMS: milliseconds)
+                case .typeText(let value): try await service.typeText(value)
+                case .launch(let bundleID): try await service.launchApplication(bundleID: bundleID, arguments: [])
+                case .home: try await service.home()
+                case .pressKey: return
+                }
+                try ensureCurrent(token)
+            } onCancel: { [weak self] in
+                Task { @MainActor in if let self, self.epoch == token { self.disconnectNow() } }
+            }
+            return .submitted
+        } catch NativeBackendError.coordinateSpaceChanged {
+            capturedGeometry = nil; return .notSubmitted(.staleFrame)
+        } catch NativeBackendError.unsupportedControlAction {
+            return .notSubmitted(.capabilityUnavailable(action.capability))
+        } catch NativeBackendError.busy {
+            return .notSubmitted(.busy)
+        } catch {
+            // A cancellation or epoch change after dispatch cannot prove that
+            // input did not reach the device, even after an acknowledged send.
+            throw DeviceControlError.deliveryUnknown("")
         }
     }
 
@@ -433,22 +467,6 @@ import OSLog
     private func ensureCurrent(_ token: UUID) throws {
         try Task.checkCancellation()
         guard token == epoch else { throw CancellationError() }
-    }
-
-    private func consumeFrame(service: any LocalDeviceSession, id: UUID, points: [DevicePoint]) async throws -> [(UInt16, UInt16)] {
-        let token = epoch
-        let geometry = try await service.currentVideoGeometry()
-        try ensureCurrent(token)
-        return try frames.consume(id: id, points: points, geometryID: geometry?.id)
-    }
-
-    private func deliver(_ body: () async throws -> Void) async throws {
-        try Task.checkCancellation()
-        do { try await body() }
-        catch NativeBackendError.coordinateSpaceChanged { throw DeviceControlError.staleFrame }
-        catch NativeBackendError.unsupportedControlAction { throw DeviceControlError.unsupported }
-        catch NativeBackendError.busy { throw DeviceControlError.busy }
-        catch { throw DeviceControlError.deliveryUnknown(Self.message(error)) }
     }
 
     private func operation<T: Sendable>(_ body: (any LocalDeviceSession) async throws -> T) async throws -> T {
@@ -472,7 +490,7 @@ import OSLog
                 throw CancellationError()
             }
             if case NativeBackendError.coordinateSpaceChanged = error {
-                frames.invalidate()
+                capturedGeometry = nil
                 throw DeviceControlError.staleFrame
             }
             if case NativeBackendError.applicationQueryFailure(stage: 21, cause: let cause) = error,
@@ -480,7 +498,7 @@ import OSLog
                 // AppService queries use an independent read-only stream. The
                 // native backend retains the parent session on these failures;
                 // tearing it down here would also end working screen/control.
-                frames.invalidate()
+                capturedGeometry = nil
                 throw Self.convert(error)
             }
             // Validation failures happen before native submission and preserve the connection.
@@ -496,7 +514,17 @@ import OSLog
     private static func convert(_ error: Error) -> Error {
         if error is CancellationError || error is DeviceControlError { return error }
         if case NativeBackendError.coordinateSpaceChanged = error { return DeviceControlError.staleFrame }
-        if case NativeBackendError.unsupportedControlAction = error { return DeviceControlError.unsupported }
+        if case NativeBackendError.unsupportedControlAction = error { return DeviceControlError.serviceUnavailable(.input) }
+        if case NativeBackendError.closed = error { return DeviceControlError.connectionLost }
+        if case NativeBackendError.transport = error { return DeviceControlError.connectionLost }
+        if case NativeBackendError.applicationQueryFailure(stage: 21, cause: let cause) = error, [UInt32(1), 2, 4].contains(cause) {
+            return DeviceControlError.serviceUnavailable(.applicationList)
+        }
+        if case NativeBackendError.applicationQueryFailure = error { return DeviceControlError.connectionLost }
+        if case NativeBackendError.screenshotFailure = error { return DeviceControlError.connectionLost }
+        if let value = error as? NCMError {
+            switch value { case .disconnected, .network: return DeviceControlError.connectionLost; default: break }
+        }
         if let native = error as? NativeBackendError { NativeDeviceErrorPresentation.record(native) }
         return DeviceControlError.connection(message(error))
     }
@@ -565,7 +593,7 @@ enum NativeDeviceErrorPresentation {
         case .touchPreparationFailure(stage: _, cause: 2): return String(localized: "device.backend.touch-timed-out", defaultValue: "Device control setup timed out. Keep the device unlocked, then reconnect.", bundle: bundle)
         case .touchPreparationFailure: return String(localized: "device.backend.touch-not-ready", defaultValue: "Device control could not start. Chat is still available.", bundle: bundle)
         case .coordinateSpaceChanged: return DeviceControlError.staleFrame.localizedDescription
-        case .unsupportedControlAction: return DeviceControlError.unsupported.localizedDescription
+        case .unsupportedControlAction: return DeviceControlError.serviceUnavailable(.input).localizedDescription
         case .automationDeliveryUnknown: return String(localized: "device.backend.automation-delivery-unknown", defaultValue: "The device did not confirm this action; it will not be repeated. Check the screen before reconnecting.", bundle: bundle)
         case .automationAuthorizationTimedOut: return String(localized: "device.backend.automation-authorization-timed-out", defaultValue: "System authorization timed out. Keep the device unlocked and reconnect. Enter your passcode only on the system’s Enable UI Automation screen if asked.", bundle: bundle)
         case .screenshotFailure: return String(localized: "device.backend.screenshot-failed", defaultValue: "Could not read the screen. Keep the device unlocked, then reconnect.", bundle: bundle)
@@ -599,21 +627,6 @@ enum NativeDeviceErrorPresentation {
         fflush(stdout)
         #endif
         logger.error("operation=\(diagnostic.operation, privacy: .public) stage=\(diagnostic.stage, privacy: .public) cause=\(diagnostic.cause, privacy: .public)")
-    }
-}
-
-enum DeviceInputValidation {
-    static func text(_ text: String) throws {
-        guard !text.isEmpty, text.utf8.count <= 8 * 1024, !text.utf8.contains(0),
-              let payload = try? JSONSerialization.data(withJSONObject: ["text": text]), payload.count <= 16 * 1024 else {
-            throw DeviceControlError.invalidText
-        }
-    }
-    static func bundleID(_ bundleID: String) throws {
-        guard !bundleID.isEmpty, bundleID.utf8.count <= 256,
-              bundleID.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95].contains($0) }) else {
-            throw DeviceControlError.invalidBundleID
-        }
     }
 }
 

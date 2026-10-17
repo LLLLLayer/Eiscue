@@ -1753,6 +1753,23 @@
           }
         }
       }
+    },
+    "connection.stop_to_switch": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop the task before switching."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止任务后可切换。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

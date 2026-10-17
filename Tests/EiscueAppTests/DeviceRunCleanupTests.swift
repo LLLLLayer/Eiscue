@@ -20,7 +20,7 @@ final class DeviceRunCleanupTests: XCTestCase {
     func testScreenshotExecutionDisconnectsEvenWhenItsPreparedLogCannotBeSaved() async throws {
         for failLog in [false, true] {
             let controller = CleanupDeviceController()
-            let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control,
+            let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control,
                                             timeoutSeconds: 30, log: { kind, _ in
                 if failLog && kind == "observation.prepared" { throw CleanupFixtureError.persistence }
             }, onUnknown: {})
@@ -30,7 +30,7 @@ final class DeviceRunCleanupTests: XCTestCase {
                 XCTAssertFalse(failLog, "The prepared-log failure must reach the caller.")
             } catch {
                 XCTAssertTrue(failLog)
-                XCTAssertEqual(error as? CleanupFixtureError, .persistence)
+                XCTAssertEqual(error as? AgentToolError, .outcomeUnknown)
             }
 
             // Deliberately omit activity events: execution may precede event delivery.
@@ -167,14 +167,14 @@ final class DeviceRunCleanupTests: XCTestCase {
     }
 
     private func makeSession(_ controller: CleanupDeviceController, scope: TaskScope = .control) -> DeviceToolSession {
-        DeviceToolSession(client: DeviceClient(controller: controller), scope: scope,
+        DeviceToolSession(client: DeviceClient(actuator: controller), scope: scope,
                           timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
     }
 
     private func finish(_ run: RunRecord, disconnectAfterTask: Bool = false,
                         modelRequestFailed: Bool = true, session: DeviceToolSession?, stopRequested: Bool = false,
                         controller: CleanupDeviceController) async throws {
-        let client = DeviceClient(controller: controller)
+        let client = DeviceClient(actuator: controller)
         try await DeviceRunCleanup.finish(run: run, disconnectAfterTask: disconnectAfterTask, modelRequestFailed: modelRequestFailed,
                                           deviceTools: session, stopRequested: stopRequested,
                                           finishConnection: { try await client.finishTask() },
@@ -184,7 +184,9 @@ final class DeviceRunCleanupTests: XCTestCase {
 
 private enum CleanupFixtureError: Error, Equatable { case persistence }
 
-private actor CleanupDeviceController: DeviceController {
+private actor CleanupDeviceController: DeviceFixtureActuator {
+    var fixtureObservedFrameID: UUID?
+    var fixtureGeometry: DeviceFrameGeometry?
     private(set) var events: [String] = []
     private let failRelease: Bool
 
@@ -195,9 +197,9 @@ private actor CleanupDeviceController: DeviceController {
         events.append("screenshot")
         return DeviceScreenshot(width: 390, height: 844, mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
     }
-    func finishTask() async throws {
+    func fixtureReleaseInput() async throws {
         events.append("release")
         if failRelease { throw DeviceControlError.deliveryUnknown("Fixture release failed") }
     }
-    func disconnect() async { events.append("disconnect") }
+    func fixtureDisconnect() async { events.append("disconnect") }
 }

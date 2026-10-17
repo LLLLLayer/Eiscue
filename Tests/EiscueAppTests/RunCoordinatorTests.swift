@@ -42,19 +42,37 @@ import XCTest
         let cancelled = await engine.wasCancelled()
         XCTAssertTrue(cancelled)
         XCTAssertEqual(fixture.model.runs.first?.state, .failed)
+        XCTAssertEqual(fixture.model.runs.first?.stopCause, .eventSaveFailed)
         XCTAssertFalse(fixture.model.isBusy)
         XCTAssertNil(fixture.model.activeRun)
         XCTAssertTrue(fixture.model.selectedConversation?.messages.allSatisfy { $0.role == .user } == true)
+    }
+
+    func testEventPersistenceFailureAlsoRetainsFailureFromRuntimeCancellationClose() async throws {
+        let fixture = try CoordinatorFixture(repository: CoordinatorStore())
+        defer { fixture.cleanUp() }
+        let engine = CoordinatorEngine(close: { throw AgentError.cleanupFailed("Contract close failed") })
+        fixture.model.runCoordinator = RunCoordinator(model: fixture.model) { _, _, _ in AgentClient(engine: engine) }
+        fixture.model.draft = "Hello"
+        await fixture.model.sendMessage()
+        let run = try XCTUnwrap(fixture.model.runs.first)
+        XCTAssertEqual(run.state, .failed)
+        XCTAssertEqual(run.stopCause, .eventSaveFailed)
+        let storageError = String(format: String(localized: "error.save_run", table: "Runtime"),
+                                  fixture.model.safeError(CocoaError(.fileWriteNoPermission)))
+        XCTAssertEqual(run.cleanupFailure, "Contract close failed\n" + storageError)
+        XCTAssertEqual(fixture.model.errorMessage, storageError)
+        XCTAssertFalse(fixture.model.isBusy)
     }
 
     func testStaleStopDoesNotCancelCurrentRun() async throws {
         let fixture = try CoordinatorFixture()
         defer { fixture.cleanUp() }
         let engine = CoordinatorEngine()
-        fixture.model.agent = AgentClient(engine: engine)
+        fixture.model.configuredAgent = AgentClient(engine: engine)
         let run = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: .now,
                             scope: .chat, model: "fixture", skill: nil, state: .running, detail: "Working", events: [])
-        fixture.model.activeRun = run
+        fixture.model.runCoordinator.publish(run)
         await fixture.model.stop(expectedRunID: UUID())
         let cancelled = await engine.wasCancelled()
         XCTAssertFalse(cancelled)
@@ -84,25 +102,29 @@ import XCTest
     }
 }
 
-private actor CoordinatorEngine: AgentEngine {
-    var availability: AgentAvailability { .ready }
+/// App integration fake uses the same durable lifecycle as the shared contract fixture.
+actor CoordinatorEngine: AgentEngine {
+    private let base: ContractFakeEngine
     private var request: AgentRequest?
     private var cancelled = false
+    var availability: AgentAvailability { .ready }
+    init(store: ContractFakeStore = ContractFakeStore(), tool: AgentTool? = nil,
+         close: @escaping @Sendable () async throws -> Void = {}) {
+        base = ContractFakeEngine(store: store, tool: tool, answerText: "Hello back", close: close)
+    }
     func lastRequest() -> AgentRequest? { request }
     func wasCancelled() -> Bool { cancelled }
     func run(request: AgentRequest) async throws -> AsyncThrowingStream<AgentEvent, Error> {
         self.request = request
-        return AsyncThrowingStream { continuation in
-            continuation.yield(.requestAccepted(request.requestID))
-            continuation.yield(.message(AgentMessage(role: .assistant, text: "Hello back")))
-            continuation.yield(.finished(.completed))
-            continuation.finish()
-        }
+        return try await base.run(request: request)
     }
-    func recover(conversationID: UUID) async throws -> AgentRecovery { AgentRecovery(messages: [], hasInterruptedRun: false) }
-    func cancel() async throws { cancelled = true }
-    func cancel(conversationID: UUID) async throws { cancelled = true }
-    func removeConversation(id: UUID) async throws {}
+    func recover(conversationID: UUID) async throws -> AgentRecovery { try await base.recover(conversationID: conversationID) }
+    func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? {
+        try await base.toolResult(conversationID: conversationID, requestID: requestID, toolCallID: toolCallID)
+    }
+    func cancel() async throws { cancelled = true; try await base.cancel() }
+    func cancel(conversationID: UUID) async throws { cancelled = true; try await base.cancel(conversationID: conversationID) }
+    func removeConversation(id: UUID) async throws { try await base.removeConversation(id: id) }
 }
 
 private actor CoordinatorStore: ConversationRepository {

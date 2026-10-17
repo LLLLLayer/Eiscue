@@ -257,7 +257,9 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
             case .gattWriteRejected, .malformedReply, .hidSendFailed: failure = .connectionFailed
             default: failure = reason
             }
-            closeSession(connectError: failure, commandError: failure, finalState: .failed(failure))
+            // A failed read-only probe downgrades host readiness. Preserve the
+            // authenticated connection; this request cannot have emitted input.
+            finishCommand(.failure(failure))
         } else {
             closeSession(connectError: reason, commandError: unknownDelivery(reason), finalState: .failed(.deliveryUnknown))
         }

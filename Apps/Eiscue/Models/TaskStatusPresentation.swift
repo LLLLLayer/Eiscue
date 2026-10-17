@@ -46,6 +46,9 @@ struct TaskStatusPresentation: Equatable, Sendable {
         case .paused:
             stage = .paused
             phase = String(localized: "task.status.phase.paused", defaultValue: "Open Eiscue to continue", table: "TaskStatus")
+        case .outcomeUnknown:
+            stage = .interrupted
+            phase = String(localized: "run.outcome_unknown", table: "Runtime")
         case .interrupted:
             stage = .interrupted
             phase = String(localized: "task.status.phase.interrupted", defaultValue: "Open Eiscue to review the task", table: "TaskStatus")

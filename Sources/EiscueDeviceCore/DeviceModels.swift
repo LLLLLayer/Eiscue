@@ -51,9 +51,10 @@ public struct DeviceScreenshot: Sendable, Equatable {
     public let height: Int
     public let mimeType: String
     public let data: Data
-    public init(frameID: UUID = UUID(), capturedAt: Date = Date(), width: Int, height: Int, mimeType: String, data: Data) {
+    public let geometry: DeviceFrameGeometry?
+    public init(frameID: UUID = UUID(), capturedAt: Date = Date(), width: Int, height: Int, mimeType: String, data: Data, geometry: DeviceFrameGeometry? = nil) {
         self.frameID = frameID; self.capturedAt = capturedAt
-        self.width = width; self.height = height; self.mimeType = mimeType; self.data = data
+        self.width = width; self.height = height; self.mimeType = mimeType; self.data = data; self.geometry = geometry
     }
 }
 
@@ -73,6 +74,10 @@ public enum DevicePairingEvent: Sendable, Equatable {
 
 public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
     case unsupported, notConnected, busy, noIdentity, invalidIdentity, pairingAlreadyExists
+    case connectionLost
+    case serviceUnavailable(DeviceService)
+    case capabilityUnavailable(DeviceCapability)
+    case routeUnsupported(DeviceConnectionMethod)
     case systemPairingUnavailable
     case backendUnavailable(DeviceControlBackend)
     case staleFrame, invalidCoordinates, invalidDuration, invalidText, invalidBundleID
@@ -86,6 +91,10 @@ public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
 
     public var errorDescription: String? {
         switch self {
+        case .connectionLost: String(localized: "device.error.connection-lost", defaultValue: "Device connection lost. Reconnect the device.", bundle: .module)
+        case .serviceUnavailable: String(localized: "device.error.service-unavailable", defaultValue: "This device service is unavailable. Other device services may still work.", bundle: .module)
+        case .capabilityUnavailable: String(localized: "device.error.capability-unavailable", defaultValue: "This action is unavailable on the selected device connection.", bundle: .module)
+        case .routeUnsupported: String(localized: "device.error.route-unsupported", defaultValue: "The selected connection does not support this route.", bundle: .module)
         case .unsupported: String(localized: "device.error.unsupported", defaultValue: "Local device control needs a physical iOS device. This connection is unavailable on simulators and Macs.", bundle: .module)
         case .notConnected: String(localized: "device.error.not-connected", defaultValue: "Device not connected. Complete pairing, then connect using your selected method.", bundle: .module)
         case .busy: String(localized: "device.error.busy", defaultValue: "The device is busy. Wait for the current operation to finish.", bundle: .module)
@@ -106,3 +115,5 @@ public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
         }
     }
 }
+
+public enum DeviceService: String, Codable, Sendable { case screen, input, applicationList, developerServices, bluetooth }

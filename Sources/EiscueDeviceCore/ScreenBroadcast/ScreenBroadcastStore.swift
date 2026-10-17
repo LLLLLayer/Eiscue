@@ -62,7 +62,10 @@ public struct ScreenBroadcastStore: Sendable {
     public static let maximumFrameAge: TimeInterval = 3
     public static let maximumPixelDimension = 1600
 
+    private let cache = RecordCache()
     private let directory: URL
+    public var readMetrics: ScreenBroadcastReadMetrics { cache.metrics }
+
     private var recordURL: URL { directory.appendingPathComponent("latest.plist") }
     private var stopURL: URL { directory.appendingPathComponent("stop.plist") }
     private var heartbeatURL: URL { directory.appendingPathComponent("heartbeat.plist") }
@@ -198,7 +201,7 @@ public struct ScreenBroadcastStore: Sendable {
         return try read(StopRequest.self, from: stopURL, maximumBytes: 4096).sessionID == sessionID
     }
 
-    private struct Record: Codable {
+    private struct Record: Codable, Sendable {
         var schemaVersion = 1
         let sessionID: UUID
         let phase: ScreenBroadcastPhase
@@ -236,7 +239,9 @@ public struct ScreenBroadcastStore: Sendable {
     }
 
     private func readRecord() throws -> Record {
-        let record = try read(Record.self, from: recordURL, maximumBytes: Self.maximumFrameBytes + 16_384)
+        // Stat first: an unchanged latest.plist never rereads or decodes JPEG
+        // bytes during geometry checks. Atomic replacements change the inode.
+        let record = try cache.read(from: recordURL, maximumBytes: Self.maximumFrameBytes + 16_384)
         guard record.schemaVersion == 1,
               [.starting, .active, .paused, .ended].contains(record.phase) else {
             throw ScreenBroadcastError.invalidFrame
@@ -250,6 +255,40 @@ public struct ScreenBroadcastStore: Sendable {
             throw ScreenBroadcastError.invalidFrame
         }
         return record
+    }
+
+    private final class RecordCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var signature: Signature?
+        private var record: Record?
+        private var counts = ScreenBroadcastReadMetrics()
+        var metrics: ScreenBroadcastReadMetrics { lock.withLock { counts } }
+        private struct Signature: Equatable {
+            let modified: Date
+            let size: UInt64
+            let inode: UInt64
+        }
+        func read(from url: URL, maximumBytes: Int) throws -> Record {
+            try lock.withLock {
+                do {
+                    counts.statCount += 1
+                    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+                    guard let modified = attributes[.modificationDate] as? Date,
+                          let size = attributes[.size] as? NSNumber,
+                          let inode = attributes[.systemFileNumber] as? NSNumber,
+                          size.uint64Value <= UInt64(maximumBytes) else { throw ScreenBroadcastError.invalidFrame }
+                    let current = Signature(modified: modified, size: size.uint64Value, inode: inode.uint64Value)
+                    if signature == current, let record { return record }
+                    let data = try Data(contentsOf: url)
+                    guard data.count <= maximumBytes else { throw ScreenBroadcastError.invalidFrame }
+                    let value = try PropertyListDecoder().decode(Record.self, from: data)
+                    counts.decodeCount += 1; counts.decodedBytes += data.count
+                    if Thread.isMainThread { counts.mainThreadDecodeCount += 1 }
+                    signature = current; record = value
+                    return value
+                } catch { signature = nil; record = nil; throw error }
+            }
+        }
     }
 
     private func isFresh(_ frame: ScreenBroadcastFrame?, maximumAge: TimeInterval) -> Bool {
@@ -308,4 +347,12 @@ public struct ScreenBroadcastStore: Sendable {
         try data.write(to: url, options: .atomic)
         #endif
     }
+}
+
+/// Offline fixture counters; these contain sizes and counts, never frame data.
+public struct ScreenBroadcastReadMetrics: Sendable, Equatable {
+    public fileprivate(set) var statCount = 0
+    public fileprivate(set) var decodeCount = 0
+    public fileprivate(set) var decodedBytes = 0
+    public fileprivate(set) var mainThreadDecodeCount = 0
 }

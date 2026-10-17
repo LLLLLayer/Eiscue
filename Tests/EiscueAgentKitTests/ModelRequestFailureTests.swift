@@ -32,11 +32,11 @@ struct ModelRequestFailureTests {
         do {
             for try await _ in try await fixture.client.run(request: .init(conversationID: UUID(), prompt: "Hello")) {}
             Issue.record("Durable cleanup failure must reach the host.")
-        } catch AgentError.runtime(let message) {
+        } catch AgentError.cleanupFailed(let message) {
             #expect(message.contains("Durable cleanup failed"))
             #expect(!message.contains(FailureFixture.secret))
             #expect(message.contains("[redacted]"))
-        } catch { Issue.record("Cleanup must downgrade a model error to runtime failure, got \(error)") }
+        } catch { Issue.record("Cleanup must surface its own failure independently of the model error, got \(error)") }
         #expect(fixture.toolCalls.withLock { $0 } == 0)
     }
 

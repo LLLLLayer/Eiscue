@@ -63,6 +63,9 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertFalse(model.canSend, "A temporarily released connection must not accidentally choose chat scope.")
         XCTAssertNil(model.screenshot)
         XCTAssertNil(model.activeDeviceConnectionMethod)
+        XCTAssertEqual(model.deviceSession.owner, .dictation(id))
+        XCTAssertEqual(model.deviceSession.state, .idle(route: .usbBoard))
+        XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
         XCTAssertTrue(model.hasPairingIdentity)
         XCTAssertFalse(model.localTunnel.isConnected)
         let error = await model.finishDeviceDictation(id: id)
@@ -72,6 +75,9 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertTrue(model.hasPairingIdentity)
         XCTAssertEqual(model.activeDeviceControlBackend, .coreDevice)
         XCTAssertEqual(model.deviceControlBackend, .automatic)
+        XCTAssertEqual(model.deviceSession.backendPreference, .automatic)
+        XCTAssertNil(model.deviceSession.owner)
+        XCTAssertEqual(model.deviceSession.state, .connected(route: .usbBoard, backend: .coreDevice, status: model.deviceStatus))
         let calls = await fixture.controller.calls()
         XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
         XCTAssertEqual(calls.backends, [.automatic, .coreDevice])
@@ -136,7 +142,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
                 operatingSystemVersion: .init(majorVersion: major, minorVersion: 0, patchVersion: 0))
             let model = fixture.model
             // Model readiness is injected so the HID case never contacts a real board.
-            model.deviceClient = DeviceClient(controller: fixture.controller)
+            model.deviceClient = DeviceClient(actuator: fixture.controller, networkSetup: fixture.controller)
             model.activeDeviceConnectionMethod = connected ? method : nil
             model.activeDeviceControlBackend = connected ? backend : nil
             if connected { model.deviceStatus = .ready(capabilities: [.screenshot, .tap]) }
@@ -164,7 +170,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
                 let fixture = try Fixture(savedMethod: method.rawValue, savedBackend: backend.rawValue,
                     operatingSystemVersion: .init(majorVersion: major, minorVersion: 0, patchVersion: 0))
                 let model = fixture.model
-                model.deviceClient = DeviceClient(controller: fixture.controller)
+                model.deviceClient = DeviceClient(actuator: fixture.controller, networkSetup: fixture.controller)
                 model.activeDeviceConnectionMethod = connected ? method : nil
                 model.activeDeviceControlBackend = connected ? backend : nil
                 if connected { model.deviceStatus = .ready(capabilities: [.screenshot, .tap]) }
@@ -198,7 +204,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
             model.selectedConversationID = conversationID
             let run = RunRecord(id: UUID(), conversationID: conversationID, requestID: UUID(), startedAt: .now,
                 scope: .control, model: "fixture", skill: nil, state: state, detail: "", events: [])
-            if state == .running { model.activeRun = run } else { model.runs = [run] }
+            if state == .running { model.runCoordinator.publish(run) } else { model.runs = [run] }
             if state == .interrupted { model.interruptedConversationIDs.insert(conversationID) }
             let id = UUID()
             do { try await model.prepareDeviceForDictation(id: id); XCTFail("Run state \(state) must block dictation handoff.") }
@@ -352,6 +358,10 @@ final class DeviceConnectionMethodTests: XCTestCase {
             XCTAssertFalse(model.isDeviceReady)
             XCTAssertFalse(model.isConnecting)
             XCTAssertNil(model.dictationDeviceRestoration)
+            XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertNil(model.deviceSession.owner)
+            XCTAssertEqual(model.deviceSession.state, .idle(route: .usbBoard))
+            XCTAssertThrowsError(try model.deviceSession.acquire(.run(UUID())))
             let calls = await fixture.controller.calls()
             XCTAssertEqual(calls.methods, [.usbBoard])
             XCTAssertEqual(calls.disconnects, 1)
@@ -426,7 +436,8 @@ final class DeviceConnectionMethodTests: XCTestCase {
         let cancel = Task { await model.finishDeviceDictation(id: id, reconnect: false) }
         defer { Task { await fixture.controller.completePendingDisconnect() } }
         try await waitUntil { await fixture.controller.calls().disconnects == 2 }
-        XCTAssertTrue(model.isConnecting)
+        XCTAssertTrue(model.deviceSession.isTransitioning)
+        XCTAssertEqual(model.deviceSession.owner, .dictation(id))
         XCTAssertNotNil(model.dictationDeviceRestoration)
         XCTAssertFalse(model.canSend, "Cancelling restoration must not race an unfinished media release.")
         XCTAssertEqual(model.draft, "Completed dictation")
@@ -557,14 +568,12 @@ final class DeviceConnectionMethodTests: XCTestCase {
         let fixture = try Fixture(savedMethod: "usbBoard", suspendsDisconnect: true,
             operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
         let model = fixture.model
-        let operationID = model.deviceOperationID
         let switching = Task { await model.selectDeviceControlBackend(.xcTest) }
         try await waitUntil { await fixture.controller.calls().disconnects == 1 }
         XCTAssertFalse(model.isConnecting)
         XCTAssertTrue(model.isChangingDeviceConnectionMethod)
         XCTAssertFalse(model.canChangeDeviceControlBackend)
         XCTAssertEqual(model.deviceControlBackend, .automatic)
-        XCTAssertEqual(model.deviceOperationID, operationID)
         await fixture.controller.completePendingDisconnect()
         await switching.value
         XCTAssertEqual(model.deviceControlBackend, .xcTest)
@@ -680,33 +689,33 @@ final class DeviceConnectionMethodTests: XCTestCase {
         for state in [RunState.running, .paused, .interrupted] {
             let run = RunRecord(id: UUID(), conversationID: conversationID, requestID: UUID(), startedAt: .now,
                                 scope: .control, model: "fixture", skill: nil, state: state, detail: "", events: [])
-            if state == .running { model.activeRun = run }
+            if state == .running { model.runCoordinator.publish(run) }
             else { model.runs = [run] }
             if state == .interrupted { model.interruptedConversationIDs.insert(conversationID) }
             XCTAssertFalse(model.canChangeDeviceControlBackend)
             await model.selectDeviceControlBackend(.xcTest)
             XCTAssertEqual(model.deviceControlBackend, .automatic)
-            model.activeRun = nil; model.runs = []; model.interruptedConversationIDs.removeAll()
+            model.runCoordinator.publish(nil); model.runs = []; model.interruptedConversationIDs.removeAll()
         }
         let calls = await fixture.controller.calls()
         XCTAssertEqual(calls.disconnects, 0)
         XCTAssertTrue(model.canChangeDeviceControlBackend)
     }
 
-    func testLegacyInjectedControllerKeepsAutomaticBehaviorAndRejectsExplicitSelection() async throws {
+    func testInjectedRouteRejectsAnUnimplementedExplicitBackendWithoutFallback() async throws {
         let fixture = try Fixture(savedMethod: "usbBoard",
             operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
-        let controller = LegacyAppConnectionController()
-        fixture.model.deviceClient = DeviceClient(controller: controller)
+        let controller = AutomaticOnlyAppRoute()
+        fixture.model.deviceClient = DeviceClient(actuator: controller, networkSetup: controller)
         await fixture.model.connectDevice()
         XCTAssertTrue(fixture.model.isDeviceReady)
         await fixture.model.selectDeviceControlBackend(.xcTest)
         await fixture.model.connectDevice()
         XCTAssertFalse(fixture.model.isDeviceReady)
         XCTAssertNil(fixture.model.activeDeviceControlBackend)
-        XCTAssertEqual(fixture.model.deviceConnectionError, DeviceControlError.unsupported.localizedDescription)
+        XCTAssertEqual(fixture.model.deviceConnectionError, DeviceControlError.serviceUnavailable(.developerServices).localizedDescription)
         let connections = await controller.connections
-        XCTAssertEqual(connections, 1, "An explicit unsupported backend must not invoke the legacy automatic connection.")
+        XCTAssertEqual(connections, 1, "An explicit unsupported backend must not invoke the automatic connection.")
     }
 
     func testConnectionRetentionIsDefaultAndAutomaticDisconnectPreferencePersists() throws {
@@ -1000,13 +1009,13 @@ final class DeviceConnectionMethodTests: XCTestCase {
         model.sceneChanged(.background)
         await fixture.controller.completePendingConnection()
         await pending.value
-        model.activeRun = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(),
-                                    scope: .control, model: "synthetic", skill: nil, state: .running, detail: "", events: [])
+        model.runCoordinator.publish(RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(),
+                                    scope: .control, model: "synthetic", skill: nil, state: .running, detail: "", events: []))
         try await Task.sleep(for: .milliseconds(300))
         let calls = await fixture.controller.calls()
         XCTAssertEqual(calls.disconnects, 0)
         XCTAssertTrue(model.isDeviceReady)
-        model.activeRun = nil
+        model.runCoordinator.publish(nil)
         model.sceneChanged(.active)
         await model.disconnectDevice()
     }
@@ -1017,8 +1026,8 @@ final class DeviceConnectionMethodTests: XCTestCase {
             let model = fixture.model
             await model.connectDevice()
             if hasChat {
-                model.activeRun = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: .now,
-                                            scope: .chat, model: "fixture", skill: nil, state: .running, detail: "", events: [])
+                model.runCoordinator.publish(RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: .now,
+                                            scope: .chat, model: "fixture", skill: nil, state: .running, detail: "", events: []))
             }
             model.sceneChanged(.background)
             try await Task.sleep(for: .milliseconds(30))
@@ -1026,7 +1035,7 @@ final class DeviceConnectionMethodTests: XCTestCase {
             XCTAssertEqual(calls.disconnects, 0)
             XCTAssertTrue(model.isDeviceReady)
             XCTAssertEqual(model.stopRequested, hasChat)
-            model.activeRun = nil
+            model.runCoordinator.publish(nil)
             await model.disconnectDevice()
         }
     }
@@ -1054,15 +1063,20 @@ final class DeviceConnectionMethodTests: XCTestCase {
     }
 
     func testMethodChangeIsBusyAndBlocksNewControlWork() async throws {
-        let fixture = try Fixture(savedMethod: "usbBoard")
-        fixture.model.isChangingDeviceConnectionMethod = true
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsDisconnect: true)
+        let changing = Task { await fixture.model.selectDeviceConnectionMethod(.localVPN) }
+        try await waitUntil { await fixture.controller.calls().disconnects == 1 }
         XCTAssertTrue(fixture.model.isBusy)
+        XCTAssertEqual(fixture.model.deviceSession.owner, .setup)
         await fixture.model.connectDevice()
         await fixture.model.enableDeviceControl()
         await fixture.model.startLocalTunnel()
         let calls = await fixture.controller.calls()
         XCTAssertTrue(calls.methods.isEmpty)
         XCTAssertNil(fixture.model.localTunnel.lastError)
+        await fixture.controller.completePendingDisconnect()
+        await changing.value
+        XCTAssertFalse(fixture.model.isBusy)
     }
 
     func testAppConnectionRequiresLocalTunnelInsteadOfUsingBoardFallback() async throws {
@@ -1133,24 +1147,29 @@ final class DeviceConnectionMethodTests: XCTestCase {
             suspendsConnection: suspendsConnection, suspendsDisconnect: suspendsDisconnect)
         model = AppModel(storageDirectory: directory, preferences: preferences,
                          credentialStore: CredentialStore(service: suite), operatingSystemVersion: operatingSystemVersion)
-        let client = DeviceClient(controller: controller)
+        let client = DeviceClient(actuator: controller, networkSetup: controller)
         if model.deviceConnectionMethod == .bluetoothBoard { model.networkDeviceClient = client }
         else { model.deviceClient = client }
     }
     deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
 }
 
-private actor LegacyAppConnectionController: DeviceController {
+private actor AutomaticOnlyAppRoute: DeviceFixtureActuator {
+    var fixtureObservedFrameID: UUID?
+    var fixtureGeometry: DeviceFrameGeometry?
     var connections = 0
     var connected = false
     func status() async -> DeviceStatus {
         connected ? .ready(capabilities: [.screenshot, .tap]) : .unavailable(reason: "Fixture disconnected")
     }
     func connectUSBBoard() async throws { connections += 1; connected = true }
-    func disconnect() async { connected = false }
+    func fixtureDisconnect() async { connected = false }
+    func fixtureDisconnectAndConfirmRelease() async -> Bool { await fixtureDisconnect(); return true }
 }
 
-private actor AppConnectionRecordingController: DeviceController {
+private actor AppConnectionRecordingController: DeviceFixtureActuator {
+    var fixtureObservedFrameID: UUID?
+    var fixtureGeometry: DeviceFrameGeometry?
     var failure: DeviceControlError?
     let grantsControl: Bool
     var suspendsConnection: Bool
@@ -1224,7 +1243,7 @@ private actor AppConnectionRecordingController: DeviceController {
         self.pending = nil; cancelledConnections += 1
         pending.resume(throwing: CancellationError())
     }
-    func disconnect() async {
+    func fixtureDisconnect() async {
         events.append("disconnect:start")
         disconnects += 1; connected = false; cancelPending()
         if suspendsDisconnect {
@@ -1233,8 +1252,8 @@ private actor AppConnectionRecordingController: DeviceController {
         }
         events.append("disconnect:end")
     }
-    func disconnectAndConfirmRelease() async -> Bool {
-        await disconnect()
+    func fixtureDisconnectAndConfirmRelease() async -> Bool {
+        await fixtureDisconnect()
         return releaseConfirmed
     }
     func completePendingDisconnect() {

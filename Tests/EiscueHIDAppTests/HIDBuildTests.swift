@@ -19,7 +19,7 @@ import XCTest
     func testUnsupportedRouteSelectionNeverReleasesOrReplacesHIDClient() async throws {
         let fixture = try HIDFixture()
         let controller = HIDRecordingController()
-        fixture.model.deviceClient = DeviceClient(controller: controller)
+        fixture.model.deviceClient = DeviceClient(actuator: controller)
         for method in [DeviceConnectionMethod.localVPN, .usbBoard] {
             await fixture.model.selectDeviceConnectionMethod(method)
             XCTAssertEqual(fixture.model.deviceConnectionMethod, .bluetoothBoard)
@@ -59,8 +59,14 @@ import XCTest
     deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
 }
 
-private actor HIDRecordingController: DeviceController {
+private actor HIDRecordingController: DeviceActuator {
     var disconnects = 0
-    func status() async -> DeviceStatus { .unavailable(reason: "injected HID controller") }
-    func disconnect() async { disconnects += 1 }
+    func cachedStatus() async -> DeviceStatus { .unavailable(reason: "injected HID controller") }
+    func disconnect() async -> ReleaseConfirmation { disconnects += 1; return .unconfirmed }
+    func probe() async -> DeviceStatus { await cachedStatus() }
+    func capture() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
+    func frameState() async throws -> DeviceFrameState { throw DeviceControlError.notConnected }
+    func perform(_ action: DeviceAction, frame: FrameGrant) async throws -> SubmissionResult { .notSubmitted(.notConnected) }
+    func releaseInput() async throws {}
+    func listApplications() async throws -> [DeviceApplication] { [] }
 }

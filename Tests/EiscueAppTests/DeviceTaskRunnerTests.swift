@@ -10,7 +10,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
         let controller = RunnerDeviceController()
         var phases: [DeviceTaskPhase] = []
         var presentation: [String] = []
-        let runner = DeviceTaskRunner(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+        let runner = DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
                                      log: { _, _ in }, onUnknown: {},
                                      onObservationWillCapture: { presentation.append("hold") },
                                      onActionFinished: { presentation.append("release") },
@@ -30,7 +30,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
     func testEveryActionRequiresCurrentObservationIncludingHomeAndLaunch() async throws {
         let controller = RunnerDeviceController()
         let runner = makeRunner(controller)
-        for action in [DeviceAction.home, .launchApplication("com.apple.Preferences"), .pressKey(.search)] {
+        for action in [Eiscue.DeviceTaskAction.home, .launchApplication("com.apple.Preferences"), .pressKey(.search)] {
             await rejected(makeRunner(controller), .action(action, frameID: UUID()), as: .frame)
         }
         let first = try observation(await runner.step(.observe))
@@ -63,7 +63,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
     func testTypedCoordinatesAndArgumentsAreValidatedBeforeSending() async throws {
         let controller = RunnerDeviceController()
         let runner = makeRunner(controller)
-        let invalid: [DeviceAction] = [
+        let invalid: [Eiscue.DeviceTaskAction] = [
             .tap(.init(x: .nan, y: 0)), .tap(.init(x: 390, y: 2)), .tap(.init(x: 0, y: -1)),
             .swipe(from: .init(x: 1, y: 1), to: .init(x: 2, y: 844), duration: 0.5),
             .swipe(from: .init(x: 1, y: 1), to: .init(x: 2, y: 2), duration: .infinity),
@@ -96,7 +96,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
     func testMalformedAdapterDecisionsShareFramePauseAndReleaseBoundary() async throws {
         let controller = RunnerDeviceController()
         var held = false
-        let runner = DeviceTaskRunner(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+        let runner = DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
                                      log: { _, _ in }, onUnknown: {}, onObservationWillCapture: { held = true },
                                      onActionFinished: { held = false })
         for count in 1...3 {
@@ -162,7 +162,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
 
     func testLostConnectionDuringAppListingTerminatesAdapterInsteadOfFinishingNormally() async throws {
         let controller = RunnerDeviceController(listFailure: .connection("Transport closed"), losesConnectionOnListFailure: true)
-        let session = DeviceToolSession(client: DeviceClient(controller: controller), scope: .control,
+        let session = DeviceToolSession(client: DeviceClient(actuator: controller), scope: .control,
                                         timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
         let screenshot = try XCTUnwrap(session.tools.first { $0.name == "device_screenshot" })
         let listApps = try XCTUnwrap(session.tools.first { $0.name == "device_list_apps" })
@@ -171,7 +171,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
             _ = try await listApps.execute([:])
             XCTFail("A disconnected tool must terminate this runtime turn.")
         } catch {
-            guard case .toolExecutionPaused = error as? AgentError else { return XCTFail("Expected a terminating pause.") }
+            guard case .paused(.connectionLost) = error as? AgentToolError else { return XCTFail("Expected a terminating pause.") }
         }
         XCTAssertEqual(session.pauseReason, .connectionLost)
         XCTAssertFalse(session.hasUnknownOutcome)
@@ -202,16 +202,19 @@ final class DeviceTaskRunnerTests: XCTestCase {
     func testCancellationDuringVerificationNeverReturnsSuccessOrNextFrame() async throws {
         let controller = RunnerDeviceController()
         var observations = 0
-        let runner = DeviceTaskRunner(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
-                                     log: { _, _ in }, onUnknown: {}, onObservationWillCapture: {
+        var logKinds: [String] = []
+        let runner = DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                                     log: { kind, _ in logKinds.append(kind) }, onUnknown: {}, onObservationWillCapture: {
             observations += 1
             if observations == 2 { withUnsafeCurrentTask { $0?.cancel() } }
         })
         let first = try observation(await runner.step(.observe)).screenshot.frameID
         let operation = Task { try await runner.step(.action(.home, frameID: first)) }
         do { _ = try await operation.value; XCTFail("Cancelled verification must not report success.") }
-        catch { XCTAssertTrue(error is CancellationError) }
+        catch { XCTAssertTrue((error as? DeviceControlError)?.isDeliveryUnknown == true) }
         XCTAssertEqual(runner.phase, .stopped)
+        XCTAssertTrue(runner.hasUnknownOutcome)
+        XCTAssertTrue(logKinds.contains("action.unknown"))
         await rejected(runner, .observe, as: .stopped)
         let counts = await controller.counts()
         XCTAssertEqual(counts.actions, 1)
@@ -221,7 +224,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
     func testUnknownDeliveryStopsWithoutAnAutomaticObservation() async throws {
         let controller = RunnerDeviceController(actionFailure: .deliveryUnknown("mock"))
         let notified = expectation(description: "Unknown delivery stops the host")
-        let runner = DeviceTaskRunner(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+        let runner = DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
                                      log: { _, _ in }, onUnknown: { notified.fulfill() })
         let first = try observation(await runner.step(.observe)).screenshot.frameID
         do { _ = try await runner.step(.action(.home, frameID: first)); XCTFail("Unknown input cannot be retried.") }
@@ -237,7 +240,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
     func testStorageFailureAfterActionStopsEvenIfVerificationWouldWork() async throws {
         let controller = RunnerDeviceController()
         let notified = expectation(description: "Lost durable acknowledgment stops the host")
-        let runner = DeviceTaskRunner(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+        let runner = DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
                                      log: { kind, _ in if kind == "action.acknowledged" { throw RunnerTestError.storage } },
                                      onUnknown: { notified.fulfill() })
         let first = try observation(await runner.step(.observe)).screenshot.frameID
@@ -254,7 +257,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
     func testStorageFailureBeforeDispatchAlsoClosesTheSession() async throws {
         let controller = RunnerDeviceController()
         let notified = expectation(description: "Lost preflight journal stops the host")
-        let runner = DeviceTaskRunner(client: DeviceClient(controller: controller), scope: .control, timeoutSeconds: 30,
+        let runner = DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
                                      log: { kind, _ in if kind == "action.prepared" { throw RunnerTestError.storage } },
                                      onUnknown: { notified.fulfill() })
         let first = try observation(await runner.step(.observe)).screenshot.frameID
@@ -323,7 +326,7 @@ final class DeviceTaskRunnerTests: XCTestCase {
     private func makeRunner(_ controller: RunnerDeviceController, scope: TaskScope = .control,
                             capabilities: Set<DeviceCapability> = Set(DeviceCapability.allCases),
                             maxOperations: Int = 30) -> DeviceTaskRunner {
-        DeviceTaskRunner(capabilities: capabilities, client: DeviceClient(controller: controller), scope: scope,
+        DeviceTaskRunner(capabilities: capabilities, client: DeviceClient(actuator: controller), scope: scope,
                          timeoutSeconds: 30, maxOperations: maxOperations, log: { _, _ in }, onUnknown: {})
     }
 
@@ -350,7 +353,9 @@ final class DeviceTaskRunnerTests: XCTestCase {
 
 private enum RunnerTestError: Error, Equatable { case storage, unexpectedResult }
 
-private actor RunnerDeviceController: DeviceController {
+private actor RunnerDeviceController: DeviceFixtureActuator {
+    var fixtureObservedFrameID: UUID?
+    var fixtureGeometry: DeviceFrameGeometry?
     let captureFailures: Set<Int>
     let actionFailure: DeviceControlError?
     let listFailure: DeviceControlError?

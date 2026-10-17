@@ -36,9 +36,20 @@ public struct AgentRequest: Sendable {
     }
 }
 
+public enum AgentPauseReason: String, Codable, Sendable, Equatable {
+    case toolBudget, noProgress, verificationUnavailable, connectionLost, hostRequested
+}
+
+public enum StopCause: Codable, Sendable, Equatable {
+    case cancelled, timedOut, userRequested, engineCancelled, hardwareStop, eventSaveFailed
+    case outcomeUnknown(toolName: String)
+    case paused(AgentPauseReason)
+}
+
 public enum AgentRunOutcome: Sendable, Equatable {
     case completed
     case cancelled
+    case stopped(StopCause)
 }
 
 public enum AgentEvent: Sendable, Equatable {
@@ -51,15 +62,19 @@ public enum AgentEvent: Sendable, Equatable {
     case message(AgentMessage)
     case toolStarted(AgentToolCall)
     case toolFinished(AgentToolCompletion)
+    /// Cleanup failed independently of the run outcome. The database cannot be reopened until ownership is released.
+    case cleanupFailed(String)
     case finished(AgentRunOutcome)
 }
 
 public struct AgentRecovery: Sendable, Equatable {
     public let messages: [AgentMessage]
     public let hasInterruptedRun: Bool
+    public let acceptedRequestIDs: Set<UUID>
 
-    public init(messages: [AgentMessage], hasInterruptedRun: Bool) {
+    public init(messages: [AgentMessage], hasInterruptedRun: Bool, acceptedRequestIDs: Set<UUID> = []) {
         self.messages = messages
         self.hasInterruptedRun = hasInterruptedRun
+        self.acceptedRequestIDs = acceptedRequestIDs
     }
 }

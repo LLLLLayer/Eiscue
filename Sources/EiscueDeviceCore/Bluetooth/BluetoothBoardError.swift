@@ -35,3 +35,15 @@ public enum BluetoothBoardError: String, Error, LocalizedError, Sendable, Equata
         return NSLocalizedString(key, tableName: "BluetoothBoard", bundle: .module, comment: "Bluetooth board connection error")
     }
 }
+
+public extension BluetoothBoardError {
+    var deviceControlError: DeviceControlError {
+        switch self {
+        case .disconnected, .connectionFailed, .bluetoothUnavailable, .bluetoothDenied, .authenticationFailed: .connectionLost
+        case .busy, .boardBusy: .busy
+        case .deliveryUnknown, .gattWriteRejected, .malformedReply, .hidSendFailed: .deliveryUnknown("")
+        case .hidNotSubscribed, .hardwareStopped: .serviceUnavailable(.input)
+        default: .serviceUnavailable(.bluetooth)
+        }
+    }
+}

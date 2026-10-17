@@ -32,12 +32,7 @@ import Testing
         #expect(original.id != returned.id)
         #expect(rotated.id != returned.id)
 
-        let frame = screenshot()
-        var ledger = FrameLedger()
-        ledger.record(frame, geometryID: original.id)
-        #expect(throws: DeviceControlError.staleFrame) {
-            try ledger.consume(id: frame.frameID, points: [DevicePoint(x: 50, y: 100)], geometryID: returned.id)
-        }
+
     }
 
     @Test func visibleOriginChangesInvalidateEvenWithSamePixelDimensions() {
@@ -62,47 +57,4 @@ import Testing
         #expect(newBuffer.id != restarted.id)
     }
 
-    @Test func missingCurrentGeometryPermanentlyInvalidatesObservedFrame() {
-        let frame = screenshot(), geometry = UUID()
-        var ledger = FrameLedger()
-        ledger.record(frame, geometryID: geometry)
-        #expect(throws: DeviceControlError.staleFrame) {
-            try ledger.consume(id: frame.frameID, points: [], geometryID: nil)
-        }
-        #expect(throws: DeviceControlError.staleFrame) {
-            try ledger.consume(id: frame.frameID, points: [], geometryID: geometry)
-        }
-    }
-
-    @Test func matchingGeometryStillRequiresFreshSingleUseObservation() throws {
-        let frame = screenshot(), geometry = UUID(), now = ContinuousClock.now
-        var ledger = FrameLedger()
-        ledger.record(frame, geometryID: geometry, now: now)
-        let points = try ledger.consume(id: frame.frameID, points: [DevicePoint(x: 50, y: 100)],
-                                        geometryID: geometry, now: now.advanced(by: .seconds(1)))
-        #expect(points.count == 1)
-        #expect(points[0].0 == 32768)
-        #expect(points[0].1 == 32768)
-        #expect(throws: DeviceControlError.staleFrame) {
-            try ledger.consume(id: frame.frameID, points: [], geometryID: geometry)
-        }
-        ledger.record(frame, geometryID: geometry, now: now)
-        #expect(throws: DeviceControlError.staleFrame) {
-            try ledger.consume(id: frame.frameID, points: [], geometryID: geometry, now: now.advanced(by: .seconds(31)))
-        }
-    }
-
-    @Test func invalidPointPreservesMatchingFrameUntilGeometryChanges() throws {
-        let frame = screenshot(), geometry = UUID()
-        var ledger = FrameLedger()
-        ledger.record(frame, geometryID: geometry)
-        #expect(throws: DeviceControlError.invalidCoordinates) {
-            try ledger.consume(id: frame.frameID, points: [DevicePoint(x: 100, y: 0)], geometryID: geometry)
-        }
-        #expect(try ledger.consume(id: frame.frameID, points: [], geometryID: geometry).isEmpty)
-    }
-
-    private func screenshot() -> DeviceScreenshot {
-        DeviceScreenshot(width: 100, height: 200, mimeType: "image/jpeg", data: Data([1]))
-    }
 }

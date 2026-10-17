@@ -47,7 +47,7 @@
 
 选择 `EiscueHID` scheme 可构建独立 App，只包含 ESP32 BLE / USB HID 与 ReplayKit。它默认使用 ESP32 键鼠，采用 `org.eiscue.hid`、`group.org.eiscue.hid`，仅嵌入自己的屏幕共享扩展。包依赖和编译产物不包含开发者服务后端、XCTest 桥或 VPN 扩展；完整 `Eiscue` App 运行时选择蓝牙并不会移除这些组件。两种 App 的模型配置、会话和共享授权互相独立；一个 App 保存的 S3 认证密钥不会自动迁移给另一个，也不会自动覆盖已有注册。这次构建拆分不代表 App Store 已批准，也不授予新的图片或组件许可。
 
-其他宿主可依赖 `EiscueHIDKit` product，`import EiscueDeviceCore`，并创建 `DeviceClient(controller: BluetoothDeviceController())`。完整 `EiscueDeviceKit` 保留 `DeviceClient()` 和 `DeviceClient(identityStore:)`。可通过 `python3 Scripts/check-hid-boundary.py --app <EiscueHID.app路径>` 检查构建边界。
+其他宿主可依赖 `EiscueHIDKit` product，`import EiscueDeviceCore`，并创建 `let board = BluetoothDeviceController(); let client = DeviceClient(actuator: board, hidSetup: board)`。完整 `EiscueDeviceKit` 保留 `DeviceClient()` 和 `DeviceClient(identityStore:)`。可通过 `python3 Scripts/check-hid-boundary.py --app <EiscueHID.app路径>` 检查构建边界。
 
 ### 让 AI 操作设备
 
@@ -102,11 +102,12 @@ C3 屏幕伙伴仅显示固定阶段、表情和步数，不显示模型文字�
 ```text
 Eiscue App（SwiftUI，iOS 26+）
 ├── 对话、模型设置、附件、语音、Skill、任务记录、后台执行
-├── RunCoordinator：请求接收、执行、取消、清理与最终结果发布
+├── RunCoordinator / RunSession：每次运行独享引擎、设备占用、清理与可等待的结束点
+├── DeviceSession / DictationSession：连接状态、占用权和录音交接
 ├── DeviceToolSpec / DeviceToolSession：统一工具描述 → DeviceDecision
 ├── DeviceTaskRunner：权限、预算、串行执行、动作后观察
 ├── EiscueAgentKit：Agent / 工具 / 事件协议，内部适配 PiDurableKit
-└── EiscueDeviceCore：DeviceController、可注入的 DeviceClient、BLE / USB HID + ReplayKit
+└── EiscueDeviceCore：DeviceActuator、GuardedDevice、可注入的 DeviceClient、BLE / USB HID + ReplayKit
     ├── EiscueHIDKit product：仅 Core
     └── EiscueDeviceKit 外观层：Core + 开发者服务 / 默认客户端
 
@@ -119,7 +120,7 @@ Agent 与 Device 库互不依赖，由 App 集成层连接；两个 Device produ
 | Kit | 职责 | 替换入口 |
 | --- | --- | --- |
 | [EiscueAgentKit](Sources/EiscueAgentKit/AgentClient.swift) | Agent、工具、事件和会话存储；内部通过 JavaScriptCore 运行 PiDurableKit，每个会话一个 SQLite | `AgentClient(engine:)`，也可注册自己的 Swift 工具 |
-| [EiscueDeviceKit](Sources/EiscueDeviceCore/DeviceClient.swift) | 连接、观察、动作和能力状态 | `DeviceClient(controller:)` |
+| [EiscueDeviceKit](Sources/EiscueDeviceCore/DeviceClient.swift) | 连接、观察、动作和能力状态 | `DeviceClient(actuator:networkSetup:hidSetup:)` |
 
 集成 DeviceKit XCTest 后端的 App 需在真机 target 的 `LD_RUNPATH_SEARCH_PATHS` 中保留继承路径，并添加 `/System/Developer/usr/lib` 和 `/Developer/usr/lib`。Xcode 27 的开发镜像通过这些路径加载 Testing 互操作依赖。Eiscue 已在 `project.yml` 配置；Apple 测试库从已挂载 DDI 动态加载，不随 App 打包。
 
@@ -163,21 +164,22 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 保存检查日志时，可使用 `bash Scripts/run-logged-check.sh .build/<唯一名称>.log <命令> [参数...]`。脚本保留已有日志，并返回检查命令的真实退出码；失败不会被包装成成功。
 
-**2026-10-17 架构与 UI 修复后复核**，使用隔离模型服务，未操作真机：
+**2026-10-17 架构迭代复核**，分别使用 Xcode 26.3 / Swift 6.2.4 与 Xcode 27 / Swift 6.4。本轮未使用真机、开发板或真实模型：
 
 | 检查 | 结果 |
 | --- | --- |
-| Swift Kit | Xcode 26.3：180 项 / 19 套件通过。Xcode 27：178 项通过，运行后又补充了两项删除恢复回归测试 |
-| App 单元测试 | Xcode 27、iPad / iOS 26.3.1：318 项通过 |
-| iPhone 完整 UI，iOS 26.3.1 | 59 通过、13 跳过、0 失败 |
-| iPhone 完整 UI，iOS 27.0 | 63 通过、9 跳过、0 失败；最终拆分视图表达式后，7 项受影响的语音 / 侧栏用例再次通过 |
-| iPad 侧栏、会话和分享 | 10 通过、1 项因布局不适用跳过、0 失败 |
-| 纯 HID App | 3 项单测通过；Release 模拟器构建及依赖、符号、权限和扩展边界检查通过；未签名真机构建与链接检查通过 |
-| 测试辅助工具 | 18 项通过；fixture 端口改动后 4 项通过；重新生成工程无差异 |
+| Swift Kit | 两套工具链各 209 项通过 |
+| App 单元测试，iOS 26.3.1 | 426 通过、0 失败 |
+| App 单元测试，iOS 27.0 | 425 通过、1 项系统专用跳过、0 失败 |
+| 连接 / 引导 / 听写 / 结果未知 UI，iOS 26.3.1 | 10 通过、5 项 iOS 27 专用跳过、0 失败 |
+| 同组专项 UI，iOS 27.0 | 15 项全通过；最后的编排错误归类窄修后，两系统各重跑结果未知的 2 项并通过 |
+| Release App 构建 | 完整版和纯 HID 版均在两套 Xcode 构建通过；HID 依赖图与产物边界审计通过 |
+| HID App 单元测试 | 最终源码 3 项通过 |
+| 生成工程 | 重新生成无差异 |
 
-以上成功命令均返回 exit 0。需真机、另一系统或特定布局的跳过项不计为通过。两个 iPhone 系统都完成了首次引导与“存储到文件”，包括逐字节读回检查。HID 真机构建未签名，不代表签名或手机行为已验收。CI 工作流及本地检查脚本已入库，远端 runner 和分支保护仍需配置。
+成功命令均返回 exit 0，跳过不计为通过。日志和结果包仅保留在本地 `.build/`。当前为相关 UI 专项检查，没有重新跑整套 UI。此前 `c4fc538` 基线的 iPhone 完整 UI 已在两系统通过（iOS 26：59 通过 / 13 跳过；iOS 27：63 通过 / 9 跳过），iPad 侧栏 / 会话 / 分享为 10 通过 / 1 项布局跳过；这些历史结果不能证明后续变更已验收。
 
-此前 `f4972f5` 基线中，iOS 27 有 6 项 UI 失败、iOS 26 有 2 项。共享侧栏查询、分系统引导断言及系统文件选择器导航现已修正。更早基线和失败的中间运行保留在本地验证记录中；模拟器与主机检查不代表真机验收。
+硬件验收已明确后补：C3/S3 校准与 ReplayKit、真实旋转、动作在途停止、外部失联和 CoreDevice 麦克风交接仍需真机检查。CI 工作流和本地门禁脚本已入库，远端 runner 和分支保护需另行配置。更早的失败和中间运行保留在本地验证记录中。
 
 ### 真机记录
 
@@ -210,11 +212,11 @@ bash Scripts/test-board-companion.sh
 
 ## 权限、数据与隐私
 
-会话存储改为小型索引、每会话一个记录文件和共享的 SHA-256 附件数据。旧版在首次写入时迁移并保留原始备份；首次明确删除会话后移除旧备份、清理不再引用的附件。中断的删除清理会在读取或后续写入时继续。原始文档保留以支持按原字节分享。新运行时元数据引用已有附件，不再重复存一份；旧 SQLite 记录仍可读取。
+会话存储使用小型索引、每会话一个记录文件和共享的 SHA-256 附件数据。加载时隔离损坏的会话并报告 ID；无法完整校验时暂停回收，保留原始数据。运行日志采用带序号和校验的只追加事件，结束时生成摘要；旧日志仍可读。SQLite 中的接收状态用于重建提交缓存，未提交任务的用户放弃决定单独保留在宿主日志中。旧版在首次写入时迁移并保留原始备份；首次明确删除会话后移除旧备份、清理不再引用的附件。中断的删除清理会在读取或后续写入时继续。原始文档保留以支持按原字节分享。新运行时元数据引用已有附件，不再重复存一份；旧 SQLite 记录仍可读取。
 
 模型请求只保留最新两张设备截图，文字、工具调用关联与服务商签名保持完整，用户上传的图片不受影响。完整历史截图仍保存在会话 SQLite，供任务详情查看，删除会话时清理。`Runtime/` 不再进入设备备份；会话和原始附件沿用原有备份行为。任务记录增加系统指令版本。
 
-- 任务开始时固定权限范围；普通聊天不注册工具。设备工具只按实际后端能力开放，动作绑定最新有效截图且只能消费一次；送达结果不明时不会自动重发。
+- 任务开始时固定权限范围；普通聊天不注册工具。设备工具只按实际后端能力开放，动作绑定最新有效截图且只能消费一次。送达结果不明时停止并释放连接，对话显示“操作结果未确认”；用户核查屏幕、重新连接后才能明确继续，不提供重试该动作的按钮。继续设备任务时重新检查权限和就绪状态；设备任务清理结束前不能切换连接方式。
 - 无进展或达到步数上限时暂停，用户点“继续”后以新请求重新观察。中断恢复只读，不自动续跑。导入的 Skill 只是 Markdown 说明，不能扩大权限或执行脚本。
 - 会话、运行时 SQLite、任务记录、Skill 和附件位于 App 沙盒的 `Application Support/Eiscue/`。API Key 与配对私钥保存在仅本设备可用的 Keychain，不进入 UserDefaults、日志或导出报告。
 - ReplayKit 扩展只保留最新 JPEG 帧（最长边 ≤ 1600 px），存放于受文件保护的 App Group，不保留录屏历史、不采集音频。**观察工具与动作后的自动观察都会将截图返回给模型**；仅开启共享或手动预览不会上传。工具历史可能把截图保存在会话 SQLite 中，删除会话时一并清理。

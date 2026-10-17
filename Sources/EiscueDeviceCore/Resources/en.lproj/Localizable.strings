@@ -61,3 +61,11 @@
 "device.backend.automation-geometry" = "Could not confirm the screen size and orientation. Keep the device unlocked and steady, then reconnect.";
 "device.backend.automation-delivery-unknown" = "The device did not confirm this action; it will not be repeated. Check the screen before reconnecting.";
 "device.backend.automation-authorization-timed-out" = "System authorization timed out. Keep the device unlocked and reconnect. Enter your passcode only on the system’s Enable UI Automation screen if asked.";
+
+"device.error.connection-lost" = "Device connection lost. Reconnect the device.";
+
+"device.error.service-unavailable" = "This device service is unavailable. Other device services may still work.";
+
+"device.error.capability-unavailable" = "This action is unavailable on the selected device connection.";
+
+"device.error.route-unsupported" = "The selected connection does not support this route.";

@@ -53,7 +53,7 @@ actor RuntimeEventTranslator {
             if let entry { receiveEntry(entry) }
             else if completedCalls.insert(id).inserted {
                 let call = calls[id] ?? AgentToolCall(id: id, name: name, arguments: .object([:]))
-                continuation.yield(.toolFinished(.init(call: call, result: .error(String(localized: "agent.tool.interrupted", defaultValue: "The operation was interrupted.", bundle: .module)))))
+                continuation.yield(.toolFinished(.init(call: call, result: .init(content: [.text(String(localized: "agent.tool.interrupted", defaultValue: "The operation was interrupted.", bundle: .module))], outcome: .interrupted))))
             }
         default: break
         }
@@ -73,8 +73,8 @@ actor RuntimeEventTranslator {
         }
         if let result = entry.toolResult, completedCalls.insert(result.toolCallId).inserted {
             let call = calls[result.toolCallId] ?? AgentToolCall(id: result.toolCallId, name: result.toolName, arguments: .object([:]))
-            var output = RuntimeMapping.result(result)
-            if output.isError { output = .error(RuntimeMapping.redact(output.text, secret: secret)) }
+            var output = RuntimeMapping.result(result, entry: entry)
+            if output.isError { output = .init(content: [.text(RuntimeMapping.redact(output.text, secret: secret))], outcome: output.outcome) }
             continuation.yield(.toolFinished(.init(call: call, result: output)))
         }
     }

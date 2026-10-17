@@ -8,51 +8,6 @@ import Testing
         DeviceScreenshot(width: width, height: height, mimeType: "image/jpeg", data: Data([1]))
     }
 
-    @Test func coordinatesUseScreenshotPixelsAndFrameIsConsumedOnce() throws {
-        var ledger = FrameLedger()
-        let frame = screenshot()
-        ledger.record(frame)
-        let result = try ledger.consume(id: frame.frameID, points: [DevicePoint(x: 50, y: 100)])
-        #expect(result.count == 1)
-        #expect(result[0].0 == 32768)
-        #expect(result[0].1 == 32768)
-        #expect(throws: DeviceControlError.staleFrame) {
-            try ledger.consume(id: frame.frameID, points: [DevicePoint(x: 0, y: 0)])
-        }
-    }
-
-    @Test func expiredAndPreviousFramesCannotAuthorizeActions() throws {
-        var ledger = FrameLedger()
-        let time = ContinuousClock.now
-        let old = screenshot(), current = screenshot()
-        ledger.record(old, now: time)
-        #expect(throws: DeviceControlError.staleFrame) {
-            try ledger.consume(id: old.frameID, points: [], now: time.advanced(by: .seconds(31)))
-        }
-        ledger.record(current)
-        #expect(throws: DeviceControlError.staleFrame) { try ledger.consume(id: old.frameID, points: []) }
-        ledger.invalidate()
-        #expect(throws: DeviceControlError.staleFrame) { try ledger.consume(id: current.frameID, points: []) }
-    }
-
-    @Test func invalidCoordinatesDoNotConsumeValidFrame() throws {
-        var ledger = FrameLedger()
-        let frame = screenshot()
-        ledger.record(frame)
-        for point in [DevicePoint(x: -1, y: 0), DevicePoint(x: 100, y: 0), DevicePoint(x: 0, y: 200), DevicePoint(x: .infinity, y: 0), DevicePoint(x: .nan, y: 0)] {
-            #expect(throws: DeviceControlError.invalidCoordinates) { try ledger.consume(id: frame.frameID, points: [point]) }
-        }
-        #expect(try ledger.consume(id: frame.frameID, points: [DevicePoint(x: 99, y: 199)]).count == 1)
-    }
-
-    @Test func textConsumesAnObservationWithoutCoordinates() throws {
-        var ledger = FrameLedger()
-        let frame = screenshot()
-        ledger.record(frame)
-        #expect(try ledger.consume(id: frame.frameID, points: []).isEmpty)
-        #expect(throws: DeviceControlError.staleFrame) { try ledger.consume(id: frame.frameID, points: []) }
-    }
-
     @Test func validatesIdentitySchemaSizeAndCommitState() throws {
         let valid = try fixtureIdentity()
         #expect(try PairingIdentityCodec.decode(valid).committed)
@@ -98,27 +53,13 @@ import Testing
     @Test func customControllerWorksWithoutNativeBackend() async throws {
         let frame = screenshot()
         let controller = RecordingController(frame: frame)
-        let client = DeviceClient(controller: controller)
-        #expect(try await client.captureScreenshot() == frame)
-        try await client.tap(at: DevicePoint(x: 1, y: 2), frameID: frame.frameID)
-        #expect(await controller.tappedFrame == frame.frameID)
+        let client = DeviceClient(actuator: controller)
+        let observation = try await client.captureScreenshot()
+        #expect(observation.data == frame.data && observation.width == frame.width)
+        try await client.tap(at: DevicePoint(x: 1, y: 2), frameID: observation.frameID)
+        #expect(await controller.tappedFrame == observation.frameID)
         await client.disconnect()
         #expect(await controller.disconnected)
-    }
-
-    @Test func localVPNPairingNeverFallsBackToGenericPairing() async throws {
-        let controller = RecordingController(frame: screenshot())
-        let client = DeviceClient(controller: controller)
-        let local = await client.beginPairing(configuration: .defaults)
-        await #expect(throws: DeviceControlError.unsupported) {
-            for try await _ in local { Issue.record("Unsupported local pairing must not yield events") }
-        }
-        #expect(await controller.genericPairingCalls == 0)
-        let generic = await client.beginPairing()
-        var completed = false
-        for try await event in generic { if case .completed = event { completed = true } }
-        #expect(completed)
-        #expect(await controller.genericPairingCalls == 1)
     }
 
     @Test func unknownDeliveryIsMachineReadable() {
@@ -132,7 +73,8 @@ import Testing
         #expect(throws: DeviceControlError.invalidText) { try DeviceInputValidation.text(String(repeating: "a", count: 8193)) }
         #expect(throws: DeviceControlError.invalidText) { try DeviceInputValidation.text(String(repeating: "\"", count: 8192)) }
         #expect(throws: DeviceControlError.invalidText) { try DeviceInputValidation.text("a\0b") }
-        try DeviceInputValidation.bundleID("org.eiscue.test-app_1")
+        try DeviceInputValidation.bundleID("org.eiscue.test-app-1")
+        #expect(throws: DeviceControlError.invalidBundleID) { try DeviceInputValidation.bundleID("org.eiscue.test_app") }
         #expect(throws: DeviceControlError.invalidBundleID) { try DeviceInputValidation.bundleID("org.eiscue.应用") }
         #expect(throws: DeviceControlError.invalidBundleID) { try DeviceInputValidation.bundleID("org/eiscue") }
     }
@@ -173,20 +115,21 @@ private final class MemoryIdentityStore: PairingIdentityStore, @unchecked Sendab
     func remove() throws { lock.withLock { data = nil } }
 }
 
-private actor RecordingController: DeviceController {
-    var genericPairingCalls = 0
-    func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
-        genericPairingCalls += 1
-        return AsyncThrowingStream { continuation in
-            continuation.yield(.completed); continuation.finish()
-        }
-    }
+private actor RecordingController: DeviceActuator {
     let frame: DeviceScreenshot
+    let session = UUID()
     var tappedFrame: UUID?
     var disconnected = false
     init(frame: DeviceScreenshot) { self.frame = frame }
-    func status() async -> DeviceStatus { .ready(capabilities: [.screenshot, .tap]) }
-    func captureScreenshot() async throws -> DeviceScreenshot { frame }
-    func tap(at point: DevicePoint, frameID: UUID) async throws { tappedFrame = frameID }
-    func disconnect() async { disconnected = true }
+    func cachedStatus() async -> DeviceStatus { .ready(capabilities: [.screenshot, .tap]) }
+    func probe() async -> DeviceStatus { await cachedStatus() }
+    func capture() async throws -> DeviceScreenshot {
+        DeviceScreenshot(width: frame.width, height: frame.height, mimeType: frame.mimeType, data: frame.data,
+            geometry: DeviceFrameGeometry(sessionID: session, revision: "1", width: frame.width, height: frame.height))
+    }
+    func frameState() async throws -> DeviceFrameState { DeviceFrameState(geometry: DeviceFrameGeometry(sessionID: session, revision: "1", width: frame.width, height: frame.height), isLive: true) }
+    func perform(_ action: DeviceAction, frame: FrameGrant) async throws -> SubmissionResult { tappedFrame = frame.frameID; return .submitted }
+    func releaseInput() async throws {}
+    func disconnect() async -> ReleaseConfirmation { disconnected = true; return .unconfirmed }
+    func listApplications() async throws -> [DeviceApplication] { [] }
 }

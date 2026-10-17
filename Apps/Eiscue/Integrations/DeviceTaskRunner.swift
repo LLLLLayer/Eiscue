@@ -5,10 +5,10 @@ import Foundation
 enum DeviceDecision: Sendable {
     case observe
     case listApplications
-    case action(DeviceAction, frameID: UUID)
+    case action(DeviceTaskAction, frameID: UUID)
 }
 
-enum DeviceAction: Codable, Sendable {
+enum DeviceTaskAction: Codable, Sendable {
     case tap(DevicePoint)
     case swipe(from: DevicePoint, to: DevicePoint, duration: Double)
     case typeText(String)
@@ -133,6 +133,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         guard !isExecuting else { throw DeviceTaskError.busy }
         isExecuting = true
         defer { isExecuting = false }
+        var actionSubmitted = false
         do {
             switch decision {
             case .observe:
@@ -173,7 +174,8 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
                 try await record("action.dispatched", action.toolName)
                 try check()
                 try await dispatch(action, frame: frame)
-                try check()
+                actionSubmitted = true
+                do { try check() } catch { throw DeviceControlError.deliveryUnknown("Stopped after dispatch") }
                 try await record("action.acknowledged", action.toolName)
                 consecutiveFrameRejections = 0
                 if let screen = latestScreenDigest { unverifiedAction = (screen, digest) }
@@ -189,6 +191,12 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
             await onActionFinished()
             throw error
         } catch {
+            if actionSubmitted, Task.isCancelled || error is CancellationError || (error as? DeviceTaskError) == .stopped {
+                markUnknown()
+                try? await log("action.unknown", decision.actionName ?? "")
+                await onActionFinished()
+                throw DeviceControlError.deliveryUnknown("Stopped after submission")
+            }
             throw await finishFailure(error, action: decision.actionName != nil)
         }
     }
@@ -230,16 +238,16 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         return DeviceObservation(screenshot: image, feedback: feedback)
     }
 
-    private func dispatch(_ action: DeviceAction, frame: DeviceObservationCoordinates) async throws {
+    private func dispatch(_ action: DeviceTaskAction, frame: DeviceObservationCoordinates) async throws {
         switch action {
         case .tap(let point): try await client.tap(at: frame.nativePoint(point), frameID: frame.id)
         case .swipe(let from, let to, let duration):
             try await client.swipe(from: frame.nativePoint(from), to: frame.nativePoint(to),
-                                   duration: .seconds(duration), frameID: frame.id)
+                                   duration: try DeviceInputValidation.swipeDuration(seconds: duration), frameID: frame.id)
         case .typeText(let text): try await client.typeText(text, frameID: frame.id)
         case .pressKey(let key): try await client.pressKey(key, frameID: frame.id)
-        case .home: try await client.home()
-        case .launchApplication(let bundleID): try await client.launchApplication(bundleID: bundleID)
+        case .home: try await client.home(frameID: frame.id)
+        case .launchApplication(let bundleID): try await client.launchApplication(bundleID: bundleID, frameID: frame.id)
         }
     }
 
@@ -250,22 +258,18 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         return frame
     }
 
-    private func validate(_ action: DeviceAction, width: Int, height: Int) throws {
-        func pointIsValid(_ point: DevicePoint) -> Bool {
-            point.x.isFinite && point.y.isFinite && point.x >= 0 && point.y >= 0
-                && point.x < Double(width) && point.y < Double(height)
-        }
-        switch action {
-        case .tap(let point): guard pointIsValid(point) else { throw DeviceTaskError.arguments }
-        case .swipe(let from, let to, let duration):
-            guard pointIsValid(from), pointIsValid(to), duration.isFinite, (0.1...2).contains(duration) else { throw DeviceTaskError.arguments }
-        case .typeText(let text):
-            guard !text.isEmpty, text.count <= 4096, text.utf8.count <= 8192 else { throw DeviceTaskError.arguments }
-        case .launchApplication(let bundle):
-            guard !bundle.isEmpty, bundle.utf8.count <= 255,
-                  bundle.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]*$", options: .regularExpression) != nil else { throw DeviceTaskError.arguments }
-        case .pressKey, .home: break
-        }
+    private func validate(_ action: DeviceTaskAction, width: Int, height: Int) throws {
+        do {
+            let native: EiscueDeviceCore.DeviceAction = switch action {
+            case .tap(let p): .tap(p)
+            case .swipe(let from, let to, let duration): .swipe(from, to, try DeviceInputValidation.swipeDuration(seconds: duration))
+            case .typeText(let text): .typeText(text)
+            case .launchApplication(let bundle): .launch(bundleID: bundle)
+            case .pressKey(let key): .pressKey(key)
+            case .home: .home
+            }
+            try DeviceInputValidation.action(native, geometry: .init(sessionID: UUID(), revision: "validation", width: width, height: height))
+        } catch { throw DeviceTaskError.arguments }
     }
 
     private func observe(_ image: DeviceScreenshot) -> String {
@@ -282,7 +286,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         return " Screen pixels are unchanged after the last submitted action (\(repeats) identical submissions on this screen). This is not evidence of success. Reassess the visible controls and choose another route; a third identical action on an unchanged screen will pause the task."
     }
 
-    private func actionDigest(_ action: DeviceAction) throws -> Data {
+    private func actionDigest(_ action: DeviceTaskAction) throws -> Data {
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         return Data(SHA256.hash(data: try encoder.encode(action)))
     }
@@ -347,7 +351,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         if isActive, let deviceError = error as? DeviceControlError {
             let connectionLost: Bool
             switch deviceError {
-            case .notConnected: connectionLost = true
+            case .notConnected, .connectionLost: connectionLost = true
             case .connection:
                 // An optional service can fail while screen control remains
                 // usable. Pause only when the controller lost readiness.
@@ -373,7 +377,7 @@ private extension DeviceDecision {
     }
 }
 
-enum DeviceTaskError: LocalizedError {
+enum DeviceTaskError: LocalizedError, Equatable {
     case stopped, expired, scope, frame, arguments, busy, budget, paused(String)
 
     var errorDescription: String? {

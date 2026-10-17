@@ -32,7 +32,7 @@ struct ModelSettings: Codable, Equatable {
         return AgentConfiguration(
             api: api, baseURL: url, model: model.trimmingCharacters(in: .whitespacesAndNewlines),
             apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
-            supportsImages: supportsImages, maxOutputTokens: maxOutputTokens
+            supportsImages: supportsImages, maxOutputTokens: maxOutputTokens, allowsLoopbackHTTP: allowsTestLoopback
         )
     }
 }

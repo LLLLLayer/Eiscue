@@ -8,9 +8,37 @@ import Testing
 @testable import PhoneAgentNCM
 
 @Suite @MainActor struct ConnectionMethodTests {
+    @Test func cachedStatusDoesNotProbeAndFailedProbeKeepsTheSession() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        try await client.connectUSBBoard(backend: .coreDevice)
+        for _ in 0..<10 { _ = await client.status() }
+        #expect(fixture.session.geometryReads == 0)
+        fixture.session.geometryFailure = NativeBackendError.transport(code: 3)
+        guard case .unavailable = await client.probe() else { Issue.record("A failed probe must downgrade readiness"); return }
+        #expect(fixture.session.geometryReads == 1)
+        #expect(fixture.session.mediaStops == 0 && !fixture.session.closed)
+        #expect(try await client.hasPairingIdentity())
+        fixture.session.geometryFailure = nil
+        guard case .ready = await client.probe() else { Issue.record("An explicit healthy probe can restore readiness"); return }
+        #expect(fixture.session.geometryReads == 2 && fixture.session.mediaStarts == 1)
+        await client.disconnect()
+        #expect(fixture.session.mediaStops == 1 && fixture.session.closed)
+    }
+
+    @Test func probingBeforeTheFirstXCTestObservationKeepsConnectionReady() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 26), client = fixture.client()
+        fixture.session.geometryIsUnavailable = true
+        try await client.connectUSBBoard(backend: .xcTest)
+        guard case .ready = await client.probe() else { Issue.record("No initial frame is not a transport failure"); return }
+        #expect(fixture.session.mediaStops == 0 && !fixture.session.closed)
+        fixture.session.geometryIsUnavailable = false
+        _ = try await client.captureScreenshot()
+        await client.disconnect()
+    }
+
     @Test func publicMethodsSelectOnlyTheRequestedControllerTransport() async throws {
         let controller = MethodRecordingController()
-        let client = DeviceClient(controller: controller)
+        let client = DeviceClient(actuator: controller, networkSetup: controller)
         let configuration = LocalVPNConfiguration(localAddress: "10.8.1.1", peerAddress: "10.8.0.1")
         try await client.connect(method: .usbBoard, configuration: configuration)
         #expect(await controller.methods == [.usbBoard])
@@ -24,16 +52,16 @@ import Testing
         #expect(Set(DeviceConnectionMethod.allCases) == [.bluetoothBoard, .localVPN, .usbBoard])
     }
 
-    @Test func existingCustomControllersKeepAnUnsupportedBoardDefault() async {
-        let client = DeviceClient(controller: VPNOnlyController())
-        await #expect(throws: DeviceControlError.unsupported) { try await client.connectUSBBoard() }
-        await #expect(throws: DeviceControlError.unsupported) { try await client.connect(method: .usbBoard) }
-        await #expect(throws: DeviceControlError.unsupported) { try await client.pressKey(.search, frameID: UUID()) }
+    @Test func missingRouteSetupFailsWithoutFallback() async {
+        let client = DeviceClient(actuator: MethodRecordingController())
+        await #expect(throws: DeviceControlError.routeUnsupported(.usbBoard)) { try await client.connectUSBBoard() }
+        await #expect(throws: DeviceControlError.routeUnsupported(.bluetoothBoard)) { try await client.connect(method: .bluetoothBoard) }
+        await #expect(throws: DeviceControlError.staleFrame) { try await client.pressKey(.search, frameID: UUID()) }
     }
 
     @Test func existingCustomControllersDisconnectWithoutClaimingConfirmedRelease() async {
         let controller = MethodRecordingController()
-        let client = DeviceClient(controller: controller)
+        let client = DeviceClient(actuator: controller, networkSetup: controller)
         #expect(await client.disconnectAndConfirmRelease() == false)
         #expect(await controller.disconnects == 1)
     }
@@ -77,20 +105,9 @@ import Testing
         }
     }
 
-    @Test(arguments: [DeviceControlBackend.coreDevice, .xcTest])
-    func existingCustomControllersRejectExplicitBackendsWithoutConnecting(backend: DeviceControlBackend) async {
-        let controller = MethodRecordingController()
-        let client = DeviceClient(controller: controller)
-        await #expect(throws: DeviceControlError.unsupported) { try await client.connectLocalVPN(backend: backend) }
-        await #expect(throws: DeviceControlError.unsupported) { try await client.connectUSBBoard(backend: backend) }
-        await #expect(throws: DeviceControlError.unsupported) { try await client.connect(method: .localVPN, backend: backend) }
-        await #expect(throws: DeviceControlError.unsupported) { try await client.connect(method: .usbBoard, backend: backend) }
-        #expect(await controller.methods.isEmpty)
-    }
-
     @Test func publicConnectionMethodsForwardBackendChoicesToSupportingControllers() async throws {
         let controller = BackendRecordingController()
-        let client = DeviceClient(controller: controller)
+        let client = DeviceClient(actuator: controller, networkSetup: controller)
         let configuration = LocalVPNConfiguration(localAddress: "10.8.1.1", peerAddress: "10.8.0.1")
         try await client.connect(method: .localVPN, configuration: configuration, backend: .xcTest)
         try await client.connect(method: .usbBoard, backend: .coreDevice)
@@ -197,8 +214,8 @@ import Testing
         #expect(await client.status() == .ready(capabilities: [.screenshot, .tap, .swipe, .launchApplication, .listApplications]))
         let screenshot = try await client.captureScreenshot()
         #expect(screenshot.mimeType == "image/png")
-        await #expect(throws: DeviceControlError.unsupported) { try await client.home() }
-        await #expect(throws: DeviceControlError.unsupported) { try await client.typeText("synthetic") }
+        await #expect(throws: DeviceControlError.capabilityUnavailable(.home)) { try await client.home(frameID: screenshot.frameID) }
+        await #expect(throws: DeviceControlError.capabilityUnavailable(.textInput)) { try await client.typeText("synthetic", frameID: screenshot.frameID) }
         #expect(!fixture.session.closed)
         try await client.tap(at: DevicePoint(x: 1, y: 1), frameID: screenshot.frameID)
         #expect(fixture.session.taps == 1)
@@ -271,7 +288,7 @@ import Testing
         let oldFrame = try await client.captureScreenshot()
         let queryFailure = NativeBackendError.applicationQueryFailure(stage: 21, cause: cause)
         fixture.session.appListFailure = queryFailure
-        await #expect(throws: DeviceControlError.connection(NativeDeviceErrorPresentation.message(queryFailure))) {
+        await #expect(throws: DeviceControlError.serviceUnavailable(.applicationList)) {
             try await client.listApplications()
         }
         #expect(!fixture.session.closed)
@@ -450,29 +467,50 @@ import Testing
 
 private enum TestFailure: Error { case didNotStart }
 
-private actor MethodRecordingController: DeviceController {
+private actor MethodRecordingController: DeviceActuator, NetworkRouteSetup {
     var methods: [DeviceConnectionMethod] = []
     var configurations: [LocalVPNConfiguration] = []
     var disconnects = 0
-    func status() async -> DeviceStatus { .unavailable(reason: "synthetic") }
-    func connectLocalVPN(configuration: LocalVPNConfiguration) async throws {
-        methods.append(.localVPN); configurations.append(configuration)
-    }
-    func connectUSBBoard() async throws { methods.append(.usbBoard) }
-    func disconnect() async { disconnects += 1 }
+    func cachedStatus() async -> DeviceStatus { .unavailable(reason: "synthetic") }
+    func probe() async -> DeviceStatus { await cachedStatus() }
+    func capture() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
+    func frameState() async throws -> DeviceFrameState { throw DeviceControlError.notConnected }
+    func perform(_ action: DeviceAction, frame: FrameGrant) async throws -> SubmissionResult { .notSubmitted(.notConnected) }
+    func releaseInput() async throws {}
+    func disconnect() async -> ReleaseConfirmation { disconnects += 1; return .unconfirmed }
+    func listApplications() async throws -> [DeviceApplication] { [] }
+    func hasPairingIdentity() async throws -> Bool { false }
+    func importPairingIdentity(_ data: Data) async throws {}
+    func removePairingIdentity() async throws {}
+    func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws { methods.append(.localVPN); configurations.append(configuration) }
+    func connectUSBBoard(backend: DeviceControlBackend) async throws { methods.append(.usbBoard) }
+    #if DEBUG
+    func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data { Data() }
+    #endif
 }
-private actor VPNOnlyController: DeviceController {
-    func status() async -> DeviceStatus { .unavailable(reason: "synthetic") }
-    func connectLocalVPN(configuration: LocalVPNConfiguration) async throws {}
-}
-private actor BackendRecordingController: DeviceController {
+private actor BackendRecordingController: DeviceActuator, NetworkRouteSetup {
     var backends: [DeviceControlBackend] = []
     var configurations: [LocalVPNConfiguration] = []
-    func status() async -> DeviceStatus { .unavailable(reason: "synthetic") }
-    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws {
-        backends.append(backend); configurations.append(configuration)
-    }
+    func cachedStatus() async -> DeviceStatus { .unavailable(reason: "synthetic") }
+    func probe() async -> DeviceStatus { await cachedStatus() }
+    func capture() async throws -> DeviceScreenshot { throw DeviceControlError.notConnected }
+    func frameState() async throws -> DeviceFrameState { throw DeviceControlError.notConnected }
+    func perform(_ action: DeviceAction, frame: FrameGrant) async throws -> SubmissionResult { .notSubmitted(.notConnected) }
+    func releaseInput() async throws {}
+    func disconnect() async -> ReleaseConfirmation { .unconfirmed }
+    func listApplications() async throws -> [DeviceApplication] { [] }
+    func hasPairingIdentity() async throws -> Bool { false }
+    func importPairingIdentity(_ data: Data) async throws {}
+    func removePairingIdentity() async throws {}
+    func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func beginPairing(configuration: LocalVPNConfiguration) async -> AsyncThrowingStream<DevicePairingEvent, Error> { AsyncThrowingStream { $0.finish() } }
+    func connectLocalVPN(configuration: LocalVPNConfiguration, backend: DeviceControlBackend) async throws { backends.append(backend); configurations.append(configuration) }
     func connectUSBBoard(backend: DeviceControlBackend) async throws { backends.append(backend) }
+    #if DEBUG
+    func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data { Data() }
+    #endif
 }
 
 @MainActor private final class ConnectionFixture {
@@ -497,7 +535,7 @@ private actor BackendRecordingController: DeviceController {
         ]))
     }
     func client() -> DeviceClient {
-        if let controller { return DeviceClient(controller: controller) }
+        if let controller { return DeviceClient(actuator: controller, networkSetup: controller) }
         let dependencies = LocalDeviceConnectionDependencies(
             supportsPhysicalDevice: true,
             operatingSystemVersion: operatingSystemVersion,
@@ -507,7 +545,7 @@ private actor BackendRecordingController: DeviceController {
         )
         let controller = LocalDeviceController(identityStore: store, dependencies: dependencies)
         self.controller = controller
-        return DeviceClient(controller: controller)
+        return DeviceClient(actuator: controller, networkSetup: controller)
     }
 }
 
@@ -563,6 +601,9 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
     var peerID: String?
     var mediaFailure: (any Error)?
     var captureFailure: (any Error)?
+    var geometryFailure: (any Error)?
+    var geometryReads = 0
+    var geometryIsUnavailable = false
     var appListFailure: (any Error)?
     private var geometry = NativeVideoGeometry(id: UUID(), epoch: 1, revision: 1)
     private let image: Data
@@ -599,7 +640,7 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
         if let captureFailure { throw captureFailure }
         return NativeVideoSnapshot(data: image, geometry: geometry, mimeType: "image/png")
     }
-    func currentVideoGeometry() async throws -> NativeVideoGeometry? { geometry }
+    func currentVideoGeometry() async throws -> NativeVideoGeometry? { geometryReads += 1; if let geometryFailure { throw geometryFailure }; return geometryIsUnavailable ? nil : geometry }
     func tapDelivery(x: UInt16, y: UInt16) async throws -> InputDelivery { taps += 1; return .reportsWrittenVisualEffectUnverified }
     func dragDelivery(fromX: UInt16, fromY: UInt16, toX: UInt16, toY: UInt16, durationMS: UInt16) async throws -> InputDelivery { .reportsWrittenVisualEffectUnverified }
     func typeText(_ text: String) async throws {}

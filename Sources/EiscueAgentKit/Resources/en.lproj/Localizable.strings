@@ -5,7 +5,7 @@
 "agent.configuration.invalid-storage" = "The agent storage directory must be a local file URL.";
 "agent.configuration.invalid-tools" = "Tool names must be unique, and parameters must be JSON Schema objects.";
 "agent.configuration.invalid-verification" = "Verification tools must be read-only.";
-"agent.configuration.invalid-url" = "Enter a valid HTTP or HTTPS model service URL.";
+"agent.configuration.invalid-url" = "Enter a valid HTTPS model service URL without credentials, query, or fragment.";
 "agent.configuration.missing-model" = "Enter a model ID.";
 "agent.conversation.new-title" = "New conversation";
 "agent.error.busy" = "A task is running. Stop it or wait for it to finish.";
@@ -29,3 +29,12 @@
 "agent.configuration.invalid-tool-cost" = "Tool execution costs must be positive. An action with built-in verification must reserve at least two units.";
 
 "agent.storage.deletion-pending" = "This conversation is being deleted. Reopen the conversation list to finish cleanup.";
+
+"agent.pause.no-progress" = "The task paused because it was not making progress.";
+"agent.pause.verification-unavailable" = "The last action could not be verified. Observe again before continuing.";
+"agent.pause.connection-lost" = "The device connection was lost. Reconnect before continuing.";
+"agent.pause.host-requested" = "The task paused. Review progress before continuing.";
+"agent.tool.outcome-unknown" = "The operation outcome is unknown. Confirm its visible result before continuing.";
+"agent.tool.not-executed" = "The operation was not executed because the task stopped.";
+"agent.storage.corrupt-conversations" = "Some conversations could not be read. Their original files are preserved: %@";
+"agent.configuration.invalid-image-limit" = "Image context limits must not be negative.";

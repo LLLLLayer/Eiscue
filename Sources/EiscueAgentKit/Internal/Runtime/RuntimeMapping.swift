@@ -108,27 +108,45 @@ enum RuntimeMapping {
                 try await budget.enter(mayHaveSideEffects: tool.mayHaveSideEffects, isVerification: tool.isVerification,
                                        executionCost: tool.executionCost, verifiesSideEffects: tool.verifiesSideEffects)
                 let result = try await tool.execute(arguments)
+                if result.outcome == .unknown {
+                    await budget.outcomeUnknown(toolName: tool.name)
+                    return runtimeResult(result, policy: tool.contextImagePolicy).terminating()
+                }
                 try await budget.check()
                 await budget.complete(isVerification: tool.isVerification, verifiesSideEffects: tool.verifiesSideEffects,
                                       isError: result.isError)
-                var blocks = result.content.map(content)
+                var blocks = result.content
                 if tool.mayHaveSideEffects, !result.isError, let reminder = await budget.verificationReminder() {
                     blocks.append(.text(reminder))
                 }
-                return PiDurableKit.ToolResult(content: blocks, isError: result.isError)
+                return runtimeResult(.init(content: blocks, outcome: result.outcome), policy: tool.contextImagePolicy)
             } catch AgentError.toolLimitReached {
                 await budget.reachLimit()
-                return .error(AgentError.toolLimitReached.localizedDescription).terminating()
+                return runtimeResult(.init(content: [.text(AgentError.toolLimitReached.localizedDescription)], outcome: .notExecuted), policy: tool.contextImagePolicy).terminating()
             } catch AgentError.toolExecutionPaused(let reason) {
-                let reason = redact(reason, secret: secret)
                 await budget.pause(reason)
-                return .error(reason).terminating()
+                return runtimeResult(.init(content: [.text(reason.localizedDescription)], outcome: .failed), policy: tool.contextImagePolicy).terminating()
+            } catch AgentToolError.paused(let reason) {
+                await budget.pause(reason)
+                return runtimeResult(.init(content: [.text(reason.localizedDescription)], outcome: .failed), policy: tool.contextImagePolicy).terminating()
+            } catch AgentToolError.outcomeUnknown {
+                await budget.outcomeUnknown(toolName: tool.name)
+                return runtimeResult(.init(content: [.text(String(localized: "agent.tool.outcome-unknown", defaultValue: "The operation outcome is unknown. Confirm its visible result before continuing.", bundle: .module))], outcome: .unknown), policy: tool.contextImagePolicy).terminating()
+            } catch RuntimeStopSignal.outcomeUnknown {
+                return runtimeResult(.init(content: [.text(String(localized: "agent.tool.not-executed", defaultValue: "The operation was not executed because the task stopped.", bundle: .module))], outcome: .notExecuted), policy: tool.contextImagePolicy).terminating()
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                return .error(redact(error.localizedDescription, secret: secret))
+                return runtimeResult(.error(redact(error.localizedDescription, secret: secret)), policy: tool.contextImagePolicy)
             }
         }
+    }
+
+    static func runtimeResult(_ result: AgentToolResult, policy: AgentContextImagePolicy) -> PiDurableKit.ToolResult {
+        var metadata: PiDurableKit.JSONObject = ["outcome": .string(result.outcome.rawValue)]
+        if case .latest(let limit) = policy { metadata["contextImageLimit"] = .number(Double(limit)) }
+        return PiDurableKit.ToolResult(content: result.content.map(content), isError: result.isError,
+                                      details: .object(["eiscue": .object(metadata)]))
     }
 
     static func content(_ block: AgentToolContent) -> PiDurableKit.ContentBlock {
@@ -138,7 +156,7 @@ enum RuntimeMapping {
         }
     }
 
-    static func result(_ message: ToolResultMessage) -> AgentToolResult {
+    static func result(_ message: ToolResultMessage, entry: Entry? = nil) -> AgentToolResult {
         let content: [AgentToolContent] = message.content.compactMap { block in
             switch block {
             case .text(let text): return .text(text)
@@ -146,7 +164,11 @@ enum RuntimeMapping {
             default: return nil
             }
         }
-        return AgentToolResult(content: content, isError: message.isError)
+        let diagnostics = (try? entry?.data?["diagnostics"]?.decode(as: [ToolDiagnostic].self)) ?? []
+        let wasInterrupted = diagnostics.contains { $0.code == "interrupted" || $0.code == "aborted" }
+        let outcome = message.details?["eiscue"]?["outcome"]?.stringValue.flatMap(AgentToolOutcome.init(rawValue:))
+            ?? (wasInterrupted ? .interrupted : (message.isError ? .failed : .succeeded))
+        return AgentToolResult(content: content, outcome: outcome)
     }
 
     static func message(_ entry: Entry, conversationID: UUID) -> AgentMessage? {

@@ -35,7 +35,7 @@ final class DeviceToolSession {
             let schema = spec.schema
             return AgentTool(name: spec.rawValue, description: schema.description, parameters: schema.parameters,
                              mayHaveSideEffects: spec.mayHaveSideEffects, isVerification: spec.isVerification,
-                             executionCost: spec.executionCost, verifiesSideEffects: spec.verifiesSideEffects) { [weak self] arguments in
+                             executionCost: spec.executionCost, verifiesSideEffects: spec.verifiesSideEffects, contextImagePolicy: .latest(2)) { [weak self] arguments in
                 guard let self else { throw DeviceTaskError.stopped }
                 return try await self.execute(spec, arguments: arguments)
             }
@@ -57,8 +57,18 @@ final class DeviceToolSession {
             }
         } catch DeviceTaskError.budget {
             throw AgentError.toolLimitReached
-        } catch DeviceTaskError.paused(let reason) {
-            throw AgentError.toolExecutionPaused(reason)
+        } catch let error as DeviceControlError where error.isDeliveryUnknown {
+            throw AgentToolError.outcomeUnknown
+        } catch DeviceTaskError.paused {
+            let reason: AgentPauseReason = switch runner.pauseReason {
+            case .verificationUnavailable: .verificationUnavailable
+            case .connectionLost: .connectionLost
+            default: .noProgress
+            }
+            throw AgentToolError.paused(reason)
+        } catch {
+            if runner.hasUnknownOutcome { throw AgentToolError.outcomeUnknown }
+            throw error
         }
     }
 
@@ -69,7 +79,7 @@ final class DeviceToolSession {
         case .tap, .swipe, .typeText, .launchApplication, .home, .pressKey: break
         }
         guard let raw = arguments["frameId"]?.stringValue, let id = UUID(uuidString: raw) else { throw DeviceTaskError.frame }
-        let action: DeviceAction
+        let action: DeviceTaskAction
         switch spec {
         case .tap: action = .tap(try point("x", "y", arguments))
         case .swipe:
@@ -134,15 +144,15 @@ extension DeviceToolSpec {
         case .swipe:
             Schema(description: "Drag between pixel coordinates. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: [
                     "frameId": frame, "fromX": coordinate, "fromY": coordinate, "toX": coordinate, "toY": coordinate,
-                    "duration": ["type": "number", "minimum": 0.1, "maximum": 2]
+                    "duration": ["type": "number", "minimum": .number(DeviceInputValidation.minimumSwipeSeconds), "maximum": .number(DeviceInputValidation.maximumSwipeSeconds)]
                 ], required: ["frameId", "fromX", "fromY", "toX", "toY", "duration"])
         case .typeText:
             Schema(description: "Enter text into the focused field visible in the latest screenshot. Replaces the system clipboard and pastes it. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: [
-                    "frameId": frame, "text": ["type": "string", "maxLength": 4096]
+                    "frameId": frame, "text": ["type": "string", "maxLength": .number(Double(DeviceInputValidation.maximumTextBytes))]
                 ], required: ["frameId", "text"])
         case .launchApplication:
             Schema(description: "Launch an application by exact bundle ID from device_list_apps. Returns a fresh screenshot and frameId to verify the result.", properties: [
-                    "frameId": frame, "bundleId": ["type": "string", "minLength": 1, "maxLength": 255]
+                    "frameId": frame, "bundleId": ["type": "string", "minLength": 1, "maxLength": .number(Double(DeviceInputValidation.maximumBundleIDBytes))]
                 ], required: ["frameId", "bundleId"])
         case .home:
             Schema(description: "Return to the device home screen. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: ["frameId": frame], required: ["frameId"])

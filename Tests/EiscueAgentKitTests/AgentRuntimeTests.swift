@@ -5,6 +5,147 @@ import PiDurableKit
 
 @Suite("Agent runtime")
 struct AgentRuntimeTests {
+    @Test(arguments: [false, true])
+    func unknownOutcomeTerminatesAMixedToolRoundBeforeAnotherModelRequest(asResult: Bool) async throws {
+        let evidence = RuntimeEvidence()
+        let first = AgentTool(name: "first", description: "Known action", parameters: emptySchema) { _ in
+            await evidence.record("first"); return .text("Done")
+        }
+        let unknown = AgentTool(name: "uncertain", description: "Unknown action", parameters: emptySchema) { _ in
+            await evidence.record("unknown")
+            if asResult { return .init(content: [.text("Unknown")], outcome: .unknown) }
+            throw AgentToolError.outcomeUnknown
+        }
+        let later = AgentTool(name: "later", description: "Must not run", parameters: emptySchema) { _ in
+            await evidence.record("unexpected"); return .text("Wrong")
+        }
+        let fixture = try await RuntimeFixture(tools: [first, unknown, later])
+        defer { fixture.remove() }
+        try await fixture.faux.append(.toolCall("first", [:], id: "first"), .toolCall("uncertain", [:], id: "unknown"), .toolCall("later", [:], id: "later"))
+        try await fixture.faux.append(.text("Must remain unused"))
+        let request = AgentRequest(conversationID: UUID(), prompt: "Act")
+        let events = try await collect(fixture.client.run(request: request))
+        #expect(events.contains(.finished(.stopped(.outcomeUnknown(toolName: "uncertain")))))
+        #expect(!events.contains(.finished(.completed)))
+        #expect(await evidence.values == ["first", "unknown"])
+        #expect(try await fixture.faux.pendingResponseCount() == 1)
+        let result = try await fixture.client.toolResult(conversationID: request.conversationID, requestID: request.requestID, toolCallID: "unknown")
+        #expect(result?.result.outcome == .unknown)
+        let skipped = try await fixture.client.toolResult(conversationID: request.conversationID, requestID: request.requestID, toolCallID: "later")
+        #expect(skipped?.result.outcome == .notExecuted)
+        #expect(try await !fixture.client.recover(conversationID: request.conversationID).hasInterruptedRun)
+        // An explicit fresh request can inspect the state; the old unknown result does not block it.
+        let next = try await collect(fixture.client.run(request: .init(conversationID: request.conversationID, prompt: "I checked the result. Continue.")))
+        #expect(next.contains(.finished(.completed)))
+    }
+
+    @Test func successfulWorkKeepsItsOutcomeWhenStorageCloseFails() async throws {
+        let fixture = try await RuntimeFixture(closeOperation: { harness in
+            try await harness.close(); throw AgentError.runtime("Injected close failure")
+        })
+        defer { fixture.remove() }
+        try await fixture.faux.append(.text("Completed answer"))
+        let events = try await collect(fixture.client.run(request: .init(conversationID: UUID(), prompt: "Work")))
+        #expect(events.contains(.cleanupFailed("Injected close failure")))
+        #expect(events.last == .finished(.completed))
+    }
+
+    @Test func lateCancelReportsEndedCloseFailureButDoesNotReplaceANewerRunsCleanup() async throws {
+        let closes = RuntimeEvidence(), toolWork = RuntimeEvidence()
+        let slow = AgentTool(name: "slow", description: "Wait", parameters: emptySchema) { _ in
+            await toolWork.record("started"); try await Task.sleep(for: .seconds(30)); return .text("Wrong")
+        }
+        let fixture = try await RuntimeFixture(tools: [slow], closeOperation: { harness in
+            try await harness.close()
+            await closes.record("closed")
+            if await closes.values.count == 1 { throw AgentError.runtime("Ended close failure") }
+        })
+        defer { fixture.remove() }
+        try await fixture.faux.append(.text("Completed answer"))
+        let first = AgentRequest(conversationID: UUID(), prompt: "First")
+        let events = try await collect(fixture.client.run(request: first))
+        #expect(events.last == .finished(.completed))
+        #expect(events.contains(.cleanupFailed("Ended close failure")))
+        await #expect(throws: AgentError.cleanupFailed("Ended close failure")) { try await fixture.client.cancel() }
+        await #expect(throws: AgentError.cleanupFailed("Ended close failure")) { try await fixture.client.cancel(conversationID: first.conversationID) }
+        let reader = AgentClient(storageDirectory: fixture.directory)
+        await #expect(throws: AgentError.busy) { try await reader.recover(conversationID: first.conversationID) }
+
+        try await fixture.faux.append(.toolCall("slow", [:]))
+        let next = AgentRequest(conversationID: UUID(), prompt: "New run")
+        let work = Task { try await collect(fixture.client.run(request: next)) }
+        try await eventually { await toolWork.values == ["started"] }
+        try await fixture.client.cancel()
+        #expect(try await work.value.last == .finished(.cancelled))
+        try await fixture.client.cancel()
+        #expect(await closes.values.count == 2)
+    }
+
+    @Test func cancellingReportsCloseFailureAndKeepsTheDatabaseOwned() async throws {
+        let evidence = RuntimeEvidence()
+        let slow = AgentTool(name: "slow", description: "Wait", parameters: emptySchema) { _ in
+            await evidence.record("started"); try await Task.sleep(for: .seconds(30)); return .text("Wrong")
+        }
+        let fixture = try await RuntimeFixture(tools: [slow], closeOperation: { harness in
+            try await harness.close()
+            throw AgentError.runtime("Injected close failure")
+        })
+        defer { fixture.remove() }
+        try await fixture.faux.append(.toolCall("slow", [:]))
+        let request = AgentRequest(conversationID: UUID(), prompt: "Work")
+        let reader = Task { try await collect(fixture.client.run(request: request)) }
+        try await eventually { await evidence.values == ["started"] }
+        await #expect(throws: AgentError.cleanupFailed("Injected close failure")) { try await fixture.client.cancel() }
+        let events = try await reader.value
+        #expect(events.contains(.cleanupFailed("Injected close failure")))
+        #expect(events.contains(.finished(.cancelled)))
+        let other = AgentClient(storageDirectory: fixture.directory)
+        await #expect(throws: AgentError.busy) { try await other.recover(conversationID: request.conversationID) }
+        await #expect(throws: AgentError.busy) { try await other.removeConversation(id: request.conversationID) }
+    }
+
+    @Test func processWideOwnershipRejectsAnotherEngineUntilCloseCompletes() async throws {
+        let evidence = RuntimeEvidence()
+        let slow = AgentTool(name: "slow", description: "Wait", parameters: emptySchema) { _ in
+            await evidence.record("started"); try await Task.sleep(for: .seconds(30)); return .text("Wrong")
+        }
+        let fixture = try await RuntimeFixture(tools: [slow])
+        defer { fixture.remove() }
+        try await fixture.faux.append(.toolCall("slow", [:]))
+        let request = AgentRequest(conversationID: UUID(), prompt: "Work")
+        let reader = Task { try await collect(fixture.client.run(request: request)) }
+        try await eventually { await evidence.values == ["started"] }
+        let other = AgentClient(storageDirectory: fixture.directory.appendingPathComponent("..", isDirectory: true).appendingPathComponent(fixture.directory.lastPathComponent))
+        await #expect(throws: AgentError.busy) { try await other.recover(conversationID: request.conversationID) }
+        await #expect(throws: AgentError.busy) { try await other.cancel(conversationID: request.conversationID) }
+        await #expect(throws: AgentError.busy) { try await other.removeConversation(id: request.conversationID) }
+        try await fixture.client.cancel()
+        _ = try await reader.value
+        #expect(try await !other.recover(conversationID: request.conversationID).hasInterruptedRun)
+    }
+
+    @Test func endpointValidationRequiresHTTPSOrAnExplicitLiteralLoopbackException() throws {
+        for endpoint in ["http://example.com/v1", "https://example.com/v1?key=secret", "https://example.com/v1#part", "https://u:p@example.com/v1", "http://127.0.0.1:18765/v1"] {
+            var configuration = testConfiguration; configuration.baseURL = URL(string: endpoint)!
+            #expect(throws: AgentError.self) { try configuration.validate() }
+        }
+        for endpoint in ["http://127.0.0.1:18765/v1", "http://[::1]:18765/v1", "http://localhost:18765/v1"] {
+            var configuration = testConfiguration; configuration.baseURL = URL(string: endpoint)!; configuration.allowsLoopbackHTTP = true
+            try configuration.validate()
+        }
+        var remote = testConfiguration; remote.baseURL = URL(string: "http://127.0.0.1.evil.invalid/v1")!; remote.allowsLoopbackHTTP = true
+        #expect(throws: AgentError.self) { try remote.validate() }
+    }
+
+    @Test func legacyToolResultsInferTheirTypedOutcomeWithoutMetadata() throws {
+        for failed in [false, true] {
+            let json: PiDurableKit.JSONValue = ["role": "toolResult", "toolCallId": "legacy", "toolName": "old", "isError": .bool(failed), "timestamp": 1, "content": [["type": "text", "text": "Legacy result"]]]
+            let result = RuntimeMapping.result(try json.decode(as: ToolResultMessage.self))
+            #expect(result.outcome == (failed ? .failed : .succeeded))
+            #expect(result.text == "Legacy result")
+        }
+    }
+
     @Test func attachmentMetadataReferencesDurableContentAcrossImportRetryAndReopen() async throws {
         let fixture = try await RuntimeFixture()
         defer { fixture.remove() }
@@ -41,8 +182,8 @@ struct AgentRuntimeTests {
 
     @Test func deviceImagesAreBoundedOnlyInRequestsAndNeverReplayOnRecovery() async throws {
         let evidence = RuntimeEvidence()
-        let action = AgentTool(name: "device_tap", description: "Fixture input with observation", parameters: emptySchema,
-            executionCost: 2, verifiesSideEffects: true) { _ in
+        let action = AgentTool(name: "capture_after_action", description: "Fixture input with observation", parameters: emptySchema,
+            executionCost: 2, verifiesSideEffects: true, contextImagePolicy: .latest(2)) { _ in
                 await evidence.record("tap")
                 let step = await evidence.values.count
                 return .image(Data(repeating: UInt8(step), count: 1024), mimeType: "image/png", caption: "frameId=frame-\(step)")
@@ -66,9 +207,9 @@ struct AgentRuntimeTests {
             if expectedResults > 2 {
                 #expect(images.first?.first == UInt8(expectedResults - 1))
                 #expect(images.last?.first == UInt8(expectedResults))
-                #expect(results.first?.text.contains("Older device screenshot omitted") == true)
+                #expect(results.first?.text.contains("Older tool image omitted") == true)
             }
-            return count <= 4 ? FauxResponse(.toolCall("device_tap", [:], id: "tap-\(count)")) : .text("Done")
+            return count <= 4 ? FauxResponse(.toolCall("capture_after_action", [:], id: "tap-\(count)")) : .text("Done")
         }
         let request = AgentRequest(conversationID: UUID(), prompt: "Four fixture inputs")
         try await collect(fixture.client.run(request: request))
@@ -79,9 +220,9 @@ struct AgentRuntimeTests {
             let completion = try #require(try await reader.toolResult(conversationID: request.conversationID,
                 requestID: request.requestID, toolCallID: "tap-\(step)"))
             #expect(completion.result.content.contains(.image(data: Data(repeating: UInt8(step), count: 1024), mimeType: "image/png")))
-            #expect(!completion.result.text.contains("Older device screenshot omitted"))
+            #expect(!completion.result.text.contains("Older tool image omitted"))
         }
-        // Reopen with no registered tools: old screenshot policy still applies, and no input replays.
+        // Reopen with no registered tools: persisted image policy still applies, and no input replays.
         let reopened = AgentClient(engine: DefaultEngine(configuration: testConfiguration, storageDirectory: fixture.directory,
             modelFactory: { (fixture.models, fixture.faux.model) }))
         try await collect(reopened.run(request: .init(conversationID: request.conversationID, prompt: "Continue as chat")))
@@ -594,7 +735,7 @@ struct AgentRuntimeTests {
         let evidence = RuntimeEvidence()
         let pause = AgentTool(name: "pause", description: "Pause at a known boundary", parameters: emptySchema) { _ in
             await evidence.record("paused")
-            throw AgentError.toolExecutionPaused("Review test-secret-not-for-disk")
+            throw AgentError.toolExecutionPaused(.noProgress)
         }
         let capture = AgentTool(name: "capture", description: "Observe again", parameters: emptySchema,
                                mayHaveSideEffects: false) { _ in
@@ -617,7 +758,7 @@ struct AgentRuntimeTests {
                 events.append(event)
             }
             Issue.record("Host pause must surface to the caller")
-        } catch { #expect(error as? AgentError == .toolExecutionPaused("Review [redacted]")) }
+        } catch { #expect(error as? AgentError == .toolExecutionPaused(.noProgress)) }
         #expect(!events.contains(.finished(.completed)))
         #expect(await evidence.values == ["paused"])
         #expect(try await !fixture.client.recover(conversationID: id).hasInterruptedRun)
@@ -634,12 +775,12 @@ struct AgentRuntimeTests {
     func cleanupFailureCannotBeReportedAsASafePause(hostPause: Bool) async throws {
         let failure = AgentError.runtime("Injected durable cleanup failure")
         let action = AgentTool(name: "act", description: "Action", parameters: emptySchema) { _ in
-            throw AgentError.toolExecutionPaused("Review progress")
+            throw AgentError.toolExecutionPaused(.noProgress)
         }
         let fixture = try await RuntimeFixture(tools: [action], abortOperation: { _ in throw failure })
         defer { fixture.remove() }
         try await fixture.faux.append(.toolCall("act", [:]))
-        await #expect(throws: failure) {
+        await #expect(throws: AgentError.cleanupFailed(failure.localizedDescription)) {
             try await collect(fixture.client.run(request: .init(conversationID: UUID(), prompt: "Work", maxToolCalls: hostPause ? 1 : 0)))
         }
     }
@@ -684,7 +825,7 @@ struct AgentRuntimeTests {
         defer { fixture.remove() }
         try await fixture.faux.append(.toolCall("slow", [:]))
         await #expect(throws: AgentError.timedOut) {
-            try await collect(fixture.client.run(request: .init(conversationID: UUID(), prompt: "Wait", timeoutSeconds: 0.7)))
+            try await collect(fixture.client.run(request: .init(conversationID: UUID(), prompt: "Wait", timeoutSeconds: 5)))
         }
         #expect(await evidence.values == ["started"])
     }
@@ -710,7 +851,7 @@ struct AgentRuntimeTests {
         let reader = Task { try await collect(events) }
         try await eventually { await evidence.values == ["started"] }
         let started = ContinuousClock.now
-        await #expect(throws: failure) { try await fixture.client.cancel() }
+        await #expect(throws: AgentError.cleanupFailed(failure.localizedDescription)) { try await fixture.client.cancel() }
         #expect(ContinuousClock.now - started < .seconds(5))
         #expect(await evidence.values == ["started", "cancelled"])
         #expect(try await reader.value.contains(.finished(.cancelled)))
@@ -775,6 +916,7 @@ struct AgentRuntimeTests {
         }
         let events = try await collect(fixture.client.run(request: .init(conversationID: id, prompt: "", mode: .resume)))
         #expect(events.contains(.finished(.completed)))
+        #expect(events.contains { if case .toolFinished(let result) = $0 { result.result.outcome == .interrupted } else { false } })
         #expect(await evidence.values == ["original-action"])
     }
 
@@ -926,7 +1068,7 @@ private struct RuntimeFixture {
     let faux: FauxProvider
     let client: AgentClient
 
-    init(tools: [AgentTool] = [], abortOperation: DefaultEngine.AbortOperation? = nil) async throws {
+    init(tools: [AgentTool] = [], abortOperation: DefaultEngine.AbortOperation? = nil, closeOperation: DefaultEngine.CloseOperation? = nil) async throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-runtime-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let models = Models(builtinProviders: false)
@@ -936,7 +1078,8 @@ private struct RuntimeFixture {
         self.faux = faux
         client = AgentClient(engine: DefaultEngine(configuration: testConfiguration, storageDirectory: directory,
             tools: tools, modelFactory: { (models, faux.model) },
-            abortOperation: abortOperation ?? { try await $0.abort(background: true) }))
+            abortOperation: abortOperation ?? { try await $0.abort(background: true) },
+            closeOperation: closeOperation ?? { try await $0.close() }))
     }
 
     func fileURL(_ id: UUID) -> URL { directory.appendingPathComponent(id.uuidString.lowercased() + ".sqlite") }

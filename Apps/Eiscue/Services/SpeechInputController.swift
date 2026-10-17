@@ -49,13 +49,28 @@ final class SpeechInputController {
     @ObservationIgnored private var finishTimeout: Task<Void, Never>?
     @ObservationIgnored private var recordingTimeout: Task<Void, Never>?
     @ObservationIgnored private var captureMonitor: Task<Void, Never>?
-    @ObservationIgnored private var recognizer: SFSpeechRecognizer?
-    @ObservationIgnored private var recognitionTask: SFSpeechRecognitionTask?
-    @ObservationIgnored private var engine: AVAudioEngine?
-    @ObservationIgnored private var pipe: SpeechAudioPipe?
-    @ObservationIgnored private var hasTap = false
-    @ObservationIgnored private var ownsAudioSession = false
-    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private let resources = SpeechInputResources()
+    private var recognizer: SFSpeechRecognizer? {
+        get { resources.state.recognizer } set { resources.state.recognizer = newValue }
+    }
+    private var recognitionTask: SFSpeechRecognitionTask? {
+        get { resources.state.recognitionTask } set { resources.state.recognitionTask = newValue }
+    }
+    private var engine: AVAudioEngine? {
+        get { resources.state.engine } set { resources.state.engine = newValue }
+    }
+    private var pipe: SpeechAudioPipe? {
+        get { resources.state.pipe } set { resources.state.pipe = newValue }
+    }
+    private var hasTap: Bool {
+        get { resources.state.hasTap } set { resources.state.hasTap = newValue }
+    }
+    private var ownsAudioSession: Bool {
+        get { resources.state.ownsAudioSession } set { resources.state.ownsAudioSession = newValue }
+    }
+    private var observers: [NSObjectProtocol] {
+        get { resources.state.observers } set { resources.state.observers = newValue }
+    }
     @ObservationIgnored private let dependencies: Dependencies?
     #if DEBUG
     @ObservationIgnored private var captureDiagnostics: [[String: Any]] = []
@@ -95,19 +110,14 @@ final class SpeechInputController {
         })
     }
 
-    isolated deinit {
-        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    // Isolated deinit crashes in iOS 26's TaskLocal runtime when SwiftUI releases
+    // this object outside a Swift task (swiftlang/swift#88036). Keep teardown
+    // synchronous on the releasing thread; these APIs require no actor hop.
+    nonisolated deinit {
         startTask?.cancel()
         finishTimeout?.cancel()
         recordingTimeout?.cancel()
         captureMonitor?.cancel()
-        engine?.stop()
-        if hasTap { engine?.inputNode.removeTap(onBus: 0) }
-        pipe?.endAudio()
-        recognitionTask?.cancel()
-        if ownsAudioSession {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        }
     }
 
     func toggle(locale: Locale = .current, beforeRecording: @escaping @MainActor () async throws -> Void = {},
@@ -398,6 +408,37 @@ final class SpeechInputController {
             case .microphoneUnavailable: String(localized: "speech.error.microphoneUnavailable", table: "Speech")
             case .noSpeech: String(localized: "speech.error.noSpeech", table: "Speech")
             }
+        }
+    }
+}
+
+/// Only the controller owns this box. Live state is accessed on MainActor; its
+/// final release has exclusive access and performs thread-independent teardown.
+/// Keeping non-Sendable AV/Speech references here avoids transferring them to a
+/// task or marking individual controller fields nonisolated(unsafe).
+private final class SpeechInputResources: @unchecked Sendable {
+    struct State {
+        var recognizer: SFSpeechRecognizer?
+        var recognitionTask: SFSpeechRecognitionTask?
+        var engine: AVAudioEngine?
+        var pipe: SpeechAudioPipe?
+        var hasTap = false
+        var ownsAudioSession = false
+        var observers: [NSObjectProtocol] = []
+    }
+    private var storage = State()
+    @MainActor var state: State {
+        get { storage } set { storage = newValue }
+    }
+
+    deinit {
+        for observer in storage.observers { NotificationCenter.default.removeObserver(observer) }
+        storage.engine?.stop()
+        if storage.hasTap { storage.engine?.inputNode.removeTap(onBus: 0) }
+        storage.pipe?.endAudio()
+        storage.recognitionTask?.cancel()
+        if storage.ownsAudioSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 }

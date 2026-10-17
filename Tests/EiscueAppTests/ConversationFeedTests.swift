@@ -145,13 +145,18 @@ final class ConversationFeedTests: XCTestCase {
         let conversation = Conversation(title: "Device task", messages: [user])
         model.conversations = [conversation]; model.selectedConversationID = conversation.id
         let run = fixture.run(conversation: conversation, requestID: user.id)
-        model.activeRun = run
+        model.runCoordinator.publish(run)
+        let session = try XCTUnwrap(model.runCoordinator.current)
+        let revision = session.activityRevision
+        model.runCoordinator.updateSnapshot { $0.record.events.append(RunLogEntry(kind: "model.waiting", summary: "Waiting")) }
+        XCTAssertEqual(session.activityRevision, revision, "Log updates must not invalidate the transcript's activity projection.")
         XCTAssertFalse(model.isHoldingDeviceTranscript, "Starting a run must not hide all its progress.")
-        model.streamingText = "Checking the screen"
+        model.runCoordinator.updateSnapshot { $0.streamingText = "Checking the screen" }
         model.holdDeviceTranscript(for: run.id)
         let tool = ToolActivity(id: "run:call", name: "device_screenshot", precedingMessageID: user.id)
-        model.activeRun?.activities = [tool]
-        model.streamingText = "Choosing a visible control"
+        model.runCoordinator.updateSnapshot { $0.record.activities = [tool] }
+        XCTAssertEqual(session.activityRevision, revision + 1)
+        model.runCoordinator.updateSnapshot { $0.streamingText = "Choosing a visible control" }
         let reply = AgentMessage(role: .assistant, text: "Next I will open Settings")
         model.conversations[0].messages.append(reply)
         XCTAssertEqual(model.displayedConversationFeed, [.message(user)])
@@ -162,15 +167,15 @@ final class ConversationFeedTests: XCTestCase {
         XCTAssertEqual(model.displayedConversationFeed, model.conversationFeed)
         XCTAssertEqual(model.displayedStreamingText, "Choosing a visible control")
         XCTAssertNotNil(model.activeRun, "Progress becomes visible before the entire task finishes.")
-        model.activeRun?.activities?[0].endedAt = Date()
-        model.activeRun?.activities?[0].output = "Observed"
+        model.runCoordinator.updateSnapshot { $0.record.activities?[0].endedAt = Date() }
+        model.runCoordinator.updateSnapshot { $0.record.activities?[0].output = "Observed" }
         model.holdDeviceTranscript(for: run.id)
         let secondStep = model.displayedConversationFeed
         model.conversations[0].messages.append(AgentMessage(role: .assistant, text: "Another step"))
         XCTAssertEqual(model.displayedConversationFeed, secondStep)
-        model.activeRun?.state = .completed
+        model.runCoordinator.updateSnapshot { $0.record.state = .completed }
         model.runs = [try XCTUnwrap(model.activeRun)]
-        model.activeRun = nil
+        model.runCoordinator.publish(nil)
         XCTAssertFalse(model.isHoldingDeviceTranscript)
         XCTAssertEqual(model.displayedConversationFeed.count, 4)
     }
@@ -183,16 +188,16 @@ final class ConversationFeedTests: XCTestCase {
         let conversation = Conversation(title: "Continue", messages: [user])
         model.conversations = [conversation]; model.selectedConversationID = conversation.id
         let first = fixture.run(conversation: conversation, requestID: user.id)
-        model.activeRun = first; model.holdDeviceTranscript(for: first.id)
+        model.runCoordinator.publish(first); model.holdDeviceTranscript(for: first.id)
         let next = fixture.run(conversation: conversation, requestID: user.id)
-        model.activeRun = next
+        model.runCoordinator.publish(next)
         XCTAssertFalse(model.isHoldingDeviceTranscript)
         model.holdDeviceTranscript(for: first.id)
         XCTAssertFalse(model.isHoldingDeviceTranscript)
         model.holdDeviceTranscript(for: next.id)
         model.releaseDeviceTranscript(for: first.id)
         XCTAssertTrue(model.isHoldingDeviceTranscript)
-        model.activeRun = nil
+        model.runCoordinator.publish(nil)
         XCTAssertFalse(model.isHoldingDeviceTranscript)
     }
 
@@ -205,18 +210,18 @@ final class ConversationFeedTests: XCTestCase {
             let conversation = Conversation(title: "Live", messages: [user])
             model.conversations = [conversation]; model.selectedConversationID = conversation.id
             let run = fixture.run(conversation: conversation, requestID: user.id, scope: scope)
-            model.activeRun = run; model.scope = .control
+            model.runCoordinator.publish(run); model.scope = .control
             model.holdDeviceTranscript(for: run.id)
-            model.streamingText = "Live response"
+            model.runCoordinator.updateSnapshot { $0.streamingText = "Live response" }
             model.conversations[0].messages.append(AgentMessage(role: .assistant, text: "Finished"))
             XCTAssertFalse(model.isHoldingDeviceTranscript)
             XCTAssertEqual(model.displayedStreamingText, "Live response")
             XCTAssertEqual(model.displayedConversationFeed, model.conversationFeed)
-            model.activeRun = nil
+            model.runCoordinator.publish(nil)
         }
         let conversation = try XCTUnwrap(model.selectedConversation)
         let run = fixture.run(conversation: conversation, requestID: UUID())
-        model.activeRun = run; model.scope = .chat
+        model.runCoordinator.publish(run); model.scope = .chat
         model.holdDeviceTranscript(for: run.id)
         XCTAssertTrue(model.isHoldingDeviceTranscript, "Composer scope must not change an active run's presentation.")
         let other = Conversation(title: "Other", messages: [AgentMessage(role: .user, text: "History")])

@@ -4,14 +4,17 @@ import PiDurableKit
 /// Runtime-specific types are kept behind AgentEngine.
 actor DefaultEngine: AgentEngine {
     typealias ModelFactory = @Sendable () async throws -> (Models, ModelRef)
+    typealias CloseOperation = @Sendable (Harness) async throws -> Void
     typealias AbortOperation = @Sendable (PiDurableKit.Conversation) async throws -> Void
     private let configuration: AgentConfiguration?
     private let storageDirectory: URL?
     private let tools: [AgentTool]
     private let modelFactory: ModelFactory?
     private let abortOperation: AbortOperation
+    private let closeOperation: CloseOperation
     private var operation: UUID?
     private var active: ActiveRun?
+    private var lastEnded: (conversationID: UUID, cleanupError: AgentError?)?
 
     init() {
         configuration = nil
@@ -19,6 +22,7 @@ actor DefaultEngine: AgentEngine {
         tools = []
         modelFactory = nil
         abortOperation = Self.abort
+        closeOperation = { try await $0.close() }
     }
 
     init(storageDirectory: URL) {
@@ -27,15 +31,18 @@ actor DefaultEngine: AgentEngine {
         tools = []
         modelFactory = nil
         abortOperation = Self.abort
+        closeOperation = { try await $0.close() }
     }
 
     init(configuration: AgentConfiguration, storageDirectory: URL, tools: [AgentTool] = [], modelFactory: ModelFactory? = nil,
-         abortOperation: @escaping AbortOperation = DefaultEngine.abort) {
+         abortOperation: @escaping AbortOperation = DefaultEngine.abort,
+         closeOperation: @escaping CloseOperation = { try await $0.close() }) {
         self.configuration = configuration
         self.storageDirectory = storageDirectory
         self.tools = tools
         self.modelFactory = modelFactory
         self.abortOperation = abortOperation
+        self.closeOperation = closeOperation
     }
 
     var availability: AgentAvailability {
@@ -59,7 +66,7 @@ actor DefaultEngine: AgentEngine {
         let budget = RunBudget(limit: request.maxToolCalls, verificationCost: tools.filter(\.isVerification).map(\.executionCost).min())
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         operation = id
-        active = ActiveRun(id: id, conversationID: request.conversationID, budget: budget)
+        active = ActiveRun(id: id, conversationID: request.conversationID, budget: budget, completion: RuntimeCompletion())
         let task = Task { await self.execute(request, id: id, budget: budget, continuation: continuation) }
         active?.task = task
         continuation.onTermination = { [weak self] reason in
@@ -71,14 +78,19 @@ actor DefaultEngine: AgentEngine {
     }
 
     func cancel() async throws {
-        guard let current = active else { return }
+        guard let current = active else {
+            if let cleanupError = lastEnded?.cleanupError { throw cleanupError }
+            return
+        }
         do { try await requestStop(id: current.id, cause: .cancelled) }
         catch {
             // An abort failure must not release the caller while the old task still owns the database.
             await current.task?.value
+            if let cleanupError = await current.completion.cleanupError { throw cleanupError }
             throw sanitized(error)
         }
         await current.task?.value
+        if let cleanupError = await current.completion.cleanupError { throw cleanupError }
     }
 
     func cancel(conversationID: UUID) async throws {
@@ -87,51 +99,74 @@ actor DefaultEngine: AgentEngine {
             try await cancel()
             return
         }
+        if lastEnded?.conversationID == conversationID, let cleanupError = lastEnded?.cleanupError { throw cleanupError }
         guard operation == nil else { throw AgentError.busy }
         try validateStorage()
-        guard FileManager.default.fileExists(atPath: try fileURL(conversationID).path) else { return }
+        guard FileManager.default.fileExists(atPath: try fileURL(conversationID).path) else {
+            let url = try fileURL(conversationID)
+            let token = try await RuntimeOwnership.shared.acquire(url)
+            await RuntimeOwnership.shared.release(url, token: token)
+            return
+        }
         operation = UUID()
         defer { operation = nil }
         let session = try await open(conversationID, budget: RunBudget(limit: 0))
-        do {
-            try await session.conversation.abort(background: true)
-            try await session.harness.close()
-        } catch {
-            try? await session.harness.close()
+        do { try await session.conversation.abort(background: true) }
+        catch {
+            try await close(session)
             throw sanitized(error)
         }
+        try await close(session)
     }
 
     func recover(conversationID: UUID) async throws -> AgentRecovery {
         if let current = active, current.conversationID == conversationID, let session = current.session {
-            return RuntimeMapping.recovery(try await session.conversation.view(), conversationID: conversationID)
+            return try recovery(try await session.conversation.view(), conversationID: conversationID)
         }
         guard operation == nil else { throw AgentError.busy }
         try validateStorage()
         guard FileManager.default.fileExists(atPath: try fileURL(conversationID).path) else {
+            let url = try fileURL(conversationID)
+            let token = try await RuntimeOwnership.shared.acquire(url)
+            await RuntimeOwnership.shared.release(url, token: token)
             return AgentRecovery(messages: [], hasInterruptedRun: false)
         }
         operation = UUID()
         defer { operation = nil }
         let session = try await open(conversationID, budget: RunBudget(limit: 0))
-        do {
-            let view = try await session.conversation.view()
-            try await session.harness.close()
-            return RuntimeMapping.recovery(view, conversationID: conversationID)
-        } catch {
-            try? await session.harness.close()
+        let recovered: AgentRecovery
+        do { recovered = try recovery(try await session.conversation.view(), conversationID: conversationID) }
+        catch {
+            try await close(session)
             throw sanitized(error)
         }
+        try await close(session)
+        return recovered
     }
 
     func removeConversation(id: UUID) async throws {
         guard operation == nil else { throw AgentError.busy }
+        operation = UUID()
+        defer { operation = nil }
         let url = try fileURL(id)
-        for suffix in ["", "-wal", "-shm"] {
-            let file = URL(fileURLWithPath: url.path + suffix)
-            do { try FileManager.default.removeItem(at: file) }
-            catch CocoaError.fileNoSuchFile { continue }
+        let ownership = try await RuntimeOwnership.shared.acquire(url)
+        do {
+            for suffix in ["", "-wal", "-shm"] {
+                let file = URL(fileURLWithPath: url.path + suffix)
+                do { try FileManager.default.removeItem(at: file) }
+                catch CocoaError.fileNoSuchFile { continue }
+            }
+            await RuntimeOwnership.shared.release(url, token: ownership)
+        } catch {
+            await RuntimeOwnership.shared.release(url, token: ownership)
+            throw error
         }
+    }
+
+    private func recovery(_ view: ConversationView, conversationID: UUID) throws -> AgentRecovery {
+        let recovered = RuntimeMapping.recovery(view, conversationID: conversationID)
+        return AgentRecovery(messages: recovered.messages, hasInterruptedRun: recovered.hasInterruptedRun,
+                             acceptedRequestIDs: try RuntimeToolHistory.acceptedRequestIDs(at: fileURL(conversationID)))
     }
 
     func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? {
@@ -147,6 +182,8 @@ actor DefaultEngine: AgentEngine {
         var translator: RuntimeEventTranslator?
         var admitted = false
         var failure: Error?
+        var cleanupFailure: AgentError?
+        let completion = active!.completion
         let timeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(request.timeoutSeconds)) }
             catch { return }
@@ -215,6 +252,7 @@ actor DefaultEngine: AgentEngine {
             for submission in submissions {
                 let settled = try await submission.wait()
                 try checkRunning(id)
+                if await budget.terminalCause != nil { throw RuntimeStopSignal.outcomeUnknown }
                 if let budgetError = await budget.failure { throw budgetError }
                 if case .unanswered(let input, let reason, let detail) = settled.status {
                     let failedView = try await opened.conversation.view()
@@ -231,6 +269,7 @@ actor DefaultEngine: AgentEngine {
             }
             try await opened.conversation.waitForIdle()
             try checkRunning(id)
+            if await budget.terminalCause != nil { throw RuntimeStopSignal.outcomeUnknown }
             if let budgetError = await budget.failure { throw budgetError }
             let finalView = try await opened.conversation.view()
             await mapping.reconcile(finalView)
@@ -247,6 +286,7 @@ actor DefaultEngine: AgentEngine {
             }
         } catch {
             failure = error
+            if case .cleanupFailed = error as? AgentError { await completion.failCleanup(sanitized(error)) }
         }
         timeout.cancel()
         if let session {
@@ -262,30 +302,40 @@ actor DefaultEngine: AgentEngine {
                     await budget.stop()
                     do { try await abortOperation(session.conversation) }
                     catch {
-                        if result is CancellationError || Self.requiresSuccessfulCleanup(result) {
-                            result = AgentError.runtime(error.localizedDescription)
-                        }
+                        let cleanup = AgentError.cleanupFailed(RuntimeMapping.redact(error.localizedDescription, secret: configuration?.apiKey ?? ""))
+                        await completion.failCleanup(cleanup)
+                        if Self.requiresSuccessfulCleanup(result) { result = cleanup }
                     }
                 }
                 do { await finalTranslator?.reconcile(try await session.conversation.view()) }
                 catch {
-                    if Self.requiresSuccessfulCleanup(result) { result = AgentError.runtime(error.localizedDescription) }
+                    let cleanup = AgentError.cleanupFailed(RuntimeMapping.redact(error.localizedDescription, secret: configuration?.apiKey ?? ""))
+                    await completion.failCleanup(cleanup)
+                    if Self.requiresSuccessfulCleanup(result) { result = cleanup }
                 }
                 finalReader?.cancel()
                 await finalReader?.value
-                do { try await session.harness.close() }
+                do { try await close(session) }
                 catch {
-                    if result == nil || Self.requiresSuccessfulCleanup(result) {
-                        result = AgentError.runtime(error.localizedDescription)
-                    }
+                    let cleanup = AgentError.cleanupFailed(RuntimeMapping.redact(error.localizedDescription, secret: configuration?.apiKey ?? ""))
+                    await completion.failCleanup(cleanup)
+                    if Self.requiresSuccessfulCleanup(result) { result = cleanup }
                 }
                 return result
             }.value
         }
-        let stopCause = active?.stopCause
+        cleanupFailure = await completion.cleanupError
+        let stopCause = await budget.terminalCause ?? active?.stopCause
+        if let cleanupFailure { continuation.yield(.cleanupFailed(cleanupFailure.localizedDescription)) }
+        // A consumer can fail to save an earlier buffered event after execution
+        // has ended. Its subsequent cancel must still report the close failure.
+        lastEnded = (request.conversationID, cleanupFailure)
         active = nil
         operation = nil
-        if stopCause == .cancelled {
+        if case .outcomeUnknown = stopCause {
+            continuation.yield(.finished(.stopped(stopCause!)))
+            continuation.finish()
+        } else if stopCause == .cancelled {
             continuation.yield(.finished(.cancelled))
             continuation.finish()
         } else if stopCause == .timedOut {
@@ -310,6 +360,9 @@ actor DefaultEngine: AgentEngine {
             guard !tool.isVerification || !tool.mayHaveSideEffects else {
                 throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-verification", defaultValue: "Verification tools must be read-only.", bundle: .module))
             }
+            if case .latest(let limit) = tool.contextImagePolicy, limit < 0 {
+                throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-image-limit", defaultValue: "Image context limits must not be negative.", bundle: .module))
+            }
             guard tool.executionCost > 0,
                   !tool.verifiesSideEffects || (tool.mayHaveSideEffects && tool.executionCost >= 2) else {
                 throw AgentError.invalidConfiguration(String(localized: "agent.configuration.invalid-tool-cost", defaultValue: "Tool execution costs must be positive. An action with built-in verification must reserve at least two units.", bundle: .module))
@@ -331,34 +384,51 @@ actor DefaultEngine: AgentEngine {
 
     private func open(_ id: UUID, budget: RunBudget) async throws -> Session {
         let url = try fileURL(id)
-        var directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var resources = URLResourceValues(); resources.isExcludedFromBackup = true
-        try directory.setResourceValues(resources)
-        let (models, model): (Models, ModelRef)
-        if let modelFactory { (models, model) = try await modelFactory() }
-        else if let configuration { (models, model) = try await Self.makeModels(configuration: configuration) }
-        else {
-            models = Models(credentials: .inMemory, builtinProviders: false)
-            model = ModelRef(provider: "eiscue", modelId: "unconfigured")
-        }
-        let runtimeTools = try tools.map { try RuntimeMapping.tool($0, budget: budget, secret: configuration?.apiKey ?? "") }
-        var extensions = [Extension("eiscue", tools: runtimeTools), DeviceImageContext.runtimeExtension]
-        if let configuration, GoogleCompletionCompatibility.applies(to: configuration) {
-            extensions.append(GoogleCompletionCompatibility.runtimeExtension)
-        }
-        let harness = try await Harness.open(.sqlite(at: url), models: models,
-            extensions: extensions,
-            settings: Settings(stream: .init(timeout: .seconds(120), maxRetries: 0), retry: .init(enabled: false),
-                               progress: .init(partialInterval: .milliseconds(80)), toolExecution: .sequential),
-            resume: false)
+        let ownership = try await RuntimeOwnership.shared.acquire(url)
         do {
-            let root = try await harness.root(agent: configuration == nil ? nil : AgentChange(model: model))
-            return Session(harness: harness, conversation: root, model: model)
+            var directory = url.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var resources = URLResourceValues(); resources.isExcludedFromBackup = true
+            try directory.setResourceValues(resources)
+            let (models, model): (Models, ModelRef)
+            if let modelFactory { (models, model) = try await modelFactory() }
+            else if let configuration { (models, model) = try await Self.makeModels(configuration: configuration) }
+            else {
+                models = Models(credentials: .inMemory, builtinProviders: false)
+                model = ModelRef(provider: "eiscue", modelId: "unconfigured")
+            }
+            let runtimeTools = try tools.map { try RuntimeMapping.tool($0, budget: budget, secret: configuration?.apiKey ?? "") }
+            let outcomeGate = RuntimeOutcomeGate()
+            var extensions = [Extension("eiscue", tools: runtimeTools), try DeviceImageContext.runtimeExtension(tools: tools), outcomeGate.runtimeExtension(budget: budget)]
+            if let configuration, GoogleCompletionCompatibility.applies(to: configuration) {
+                extensions.append(GoogleCompletionCompatibility.runtimeExtension)
+            }
+            let harness = try await Harness.open(.sqlite(at: url), models: models,
+                extensions: extensions,
+                settings: Settings(stream: .init(timeout: .seconds(120), maxRetries: 0), retry: .init(enabled: false),
+                                   progress: .init(partialInterval: .milliseconds(80)), toolExecution: .sequential),
+                resume: false)
+            await outcomeGate.attach(harness)
+            do {
+                let root = try await harness.root(agent: configuration == nil ? nil : AgentChange(model: model))
+                return Session(harness: harness, conversation: root, model: model, url: url, ownership: ownership, outcomeGate: outcomeGate)
+            } catch {
+                do { try await closeOperation(harness) }
+                catch { throw AgentError.cleanupFailed(error.localizedDescription) }
+                await outcomeGate.detach()
+                throw error
+            }
         } catch {
-            try? await harness.close()
+            if case .cleanupFailed = error as? AgentError {} else { await RuntimeOwnership.shared.release(url, token: ownership) }
             throw error
         }
+    }
+
+    private func close(_ session: Session) async throws {
+        do { try await closeOperation(session.harness) }
+        catch { throw AgentError.cleanupFailed(RuntimeMapping.redact(error.localizedDescription, secret: configuration?.apiKey ?? "")) }
+        await session.outcomeGate.detach()
+        await RuntimeOwnership.shared.release(session.url, token: session.ownership)
     }
 
     static func makeModels(configuration: AgentConfiguration, runtime: Runtime = .shared) async throws -> (Models, ModelRef) {
@@ -413,6 +483,7 @@ actor DefaultEngine: AgentEngine {
         case .cancelled: throw CancellationError()
         case .timedOut: throw AgentError.timedOut
         case nil: break
+        default: throw CancellationError()
         }
     }
 
@@ -440,7 +511,7 @@ actor DefaultEngine: AgentEngine {
         if let error = error as? AgentError {
             if case .runtime(let text) = error { return .runtime(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
             if case .modelRequestFailed(let text) = error { return .modelRequestFailed(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
-            if case .toolExecutionPaused(let text) = error { return .toolExecutionPaused(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
+            if case .cleanupFailed(let text) = error { return .cleanupFailed(RuntimeMapping.redact(text, secret: configuration?.apiKey ?? "")) }
             return error
         }
         return .runtime(RuntimeMapping.redact(error.localizedDescription, secret: configuration?.apiKey ?? ""))
@@ -457,12 +528,15 @@ actor DefaultEngine: AgentEngine {
         let harness: Harness
         let conversation: PiDurableKit.Conversation
         let model: ModelRef
+        let url: URL
+        let ownership: UUID
+        let outcomeGate: RuntimeOutcomeGate
     }
-    private enum StopCause { case cancelled, timedOut }
     private struct ActiveRun {
         let id: UUID
         let conversationID: UUID
         let budget: RunBudget
+        let completion: RuntimeCompletion
         var task: Task<Void, Never>?
         var session: Session?
         var stopCause: StopCause?

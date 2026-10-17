@@ -14,12 +14,13 @@ struct AssistantView: View {
     @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var showsFiles = false
     @State private var showsCamera = false
-    @State private var speech = SpeechInputController()
-    @State private var isVoiceMode = false
-    @State private var voiceSessionID: UUID?
-    @State private var voiceRestorationID: UUID?
-    @State private var cancellingVoiceRestorationID: UUID?
-    @State private var isPreparingVoice = false
+    private var dictation: DictationSession { model.dictationSession }
+    private var speech: SpeechInputController { dictation.speech }
+    private var isVoiceMode: Bool { get { dictation.isVoiceMode } nonmutating set { dictation.isVoiceMode = newValue } }
+    private var voiceSessionID: UUID? { dictation.recordingID }
+    private var voiceRestorationID: UUID? { dictation.restorationID }
+    private var cancellingVoiceRestorationID: UUID? { dictation.cancellingRestorationID }
+    private var isPreparingVoice: Bool { dictation.isPreparing }
     @State private var speechNotice: String?
     @State private var speechNoticeID: UUID?
     @State private var showsRunHistory = false
@@ -241,44 +242,12 @@ struct AssistantView: View {
         isVoiceMode = true; isComposerFocused = false
     }
 
-    private func prepareForRecording() async throws {
-        try Task.checkCancellation()
-        guard isVoiceMode, voiceSessionID == nil, !isChangingVoiceConnection,
-              scenePhase == .active else { throw CancellationError() }
-        let id = UUID(), composerID = model.composerSessionID
-        voiceSessionID = id; isPreparingVoice = true
-        defer { if voiceSessionID == id { isPreparingVoice = false } }
-        try await model.prepareDeviceForDictation(id: id)
-        try Task.checkCancellation()
-        guard voiceSessionID == id, isVoiceMode, scenePhase == .active,
-              model.composerSessionID == composerID else { throw CancellationError() }
-    }
+    private func prepareForRecording() async throws { try await dictation.prepare(model: model) }
 
-    /// Called only after capture stops (including permission/error cancellation).
-    /// Keep Send disabled until the prior control session has been restored so
-    /// the recovered draft cannot accidentally start a plain-chat task.
     private func finishVoiceMode(reconnect: Bool = true) {
-        isVoiceMode = false; isPreparingVoice = false
-        guard let id = voiceSessionID else { return }
-        voiceSessionID = nil; voiceRestorationID = id
-        Task { @MainActor in
-            let error = await model.finishDeviceDictation(id: id, reconnect: reconnect)
-            guard voiceRestorationID == id else { return }
-            voiceRestorationID = nil
-            if let error, scenePhase == .active { showSpeechNotice(error) }
-        }
+        dictation.finish(model: model, reconnect: reconnect, notice: showSpeechNotice)
     }
-
-    private func cancelVoiceRestoration() {
-        guard let id = voiceRestorationID, cancellingVoiceRestorationID == nil else { return }
-        cancellingVoiceRestorationID = id
-        Task { @MainActor in
-            // Keep the send/recording gates until the cancelled connection has
-            // released its partial media session, including delayed teardown.
-            _ = await model.finishDeviceDictation(id: id, reconnect: false)
-            if cancellingVoiceRestorationID == id { cancellingVoiceRestorationID = nil }
-        }
-    }
+    private func cancelVoiceRestoration() { dictation.cancelRestoration(model: model) }
 
     private func toggleVoiceMode() {
         if isVoiceMode {

@@ -23,11 +23,12 @@ extension AppModel {
     }
 
     func importTransferredPairingIdentity() async {
-        guard !isBusy else { return }
-        let operationID = UUID(); deviceOperationID = operationID
-        isConnecting = true
+        guard !isBusy, let lease = try? deviceSession.acquire(.setup) else { return }
+        defer { lease.release() }
+        let operationID = UUID()
+        guard let operation = try? deviceSession.beginSetup(owner: lease.owner, id: operationID) else { return }
         defer {
-            if deviceOperationID == operationID { isConnecting = false }
+            deviceSession.completeSetup(operation, transportConnected: false)
             refreshPairingTransfer()
         }
         do {
