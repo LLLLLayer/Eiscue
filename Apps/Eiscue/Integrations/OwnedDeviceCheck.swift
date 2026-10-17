@@ -1,6 +1,6 @@
 #if DEBUG
 import SwiftUI
-import EiscueDeviceKit
+import EiscueDeviceCore
 import UIKit
 import ImageIO
 import Synchronization
@@ -268,6 +268,7 @@ extension AppModel {
         return geometry
     }
 
+    #if !EISCUE_HID_ONLY
     func runOwnedDeviceCheck() async {
         let proof = OwnedDeviceCheckState.shared
         let destination = URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json")
@@ -484,5 +485,6 @@ extension AppModel {
         }
         save("finished")
     }
+    #endif
 }
 #endif

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 @testable import PhoneAgentNCM
 
 @Suite struct GeometryTests {

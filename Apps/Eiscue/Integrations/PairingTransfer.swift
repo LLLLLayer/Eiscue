@@ -1,4 +1,4 @@
-import EiscueDeviceKit
+import EiscueDeviceCore
 import Foundation
 
 /// A trusted desktop can send this one temporary file through the app's USB

@@ -8,6 +8,7 @@ let package = Package(
     products: [
         .library(name: "EiscueAgentKit", targets: ["EiscueAgentKit"]),
         .library(name: "EiscueDeviceKit", targets: ["EiscueDeviceKit"]),
+        .library(name: "EiscueHIDKit", targets: ["EiscueDeviceCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/finnvoor/PiDurableKit.git", revision: "6e7f267181500943db328bbe2a262ae17b39bef1"),
@@ -27,8 +28,10 @@ let package = Package(
         ),
         .target(name: "CEiscueAutomation", path: "Vendor/DeviceBackend/Sources/CEiscueAutomation", publicHeadersPath: "include",
                 linkerSettings: [.linkedFramework("Foundation"), .linkedFramework("UIKit", .when(platforms: [.iOS]))]),
-        .target(name: "EiscueDeviceKit", dependencies: ["PhoneAgentNCM"], resources: [.process("Resources")]),
+        .target(name: "EiscueDeviceCore", resources: [.process("Resources")]),
+        .target(name: "EiscueDeviceKit", dependencies: ["EiscueDeviceCore", "PhoneAgentNCM"]),
         .testTarget(name: "EiscueAgentKitTests", dependencies: ["EiscueAgentKit", .product(name: "PiDurableKit", package: "PiDurableKit")]),
-        .testTarget(name: "EiscueDeviceKitTests", dependencies: ["EiscueDeviceKit"]),
+        .testTarget(name: "EiscueDeviceKitTests", dependencies: ["EiscueDeviceKit", "EiscueDeviceCore"]),
+        .testTarget(name: "EiscueDeviceCoreTests", dependencies: ["EiscueDeviceCore"]),
     ]
 )

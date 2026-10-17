@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite struct PairingRequirementsTests {
     @Test(arguments: [
@@ -24,7 +25,7 @@ import Testing
     }
 
     @Test func unavailableReasonIsLocalizedAndKeepsTheAppMinimumSeparate() {
-        let expected = NSLocalizedString("device.error.system-pairing-unavailable", bundle: .module,
+        let expected = NSLocalizedString("device.error.system-pairing-unavailable", bundle: EiscueDeviceResources.bundle,
                                          value: "MISSING RESOURCE", comment: "")
         #expect(expected != "MISSING RESOURCE")
         #expect(DeviceControlError.systemPairingUnavailable.localizedDescription == expected)

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite struct DeviceLocalizationTests {
     @Test func englishAndSimplifiedChineseResourcesHaveMatchingKeysAndArguments() throws {
@@ -18,7 +18,7 @@ import Testing
     }
 
     @Test func publicErrorsKeepTypedIdentityAndFormatParameters() {
-        let expected = NSLocalizedString("device.error.stale-frame", bundle: .module, value: "MISSING RESOURCE", comment: "")
+        let expected = NSLocalizedString("device.error.stale-frame", bundle: EiscueDeviceResources.bundle, value: "MISSING RESOURCE", comment: "")
         #expect(DeviceControlError.staleFrame.errorDescription == expected)
         #expect(DeviceControlError.staleFrame == .staleFrame)
         let keychain = DeviceControlError.keychain(-34018).localizedDescription
@@ -29,7 +29,7 @@ import Testing
         #expect(unknown.localizedDescription.contains("receipt-unconfirmed"))
         #expect(!unknown.localizedDescription.contains("%@"))
         for (backend, key) in [(DeviceControlBackend.coreDevice, "device.error.core-device-unavailable"), (.xcTest, "device.error.xctest-unavailable")] {
-            let expected = NSLocalizedString(key, bundle: .module, value: "MISSING RESOURCE", comment: "")
+            let expected = NSLocalizedString(key, bundle: EiscueDeviceResources.bundle, value: "MISSING RESOURCE", comment: "")
             #expect(DeviceControlError.backendUnavailable(backend).errorDescription == expected)
             #expect(!expected.contains("MISSING RESOURCE"))
         }
@@ -37,7 +37,7 @@ import Testing
 
     @Test(arguments: ["en", "zh-Hans"])
     func bothLanguagesCanBeReadAndFormattedByFoundation(language: String) throws {
-        let resource = try #require(Bundle.module.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
+        let resource = try #require(EiscueDeviceResources.bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
         let bundle = try #require(Bundle(url: resource.deletingLastPathComponent()))
         let message = String(localized: "device.error.delivery-unknown",
                              defaultValue: "MISSING RESOURCE \(String("delivery-detail"))", bundle: bundle)
@@ -47,7 +47,7 @@ import Testing
     }
 
     private func resources(language: String) throws -> [String: String] {
-        let url = try #require(Bundle.module.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
+        let url = try #require(EiscueDeviceResources.bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
         let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil)
         return try #require(plist as? [String: String])
     }

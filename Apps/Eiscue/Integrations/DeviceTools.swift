@@ -1,5 +1,5 @@
 import EiscueAgentKit
-import EiscueDeviceKit
+import EiscueDeviceCore
 import Foundation
 
 /// JSON/schema adapter for the Eiscue-owned device decision executor.
@@ -31,61 +31,21 @@ final class DeviceToolSession {
     func stop() { runner.stop() }
 
     var tools: [AgentTool] {
-        guard scope != .chat else { return [] }
-        var result = [
-            tool("device_screenshot", "Observe a fresh screen. Returns an image and frameId with pixel dimensions. Use this frameId for the next action. Each action also returns a fresh screenshot.", properties: [:], required: [], sideEffect: false),
-            tool("device_list_apps", "Optionally list installed applications and their exact bundle IDs when needed for bundle-ID launch. Visible navigation using screenshots and provided Home/tap tools does not require this list. If this query is unavailable, take a new screenshot and use the visible controls; do not repeatedly query the same unavailable service.", properties: [:], required: [], sideEffect: false)
-        ]
-        if scope == .control {
-            let frame: AgentJSONValue = ["type": "string", "description": "frameId from the most recent screenshot"]
-            let coordinate: AgentJSONValue = ["type": "number", "minimum": 0,
-                                               "description": "Pixels in the attached screenshot at its declared width and height, not screen points or normalized coordinates."]
-            result += [
-                tool("device_tap", "Tap a pixel coordinate in the newest screenshot. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: ["frameId": frame, "x": coordinate, "y": coordinate], required: ["frameId", "x", "y"]),
-                tool("device_swipe", "Drag between pixel coordinates. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: [
-                    "frameId": frame, "fromX": coordinate, "fromY": coordinate, "toX": coordinate, "toY": coordinate,
-                    "duration": ["type": "number", "minimum": 0.1, "maximum": 2]
-                ], required: ["frameId", "fromX", "fromY", "toX", "toY", "duration"]),
-                tool("device_type_text", "Enter text into the focused field visible in the latest screenshot. Replaces the system clipboard and pastes it. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: [
-                    "frameId": frame, "text": ["type": "string", "maxLength": 4096]
-                ], required: ["frameId", "text"]),
-                tool("device_launch_app", "Launch an application by exact bundle ID from device_list_apps. Returns a fresh screenshot and frameId to verify the result.", properties: [
-                    "frameId": frame, "bundleId": ["type": "string", "minLength": 1, "maxLength": 255]
-                ], required: ["frameId", "bundleId"]),
-                tool("device_home", "Return to the device home screen. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: ["frameId": frame], required: ["frameId"])
-            ]
-            result.append(tool("device_press_key", "Send one supported keyboard action. search requests system search (Command-Space), enter confirms the visible focused item, escape dismisses the visible panel. Returns a fresh screenshot and frameId after the action; inspect it because a receipt does not prove a shortcut took effect. Only type an app's display name after a fresh screenshot confirms the search field. If a shortcut had no visible effect, navigate using visible controls, such as the AssistiveTouch menu and its Home button, instead of repeating it. Only use tools actually provided. This cannot launch by bundle ID.", properties: [
-                "frameId": frame,
-                "key": ["type": "string", "enum": .array(DeviceKeyboardAction.allCases.map { .string($0.rawValue) })]
-            ], required: ["frameId", "key"]))
-        }
-        let requirements: [String: DeviceCapability] = [
-            "device_screenshot": .screenshot, "device_list_apps": .listApplications,
-            "device_tap": .tap, "device_swipe": .swipe, "device_type_text": .textInput,
-            "device_launch_app": .launchApplication, "device_home": .home,
-            "device_press_key": .keyboardNavigation
-        ]
-        return result.filter {
-            (!$0.mayHaveSideEffects || capabilities.contains(.screenshot))
-                && (requirements[$0.name].map { capabilities.contains($0) } ?? false)
+        DeviceToolSpec.allCases.filter { $0.isAvailable(scope: scope, capabilities: capabilities) }.map { spec in
+            let schema = spec.schema
+            return AgentTool(name: spec.rawValue, description: schema.description, parameters: schema.parameters,
+                             mayHaveSideEffects: spec.mayHaveSideEffects, isVerification: spec.isVerification,
+                             executionCost: spec.executionCost, verifiesSideEffects: spec.verifiesSideEffects) { [weak self] arguments in
+                guard let self else { throw DeviceTaskError.stopped }
+                return try await self.execute(spec, arguments: arguments)
+            }
         }
     }
 
-    private func tool(_ name: String, _ description: String, properties: [String: AgentJSONValue], required: [String], sideEffect: Bool = true) -> AgentTool {
-        AgentTool(name: name, description: description, parameters: [
-            "type": "object", "properties": .object(properties),
-            "required": .array(required.map { .string($0) }), "additionalProperties": false
-        ], mayHaveSideEffects: sideEffect, isVerification: name == "device_screenshot",
-           executionCost: sideEffect ? 2 : 1, verifiesSideEffects: sideEffect) { [weak self] arguments in
-            guard let self else { throw DeviceTaskError.stopped }
-            return try await self.execute(name, arguments: arguments)
-        }
-    }
-
-    private func execute(_ name: String, arguments: AgentJSONValue) async throws -> AgentToolResult {
+    private func execute(_ spec: DeviceToolSpec, arguments: AgentJSONValue) async throws -> AgentToolResult {
         do {
             let next: DeviceDecision
-            do { next = try decision(name, arguments: arguments) }
+            do { next = try decision(spec, arguments: arguments) }
             catch let error as DeviceTaskError { try await runner.rejectInvalidDecision(error) }
             let result = try await runner.step(next)
             switch result {
@@ -102,30 +62,30 @@ final class DeviceToolSession {
         }
     }
 
-    private func decision(_ name: String, arguments: AgentJSONValue) throws -> DeviceDecision {
-        switch name {
-        case "device_screenshot": return .observe
-        case "device_list_apps": return .listApplications
-        default: break
+    private func decision(_ spec: DeviceToolSpec, arguments: AgentJSONValue) throws -> DeviceDecision {
+        switch spec {
+        case .screenshot: return .observe
+        case .listApplications: return .listApplications
+        case .tap, .swipe, .typeText, .launchApplication, .home, .pressKey: break
         }
         guard let raw = arguments["frameId"]?.stringValue, let id = UUID(uuidString: raw) else { throw DeviceTaskError.frame }
         let action: DeviceAction
-        switch name {
-        case "device_tap": action = .tap(try point("x", "y", arguments))
-        case "device_swipe":
+        switch spec {
+        case .tap: action = .tap(try point("x", "y", arguments))
+        case .swipe:
             action = .swipe(from: try point("fromX", "fromY", arguments), to: try point("toX", "toY", arguments),
                             duration: try number("duration", arguments))
-        case "device_type_text":
+        case .typeText:
             guard let text = arguments["text"]?.stringValue else { throw DeviceTaskError.arguments }
             action = .typeText(text)
-        case "device_launch_app":
+        case .launchApplication:
             guard let bundle = arguments["bundleId"]?.stringValue else { throw DeviceTaskError.arguments }
             action = .launchApplication(bundle)
-        case "device_home": action = .home
-        case "device_press_key":
+        case .home: action = .home
+        case .pressKey:
             guard let raw = arguments["key"]?.stringValue, let key = DeviceKeyboardAction(rawValue: raw) else { throw DeviceTaskError.arguments }
             action = .pressKey(key)
-        default: throw DeviceTaskError.scope
+        case .screenshot, .listApplications: throw DeviceTaskError.scope
         }
         return .action(action, frameID: id)
     }
@@ -143,5 +103,54 @@ final class DeviceToolSession {
     private func number(_ key: String, _ value: AgentJSONValue) throws -> Double {
         guard let number = value[key]?.doubleValue, number.isFinite else { throw DeviceTaskError.arguments }
         return number
+    }
+}
+
+// Agent schemas stay in the model adapter; DeviceTaskRunner uses only the
+// catalog's DeviceKit metadata and typed decisions.
+extension DeviceToolSpec {
+    struct Schema {
+        let description: String
+        let properties: [String: AgentJSONValue]
+        let required: [String]
+
+        var parameters: AgentJSONValue {
+            ["type": "object", "properties": .object(properties),
+             "required": .array(required.map { .string($0) }), "additionalProperties": false]
+        }
+    }
+
+    var schema: Schema {
+        let frame: AgentJSONValue = ["type": "string", "description": "frameId from the most recent screenshot"]
+        let coordinate: AgentJSONValue = ["type": "number", "minimum": 0,
+                                          "description": "Pixels in the attached screenshot at its declared width and height, not screen points or normalized coordinates."]
+        return switch self {
+        case .screenshot:
+            Schema(description: "Observe a fresh screen. Returns an image and frameId with pixel dimensions. Use this frameId for the next action. Each action also returns a fresh screenshot.", properties: [:], required: [])
+        case .listApplications:
+            Schema(description: "Optionally list installed applications and their exact bundle IDs when needed for bundle-ID launch. Visible navigation using screenshots and provided Home/tap tools does not require this list. If this query is unavailable, take a new screenshot and use the visible controls; do not repeatedly query the same unavailable service.", properties: [:], required: [])
+        case .tap:
+            Schema(description: "Tap a pixel coordinate in the newest screenshot. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: ["frameId": frame, "x": coordinate, "y": coordinate], required: ["frameId", "x", "y"])
+        case .swipe:
+            Schema(description: "Drag between pixel coordinates. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: [
+                    "frameId": frame, "fromX": coordinate, "fromY": coordinate, "toX": coordinate, "toY": coordinate,
+                    "duration": ["type": "number", "minimum": 0.1, "maximum": 2]
+                ], required: ["frameId", "fromX", "fromY", "toX", "toY", "duration"])
+        case .typeText:
+            Schema(description: "Enter text into the focused field visible in the latest screenshot. Replaces the system clipboard and pastes it. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: [
+                    "frameId": frame, "text": ["type": "string", "maxLength": 4096]
+                ], required: ["frameId", "text"])
+        case .launchApplication:
+            Schema(description: "Launch an application by exact bundle ID from device_list_apps. Returns a fresh screenshot and frameId to verify the result.", properties: [
+                    "frameId": frame, "bundleId": ["type": "string", "minLength": 1, "maxLength": 255]
+                ], required: ["frameId", "bundleId"])
+        case .home:
+            Schema(description: "Return to the device home screen. Returns a fresh screenshot and frameId to verify the result and decide the next action.", properties: ["frameId": frame], required: ["frameId"])
+        case .pressKey:
+            Schema(description: "Send one supported keyboard action. search requests system search (Command-Space), enter confirms the visible focused item, escape dismisses the visible panel. Returns a fresh screenshot and frameId after the action; inspect it because a receipt does not prove a shortcut took effect. Only type an app's display name after a fresh screenshot confirms the search field. If a shortcut had no visible effect, navigate using visible controls, such as the AssistiveTouch menu and its Home button, instead of repeating it. Only use tools actually provided. This cannot launch by bundle ID.", properties: [
+                "frameId": frame,
+                "key": ["type": "string", "enum": .array(DeviceKeyboardAction.allCases.map { .string($0.rawValue) })]
+            ], required: ["frameId", "key"])
+        }
     }
 }

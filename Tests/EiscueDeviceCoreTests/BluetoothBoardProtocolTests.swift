@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite struct BluetoothBoardProtocolTests {
     @Test func outputSelectionIsRestrictedAndCannotSmuggleInput() {

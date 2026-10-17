@@ -1,4 +1,4 @@
-import EiscueDeviceKit
+import EiscueDeviceCore
 import ReplayKit
 import SwiftUI
 
@@ -24,7 +24,7 @@ final class BroadcastPickerContainer: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        picker.preferredExtension = ScreenBroadcastStore.broadcastExtensionBundleIdentifier
+        picker.preferredExtension = (Bundle.main.bundleIdentifier ?? "org.eiscue.app") + ".broadcast"
         picker.showsMicrophoneButton = false
         // ReplayKit supplies a black icon on some OS versions even in dark
         // mode. Give the actual system control a consistent contrasting disc.

@@ -74,7 +74,6 @@ actor MessageAttachments {
         try Task.checkCancellation()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
-        let url = directory.appendingPathComponent(attachment.id.uuidString).appendingPathExtension("json")
         do {
             // Model requests keep using extracted text. Preserve the bounded
             // document separately so sharing sends the actual file, including
@@ -86,7 +85,8 @@ actor MessageAttachments {
                 try JSONEncoder().encode(original).write(to: originalMetadataURL(attachment.id),
                     options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             }
-            try JSONEncoder().encode(attachment).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            // Message content is persisted by ConversationRepository on send.
+            // Only original documents need an extra file for byte-exact sharing.
         } catch {
             remove(attachment.id)
             throw error

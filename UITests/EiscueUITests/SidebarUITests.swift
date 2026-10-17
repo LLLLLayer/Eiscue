@@ -86,7 +86,7 @@ final class SidebarUITests: XCTestCase {
     func testRightSwipeWithKeyboardPreservesDraftAndSendAppearance() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = modelFixtureURL().absoluteString
         app.launch()
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 10))
 

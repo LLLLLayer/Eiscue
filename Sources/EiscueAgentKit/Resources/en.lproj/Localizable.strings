@@ -27,3 +27,5 @@
 
 "agent.attachment.images-unavailable" = "Choose a model that supports images to send this attachment.";
 "agent.configuration.invalid-tool-cost" = "Tool execution costs must be positive. An action with built-in verification must reserve at least two units.";
+
+"agent.storage.deletion-pending" = "This conversation is being deleted. Reopen the conversation list to finish cleanup.";

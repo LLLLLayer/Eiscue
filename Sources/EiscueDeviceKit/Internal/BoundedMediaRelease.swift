@@ -1,3 +1,4 @@
+import EiscueDeviceCore
 import Foundation
 
 /// A timeout always revokes the owned transport. It never waits for a task group

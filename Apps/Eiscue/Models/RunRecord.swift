@@ -44,6 +44,7 @@ struct RunRecord: Identifiable, Codable, Sendable {
     var submission: RunSubmission? = nil
     var activities: [ToolActivity]? = nil
     var pauseReason: RunPauseReason? = nil
+    var promptVersion: Int? = nil
 
     mutating func interruptOpenActivities(at date: Date = Date()) {
         guard var activities else { return }

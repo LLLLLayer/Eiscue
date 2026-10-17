@@ -55,6 +55,9 @@ public struct ScreenBroadcastReading: Sendable, Equatable {
 public struct ScreenBroadcastStore: Sendable {
     public static let defaultAppGroupIdentifier = "group.org.eiscue.app"
     public static let broadcastExtensionBundleIdentifier = "org.eiscue.app.broadcast"
+    public static var configuredAppGroupIdentifier: String {
+        Bundle.main.object(forInfoDictionaryKey: "EiscueScreenBroadcastAppGroup") as? String ?? defaultAppGroupIdentifier
+    }
     public static let maximumFrameBytes = 1_500_000
     public static let maximumFrameAge: TimeInterval = 3
     public static let maximumPixelDimension = 1600
@@ -64,7 +67,7 @@ public struct ScreenBroadcastStore: Sendable {
     private var stopURL: URL { directory.appendingPathComponent("stop.plist") }
     private var heartbeatURL: URL { directory.appendingPathComponent("heartbeat.plist") }
 
-    public init(appGroupIdentifier: String = defaultAppGroupIdentifier) throws {
+    public init(appGroupIdentifier: String = configuredAppGroupIdentifier) throws {
         guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
             throw ScreenBroadcastError.unavailable
         }

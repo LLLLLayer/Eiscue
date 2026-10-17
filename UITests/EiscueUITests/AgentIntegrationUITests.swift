@@ -8,7 +8,7 @@ final class AgentIntegrationUITests: XCTestCase {
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         if reset { app.launchArguments.append("--reset-state") }
         if timeline { app.launchArguments.append("--tool-timeline-fixture") }
-        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = modelFixtureURL().absoluteString
         app.launch()
         return app
     }
@@ -35,7 +35,7 @@ final class AgentIntegrationUITests: XCTestCase {
         openSidebar(in: app)
         app.buttons["newConversationButton"].tap()
         openSidebar(in: app)
-        let row = row(titled: "Plan a calm morning", in: app)
+        let row = conversationRow(titled: "Plan a calm morning", in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.press(forDuration: 1)
         app.buttons["deleteConversationButton"].tap()
@@ -114,7 +114,7 @@ final class AgentIntegrationUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Streaming response arrived incrementally and is now complete."].exists,
                        "The response must be visible before its final chunk.")
         XCTAssertTrue(app.buttons["stopRunButton"].exists)
-        _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:18765/fixture/release-stream")!)
+        _ = try await URLSession.shared.data(from: modelFixtureURL("/fixture/release-stream"))
         XCTAssertTrue(app.staticTexts["Streaming response arrived incrementally and is now complete."].waitForExistence(timeout: 15))
         waitUntilIdle(in: app)
         XCTAssertFalse(app.descendants(matching: .any)["assistantReplyIndicator"].exists)
@@ -225,37 +225,33 @@ final class AgentIntegrationUITests: XCTestCase {
         }
         openSidebar(in: app)
         assertOrder(["Third conversation", "Second conversation", "First conversation"], in: app)
-        row(titled: "First conversation", in: app).press(forDuration: 1)
+        conversationRow(titled: "First conversation", in: app).press(forDuration: 1)
         app.buttons["moveConversationUpButton"].tap()
         assertOrder(["Third conversation", "First conversation", "Second conversation"], in: app)
-        row(titled: "Second conversation", in: app).press(forDuration: 1)
+        conversationRow(titled: "Second conversation", in: app).press(forDuration: 1)
         app.buttons["pinConversationButton"].tap()
         assertOrder(["Second conversation", "Third conversation", "First conversation"], in: app)
-        XCTAssertEqual(row(titled: "Second conversation", in: app).value as? String, "已置顶")
+        XCTAssertEqual(conversationRow(titled: "Second conversation", in: app).value as? String, "已置顶")
         app.terminate()
 
         app = launch(reset: false)
         XCTAssertTrue(app.buttons["historyButton"].waitForExistence(timeout: 10))
         openSidebar(in: app)
         assertOrder(["Second conversation", "Third conversation", "First conversation"], in: app)
-        XCTAssertEqual(row(titled: "Second conversation", in: app).value as? String, "已置顶")
-        row(titled: "Third conversation", in: app).press(forDuration: 1)
+        XCTAssertEqual(conversationRow(titled: "Second conversation", in: app).value as? String, "已置顶")
+        conversationRow(titled: "Third conversation", in: app).press(forDuration: 1)
         app.buttons["moveConversationDownButton"].tap()
         assertOrder(["Second conversation", "First conversation", "Third conversation"], in: app)
-        row(titled: "First conversation", in: app).press(forDuration: 1)
+        conversationRow(titled: "First conversation", in: app).press(forDuration: 1)
         app.buttons["deleteConversationButton"].tap()
         app.buttons["confirmDeleteConversationsButton"].firstMatch.tap()
-        let deleted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: row(titled: "First conversation", in: app))
+        let deleted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: conversationRow(titled: "First conversation", in: app))
         XCTAssertEqual(XCTWaiter.wait(for: [deleted], timeout: 10), .completed)
         assertOrder(["Second conversation", "Third conversation"], in: app)
     }
 
-    @MainActor private func row(titled title: String, in app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "conversationRow_", title)).firstMatch
-    }
-
     @MainActor private func assertOrder(_ titles: [String], in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let rows = titles.map { row(titled: $0, in: app) }
+        let rows = titles.map { conversationRow(titled: $0, in: app) }
         for row in rows { XCTAssertTrue(row.waitForExistence(timeout: 5), file: file, line: line) }
         for (above, below) in zip(rows, rows.dropFirst()) {
             XCTAssertLessThan(above.frame.midY, below.frame.midY, file: file, line: line)

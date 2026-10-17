@@ -1,0 +1,57 @@
+name: Apple toolchain checks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# These are explicit self-hosted runner requirements, not GitHub-hosted labels.
+# Register separate, isolated Apple Silicon runners with eiscue-xcode26 and
+# eiscue-xcode27; install the matching Xcode/runtime plus XcodeGen >= 2.45.0.
+# Set repository variables EISCUE_XCODE26_DEVELOPER_DIR and
+# EISCUE_XCODE27_DEVELOPER_DIR to each Xcode's Contents/Developer directory.
+# This workflow does not run untrusted pull-request code on self-hosted machines.
+jobs:
+  check:
+    name: Xcode ${{ matrix.xcode }} / iOS ${{ matrix.ios }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - xcode: '26'
+            ios: '26.3'
+            runner: eiscue-xcode26
+            developer_dir: EISCUE_XCODE26_DEVELOPER_DIR
+          - xcode: '27'
+            ios: '27.0'
+            runner: eiscue-xcode27
+            developer_dir: EISCUE_XCODE27_DEVELOPER_DIR
+    runs-on: [self-hosted, macOS, ARM64, '${{ matrix.runner }}']
+    timeout-minutes: 120
+    concurrency:
+      group: eiscue-${{ matrix.runner }}
+      cancel-in-progress: false
+    env:
+      DEVELOPER_DIR: ${{ vars[matrix.developer_dir] }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check helpers, Kits, full/HID Release builds and simulator suites
+        run: >-
+          python3 Scripts/run-ci-checks.py
+          --xcode-major '${{ matrix.xcode }}'
+          --ios-version '${{ matrix.ios }}'
+          --output '.build/ci-${{ github.run_id }}-${{ github.run_attempt }}-xcode${{ matrix.xcode }}'
+      - name: Retain logs and result bundles even when checks fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checks-xcode${{ matrix.xcode }}
+          path: |
+            .build/ci-*/**/*.log
+            .build/ci-*/toolchain.txt
+            .build/ci-*/*.xcresult
+          include-hidden-files: true
+          if-no-files-found: warn

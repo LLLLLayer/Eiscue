@@ -224,6 +224,9 @@ enum RunReport {
             String(localized: "report.model \(run.model)"),
             String(localized: "report.started \(run.startedAt.ISO8601Format())")
         ]
+        if let version = run.promptVersion {
+            lines.append(String(localized: "report.promptVersion \(version)"))
+        }
         if let end = run.endedAt {
             lines.append(String(localized: "report.ended \(end.ISO8601Format())"))
             lines.append(String(localized: "report.duration \(duration(from: run.startedAt, to: end))"))

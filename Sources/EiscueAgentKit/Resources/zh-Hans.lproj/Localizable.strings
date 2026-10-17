@@ -27,3 +27,5 @@
 
 "agent.attachment.images-unavailable" = "请选用支持图片的模型，再发送此附件。";
 "agent.configuration.invalid-tool-cost" = "工具执行额度必须大于零。包含结果检查的操作必须至少预留两个额度。";
+
+"agent.storage.deletion-pending" = "此对话正在删除。请重新打开对话列表以完成清理。";

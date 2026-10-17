@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite("Bluetooth monitoring and action handoff")
 @MainActor

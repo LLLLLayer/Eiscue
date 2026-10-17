@@ -80,6 +80,52 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
+  EiscueHID:
+    type: application
+    platform: iOS
+    sources:
+      - path: Apps/Eiscue
+        excludes: [Info.plist, Eiscue.entitlements]
+      - path: Apps/Shared
+    info:
+      path: Apps/EiscueHID/Info.plist
+      properties:
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).agent.continued-processing
+        NSCameraUsageDescription: "Take photos to add to your messages."
+        NSBluetoothAlwaysUsageDescription: "Connect to a development board to control this device over Bluetooth."
+        NSMicrophoneUsageDescription: "Turn speech into message text and check microphone input when requested."
+        NSSpeechRecognitionUsageDescription: "Transcribe speech on this device. Messages are sent only when you tap Send."
+        CFBundleLocalizations: [en, zh-Hans]
+        UIPrefersShowingLanguageSettings: true
+        UIBackgroundModes: [bluetooth-central]
+        EiscueScreenBroadcastAppGroup: group.org.eiscue.hid
+    dependencies:
+      - target: EiscueHIDBroadcast
+        embed: true
+      - package: EiscueKit
+        product: EiscueAgentKit
+      - package: EiscueKit
+        product: EiscueHIDKit
+      - package: SwiftMarkdown
+        product: Markdown
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.hid
+        DEVELOPMENT_TEAM: Q2T8TN4ZW6
+        CODE_SIGN_ENTITLEMENTS: Apps/EiscueHID/EiscueHID.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) EISCUE_HID_ONLY"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Eiscue HID
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
   EiscueTunnel:
     type: app-extension
     platform: iOS
@@ -109,7 +155,7 @@ targets:
     sources:
       - path: Apps/EiscueBroadcast
       # Compile only the Foundation frame store, without device-control backends.
-      - path: Sources/EiscueDeviceKit/ScreenBroadcast/ScreenBroadcastStore.swift
+      - path: Sources/EiscueDeviceCore/ScreenBroadcast/ScreenBroadcastStore.swift
     info:
       path: Apps/EiscueBroadcast/Info.plist
       properties:
@@ -125,6 +171,35 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.app.broadcast
         DEVELOPMENT_TEAM: Q2T8TN4ZW6
         CODE_SIGN_ENTITLEMENTS: Apps/EiscueBroadcast/EiscueBroadcast.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+
+  EiscueHIDBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Apps/EiscueBroadcast
+        excludes: [Info.plist, EiscueBroadcast.entitlements]
+      # Compile only the Foundation frame store, without device-control backends.
+      - path: Sources/EiscueDeviceCore/ScreenBroadcast/ScreenBroadcastStore.swift
+    info:
+      path: Apps/EiscueHIDBroadcast/Info.plist
+      properties:
+        CFBundleDisplayName: Eiscue HID
+        EiscueScreenBroadcastAppGroup: group.org.eiscue.hid
+        CFBundleLocalizations: [en, zh-Hans]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          NSExtensionAttributes:
+            RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.hid.broadcast
+        DEVELOPMENT_TEAM: Q2T8TN4ZW6
+        CODE_SIGN_ENTITLEMENTS: Apps/EiscueHIDBroadcast/EiscueHIDBroadcast.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
@@ -164,6 +239,21 @@ targets:
         DEVELOPMENT_TEAM: Q2T8TN4ZW6
         GENERATE_INFOPLIST_FILE: YES
 
+  EiscueHIDAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/EiscueHIDAppTests
+    dependencies:
+      - target: EiscueHID
+      - package: EiscueKit
+        product: EiscueHIDKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.eiscue.hid.tests
+        DEVELOPMENT_TEAM: Q2T8TN4ZW6
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   Eiscue:
     build:
@@ -177,6 +267,24 @@ schemes:
         - name: EiscueAppTests
           parallelizable: false
         - name: EiscueUITests
+          parallelizable: false
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
+  EiscueHID:
+    build:
+      targets:
+        EiscueHID: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: EiscueHIDAppTests
           parallelizable: false
     profile:
       config: Release

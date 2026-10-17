@@ -4,6 +4,7 @@ import PiDurableKit
 
 enum RuntimeMapping {
     static let attachmentEntryKind: EntryKind = "eiscue.user-attachments.v1"
+    static let attachmentReferenceEntryKind: EntryKind = "eiscue.user-attachments.v2"
 
     static func userContent(text: String, attachments: [AgentAttachment]) -> [ContentBlock] {
         var blocks: [ContentBlock] = [.text(text)]
@@ -19,9 +20,79 @@ enum RuntimeMapping {
         return blocks
     }
 
+    static func displayMetadata(_ message: AgentMessage) throws -> PiDurableKit.JSONObject {
+        ["eiscueMessageReference": try PiDurableKit.JSONValue(encoding: MessageReference(message))]
+    }
+
+    static func storedMessageID(_ entry: Entry) -> UUID? {
+        reference(entry)?.id ?? storedMessage(entry)?.id
+    }
+
     static func storedMessage(_ entry: Entry) -> AgentMessage? {
+        if let reference = reference(entry), let user = entry.userMessage { return reference.message(from: user) }
         guard let payload = entry.data?["eiscueMessage"] else { return nil }
         return try? payload.decode(as: AgentMessage.self)
+    }
+
+    private static func reference(_ entry: Entry) -> MessageReference? {
+        try? entry.data?["eiscueMessageReference"]?.decode(as: MessageReference.self)
+    }
+
+    private static func referencedMessage(_ entry: Entry, user: UserMessage) -> AgentMessage? {
+        if let reference = reference(entry) { return reference.message(from: user) }
+        guard let stored = storedMessage(entry), userContent(text: stored.text, attachments: stored.attachments) == user.content else { return nil }
+        return stored
+    }
+
+    // Display metadata references model content instead of persisting a second
+    // base64 image/text copy. A digest prevents attaching metadata to other input.
+    private struct MessageReference: Codable {
+        let id: UUID
+        let createdAt: Date
+        let contentDigest: Data
+        let attachments: [AttachmentReference]
+
+        init(_ message: AgentMessage) throws {
+            id = message.id; createdAt = message.createdAt
+            contentDigest = try Self.digest(userContent(text: message.text, attachments: message.attachments))
+            attachments = message.attachments.enumerated().map { index, attachment in
+                AttachmentReference(id: attachment.id, name: attachment.name, mimeType: attachment.mimeType,
+                                    contentIndex: 2 + index * 2)
+            }
+        }
+
+        func message(from user: UserMessage) -> AgentMessage? {
+            guard (try? Self.digest(user.content)) == contentDigest,
+                  user.content.count == 1 + attachments.count * 2,
+                  case .text(let text) = user.content.first else { return nil }
+            var restored: [AgentAttachment] = []
+            for attachment in attachments {
+                guard user.content.indices.contains(attachment.contentIndex) else { return nil }
+                let content: AgentAttachment.Content
+                switch user.content[attachment.contentIndex] {
+                case .image(let image):
+                    guard let bytes = image.bytes, image.mimeType == attachment.mimeType else { return nil }
+                    content = .image(bytes)
+                case .text(let text): content = .text(text)
+                default: return nil
+                }
+                restored.append(AgentAttachment(id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, content: content))
+            }
+            guard userContent(text: text, attachments: restored) == user.content else { return nil }
+            return AgentMessage(id: id, role: .user, text: text, createdAt: createdAt, attachments: restored)
+        }
+
+        private static func digest(_ content: [ContentBlock]) throws -> Data {
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            return Data(SHA256.hash(data: try encoder.encode(content)))
+        }
+    }
+
+    private struct AttachmentReference: Codable {
+        let id: UUID
+        let name: String
+        let mimeType: String
+        let contentIndex: Int
     }
 
     static func redact(_ text: String, secret: String) -> String {
@@ -96,14 +167,15 @@ enum RuntimeMapping {
     }
 
     static func recovery(_ view: ConversationView, conversationID: UUID) -> AgentRecovery {
-        var pending: [AgentMessage] = []
+        var pending: [Entry] = []
         var messages: [AgentMessage] = []
         for entry in view.entries {
-            if entry.kind == attachmentEntryKind, let stored = storedMessage(entry) {
-                pending.append(stored)
+            if entry.kind == attachmentEntryKind || entry.kind == attachmentReferenceEntryKind {
+                pending.append(entry)
             } else if let user = entry.userMessage,
-                      let match = pending.lastIndex(where: { userContent(text: $0.text, attachments: $0.attachments) == user.content }) {
-                messages.append(pending.remove(at: match))
+                      let match = pending.lastIndex(where: { referencedMessage($0, user: user) != nil }),
+                      let restored = referencedMessage(pending.remove(at: match), user: user) {
+                messages.append(restored)
             } else if let mapped = message(entry, conversationID: conversationID) { messages.append(mapped) }
         }
         return AgentRecovery(messages: messages, hasInterruptedRun: view.isBusy || !view.inbox.isEmpty)

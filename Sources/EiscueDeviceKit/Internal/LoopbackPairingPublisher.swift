@@ -1,3 +1,4 @@
+import EiscueDeviceCore
 import Darwin
 import Foundation
 import dnssd
@@ -75,9 +76,9 @@ final class LoopbackPairingPublisher: Sendable {
 
     private static func failure(_ code: DNSServiceErrorType) -> DeviceControlError {
         if code == kDNSServiceErr_PolicyDenied || code == kDNSServiceErr_NotPermitted {
-            return .connection(String(localized: "device.pairing.network-denied", defaultValue: "Could not make pairing available. Allow Local Network access for Eiscue.", bundle: .module))
+            return .connection(String(localized: "device.pairing.network-denied", defaultValue: "Could not make pairing available. Allow Local Network access for Eiscue.", bundle: EiscueDeviceResources.bundle))
         }
-        return .connection(String(localized: "device.pairing.publish-failed", defaultValue: "Could not make system pairing available.", bundle: .module))
+        return .connection(String(localized: "device.pairing.publish-failed", defaultValue: "Could not make system pairing available.", bundle: EiscueDeviceResources.bundle))
     }
 
     // DNS-SD calls, callbacks, references and their contexts live exclusively on

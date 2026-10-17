@@ -22,7 +22,7 @@
 
 | 能力 | 状态 |
 | --- | --- |
-| 对话、多模型、流式回答、Markdown、附件、本机听写、中英文界面 | 已实现，有模拟器测试覆盖；已知失败见下方测试基线 |
+| 对话、多模型、流式回答、Markdown、附件、本机听写、中英文界面 | 已实现，有模拟器测试覆盖；带日期的结果和待完成的真机检查见下文 |
 | C3 / S3 蓝牙连接、ReplayKit、四点触摸与中文输入检查 | 已在指定 iPhone 14 Pro / iOS 26.5.2 真机通过 |
 | App 内连接，iOS 26 + XCTest | 2026-10-13 在 iPhone 14 Pro / iOS 26.5.2 的 Eiscue 自有检查页通过确定性检查：两轮连接、点击、滑动、Unicode 文字、旋转后拒绝旧截图，以及短时后台截图 |
 | App 内连接，iOS 27 | XCTest 前台冒烟检查（连接、截图、点击自有按钮、清理）2026-10-17 在 iPhone 12 mini 通过。DisplayService：诊断版完成系统配对；模型任务曾记录 Home 与截图，随后发现旧截图误拒问题，修复后的输入**尚未重新验收** |
@@ -42,6 +42,12 @@
 3. 首次引导或「设置 → 模型」中填写服务地址、模型 ID 和 API Key。支持保存多组配置；已有 Key 显示为已保存，需要修改时点“更换”。保存配置不会请求模型。
 
 模型服务地址必须使用 HTTPS。OpenAI 兼容服务通常包含 `/v1`；Anthropic 使用 `https://api.anthropic.com`。设备任务还要求模型支持图片和工具调用。只聊天不需要开发板或屏幕共享。
+
+### 仅 HID 构建
+
+选择 `EiscueHID` scheme 可构建独立 App，只包含 ESP32 BLE / USB HID 与 ReplayKit。它默认使用 ESP32 键鼠，采用 `org.eiscue.hid`、`group.org.eiscue.hid`，仅嵌入自己的屏幕共享扩展。包依赖和编译产物不包含开发者服务后端、XCTest 桥或 VPN 扩展；完整 `Eiscue` App 运行时选择蓝牙并不会移除这些组件。两种 App 的模型配置、会话和共享授权互相独立；一个 App 保存的 S3 认证密钥不会自动迁移给另一个，也不会自动覆盖已有注册。这次构建拆分不代表 App Store 已批准，也不授予新的图片或组件许可。
+
+其他宿主可依赖 `EiscueHIDKit` product，`import EiscueDeviceCore`，并创建 `DeviceClient(controller: BluetoothDeviceController())`。完整 `EiscueDeviceKit` 保留 `DeviceClient()` 和 `DeviceClient(identityStore:)`。可通过 `python3 Scripts/check-hid-boundary.py --app <EiscueHID.app路径>` 检查构建边界。
 
 ### 让 AI 操作设备
 
@@ -96,23 +102,24 @@ C3 屏幕伙伴仅显示固定阶段、表情和步数，不显示模型文字�
 ```text
 Eiscue App（SwiftUI，iOS 26+）
 ├── 对话、模型设置、附件、语音、Skill、任务记录、后台执行
-├── DeviceToolSession：模型工具调用 → DeviceDecision
+├── RunCoordinator：请求接收、执行、取消、清理与最终结果发布
+├── DeviceToolSpec / DeviceToolSession：统一工具描述 → DeviceDecision
 ├── DeviceTaskRunner：权限、预算、串行执行、动作后观察
 ├── EiscueAgentKit：Agent / 工具 / 事件协议，内部适配 PiDurableKit
-└── EiscueDeviceKit：DeviceController 协议
-    ├── BluetoothDeviceController：BLE / USB HID + ReplayKit
-    └── 开发者服务：RemotePairing → 所选 DisplayService/HID 或 App 内 XCTest
+└── EiscueDeviceCore：DeviceController、可注入的 DeviceClient、BLE / USB HID + ReplayKit
+    ├── EiscueHIDKit product：仅 Core
+    └── EiscueDeviceKit 外观层：Core + 开发者服务 / 默认客户端
 
 扩展：EiscueBroadcast（屏幕共享）、EiscueTunnel（仅本地 VPN 路线）
 固件：Passport-BLE（C3 / S3 HID）、NCM-Relay（S3 USB 网卡）
 ```
 
-两个 Kit 是独立、互不依赖的 Swift Package library，由 App 集成层连接，没有单独的 Plugin 产品：
+Agent 与 Device 库互不依赖，由 App 集成层连接；两个 Device product 共享 Core 模块，没有单独的 Plugin 产品：
 
 | Kit | 职责 | 替换入口 |
 | --- | --- | --- |
 | [EiscueAgentKit](Sources/EiscueAgentKit/AgentClient.swift) | Agent、工具、事件和会话存储；内部通过 JavaScriptCore 运行 PiDurableKit，每个会话一个 SQLite | `AgentClient(engine:)`，也可注册自己的 Swift 工具 |
-| [EiscueDeviceKit](Sources/EiscueDeviceKit/DeviceClient.swift) | 连接、观察、动作和能力状态 | `DeviceClient(controller:)` |
+| [EiscueDeviceKit](Sources/EiscueDeviceCore/DeviceClient.swift) | 连接、观察、动作和能力状态 | `DeviceClient(controller:)` |
 
 集成 DeviceKit XCTest 后端的 App 需在真机 target 的 `LD_RUNPATH_SEARCH_PATHS` 中保留继承路径，并添加 `/System/Developer/usr/lib` 和 `/Developer/usr/lib`。Xcode 27 的开发镜像通过这些路径加载 Testing 互操作依赖。Eiscue 已在 `project.yml` 配置；Apple 测试库从已挂载 DDI 动态加载，不随 App 打包。
 
@@ -120,15 +127,16 @@ Eiscue App（SwiftUI，iOS 26+）
 
 ## 构建与测试
 
-**先保留锁文件现状。** SwiftPM 可能移除 `Package.resolved` 中仅 Xcode 使用的 swift-markdown / swift-cmark 锁定项。运行前记录并保留已有修改，运行后检查差异，只还原本轮产生的变化；不要无条件恢复整个文件。
+Kit 测试优先使用下面的隔离脚本，它不会改写实际的 `Package.resolved` 或暂存状态；直接运行 `swift test` 可能移除仅 Xcode 使用的锁定项。每套工具链使用独立 scratch 目录。[CI 配置说明](Scripts/ci.md)列出两套 Xcode/iOS 门禁、所需的自托管 runner 及本地运行方式；提交工作流不代表已经配置 runner 或分支保护。
 
 在仓库根目录执行：
 
 ```sh
 xcodegen generate
 
-# Kit 测试：使用本地模型 fixture，不调用真实模型
-swift test
+# Kit 测试：指定 Xcode，隔离锁文件及构建产物
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+python3 Scripts/test-swift-package.py --scratch-path .build/kit-xcode26
 
 # App 构建
 xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
@@ -155,20 +163,21 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 保存检查日志时，可使用 `bash Scripts/run-logged-check.sh .build/<唯一名称>.log <命令> [参数...]`。脚本保留已有日志，并返回检查命令的真实退出码；失败不会被包装成成功。
 
-2026-10-17 在提交 `f4972f5` 上完整运行，App 套件运行期间开启本地模型服务：
+**2026-10-17 架构与 UI 修复后复核**，使用隔离模型服务，未操作真机：
 
-| 套件 | 结果 |
+| 检查 | 结果 |
 | --- | --- |
-| Swift Kit | Xcode 27.0 与 Xcode 26.3 均通过 166 项 / 19 套件 |
-| App 单元测试 | iPhone 18 Pro / iOS 27.0 与 iPhone 16e / iOS 26.3.1 模拟器各运行 313 项，0 失败（iOS 27 上跳过 1 项仅限 iOS 26 的测试） |
-| UI 测试，iOS 27.0 | 72 项：57 通过、9 跳过、6 失败 |
-| UI 测试，iOS 26.3.1 | 72 项：57 通过、13 跳过、2 失败 |
-| 固件主机测试 | 板端认证 6 组、C3 屏幕伙伴 5 组通过；NCM 中继 14 项 Python 测试通过。NCM 中继 C 主机测试未运行（未安装 ESP-IDF） |
-| 设备后端与工具 | Rust 库测试 72 项、ObjC 自动化桥 535 项检查、配对助手 8 项测试通过 |
+| Swift Kit | Xcode 26.3：180 项 / 19 套件通过。Xcode 27：178 项通过，运行后又补充了两项删除恢复回归测试 |
+| App 单元测试 | Xcode 27、iPad / iOS 26.3.1：318 项通过 |
+| iPhone 完整 UI，iOS 26.3.1 | 59 通过、13 跳过、0 失败 |
+| iPhone 完整 UI，iOS 27.0 | 63 通过、9 跳过、0 失败；最终拆分视图表达式后，7 项受影响的语音 / 侧栏用例再次通过 |
+| iPad 侧栏、会话和分享 | 10 通过、1 项因布局不适用跳过、0 失败 |
+| 纯 HID App | 3 项单测通过；Release 模拟器构建及依赖、符号、权限和扩展边界检查通过；未签名真机构建与链接检查通过 |
+| 测试辅助工具 | 18 项通过；fixture 端口改动后 4 项通过；重新生成工程无差异 |
 
-UI 套件目前不是绿色门禁。两项会话持久化用例在两个系统版本上都失败：它们按按钮查询侧栏行，而行容器已不再以按钮形式暴露给 XCUITest；其他按不同方式查询同一行的 UI 测试通过，因此大概率是测试代码过时。仅 iOS 27 上，三项首次引导用例假定 iOS 26 的电脑配对流程，一项“存储到文件”用例未能进入本机文件位置；这四项在 iOS 26.3.1 上通过。跳过项需要真机、iPad 或另一系统版本，不计为通过。本轮没有运行 iPad 模拟器。
+以上成功命令均返回 exit 0。需真机、另一系统或特定布局的跳过项不计为通过。两个 iPhone 系统都完成了首次引导与“存储到文件”，包括逐字节读回检查。HID 真机构建未签名，不代表签名或手机行为已验收。CI 工作流及本地检查脚本已入库，远端 runner 和分支保护仍需配置。
 
-更早的基线（2026-10-14 的 `efb7703`、2026-10-15 的 `14d154f`）、定向复跑和失败的中间运行保留在本地验证记录中。模拟器与主机测试不代表真机验收。
+此前 `f4972f5` 基线中，iOS 27 有 6 项 UI 失败、iOS 26 有 2 项。共享侧栏查询、分系统引导断言及系统文件选择器导航现已修正。更早基线和失败的中间运行保留在本地验证记录中；模拟器与主机检查不代表真机验收。
 
 ### 真机记录
 
@@ -201,6 +210,10 @@ bash Scripts/test-board-companion.sh
 
 ## 权限、数据与隐私
 
+会话存储改为小型索引、每会话一个记录文件和共享的 SHA-256 附件数据。旧版在首次写入时迁移并保留原始备份；首次明确删除会话后移除旧备份、清理不再引用的附件。中断的删除清理会在读取或后续写入时继续。原始文档保留以支持按原字节分享。新运行时元数据引用已有附件，不再重复存一份；旧 SQLite 记录仍可读取。
+
+模型请求只保留最新两张设备截图，文字、工具调用关联与服务商签名保持完整，用户上传的图片不受影响。完整历史截图仍保存在会话 SQLite，供任务详情查看，删除会话时清理。`Runtime/` 不再进入设备备份；会话和原始附件沿用原有备份行为。任务记录增加系统指令版本。
+
 - 任务开始时固定权限范围；普通聊天不注册工具。设备工具只按实际后端能力开放，动作绑定最新有效截图且只能消费一次；送达结果不明时不会自动重发。
 - 无进展或达到步数上限时暂停，用户点“继续”后以新请求重新观察。中断恢复只读，不自动续跑。导入的 Skill 只是 Markdown 说明，不能扩大权限或执行脚本。
 - 会话、运行时 SQLite、任务记录、Skill 和附件位于 App 沙盒的 `Application Support/Eiscue/`。API Key 与配对私钥保存在仅本设备可用的 Keychain，不进入 UserDefaults、日志或导出报告。
@@ -216,7 +229,7 @@ bash Scripts/test-board-companion.sh
 
 | 组件 | 来源 / 许可 |
 | --- | --- |
-| [DeviceBackend](Vendor/DeviceBackend/README.md) | actell 固定提交，GPL-3.0-only；内含 MIT 的 idevice。App 始终链接此后端，选择蓝牙路线不会将其从二进制中移除 |
+| [DeviceBackend](Vendor/DeviceBackend/README.md) | actell 固定提交，GPL-3.0-only；内含 MIT 的 idevice。完整 `Eiscue` App 链接此后端，选择蓝牙路线不会将其移除；独立 `EiscueHID` 构建不链接此后端 |
 | [LocalTunnel](Vendor/LocalTunnel/README.md) | LocalDevVPN / StosVPN 衍生实现，自定义 StosVPN License；来源作者见目录内声明 |
 | [Passport-BLE](Firmware/Passport-BLE/README.md#license-and-api-references) | 原创固件代码为 Apache-2.0；依赖声明见固件目录。[表情资源](Firmware/Passport-BLE/Resources/README.md)不因固件代码许可而被授予同样许可 |
 | [NCM-Relay](Firmware/NCM-Relay/README.md) | 上游组合项目声明 GPL-3.0-only，本地文件带 GPL-3.0-or-later 头；详见其 `SOURCE_MANIFEST.json` |

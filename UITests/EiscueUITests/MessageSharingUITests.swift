@@ -80,6 +80,10 @@ final class MessageSharingUITests: XCTestCase {
         app.buttons["verifySavedShareButton"].tap()
         let picker = app.descendants(matching: .any)["fixtureSavedDocumentPicker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 8), "Read-back must use a fresh public document picker")
+        // iOS 27 publishes the hosting controller before the Files service has
+        // loaded its navigation tree. A bare container cannot be navigated yet.
+        XCTAssertTrue(picker.navigationBars.firstMatch.waitForExistence(timeout: 15),
+                      "The public picker must finish loading its native navigation")
         guard openLocalStorage(in: app), openLocalFolder(folderName, in: picker) else { return }
         // Files exposes the extension separately in its cell identifier and
         // omits it from the caption, even with shouldShowFileExtensions enabled.
@@ -102,13 +106,26 @@ final class MessageSharingUITests: XCTestCase {
     @MainActor private func openLocalStorage(in app: XCUIApplication) -> Bool {
         let locations = UIDevice.current.userInterfaceIdiom == .pad ? ["On My iPad", "我的 iPad", "我的iPad"] : ["On My iPhone", "我的 iPhone", "我的iPhone"]
         for _ in 0..<6 {
+            // Always return to the local root: Files may remember a folder
+            // from another picker or an earlier run.
+            let localDirectory = app.otherElements.matching(NSPredicate(
+                format: "identifier BEGINSWITH %@", "DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage, Title: ")).firstMatch
             if let element = visibleLabel(locations, in: app) {
                 element.tap()
-                return true
+                if localDirectory.waitForExistence(timeout: 5) { return true }
+            }
+            let backButton = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].buttons["BackButton"]
+            if backButton.exists && backButton.isHittable {
+                backButton.tap()
+                continue
             }
             let navigation = ["Browse", "浏览", "Locations", "位置", "Show Sidebar", "显示侧边栏", "iCloud Drive", "iCloud 云盘", "Downloads", "下载"]
                 .compactMap { label in app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex.first(where: \.isHittable) }
             guard let back = navigation.first else {
+                let hierarchy = XCTAttachment(string: app.debugDescription)
+                hierarchy.name = "Native Files navigation hierarchy"
+                hierarchy.lifetime = .keepAlways
+                add(hierarchy)
                 XCTFail("The native picker did not expose the local \(locations[0]) location or a known navigation control")
                 return false
             }

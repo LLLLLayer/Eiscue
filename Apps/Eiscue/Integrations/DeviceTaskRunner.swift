@@ -1,5 +1,5 @@
 import CryptoKit
-import EiscueDeviceKit
+import EiscueDeviceCore
 import Foundation
 
 enum DeviceDecision: Sendable {
@@ -16,27 +16,20 @@ enum DeviceAction: Codable, Sendable {
     case home
     case launchApplication(String)
 
-    var capability: DeviceCapability {
+    var tool: DeviceToolSpec {
         switch self {
         case .tap: .tap
         case .swipe: .swipe
-        case .typeText: .textInput
-        case .pressKey: .keyboardNavigation
+        case .typeText: .typeText
+        case .pressKey: .pressKey
         case .home: .home
         case .launchApplication: .launchApplication
         }
     }
 
-    var toolName: String {
-        switch self {
-        case .tap: "device_tap"
-        case .swipe: "device_swipe"
-        case .typeText: "device_type_text"
-        case .pressKey: "device_press_key"
-        case .home: "device_home"
-        case .launchApplication: "device_launch_app"
-        }
-    }
+    var capability: DeviceCapability { tool.capability }
+    var toolName: String { tool.rawValue }
+
 }
 
 struct DeviceObservation: Sendable {
@@ -143,16 +136,16 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         do {
             switch decision {
             case .observe:
-                try require(.screenshot)
-                try reserve(1)
+                try require(DeviceToolSpec.screenshot.capability)
+                try reserve(DeviceToolSpec.screenshot.executionCost)
                 hasStartedExecution = true
                 transition(to: .observing)
                 return .observation(try await capture(afterAction: false))
             case .listApplications:
-                try require(.listApplications)
-                try reserve(1)
+                try require(DeviceToolSpec.listApplications.capability)
+                try reserve(DeviceToolSpec.listApplications.executionCost)
                 hasStartedExecution = true
-                try await record("observation.prepared", "device_list_apps")
+                try await record("observation.prepared", DeviceToolSpec.listApplications.rawValue)
                 try check()
                 let apps = try await client.listApplications()
                 try check()
@@ -165,7 +158,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
                 try require(.screenshot)
                 // Every decision attempt consumes its bounded allocation;
                 // malformed typed input cannot bypass the run's operation limit.
-                try reserve(2)
+                try reserve(action.tool.executionCost)
                 let frame = try frame(for: frameID)
                 try validate(action, width: frame.width, height: frame.height)
                 let digest = try actionDigest(action)
@@ -192,7 +185,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
             }
         } catch let error as DeviceControlError where error.isDeliveryUnknown {
             markUnknown()
-            try? await log("action.unknown", decision.actionName ?? "device_screenshot")
+            try? await log("action.unknown", decision.actionName ?? DeviceToolSpec.screenshot.rawValue)
             await onActionFinished()
             throw error
         } catch {
@@ -202,7 +195,7 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
 
     private func capture(afterAction: Bool) async throws -> DeviceObservation {
         latestFrame = nil
-        try await record("observation.prepared", "device_screenshot")
+        try await record("observation.prepared", DeviceToolSpec.screenshot.rawValue)
         await onObservationWillCapture()
         try check()
         let nativeImage: DeviceScreenshot

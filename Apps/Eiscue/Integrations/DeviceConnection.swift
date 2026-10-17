@@ -1,4 +1,7 @@
+import EiscueDeviceCore
+#if !EISCUE_HID_ONLY
 import EiscueDeviceKit
+#endif
 import Foundation
 
 enum DevicePairingSupport {
@@ -84,7 +87,7 @@ extension AppModel {
         dictationDeviceRestoration = restoration
         isConnecting = true
         activeDeviceConnectionMethod = nil; activeDeviceControlBackend = nil; screenshot = nil
-        deviceStatus = .unavailable(reason: String(localized: "connection.disconnected"))
+        deviceStatus = .unavailable(reason: String(localized: "connection.disconnected", table: "Runtime"))
         // The release belongs to the connection, so cancelling a gesture must
         // still wait for media teardown before restoring or starting a new one.
         restoration.releaseTask = Task {
@@ -359,7 +362,7 @@ extension AppModel {
             if isDeviceReady { connectionMessage = String(localized: "connection.ready") }
             else if case .unavailable(let reason) = deviceStatus { connectionMessage = reason }
         } catch is CancellationError {
-            if deviceOperationID == operationID { connectionMessage = String(localized: "connection.disconnected") }
+            if deviceOperationID == operationID { connectionMessage = String(localized: "connection.disconnected", table: "Runtime") }
         } catch { if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
         guard deviceOperationID == operationID else { return }
         await refreshDeviceStatus()
@@ -381,7 +384,7 @@ extension AppModel {
 
     func selectDeviceConnectionMethod(_ method: DeviceConnectionMethod) async {
         await cancelDictationDeviceRestoration()
-        guard method != deviceConnectionMethod, !isChangingDeviceConnectionMethod, !isRepairingDeviceConnection,
+        guard DeviceBuildCapabilities.methods.contains(method), method != deviceConnectionMethod, !isChangingDeviceConnectionMethod, !isRepairingDeviceConnection,
               !isSaving, !isStopping, !isManagingTunnel, !isStoppingTunnel, !isImportingAttachments else { return }
         isChangingDeviceConnectionMethod = true
         defer { isChangingDeviceConnectionMethod = false }
@@ -395,7 +398,7 @@ extension AppModel {
             networkDeviceClient = deviceClient
             deviceClient = DeviceClient(controller: bluetoothController)
         } else if deviceConnectionMethod == .bluetoothBoard {
-            deviceClient = networkDeviceClient ?? DeviceClient()
+            deviceClient = networkDeviceClient ?? DeviceBuildCapabilities.makeClient()
             networkDeviceClient = nil
         }
         deviceConnectionMethod = method

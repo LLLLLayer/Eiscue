@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite struct DeviceKitTests {
     private func screenshot(width: Int = 100, height: Int = 200) -> DeviceScreenshot {

@@ -1,15 +1,7 @@
 import Foundation
 
 public struct DeviceClient: Sendable {
-    private let controller: any DeviceController
-
-    public init() {
-        controller = LocalDeviceController(identityStore: KeychainPairingIdentityStore())
-    }
-
-    public init(identityStore: any PairingIdentityStore) {
-        controller = LocalDeviceController(identityStore: identityStore)
-    }
+    package let controller: any DeviceController
 
     public init(controller: any DeviceController) {
         self.controller = controller
@@ -38,13 +30,6 @@ public struct DeviceClient: Sendable {
     }
     public func connectUSBBoard(backend: DeviceControlBackend = .automatic) async throws { try await controller.connectUSBBoard(backend: backend) }
     public func connectBluetoothBoard() async throws { try await controller.connectBluetoothBoard() }
-    #if DEBUG
-    /// Explicit development probe. Never marks device control ready or sends input.
-    public func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration = .defaults) async throws -> Data {
-        guard let local = controller as? LocalDeviceController else { throw DeviceControlError.unsupported }
-        return try await local.probeLegacyDeveloperServices(configuration: configuration)
-    }
-    #endif
     public func finishTask() async throws { try await controller.finishTask() }
     public func disconnect() async { await controller.disconnect() }
     public func disconnectAndConfirmRelease() async -> Bool { await controller.disconnectAndConfirmRelease() }

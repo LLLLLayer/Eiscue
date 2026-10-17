@@ -15,3 +15,6 @@ EiscuePairingTransfer.json
 
 # Product docs are kept local only.
 /docs/
+
+# Cargo output when invoked without the documented shared CARGO_TARGET_DIR.
+/Vendor/DeviceBackend/rust/target/

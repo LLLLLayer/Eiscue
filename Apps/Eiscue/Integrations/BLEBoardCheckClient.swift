@@ -1,5 +1,5 @@
 #if DEBUG
-import EiscueDeviceKit
+import EiscueDeviceCore
 import Foundation
 import CoreBluetooth
 

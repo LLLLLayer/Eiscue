@@ -25,6 +25,28 @@ struct AssistantView: View {
     @State private var showsRunHistory = false
 
     var body: some View {
+        speechPresentation
+        #if DEBUG
+        .task {
+            let arguments = ProcessInfo.processInfo.arguments
+            guard arguments.contains("--speech-diagnostics"), arguments.contains("--speech-capture-check") else { return }
+            // Loading the saved conversation changes composerSessionID and
+            // cancels capture. Wait for the same ready UI a user records from.
+            let deadline = ContinuousClock.now + .seconds(10)
+            while model.isLoading || UIApplication.shared.applicationState != .active {
+                guard ContinuousClock.now < deadline else { return }
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            }
+            guard !model.isBusy, !Task.isCancelled else { return }
+            isVoiceMode = true
+            speech.toggle(onTranscript: { _ in })
+            do { try await Task.sleep(for: .seconds(10)) } catch { }
+            speech.cancel()
+        }
+        #endif
+    }
+
+    private var transcript: some View {
         AssistantTranscriptView { welcome }
         .background(EiscueStyle.background, ignoresSafeAreaEdges: [])
         .overlay {
@@ -34,69 +56,7 @@ struct AssistantView: View {
         .navigationTitle("Eiscue")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(speech.isBusy ? .hidden : .automatic, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    endComposerInput()
-                    openSidebar()
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 20, weight: .regular))
-                        .frame(width: 24, height: 24)
-                        .padding(3)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .controlSize(.regular)
-                .foregroundStyle(EiscueStyle.accent)
-                .accessibilityLabel("assistant.history")
-                .accessibilityIdentifier("historyButton")
-            }
-            .sharedBackgroundVisibility(.hidden)
-            ToolbarItem(placement: .principal) {
-                Menu {
-                    Button("runs.conversationTitle", systemImage: "clock.arrow.circlepath") {
-                        endComposerInput(); showsRunHistory = true
-                    }
-                        .accessibilityIdentifier("conversationRunHistoryButton")
-                    Divider()
-                    ForEach(model.modelProfiles) { profile in
-                        Button {
-                            do { try model.selectModelProfile(profile.id) }
-                            catch { model.errorMessage = model.safeError(error) }
-                        } label: {
-                            if model.selectedModelProfileID == profile.id {
-                                Label(profile.displayName, systemImage: "checkmark")
-                            } else { Text(profile.displayName) }
-                        }
-                        .disabled(!model.canManageModelProfiles)
-                        .accessibilityIdentifier("switchModelProfile_\(profile.id.uuidString)")
-                    }
-                    Button(String(localized: "models.manage", table: "Models"), systemImage: "slider.horizontal.3") {
-                        endComposerInput()
-                        model.showsModelSettings = true
-                    }
-                    .disabled(!model.canManageModelProfiles)
-                    .accessibilityIdentifier("manageModelProfilesButton")
-                } label: {
-                    HStack(spacing: 5) {
-                        Text("Eiscue").font(.headline)
-                        Image(systemName: "chevron.down").font(.caption2).opacity(0.6)
-                    }
-                    .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
-                }.accessibilityLabel(chatText("chat.conversationMenu"))
-                    .accessibilityIdentifier("conversationMenuButton")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: AppDestination.device) {
-                    DeviceConnectionIndicator(state: model.connectionIndicator)
-                }
-                .accessibilityLabel("common.device")
-                .accessibilityValue(model.connectionIndicator.title)
-                .accessibilityIdentifier("deviceNavigationLink")
-                .simultaneousGesture(TapGesture().onEnded { endComposerInput() })
-            }
-        }
+        .toolbar { conversationToolbar }
         .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         .background {
             EiscueStyle.background
@@ -105,6 +65,10 @@ struct AssistantView: View {
                 }
                 .ignoresSafeArea()
         }
+    }
+
+    private var attachmentPresentation: some View {
+        transcript
         .photosPicker(isPresented: $showsPhotoPicker, selection: $selectedPhotos,
                       maxSelectionCount: max(1, 4 - model.draftAttachments.count), matching: .images)
         .onChange(of: selectedPhotos) { _, items in
@@ -135,6 +99,10 @@ struct AssistantView: View {
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("common.done") { showsRunHistory = false } } }
             }.toolImagePreviewHost()
         }
+    }
+
+    private var speechPresentation: some View {
+        attachmentPresentation
         .onChange(of: model.showsModelSettings) { _, shown in if shown { endComposerInput() } }
         .onChange(of: speech.errorMessage) { _, message in
             guard let message else { return }
@@ -184,24 +152,70 @@ struct AssistantView: View {
         }
         .onDisappear { endComposerInput() }
         .onAppear { if !isComposerFocused { dismissKeyboard() } }
-        #if DEBUG
-        .task {
-            let arguments = ProcessInfo.processInfo.arguments
-            guard arguments.contains("--speech-diagnostics"), arguments.contains("--speech-capture-check") else { return }
-            // Loading the saved conversation changes composerSessionID and
-            // cancels capture. Wait for the same ready UI a user records from.
-            let deadline = ContinuousClock.now + .seconds(10)
-            while model.isLoading || UIApplication.shared.applicationState != .active {
-                guard ContinuousClock.now < deadline else { return }
-                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+    }
+
+    @ToolbarContentBuilder private var conversationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                endComposerInput()
+                openSidebar()
+            } label: {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 20, weight: .regular))
+                    .frame(width: 24, height: 24)
+                    .padding(3)
             }
-            guard !model.isBusy, !Task.isCancelled else { return }
-            isVoiceMode = true
-            speech.toggle(onTranscript: { _ in })
-            do { try await Task.sleep(for: .seconds(10)) } catch { }
-            speech.cancel()
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.regular)
+            .foregroundStyle(EiscueStyle.accent)
+            .accessibilityLabel("assistant.history")
+            .accessibilityIdentifier("historyButton")
         }
-        #endif
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(placement: .principal) {
+            Menu {
+                Button("runs.conversationTitle", systemImage: "clock.arrow.circlepath") {
+                    endComposerInput(); showsRunHistory = true
+                }
+                    .accessibilityIdentifier("conversationRunHistoryButton")
+                Divider()
+                ForEach(model.modelProfiles) { profile in
+                    Button {
+                        do { try model.selectModelProfile(profile.id) }
+                        catch { model.errorMessage = model.safeError(error) }
+                    } label: {
+                        if model.selectedModelProfileID == profile.id {
+                            Label(profile.displayName, systemImage: "checkmark")
+                        } else { Text(profile.displayName) }
+                    }
+                    .disabled(!model.canManageModelProfiles)
+                    .accessibilityIdentifier("switchModelProfile_\(profile.id.uuidString)")
+                }
+                Button(String(localized: "models.manage", table: "Models"), systemImage: "slider.horizontal.3") {
+                    endComposerInput()
+                    model.showsModelSettings = true
+                }
+                .disabled(!model.canManageModelProfiles)
+                .accessibilityIdentifier("manageModelProfilesButton")
+            } label: {
+                HStack(spacing: 5) {
+                    Text("Eiscue").font(.headline)
+                    Image(systemName: "chevron.down").font(.caption2).opacity(0.6)
+                }
+                .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
+            }.accessibilityLabel(chatText("chat.conversationMenu"))
+                .accessibilityIdentifier("conversationMenuButton")
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink(value: AppDestination.device) {
+                DeviceConnectionIndicator(state: model.connectionIndicator)
+            }
+            .accessibilityLabel("common.device")
+            .accessibilityValue(model.connectionIndicator.title)
+            .accessibilityIdentifier("deviceNavigationLink")
+            .simultaneousGesture(TapGesture().onEnded { endComposerInput() })
+        }
     }
 
     private func endComposerInput(reconnect: Bool = true) {

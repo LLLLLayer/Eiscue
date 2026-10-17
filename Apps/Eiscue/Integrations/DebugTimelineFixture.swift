@@ -36,31 +36,31 @@ extension AppModel {
                                startedAt: time, scope: .observe, model: "UI fixture", skill: nil,
                                state: .completed, endedAt: time.addingTimeInterval(10), detail: "", events: [])
         record.activities = [
-            ToolActivity(id: "preview:image", name: "device_screenshot", startedAt: time.addingTimeInterval(1), endedAt: time.addingTimeInterval(2),
+            ToolActivity(id: "preview:image", name: DeviceToolSpec.screenshot.rawValue, startedAt: time.addingTimeInterval(1), endedAt: time.addingTimeInterval(2),
                          output: "frameId=11111111-1111-1111-1111-111111111111; width=390; height=844;", precedingMessageID: user.id),
-            ToolActivity(id: "preview:text", name: "device_list_apps", startedAt: time.addingTimeInterval(3), endedAt: time.addingTimeInterval(4),
+            ToolActivity(id: "preview:text", name: DeviceToolSpec.listApplications.rawValue, startedAt: time.addingTimeInterval(3), endedAt: time.addingTimeInterval(4),
                          output: "INTERNAL_TEXT_OUTPUT", precedingMessageID: user.id),
-            ToolActivity(id: "preview:error", name: "device_screenshot", startedAt: time.addingTimeInterval(5), endedAt: time.addingTimeInterval(6),
+            ToolActivity(id: "preview:error", name: DeviceToolSpec.screenshot.rawValue, startedAt: time.addingTimeInterval(5), endedAt: time.addingTimeInterval(6),
                          output: "INTERNAL_ERROR_OUTPUT", isError: true, precedingMessageID: user.id),
-            ToolActivity(id: "preview:old", name: "device_screenshot", startedAt: time.addingTimeInterval(7), endedAt: time.addingTimeInterval(8),
+            ToolActivity(id: "preview:old", name: DeviceToolSpec.screenshot.rawValue, startedAt: time.addingTimeInterval(7), endedAt: time.addingTimeInterval(8),
                          output: "frameId=old-metadata-only; width=390; height=844;", precedingMessageID: user.id)
         ]
         toolImagePreviews.removeAll()
         let image = Self.toolPreviewFixtureImage()
-        toolImagePreviews.record(AgentToolCompletion(call: .init(id: "image", name: "device_screenshot", arguments: [:]),
+        toolImagePreviews.record(AgentToolCompletion(call: .init(id: "image", name: DeviceToolSpec.screenshot.rawValue, arguments: [:]),
                                                     result: .image(image, mimeType: "image/png")),
                                  activityID: "preview:image", conversationID: conversation.id)
-        toolImagePreviews.record(AgentToolCompletion(call: .init(id: "error", name: "device_screenshot", arguments: [:]),
+        toolImagePreviews.record(AgentToolCompletion(call: .init(id: "error", name: DeviceToolSpec.screenshot.rawValue, arguments: [:]),
                                                     result: .init(content: [.image(data: image, mimeType: "image/png")], isError: true)),
                                  activityID: "preview:error", conversationID: conversation.id)
         toolImagePreviews.markUnavailable(activityID: "preview:old", conversationID: conversation.id)
         if ProcessInfo.processInfo.arguments.contains("--run-tool-detail-fixture") {
-            record.activities?.append(ToolActivity(id: "preview:tap", name: "device_tap", startedAt: time.addingTimeInterval(8),
+            record.activities?.append(ToolActivity(id: "preview:tap", name: DeviceToolSpec.tap.rawValue, startedAt: time.addingTimeInterval(8),
                                                   endedAt: time.addingTimeInterval(9),
                                                   arguments: #"{"frameId":"11111111-1111-1111-1111-111111111111","x":284,"y":525}"#,
                                                   output: "frameId=22222222-2222-2222-2222-222222222222; width=390; height=844;",
                                                   precedingMessageID: user.id))
-            toolImagePreviews.record(AgentToolCompletion(call: .init(id: "tap", name: "device_tap", arguments: [:]),
+            toolImagePreviews.record(AgentToolCompletion(call: .init(id: "tap", name: DeviceToolSpec.tap.rawValue, arguments: [:]),
                                                         result: .image(image, mimeType: "image/png")),
                                      activityID: "preview:tap", conversationID: conversation.id)
         }

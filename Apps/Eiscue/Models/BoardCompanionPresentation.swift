@@ -1,4 +1,4 @@
-import EiscueDeviceKit
+import EiscueDeviceCore
 import Foundation
 
 /// The board receives fixed phases and observed work counts, never model text,
@@ -25,12 +25,8 @@ enum BoardCompanionPresentation {
         else if devicePhase == .paused { phase = .waiting }
         else if devicePhase == .stopped { phase = .stopped }
         else {
-            switch currentTool {
-            case "device_screenshot", "device_list_apps": phase = .observing
-            case "device_tap", "device_swipe", "device_type_text", "device_home", "device_launch_app", "device_press_key": phase = .acting
-            case "": phase = .thinking
-            default: phase = .waiting
-            }
+            phase = DeviceToolSpec(rawValue: currentTool)?.companionPhase
+                ?? (currentTool.isEmpty ? .thinking : .waiting)
         }
         return BluetoothCompanionStatus(phase: phase, language: language, completedActions: UInt16(clamping: completed))
     }

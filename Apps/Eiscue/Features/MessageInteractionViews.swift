@@ -223,15 +223,7 @@ struct ToolActivityRow: View, Equatable {
         }
     }
     private var symbol: String {
-        switch activity.name {
-        case "device_screenshot": "photo.on.rectangle.angled"
-        case "device_list_apps", "device_launch_app": "app"
-        case "device_tap": "hand.tap"
-        case "device_swipe": "hand.draw"
-        case "device_type_text", "device_press_key": "keyboard"
-        case "device_home": "house"
-        default: "sparkle"
-        }
+        DeviceToolSpec(rawValue: activity.name)?.symbol ?? "sparkle"
     }
 }
 

@@ -103,48 +103,16 @@ enum DeviceToolPresentation {
             }
             return String(localized: "chat.activity.failed \(operation)", table: "Chat")
         }
-        let key: String.LocalizationValue
-        if activity.isRunning {
-            key = switch activity.name {
-            case "device_screenshot": "chat.activity.observing"
-            case "device_list_apps": "chat.activity.listingApps"
-            case "device_tap": "chat.activity.tapping"
-            case "device_swipe": "chat.activity.swiping"
-            case "device_type_text": "chat.activity.typing"
-            case "device_launch_app": "chat.activity.launchingApp"
-            case "device_home": "chat.activity.goingHome"
-            case "device_press_key": "chat.activity.pressingKey"
-            default: "chat.activity.running"
-            }
-        } else {
-            key = switch activity.name {
-            case "device_screenshot": "chat.activity.observedImage"
-            case "device_list_apps": "chat.activity.listedApps"
-            case "device_tap": "chat.activity.tapped"
-            case "device_swipe": "chat.activity.swiped"
-            case "device_type_text": "chat.activity.typed"
-            case "device_launch_app": "chat.activity.sentAppLaunch"
-            case "device_home": "chat.activity.sentHome"
-            case "device_press_key": "chat.activity.pressedKey"
-            default: "chat.activity.finished"
-            }
+        if let spec = DeviceToolSpec(rawValue: activity.name) {
+            return spec.activityTitle(isRunning: activity.isRunning)
         }
-        return String(localized: key, table: "Chat")
+        return String(localized: activity.isRunning ? "chat.activity.running" : "chat.activity.finished", table: "Chat")
     }
 
     static func title(for name: String) -> String? {
-        switch name {
-        case "device_screenshot": String(localized: "scope.observe")
-        case "device_list_apps": String(localized: "tool.listApps")
-        case "device_tap": String(localized: "tool.tap")
-        case "device_swipe": String(localized: "tool.swipe")
-        case "device_type_text": String(localized: "tool.typeText")
-        case "device_launch_app": String(localized: "tool.launchApp")
-        case "device_home": String(localized: "tool.home")
-        case "device_press_key": String(localized: "tool.pressKey")
-        default: nil
-        }
+        DeviceToolSpec(rawValue: name)?.title
     }
+
 }
 
 enum ToolActivityFormatting {

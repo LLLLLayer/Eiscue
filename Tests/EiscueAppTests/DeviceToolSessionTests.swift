@@ -6,6 +6,66 @@ import XCTest
 
 @MainActor
 final class DeviceToolSessionTests: XCTestCase {
+    func testRegistrationPreservesRuntimeNamesAndCapabilityGatesForEveryScope() {
+        let contract: [(name: String, capability: DeviceCapability, action: Bool)] = [
+            ("device_screenshot", .screenshot, false), ("device_list_apps", .listApplications, false),
+            ("device_tap", .tap, true), ("device_swipe", .swipe, true), ("device_type_text", .textInput, true),
+            ("device_launch_app", .launchApplication, true), ("device_home", .home, true),
+            ("device_press_key", .keyboardNavigation, true)
+        ]
+        let client = DeviceClient(controller: RecordingDeviceController())
+        let allCapabilities = DeviceCapability.allCases
+        for mask in 0..<(1 << allCapabilities.count) {
+            let capabilities = Set(allCapabilities.enumerated().compactMap { index, capability in
+                mask & (1 << index) == 0 ? nil : capability
+            })
+            for scope in TaskScope.allCases {
+                let session = DeviceToolSession(capabilities: capabilities, client: client, scope: scope,
+                                                timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
+                let expected = contract.filter {
+                    scope != .chat && capabilities.contains($0.capability)
+                        && (!$0.action || (scope == .control && capabilities.contains(.screenshot)))
+                }
+                XCTAssertEqual(session.tools.map(\.name), expected.map(\.name), "scope=\(scope), capabilities=\(capabilities)")
+            }
+        }
+    }
+
+    func testEveryRegisteredActionDecodesArgumentsAndReturnsANewObservation() async throws {
+        let samples: [(String, AgentJSONValue, DeviceAction)] = [
+            ("device_tap", ["x": 12, "y": 34], .tap(DevicePoint(x: 12, y: 34))),
+            ("device_swipe", ["fromX": 10, "fromY": 20, "toX": 30, "toY": 40, "duration": 0.5],
+             .swipe(from: DevicePoint(x: 10, y: 20), to: DevicePoint(x: 30, y: 40), duration: 0.5)),
+            ("device_type_text", ["text": "A test draft"], .typeText("A test draft")),
+            ("device_launch_app", ["bundleId": "org.eiscue.fixture"], .launchApplication("org.eiscue.fixture")),
+            ("device_home", [:], .home),
+            ("device_press_key", ["key": "escape"], .pressKey(.escape))
+        ]
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        for (name, payload, expectedAction) in samples {
+            let controller = RecordingDeviceController()
+            let session = controlSession(controller)
+            _ = try await tool("device_screenshot", in: session).execute([:])
+            let sourceFrame = try await frameID(from: controller)
+            var arguments = try XCTUnwrap(payload.objectValue)
+            arguments["frameId"] = .string(sourceFrame.uuidString)
+            let actionTool = try tool(name, in: session)
+            let result = try await actionTool.execute(.object(arguments))
+            let recorded = await controller.lastAction()
+            XCTAssertEqual(try encoder.encode(XCTUnwrap(recorded)), try encoder.encode(expectedAction), name)
+            let outputFrame = try await frameID(from: controller)
+            XCTAssertNotEqual(outputFrame, sourceFrame, name)
+            XCTAssertTrue(result.text.contains(outputFrame.uuidString), name)
+            XCTAssertTrue(result.content.contains { if case .image = $0 { true } else { false } }, name)
+            XCTAssertTrue(actionTool.mayHaveSideEffects, name)
+            XCTAssertTrue(actionTool.verifiesSideEffects, name)
+            XCTAssertFalse(actionTool.isVerification, name)
+            XCTAssertEqual(actionTool.executionCost, 2, name)
+            let counts = await controller.counts()
+            XCTAssertEqual(counts.screenshots, 2, name)
+        }
+    }
+
     func testChatExposesNoDeviceAccessAndObservationCannotMutateDevice() async throws {
         let controller = RecordingDeviceController()
         let client = DeviceClient(controller: controller)
@@ -356,6 +416,7 @@ private actor RecordingDeviceController: DeviceController {
     private var keyCount = 0
     private var frameID: UUID?
     private var screenshotData = Data([0x89, 0x50, 0x4E, 0x47])
+    private var recordedAction: DeviceAction?
 
     init(tapFailure: DeviceControlError? = nil, keyFailure: DeviceControlError? = nil, screenshotFailure: DeviceControlError? = nil) {
         self.tapFailure = tapFailure; self.keyFailure = keyFailure
@@ -375,6 +436,7 @@ private actor RecordingDeviceController: DeviceController {
     func tap(at point: DevicePoint, frameID: UUID) async throws {
         tapCount += 1
         if let tapFailure { throw tapFailure }
+        recordedAction = .tap(point)
     }
 
     func latestFrameID() -> UUID? { frameID }
@@ -382,7 +444,15 @@ private actor RecordingDeviceController: DeviceController {
     func pressKey(_ key: DeviceKeyboardAction, frameID: UUID) async throws {
         keyCount += 1
         if let keyFailure { throw keyFailure }
+        recordedAction = .pressKey(key)
     }
-    func home() async throws {}
+    func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frameID: UUID) async throws {
+        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        recordedAction = .swipe(from: from, to: to, duration: seconds)
+    }
+    func typeText(_ text: String, frameID: UUID) async throws { recordedAction = .typeText(text) }
+    func launchApplication(bundleID: String) async throws { recordedAction = .launchApplication(bundleID) }
+    func home() async throws { recordedAction = .home }
+    func lastAction() -> DeviceAction? { recordedAction }
     func counts() -> (screenshots: Int, taps: Int, keys: Int) { (screenshotCount, tapCount, keyCount) }
 }

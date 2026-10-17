@@ -35,8 +35,8 @@ struct RunToolDetails {
     let sourceFrame: Frame?
     let marker: Marker?
 
-    var isAction: Bool { Self.imageToolNames.contains(activity.name) && activity.name != "device_screenshot" }
-    var hasOutputImage: Bool { Self.imageToolNames.contains(activity.name) && !activity.isRunning && !activity.isError }
+    var isAction: Bool { DeviceToolSpec(rawValue: activity.name)?.mayHaveSideEffects == true }
+    var hasOutputImage: Bool { DeviceToolSpec(rawValue: activity.name)?.returnsImage == true && !activity.isRunning && !activity.isError }
     var outputFrame: Frame? { Self.frame(in: activity) }
     var imageMarker: Marker? {
         guard let marker, let sourceFrame, marker.fits(sourceFrame) else { return nil }
@@ -61,7 +61,7 @@ struct RunToolDetails {
     }
 
     static func frame(in activity: ToolActivity) -> Frame? {
-        guard imageToolNames.contains(activity.name), !activity.isRunning, !activity.isError,
+        guard DeviceToolSpec(rawValue: activity.name)?.returnsImage == true, !activity.isRunning, !activity.isError,
               let expression = try? NSRegularExpression(pattern: #"(?:^| )frameId=([0-9a-fA-F-]{36}); width=([0-9]{1,6}); height=([0-9]{1,6});"#),
               let match = expression.firstMatch(in: activity.output, range: NSRange(activity.output.startIndex..., in: activity.output)),
               let idRange = Range(match.range(at: 1), in: activity.output),
@@ -73,25 +73,20 @@ struct RunToolDetails {
         return Frame(id: id, width: width, height: height)
     }
 
-    private static let imageToolNames: Set<String> = [
-        "device_screenshot", "device_tap", "device_swipe", "device_type_text",
-        "device_launch_app", "device_home", "device_press_key"
-    ]
-
     private static func marker(name: String, arguments: AgentJSONValue?) -> Marker? {
         func point(_ x: String, _ y: String) -> Point? {
             guard let x = arguments?[x]?.doubleValue, let y = arguments?[y]?.doubleValue,
                   x.isFinite, y.isFinite else { return nil }
             return Point(x: x, y: y)
         }
-        switch name {
-        case "device_tap":
+        switch DeviceToolSpec(rawValue: name)?.marker {
+        case .tap:
             guard let point = point("x", "y") else { return nil }
             return .tap(point)
-        case "device_swipe":
+        case .swipe:
             guard let from = point("fromX", "fromY"), let to = point("toX", "toY") else { return nil }
             return .swipe(from: from, to: to)
-        default: return nil
+        case .some(.none), nil: return nil
         }
     }
 }

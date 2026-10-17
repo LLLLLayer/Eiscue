@@ -1,4 +1,4 @@
-import EiscueDeviceKit
+import EiscueDeviceCore
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers

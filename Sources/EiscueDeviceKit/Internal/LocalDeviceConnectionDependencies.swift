@@ -1,3 +1,4 @@
+import EiscueDeviceCore
 import Foundation
 @preconcurrency import PhoneAgentNCM
 

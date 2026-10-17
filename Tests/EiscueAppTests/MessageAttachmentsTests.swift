@@ -17,7 +17,9 @@ import XCTest
         try FileManager.default.removeItem(at: source)
         XCTAssertEqual(attachment.content, .text("Actual text from a file"))
         let persisted = directory.appendingPathComponent("Private").appendingPathComponent(attachment.id.uuidString).appendingPathExtension("json")
-        XCTAssertEqual(try JSONDecoder().decode(AgentAttachment.self, from: Data(contentsOf: persisted)), attachment)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: persisted.path), "The conversation repository owns the model attachment; do not duplicate it here.")
+        let original = directory.appendingPathComponent("Private").appendingPathComponent(attachment.id.uuidString).appendingPathExtension("source")
+        XCTAssertEqual(try Data(contentsOf: original), Data("Actual text from a file".utf8))
     }
 
     func testImagesAreRealEncodedBytesWithBoundedDimensions() throws {

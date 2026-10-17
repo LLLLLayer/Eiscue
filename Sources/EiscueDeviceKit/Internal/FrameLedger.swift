@@ -1,3 +1,4 @@
+import EiscueDeviceCore
 import Foundation
 
 /// One fresh observation grants at most one coordinate-based action.

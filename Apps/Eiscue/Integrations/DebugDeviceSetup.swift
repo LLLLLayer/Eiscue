@@ -1,5 +1,8 @@
-#if DEBUG
+#if DEBUG && !EISCUE_HID_ONLY
+import EiscueDeviceCore
+#if !EISCUE_HID_ONLY
 import EiscueDeviceKit
+#endif
 import Foundation
 import UIKit
 
@@ -143,5 +146,11 @@ extension AppModel {
 
 @MainActor private final class PairingDiagnosticPollingLifetime {
     var active = true
+}
+#endif
+
+#if DEBUG && EISCUE_HID_ONLY
+extension AppModel {
+    func runRequestedDeviceSetupCheck() async {}
 }
 #endif

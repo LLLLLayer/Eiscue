@@ -1,3 +1,4 @@
+import EiscueDeviceCore
 import Foundation
 
 /// This backend implements the device-initiated PairableHost responder.

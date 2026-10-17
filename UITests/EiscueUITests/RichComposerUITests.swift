@@ -7,7 +7,7 @@ final class RichComposerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         if reset { app.launchArguments.append("--reset-state") }
-        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = modelFixtureURL().absoluteString
         app.launch()
         XCTAssertTrue(app.buttons["composerAddButton"].waitForExistence(timeout: 10))
         return app

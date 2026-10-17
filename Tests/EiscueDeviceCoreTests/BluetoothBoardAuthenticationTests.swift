@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite struct BluetoothBoardAuthenticationTests {
     private let root = Data(0..<32)

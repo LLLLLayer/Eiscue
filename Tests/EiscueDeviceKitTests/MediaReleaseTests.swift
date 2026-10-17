@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite @MainActor struct MediaReleaseTests {
     @Test func remoteStopPrecedesTransportClose() async {

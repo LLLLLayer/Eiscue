@@ -11,7 +11,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 ## Features
 
 - **Chat and multiple models**: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. Save multiple service/model configurations and switch from the conversation header. New configurations use their model IDs as display names, without a separate name field. Each configuration keeps its own API key in Keychain.
-- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations default to **In-app connection (local VPN)**, which needs initial pairing: computer USB pairing on iOS 26, or system pairing on iOS 27+. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved supported route choices are retained.
+- **Device control**: the model uses screenshots to decide where to tap, swipe or type; each action automatically returns a new screenshot for verification. New installations of the full app default to **In-app connection (local VPN)**, which needs initial pairing: computer USB pairing on iOS 26, or system pairing on iOS 27+. The optional **Bluetooth board + system screen sharing** route only needs board power and does not occupy the phone's Wi-Fi or VPN connection. Saved supported route choices are retained.
 - **Language**: follows the system by default. Open Settings → App language to select English or Simplified Chinese in iOS settings.
 - **Attachments and speech**: photos, camera capture, text/code files, PDFs with extractable text and on-device dictation through Apple Speech, with no speech API key required. Tap to start/finish, or hold to talk; recognized text returns to the draft for editing. A gray backdrop extends behind the navigation bar and glass composer during recording; the waveform shows the measured microphone level without moving the composer. Switching to voice mode keeps the device connection. On iOS 27+, starting a recording temporarily releases an active CoreDevice connection after permission is granted; capture starts only after confirmed release. Control is restored afterward, keeping pairing and VPN. The voice button returns immediately when transcription finishes; device reconnection has a separate status that can be cancelled. Sending waits until reconnection or cancellation cleanup finishes. Other backends are unaffected. Connection failures show a notice and preserve the draft.
 - **Conversation management**: streaming responses, Markdown, tool progress and sharing. Long-press a text message to select its full text and open the system editing menu directly; drag the selection handles to adjust the range. Images and files retain their long-press sharing menu. Sidebar rows show their last update time and support pinning, reordering and renaming. Long-press a conversation to enter multi-selection for bulk actions; wide iPad windows can keep the sidebar visible. Deleting a conversation also deletes its task records. The conversation menu opens task records for the current chat. Swipe right to open and left to close the sidebar. Task details combine steps and logs in one timeline. Full-screen screenshots support pinch/double-tap zoom and swipe in any direction to close when not zoomed in; short drags spring back.
@@ -22,7 +22,7 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 
 | Capability | Status |
 | --- | --- |
-| Chat, multiple models, streaming, Markdown, attachments, on-device dictation and English/Chinese UI | Implemented with simulator test coverage; known failures are listed in the test baseline below |
+| Chat, multiple models, streaming, Markdown, attachments, on-device dictation and English/Chinese UI | Implemented with simulator test coverage; dated results and remaining hardware checks are listed below |
 | C3 / S3 Bluetooth connection, ReplayKit, four-point touch and Chinese text checks | Passed on the designated iPhone 14 Pro / iOS 26.5.2 |
 | In-app connection, iOS 26 + XCTest | Deterministic checks in Eiscue's own test page passed on iPhone 14 Pro / iOS 26.5.2 (2026-10-13): two connection cycles, taps, swipe, Unicode text, stale-frame rejection after rotation, and short background screenshots |
 | In-app connection, iOS 27 | XCTest foreground smoke check (connect, screenshot, own-button tap, cleanup) passed on iPhone 12 mini (2026-10-17). DisplayService: system pairing completed with a diagnostic build, and model-driven runs recorded Home and screenshots before a stale-frame bug; input after that fix has **not been re-accepted** |
@@ -42,6 +42,12 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 3. Enter a service URL, model ID and API key during onboarding or under **Settings → Model**. You can save multiple configurations. Existing keys appear as saved; choose **Replace** to change one. Saving a configuration does not call the model.
 
 Model service URLs must use HTTPS. OpenAI-compatible services usually include `/v1`; Anthropic uses `https://api.anthropic.com`. Device tasks also require image and tool-call support from the model. Plain chat requires neither a board nor screen sharing.
+
+### HID-only build
+
+Select the `EiscueHID` scheme for a separate app containing only ESP32 BLE / USB HID with ReplayKit. It defaults to ESP32 input, uses `org.eiscue.hid` and `group.org.eiscue.hid`, and embeds only its own broadcast extension. Its package graph and compiled artifacts exclude the developer-services backend, XCTest bridge and VPN extension; choosing Bluetooth in the full `Eiscue` app does not remove those components. Model settings, conversations and sharing permissions are separate between the two apps. An S3 authentication key enrolled by one app is not automatically available to the other; existing enrollment is never silently replaced. This build separation is not an App Store approval or a new artwork/license grant.
+
+For another host app, depend on the `EiscueHIDKit` product, `import EiscueDeviceCore`, and construct `DeviceClient(controller: BluetoothDeviceController())`. The full `EiscueDeviceKit` product keeps `DeviceClient()` and `DeviceClient(identityStore:)` compatible. Check the build boundary with `python3 Scripts/check-hid-boundary.py --app <path-to-EiscueHID.app>`.
 
 ### Let the AI operate the device
 
@@ -96,23 +102,24 @@ The C3 companion display shows only fixed phases, expressions and step counts, n
 ```text
 Eiscue App (SwiftUI, iOS 26+)
 ├── Conversations, model settings, attachments, speech, skills, run journal, background execution
-├── DeviceToolSession: model tool calls → DeviceDecision
+├── RunCoordinator: admission, execution, cancellation, cleanup and final publication
+├── DeviceToolSpec / DeviceToolSession: shared tool catalog → DeviceDecision
 ├── DeviceTaskRunner: permissions, budgets, serialized execution, post-action observation
 ├── EiscueAgentKit: agent / tool / event protocols, with an internal PiDurableKit adapter
-└── EiscueDeviceKit: DeviceController protocol
-    ├── BluetoothDeviceController: BLE / USB HID + ReplayKit
-    └── Developer services: RemotePairing → selected DisplayService/HID or in-app XCTest
+└── EiscueDeviceCore: DeviceController, injected DeviceClient, BLE / USB HID + ReplayKit
+    ├── EiscueHIDKit product: Core only
+    └── EiscueDeviceKit facade: Core + developer services / default client
 
 Extensions: EiscueBroadcast (screen sharing), EiscueTunnel (local-VPN route only)
 Firmware: Passport-BLE (C3 / S3 HID), NCM-Relay (S3 USB network adapter)
 ```
 
-The two Kits are independent Swift package libraries with no dependency on one another. The app integration layer connects them; there is no separate Plugin product.
+The Agent and Device libraries have no dependency on one another. The two Device products share the Core module. The app integration layer connects them; there is no separate Plugin product.
 
 | Kit | Responsibilities | Replacement interface |
 | --- | --- | --- |
 | [EiscueAgentKit](Sources/EiscueAgentKit/AgentClient.swift) | Agents, tools, events and conversation storage; internally runs PiDurableKit through JavaScriptCore, with one SQLite database per conversation | `AgentClient(engine:)`; custom Swift tools can also be registered |
-| [EiscueDeviceKit](Sources/EiscueDeviceKit/DeviceClient.swift) | Connection, observation, actions and capability status | `DeviceClient(controller:)` |
+| [EiscueDeviceKit](Sources/EiscueDeviceCore/DeviceClient.swift) | Connection, observation, actions and capability status | `DeviceClient(controller:)` |
 
 Apps integrating DeviceKit’s XCTest backend must include `/System/Developer/usr/lib` and `/Developer/usr/lib` in the device target’s `LD_RUNPATH_SEARCH_PATHS`, retaining inherited paths. Xcode 27’s developer image uses these paths for Testing interop dependencies. Eiscue configures this in `project.yml`; Apple’s test libraries are loaded from the mounted DDI and are not bundled.
 
@@ -120,15 +127,16 @@ Public APIs do not expose PiDurableKit or actell types. Contribution and mainten
 
 ## Build and test
 
-**Preserve the lockfile's current state first.** SwiftPM may remove the Xcode-only swift-markdown / swift-cmark pins from `Package.resolved`. Record and preserve existing changes before running it, inspect the diff afterward and restore only changes caused by that run. Do not unconditionally restore the entire file.
+Use the isolated wrapper below for Kit tests. It preserves the actual `Package.resolved` and staged state; a direct `swift test` can remove Xcode-only pins. Give each toolchain its own scratch directory. The [CI setup](Scripts/ci.md) explains the two self-hosted Xcode/iOS gates, required runners and local equivalent; committing the workflow does not provision runners or enforce branch protection.
 
 Run from the repository root:
 
 ```sh
 xcodegen generate
 
-# Kit tests: local model fixtures, no real model calls
-swift test
+# Kit tests: explicit Xcode, isolated lockfile and build products
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+python3 Scripts/test-swift-package.py --scratch-path .build/kit-xcode26
 
 # App build
 xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
@@ -155,20 +163,21 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 To retain a check's output without masking its exit status, run `bash Scripts/run-logged-check.sh .build/<unique-name>.log <command> [arguments...]`. Existing logs are preserved; a failed check still returns a nonzero exit code.
 
-Full run on 2026-10-17 at commit `f4972f5`, with the model fixture running for the app suites:
+Architecture and UI follow-up on **2026-10-17**, with isolated model fixtures and no real-device operations:
 
-| Suite | Result |
+| Check | Result |
 | --- | --- |
-| Swift Kits | 166 tests / 19 suites passed with both Xcode 27.0 and Xcode 26.3 |
-| App unit tests | 313 run, 0 failures, on iPhone 18 Pro / iOS 27.0 and iPhone 16e / iOS 26.3.1 simulators (1 iOS 26-only test skipped on iOS 27) |
-| UI tests, iOS 27.0 | 72 run: 57 passed, 9 skipped, 6 failed |
-| UI tests, iOS 26.3.1 | 72 run: 57 passed, 13 skipped, 2 failed |
-| Firmware host tests | Board authentication 6 groups and C3 companion display 5 groups passed; 14 NCM relay Python tests passed. NCM relay C host tests were not run (ESP-IDF not installed) |
-| Device backend and tools | 72 Rust library tests, 535 ObjC automation bridge checks and 8 setup-helper tests passed |
+| Swift Kits | Xcode 26.3: 180 passed / 19 suites. Xcode 27: 178 passed before the final two deletion-recovery regression tests were added |
+| App unit tests | 318 passed on iPad / iOS 26.3.1 using Xcode 27 |
+| Full iPhone UI, iOS 26.3.1 | 59 passed, 13 skipped, 0 failed |
+| Full iPhone UI, iOS 27.0 | 63 passed, 9 skipped, 0 failed; 7 affected speech/sidebar cases also passed after the final view-expression split |
+| iPad sidebar, conversations and sharing | 10 passed, 1 layout-specific skip, 0 failed |
+| HID-only app | 3 unit tests passed; Release simulator build and dependency, symbol, entitlement and extension checks passed; unsigned device build and linkage checks passed |
+| Test helpers | 18 passed; fixture-port follow-up 4 passed; generated project reproduced without drift |
 
-The UI suites are not green gates. Two conversation-persistence cases fail on both OS versions: their sidebar-row query looks for buttons, which the row container no longer exposes to XCUITest. Other UI tests already query those rows differently and pass, so this is likely outdated test code. On iOS 27 only, three onboarding cases assume the iOS 26 computer-pairing flow, and one Save to Files case could not reach the local Files location; all four pass on iOS 26.3.1. Skipped cases need real hardware, an iPad or the other OS version; they are not passes. This run did not include an iPad simulator.
+All listed successful commands returned exit 0. Hardware-only, opposite-OS and layout-specific skips are not passes. Onboarding and Save to Files completed on both iPhone OS versions, including exact-byte file readback. The HID device build was unsigned, so it does not verify signing or phone behavior. CI workflow and local gate scripts are committed; remote runners and branch protection still require configuration.
 
-Earlier baselines (2026-10-14 at `efb7703` and 2026-10-15 at `14d154f`), their targeted reruns and failed intermediate runs are retained in the local validation record. Simulator and host tests are not physical-device acceptance.
+The earlier `f4972f5` baseline had 6 UI failures on iOS 27 and 2 on iOS 26. Shared sidebar queries, OS-specific onboarding assertions and system Files navigation have since been corrected. Earlier baselines and failed intermediate runs remain in the local validation record. Simulator and host checks do not establish physical-device acceptance.
 
 ### Physical-device notes
 
@@ -201,6 +210,10 @@ Builds do not open serial ports or flash hardware. Flashing depends on the firmw
 
 ## Permissions, data and privacy
 
+Conversation storage uses a small manifest, one record per conversation and shared SHA-256 attachment blobs. Version 1 data migrates on the first write with an exact backup; the first explicit deletion retires that backup and reclaims unreferenced blobs. Interrupted deletion cleanup resumes on load or subsequent writes. Original documents remain available for byte-exact sharing. New runtime metadata references attachment content instead of copying it again; old SQLite entries are kept readable.
+
+Model requests include only the two newest device screenshots; text/tool-call IDs and provider signatures remain intact, and user photos are unaffected. Full historical screenshots remain in the conversation SQLite for inspection until conversation deletion. `Runtime/` is excluded from device backups; conversations and original attachments retain their existing backup behavior. Run records include the system-instruction version.
+
 - A task's permission scope is fixed when it starts; plain chat registers no tools. Device tools are exposed only for capabilities supported by the active backend. Actions are bound to the latest valid screenshot and consume it once. Commands are not automatically resent when delivery is uncertain.
 - Lack of progress or reaching the step limit pauses the task. Choosing **Continue** starts a new request and observes again. Recovery after interruption is read-only and never resumes automatically. Imported skills are Markdown instructions only; they cannot expand permissions or execute scripts.
 - Conversations, runtime SQLite databases, run journals, skills and attachments live in the app sandbox under `Application Support/Eiscue/`. API keys and pairing private keys stay in device-only Keychain items, never in UserDefaults, logs or exported reports.
@@ -216,7 +229,7 @@ Eiscue as a whole does not yet have a unified distribution license. The table be
 
 | Component | Source / license |
 | --- | --- |
-| [DeviceBackend](Vendor/DeviceBackend/README.md) | Pinned actell commit, GPL-3.0-only; includes MIT-licensed idevice. The app always links this backend; choosing Bluetooth does not remove it from the binary |
+| [DeviceBackend](Vendor/DeviceBackend/README.md) | Pinned actell commit, GPL-3.0-only; includes MIT-licensed idevice. The full `Eiscue` app links this backend; choosing Bluetooth does not remove it. The separate `EiscueHID` build does not link it |
 | [LocalTunnel](Vendor/LocalTunnel/README.md) | Derived from LocalDevVPN / StosVPN, under the custom StosVPN License; see attribution in the directory |
 | [Passport-BLE](Firmware/Passport-BLE/README.md#license-and-api-references) | Original firmware source is Apache-2.0; dependency notices are in the firmware directory. The firmware source license does not grant the same license to the [expression artwork](Firmware/Passport-BLE/Resources/README.md) |
 | [NCM-Relay](Firmware/NCM-Relay/README.md) | The upstream combined project declares GPL-3.0-only; local files have GPL-3.0-or-later headers. See its `SOURCE_MANIFEST.json` |

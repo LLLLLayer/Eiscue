@@ -127,7 +127,7 @@ private struct ToolImageViewer: View {
                         .opacity(expanded ? 1 - dragProgress : 0).disabled(closing)
                 }
             }
-        }.background(Color.black.opacity(expanded ? 1 - dragProgress * 0.7 : 0).ignoresSafeArea())
+        }.background(Color.black.opacity(expanded ? 1.0 - Double(dragProgress) * 0.7 : 0.0).ignoresSafeArea())
     }
 
     private var animation: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.9) }

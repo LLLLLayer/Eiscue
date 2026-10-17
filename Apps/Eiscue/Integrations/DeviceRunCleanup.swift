@@ -1,4 +1,4 @@
-import EiscueDeviceKit
+import EiscueDeviceCore
 
 @MainActor
 enum DeviceRunCleanup {

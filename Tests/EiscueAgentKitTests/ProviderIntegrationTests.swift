@@ -32,6 +32,59 @@ struct ProviderIntegrationTests {
         #expect(recovered.messages.first?.id == request.requestID)
     }
 
+    @Test(arguments: AgentAPI.allCases)
+    func screenshotContextBoundsPreserveUserAndOtherToolImagesAcrossProtocols(_ api: AgentAPI) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-image-context-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: api, baseURL: URL(string: "https://images.fixture.invalid/v1")!,
+            model: "fixture-model", apiKey: "images-fixture-\(UUID())", supportsImages: true)
+        let network = URLSessionConfiguration.ephemeral; network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let (models, model) = try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime)
+        let id = UUID()
+        let url = directory.appendingPathComponent(id.uuidString.lowercased() + ".sqlite")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let harness = try await Harness.open(.sqlite(at: url), models: models, resume: false)
+        let root = try await harness.root(agent: AgentChange(model: model))
+        let images = (1...6).map { Data(repeating: UInt8($0), count: 1024) }
+        try await root.write(EntryDraft(kind: .user, model: [.user(UserMessage(content: [.text("Keep this user photo"),
+            .image(ImageContent(data: images[0], mimeType: "image/png"))]))]))
+        for index in 1...5 {
+            let name = index == 5 ? "other_image_tool" : "device_screenshot"
+            let callID = "retained-call-\(index)"
+            let assistant = AssistantMessage(content: [.toolCall(ToolCall(id: callID, name: name, arguments: [:]))],
+                api: api.rawValue, provider: "eiscue", model: configuration.model, stopReason: .toolUse)
+            try await root.write(EntryDraft(kind: .assistant, model: [.assistant(assistant)]))
+            let json: PiDurableKit.JSONValue = ["role": "toolResult", "toolCallId": .string(callID),
+                "toolName": .string(name), "isError": false, "timestamp": 1,
+                "content": [["type": "text", "text": .string("frameId=preserved-\(index)")],
+                            ["type": "image", "mimeType": "image/png", "data": .string(images[index].base64EncodedString())]]]
+            let result = try json.decode(as: ToolResultMessage.self)
+            try await root.write(EntryDraft(kind: .toolResult, model: [.toolResult(result)]))
+        }
+        try await harness.close()
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            modelFactory: { (models, model) }))
+        for try await _ in try await client.run(request: .init(conversationID: id, prompt: "Continue")) {}
+        let request = try #require(ProviderFixtureProtocol.requests.withLock {
+            $0.last { $0.authorization == "Bearer \(configuration.apiKey)" || $0.apiKey == configuration.apiKey }
+        })
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.withoutEscapingSlashes]
+        let wire = String(decoding: try encoder.encode(request.body), as: UTF8.self)
+        for index in [0, 3, 4, 5] { #expect(wire.contains(images[index].base64EncodedString())) }
+        for index in [1, 2] { #expect(!wire.contains(images[index].base64EncodedString())) }
+        for index in 1...5 {
+            #expect(wire.contains("retained-call-\(index)"))
+            #expect(wire.contains("frameId=preserved-\(index)"))
+        }
+        let reopened = try await Harness.open(.sqlite(at: url), models: models, resume: false)
+        let savedRoot = try await reopened.root()
+        let saved = String(decoding: try encoder.encode(try await savedRoot.view().messages), as: UTF8.self)
+        for bytes in images { #expect(saved.contains(bytes.base64EncodedString())) }
+        #expect(!saved.contains("Older device screenshot omitted"))
+        try await reopened.close()
+    }
+
     struct StoreEndpoint: Sendable, CustomStringConvertible {
         let url: String
         let api: AgentAPI
@@ -99,13 +152,13 @@ struct ProviderIntegrationTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let configuration = AgentConfiguration(api: .openAICompletions,
             baseURL: URL(string: officialEndpoint ? "https://generativelanguage.googleapis.com/v1beta/openai/" : "https://signatures.fixture.invalid/v1")!,
-            model: "gemini-3.8-flash", apiKey: "google-signatures-fixture-\(UUID())")
+            model: "gemini-3.8-flash", apiKey: "google-signatures-fixture-\(UUID())", supportsImages: true)
         let arguments = OSAllocatedUnfairLock(initialState: [AgentJSONValue]())
-        let probe = AgentTool(name: "fixture_probe", description: "Observe a fixture step",
+        let probe = AgentTool(name: "device_screenshot", description: "Observe a fixture step",
             parameters: ["type": "object", "properties": ["step": ["type": "integer"]], "required": ["step"], "additionalProperties": false],
             mayHaveSideEffects: false) { value in
                 arguments.withLock { $0.append(value) }
-                return .text("Observed fixture step")
+                return .image(Data(repeating: UInt8(arguments.withLock { $0.count }), count: 1024), mimeType: "image/png", caption: "Observed fixture step")
             }
         func makeClient(_ configuration: AgentConfiguration) -> AgentClient {
             let network = URLSessionConfiguration.ephemeral
@@ -153,7 +206,15 @@ struct ProviderIntegrationTests {
         for (index, request) in requests.enumerated().dropFirst() {
             let messages = try #require(request.body["messages"]?.arrayValue)
             let calls = messages.flatMap { $0["tool_calls"]?.arrayValue ?? [] }
+            let wireImages = messages.flatMap { $0["content"]?.arrayValue ?? [] }.filter { $0["type"] == "image_url" }
+            #expect(wireImages.count == 2)
+            let imageBytes = wireImages.compactMap { block -> Data? in
+                guard let url = block["image_url"]?["url"]?.stringValue, let comma = url.firstIndex(of: ",") else { return nil }
+                return Data(base64Encoded: String(url[url.index(after: comma)...]))
+            }
+            #expect(imageBytes.reduce(0) { $0 + $1.count } == 2048)
             let count = index == 1 ? 2 : 3
+            #expect(imageBytes.compactMap(\.first) == (count == 2 ? [1, 2] : [2, 3]))
             #expect(calls.compactMap { $0["id"]?.stringValue } == Array(expectedIDs.prefix(count)))
             #expect(messages.filter { $0["role"] == "tool" }.compactMap { $0["tool_call_id"]?.stringValue } == Array(expectedIDs.prefix(count)))
             for (callIndex, call) in calls.enumerated() {
@@ -478,11 +539,11 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
         let continuation: String
         let signature: String
         if round == 1 {
-            first = #"{"index":0,"id":"signed-call-1","type":"function","function":{"name":"fixture_probe","arguments":"{"}}"#
-            continuation = #"{"index":0,"function":{"arguments":"\"step\":1}"}},{"index":1,"id":"unsigned-call-1","type":"function","function":{"name":"fixture_probe","arguments":"{\"step\":2}"}}"#
+            first = #"{"index":0,"id":"signed-call-1","type":"function","function":{"name":"device_screenshot","arguments":"{"}}"#
+            continuation = #"{"index":0,"function":{"arguments":"\"step\":1}"}},{"index":1,"id":"unsigned-call-1","type":"function","function":{"name":"device_screenshot","arguments":"{\"step\":2}"}}"#
             signature = firstSignature
         } else {
-            first = #"{"index":0,"id":"signed-call-2","type":"function","function":{"name":"fixture_probe","arguments":"{"}}"#
+            first = #"{"index":0,"id":"signed-call-2","type":"function","function":{"name":"device_screenshot","arguments":"{"}}"#
             continuation = #"{"index":0,"function":{"arguments":"\"step\":3}"}}"#
             signature = secondSignature
         }

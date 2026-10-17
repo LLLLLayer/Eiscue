@@ -18,7 +18,7 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["连接设备"].exists)
         XCTAssertEqual(app.buttons["deviceConnectionMethodPicker"].value as? String, "App 内连接")
         assertGuideHasNoNavigationExit(app)
-        XCTAssertFalse(app.buttons["startPairingButton"].exists, "iOS 26 must not offer the iOS 27 system flow.")
+        assertUnpairedLocalVPNSetup(app)
         saveScreenshot(app, name: "Onboarding-Device-Chinese")
         next.tap()
         XCTAssertTrue(app.buttons["sendMessageButton"].waitForExistence(timeout: 5))
@@ -50,8 +50,17 @@ final class OnboardingUITests: XCTestCase {
     }
 
     @MainActor
-    func testLocalVPNOnboardingShowsSetupAndCopiesCompleteCommandInline() {
+    func testComputerPairingSetupCopiesCompleteCommandInline() {
         let app = launchPairingGuide(saved: false)
+        assertUnpairedLocalVPNSetup(app)
+        if #available(iOS 27, *) {
+            // iOS 27 uses system pairing for Local VPN. The USB route still
+            // exposes the complete desktop setup flow on both OS versions.
+            app.buttons["deviceConnectionMethodPicker"].tap()
+            app.buttons["S3 USB 网卡"].tap()
+            XCTAssertEqual(app.buttons["deviceConnectionMethodPicker"].value as? String, "S3 USB 网卡")
+            XCTAssertFalse(app.buttons["startPairingButton"].exists)
+        }
         let importFile = app.buttons["onboardingImportPairingButton"]
         XCTAssertTrue(importFile.waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["onboardingConnectionHelpButton"].exists)
@@ -152,8 +161,24 @@ final class OnboardingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["onboardingImportPairingButton"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["onboardingConnectDeviceButton"].exists)
         XCTAssertFalse(app.buttons["onboardingReconnectPairingButton"].exists)
-        XCTAssertTrue(app.buttons["copyComputerPairingCommandButton"].exists)
+        assertUnpairedLocalVPNSetup(app)
         assertGuideHasNoNavigationExit(app)
+    }
+
+    @MainActor
+    private func assertUnpairedLocalVPNSetup(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["onboardingImportPairingButton"].exists)
+        XCTAssertFalse(app.buttons["onboardingConnectDeviceButton"].exists)
+        if #available(iOS 27, *) {
+            XCTAssertTrue(app.buttons["startPairingButton"].exists)
+            XCTAssertTrue(app.buttons["startPairingButton"].isEnabled)
+            XCTAssertFalse(app.buttons["copyComputerPairingCommandButton"].exists)
+            XCTAssertFalse(app.staticTexts["pairingSetupStep1"].exists)
+        } else {
+            XCTAssertFalse(app.buttons["startPairingButton"].exists)
+            XCTAssertTrue(app.buttons["copyComputerPairingCommandButton"].exists)
+            XCTAssertTrue(app.staticTexts["pairingSetupStep1"].exists)
+        }
     }
 
     @MainActor

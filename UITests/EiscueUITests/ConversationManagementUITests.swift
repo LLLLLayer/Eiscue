@@ -4,7 +4,7 @@ final class ConversationManagementUITests: XCTestCase {
     @MainActor func testSwipeRenameAndBatchActionsPersist() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = modelFixtureURL().absoluteString
         app.launch()
         send("First conversation", in: app)
         openSidebar(in: app)
@@ -90,8 +90,7 @@ final class ConversationManagementUITests: XCTestCase {
     }
 
     @MainActor private func row(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "conversationRow_", title)).firstMatch
+        conversationRow(titled: title, in: app)
     }
 
     @MainActor private func assertUpdatedTime(for row: XCUIElement) {

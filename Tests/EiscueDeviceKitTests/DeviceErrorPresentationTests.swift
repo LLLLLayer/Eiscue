@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 import PhoneAgentNCM
 
 @Suite struct DeviceErrorPresentationTests {
@@ -82,7 +83,7 @@ import PhoneAgentNCM
     }
 
     private func message(_ error: NativeBackendError, language: String) throws -> String {
-        let url = try #require(Bundle.module.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
+        let url = try #require(EiscueDeviceResources.bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
         let bundle = try #require(Bundle(url: url.deletingLastPathComponent()))
         return NativeDeviceErrorPresentation.message(error, bundle: bundle)
     }

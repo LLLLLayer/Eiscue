@@ -5,6 +5,89 @@ import PiDurableKit
 
 @Suite("Agent runtime")
 struct AgentRuntimeTests {
+    @Test func attachmentMetadataReferencesDurableContentAcrossImportRetryAndReopen() async throws {
+        let fixture = try await RuntimeFixture()
+        defer { fixture.remove() }
+        let photo = AgentAttachment(name: "named-photo.png", mimeType: "image/png", content: .image(Data(repeating: 9, count: 65_536)))
+        let document = AgentAttachment(name: "notes.txt", mimeType: "text/plain", content: .text("document-content-unique"))
+        let history = [AgentMessage(role: .user, text: "Imported", attachments: [photo, document]),
+                       AgentMessage(role: .assistant, text: "Imported reply")]
+        try await fixture.faux.respond { _, count in
+            #expect(count == 1)
+            return .text("New reply")
+        }
+        let request = AgentRequest(conversationID: UUID(), prompt: "Current", history: history, attachments: [photo, document])
+        try await collect(fixture.client.run(request: request))
+        try await collect(fixture.client.run(request: request))
+        let harness = try await Harness.open(.sqlite(at: fixture.fileURL(request.conversationID)), models: fixture.models, resume: false)
+        let root = try await harness.root()
+        let entries = try await root.entries().items
+        let metadata = entries.compactMap { $0.data?["eiscueMessageReference"] }
+        #expect(metadata.count == 2)
+        for reference in metadata {
+            let encoded = try JSONEncoder().encode(reference)
+            #expect(encoded.count < 1024)
+            #expect(!String(decoding: encoded, as: UTF8.self).contains("document-content-unique"))
+        }
+        #expect(!entries.contains { $0.data?["eiscueMessage"] != nil })
+        try await harness.close()
+        let recovered = try await AgentClient(storageDirectory: fixture.directory).recover(conversationID: request.conversationID)
+        #expect(recovered.messages.first == history[0])
+        #expect(recovered.messages[1].id == history[1].id)
+        #expect(recovered.messages[1].text == history[1].text)
+        #expect(recovered.messages.filter { $0.role == .user }.map(\.id) == [history[0].id, request.requestID])
+        #expect(recovered.messages.filter { $0.role == .user }.allSatisfy { $0.attachments == [photo, document] })
+    }
+
+    @Test func deviceImagesAreBoundedOnlyInRequestsAndNeverReplayOnRecovery() async throws {
+        let evidence = RuntimeEvidence()
+        let action = AgentTool(name: "device_tap", description: "Fixture input with observation", parameters: emptySchema,
+            executionCost: 2, verifiesSideEffects: true) { _ in
+                await evidence.record("tap")
+                let step = await evidence.values.count
+                return .image(Data(repeating: UInt8(step), count: 1024), mimeType: "image/png", caption: "frameId=frame-\(step)")
+            }
+        let fixture = try await RuntimeFixture(tools: [action])
+        defer { fixture.remove() }
+        try await fixture.faux.respond { messages, count in
+            let results = messages.compactMap { message -> ToolResultMessage? in
+                if case .toolResult(let result) = message { result } else { nil }
+            }
+            let images = results.flatMap(\.content).compactMap { block -> Data? in
+                if case .image(let image) = block { image.bytes } else { nil }
+            }
+            let expectedResults = min(count - 1, 4)
+            #expect(results.count == expectedResults)
+            #expect(images.count == min(expectedResults, 2))
+            #expect(images.reduce(0) { $0 + $1.count } == min(expectedResults, 2) * 1024)
+            #expect(results.enumerated().allSatisfy { index, result in
+                result.toolCallId == "tap-\(index + 1)" && result.text.contains("frameId=frame-\(index + 1)")
+            })
+            if expectedResults > 2 {
+                #expect(images.first?.first == UInt8(expectedResults - 1))
+                #expect(images.last?.first == UInt8(expectedResults))
+                #expect(results.first?.text.contains("Older device screenshot omitted") == true)
+            }
+            return count <= 4 ? FauxResponse(.toolCall("device_tap", [:], id: "tap-\(count)")) : .text("Done")
+        }
+        let request = AgentRequest(conversationID: UUID(), prompt: "Four fixture inputs")
+        try await collect(fixture.client.run(request: request))
+        #expect(await evidence.values.count == 4)
+        let reader = AgentClient(storageDirectory: fixture.directory)
+        #expect(try await !reader.recover(conversationID: request.conversationID).hasInterruptedRun)
+        for step in 1...4 {
+            let completion = try #require(try await reader.toolResult(conversationID: request.conversationID,
+                requestID: request.requestID, toolCallID: "tap-\(step)"))
+            #expect(completion.result.content.contains(.image(data: Data(repeating: UInt8(step), count: 1024), mimeType: "image/png")))
+            #expect(!completion.result.text.contains("Older device screenshot omitted"))
+        }
+        // Reopen with no registered tools: old screenshot policy still applies, and no input replays.
+        let reopened = AgentClient(engine: DefaultEngine(configuration: testConfiguration, storageDirectory: fixture.directory,
+            modelFactory: { (fixture.models, fixture.faux.model) }))
+        try await collect(reopened.run(request: .init(conversationID: request.conversationID, prompt: "Continue as chat")))
+        #expect(await evidence.values.count == 4)
+    }
+
     @Test func toolHistoryRestoresExactRequestAndConversationAfterResetWithoutRunningAnything() async throws {
         let evidence = RuntimeEvidence()
         let capture = AgentTool(name: "capture", description: "Observe", parameters: emptySchema, mayHaveSideEffects: false) { _ in

@@ -66,7 +66,7 @@ struct TaskStatusPresentation: Equatable, Sendable {
                 phase = String(localized: "task.status.phase.verifying", defaultValue: "Checking the screen after the action", table: "TaskStatus")
             } else if devicePhase == .observing {
                 stage = .observing
-                phase = operationSummary("device_screenshot")
+                phase = DeviceToolSpec.screenshot.operationSummary
             } else if devicePhase == .paused {
                 stage = .paused
                 phase = String(localized: "task.status.phase.paused", defaultValue: "Open Eiscue to continue", table: "TaskStatus")
@@ -79,7 +79,7 @@ struct TaskStatusPresentation: Equatable, Sendable {
                     ? String(localized: "task.status.phase.analyzing", defaultValue: "Receiving the response", table: "TaskStatus")
                     : String(localized: "task.status.phase.waiting", defaultValue: "Waiting for the next response", table: "TaskStatus")
             } else if let currentTool, !currentTool.isEmpty {
-                stage = currentTool == "device_screenshot" ? .observing : .executing
+                stage = DeviceToolSpec(rawValue: currentTool)?.isVerification == true ? .observing : .executing
                 phase = operationSummary(currentTool)
             } else {
                 stage = isReceivingResponse ? .responding : .waiting
@@ -125,17 +125,8 @@ struct TaskStatusPresentation: Equatable, Sendable {
     }
 
     private static func operationSummary(_ name: String) -> String {
-        switch name {
-        case "device_screenshot": String(localized: "task.status.operation.screenshot", defaultValue: "Reading the current screen", table: "TaskStatus")
-        case "device_tap": String(localized: "task.status.operation.tap", defaultValue: "Tapping the screen", table: "TaskStatus")
-        case "device_swipe": String(localized: "task.status.operation.swipe", defaultValue: "Swiping the screen", table: "TaskStatus")
-        case "device_type_text": String(localized: "task.status.operation.type-text", defaultValue: "Entering text", table: "TaskStatus")
-        case "device_press_key": String(localized: "task.status.operation.press-key", defaultValue: "Using the keyboard", table: "TaskStatus")
-        case "device_launch_app": String(localized: "task.status.operation.launch-app", defaultValue: "Opening an app", table: "TaskStatus")
-        case "device_home": String(localized: "task.status.operation.home", defaultValue: "Returning to Home Screen", table: "TaskStatus")
-        case "device_list_apps": String(localized: "task.status.operation.list-apps", defaultValue: "Finding apps", table: "TaskStatus")
-        default: String(localized: "task.status.operation.other", defaultValue: "Running the next step", table: "TaskStatus")
-        }
+        DeviceToolSpec(rawValue: name)?.operationSummary
+            ?? String(localized: "task.status.operation.other", defaultValue: "Running the next step", table: "TaskStatus")
     }
 }
 

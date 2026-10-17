@@ -4,6 +4,7 @@ import Foundation
 import ImageIO
 import Testing
 @testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 @testable import PhoneAgentNCM
 
 @Suite @MainActor struct ConnectionMethodTests {
@@ -426,7 +427,7 @@ import Testing
 
     @Test(arguments: ["en", "zh-Hans"])
     func boardErrorsExplainTheNextActionInBothLanguages(language: String) throws {
-        let url = try #require(Bundle.module.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
+        let url = try #require(EiscueDeviceResources.bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: language))
         let bundle = try #require(Bundle(url: url.deletingLastPathComponent()))
         for error in [NCMError.interfaceUnavailable, .interfaceAmbiguous, .interfaceInvalid, .staleDiscovery,
                       .pairingServiceUnavailable, .malformedReply, .network] {

@@ -1,3 +1,4 @@
+import EiscueDeviceCore
 import Foundation
 import ImageIO
 import OSLog
@@ -18,7 +19,7 @@ import OSLog
     private var epoch = UUID()
     private var busy = false
     private var ready = false
-    private var failure = String(localized: "device.status.not-connected", defaultValue: "Device not connected", bundle: .module)
+    private var failure = String(localized: "device.status.not-connected", defaultValue: "Device not connected", bundle: EiscueDeviceResources.bundle)
     private var frames = FrameLedger()
     private var mediaReleaseTask: Task<Bool, Never>?
     private var mediaReleaseID: UUID?
@@ -129,7 +130,7 @@ import OSLog
                         let service = NetService(domain: "local.", type: "_remotepairing-pairable-host._tcp.", name: info.identifier, port: Int32(info.port))
                         service.delegate = self
                         guard service.setTXTRecord(NetService.data(fromTXTRecord: info.txt.mapValues { Data($0.utf8) })) else {
-                            throw DeviceControlError.connection(String(localized: "device.pairing.publish-failed", defaultValue: "Could not make system pairing available.", bundle: .module))
+                            throw DeviceControlError.connection(String(localized: "device.pairing.publish-failed", defaultValue: "Could not make system pairing available.", bundle: EiscueDeviceResources.bundle))
                         }
                         self.advertisement = service
                         service.publish()
@@ -160,7 +161,7 @@ import OSLog
 
     func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
         guard advertisement === sender else { return }
-        let error = DeviceControlError.connection(String(localized: "device.pairing.network-denied", defaultValue: "Could not make pairing available. Allow Local Network access for Eiscue.", bundle: .module))
+        let error = DeviceControlError.connection(String(localized: "device.pairing.network-denied", defaultValue: "Could not make pairing available. Allow Local Network access for Eiscue.", bundle: EiscueDeviceResources.bundle))
         pairingContinuation?.finish(throwing: error)
         disconnectNow()
         failure = error.localizedDescription
@@ -201,7 +202,7 @@ import OSLog
         if let release {
             let confirmed = await release.value
             try Task.checkCancellation()
-            guard confirmed else { throw DeviceControlError.connection(String(localized: "device.media.previous-release-unconfirmed", defaultValue: "The previous screen connection may still be active. Check the system’s remote-control status before reconnecting.", bundle: .module)) }
+            guard confirmed else { throw DeviceControlError.connection(String(localized: "device.media.previous-release-unconfirmed", defaultValue: "The previous screen connection may still be active. Check the system’s remote-control status before reconnecting.", bundle: EiscueDeviceResources.bundle)) }
         }
         try ensureCurrent(connectionEpoch)
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
@@ -209,8 +210,8 @@ import OSLog
         busy = true
         failure = switch method {
         case .bluetoothBoard: throw DeviceControlError.unsupported
-        case .localVPN: String(localized: "device.status.discovering", defaultValue: "Finding the local VPN connection", bundle: .module)
-        case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB network board", bundle: .module)
+        case .localVPN: String(localized: "device.status.discovering", defaultValue: "Finding the local VPN connection", bundle: EiscueDeviceResources.bundle)
+        case .usbBoard: String(localized: "device.status.discovering-board", defaultValue: "Connecting to the USB network board", bundle: EiscueDeviceResources.bundle)
         }
         let service = dependencies.makeSession(resolvedBackend)
         services = service
@@ -326,25 +327,25 @@ import OSLog
         if let previous, shouldReleaseMedia {
             let releaseID = UUID()
             mediaReleaseID = releaseID
-            failure = String(localized: "device.status.releasing", defaultValue: "Device control stopped. Closing the screen connection.", bundle: .module)
+            failure = String(localized: "device.status.releasing", defaultValue: "Device control stopped. Closing the screen connection.", bundle: EiscueDeviceResources.bundle)
             let task = Task { @MainActor [weak self] in
                 let confirmed = await BoundedMediaRelease.run(
                     stop: {
                         guard try await previous.stopTouchMediaWhenIdle() else {
-                            throw DeviceControlError.connection(String(localized: "device.media.start-incomplete", defaultValue: "Screen connection did not finish starting. Its closure is unconfirmed; check the system’s remote-control status.", bundle: .module))
+                            throw DeviceControlError.connection(String(localized: "device.media.start-incomplete", defaultValue: "Screen connection did not finish starting. Its closure is unconfirmed; check the system’s remote-control status.", bundle: EiscueDeviceResources.bundle))
                         }
                     },
                     close: { previous.close() })
                 guard let self, self.mediaReleaseID == releaseID else { return confirmed }
                 self.mediaReleaseTask = nil; self.mediaReleaseID = nil
                 self.releaseUnconfirmed = !confirmed
-                self.failure = confirmed ? String(localized: "device.status.released", defaultValue: "Device and screen disconnected", bundle: .module) : String(localized: "device.status.release-unconfirmed", defaultValue: "Device control stopped, but the screen connection may still be active. Check the system’s remote-control status.", bundle: .module)
+                self.failure = confirmed ? String(localized: "device.status.released", defaultValue: "Device and screen disconnected", bundle: EiscueDeviceResources.bundle) : String(localized: "device.status.release-unconfirmed", defaultValue: "Device control stopped, but the screen connection may still be active. Check the system’s remote-control status.", bundle: EiscueDeviceResources.bundle)
                 return confirmed
             }
             mediaReleaseTask = task
         } else {
             previous?.close()
-            if mediaReleaseTask == nil, !releaseUnconfirmed { failure = String(localized: "device.status.disconnected", defaultValue: "Device disconnected", bundle: .module) }
+            if mediaReleaseTask == nil, !releaseUnconfirmed { failure = String(localized: "device.status.disconnected", defaultValue: "Device disconnected", bundle: EiscueDeviceResources.bundle) }
         }
         return mediaReleaseTask
     }
@@ -360,10 +361,10 @@ import OSLog
                   let width = properties[kCGImagePropertyPixelWidth] as? Int,
                   let height = properties[kCGImagePropertyPixelHeight] as? Int,
                   width > 1, height > 1, width <= 16384, height <= 16384 else {
-                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The screen image is invalid.", bundle: .module))
+                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The screen image is invalid.", bundle: EiscueDeviceResources.bundle))
             }
             guard ["image/jpeg", "image/png"].contains(snapshot.mimeType) else {
-                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The screen image is invalid.", bundle: .module))
+                throw DeviceControlError.connection(String(localized: "device.media.invalid-image", defaultValue: "The screen image is invalid.", bundle: EiscueDeviceResources.bundle))
             }
             let frame = DeviceScreenshot(width: width, height: height, mimeType: snapshot.mimeType, data: data)
             self.frames.record(frame, geometryID: snapshot.geometry.id)
@@ -422,7 +423,7 @@ import OSLog
         try await operation { service in
             struct Row: Decodable { let name: String; let bundle_id: String }
             let data = try await service.installedApplications()
-            guard data.count <= 4 * 1024 * 1024 else { throw DeviceControlError.connection(String(localized: "device.app-list.too-large", defaultValue: "The app list is too large.", bundle: .module)) }
+            guard data.count <= 4 * 1024 * 1024 else { throw DeviceControlError.connection(String(localized: "device.app-list.too-large", defaultValue: "The app list is too large.", bundle: EiscueDeviceResources.bundle)) }
             return try JSONDecoder().decode([Row].self, from: data)
                 .map { DeviceApplication(bundleID: $0.bundle_id, name: $0.name) }
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -502,25 +503,25 @@ import OSLog
 
     private static func message(_ error: Error) -> String {
         if let error = error as? DeviceControlError { return error.localizedDescription }
-        if error is CancellationError { return String(localized: "device.operation.stopped", defaultValue: "The operation has stopped.", bundle: .module) }
+        if error is CancellationError { return String(localized: "device.operation.stopped", defaultValue: "The operation has stopped.", bundle: EiscueDeviceResources.bundle) }
         if let error = error as? LocalVPNError {
             switch error {
-            case .inactive: return String(localized: "device.vpn.inactive", defaultValue: "The local VPN is off or its address does not match the configuration.", bundle: .module)
-            case .ambiguousInterface: return String(localized: "device.vpn.ambiguous-interface", defaultValue: "Multiple VPN connections found. Keep only the local VPN selected for Eiscue.", bundle: .module)
-            case .serviceNotFound: return String(localized: "device.vpn.service-not-found", defaultValue: "Pairing service not found. Check Developer Mode and the local VPN.", bundle: .module)
-            case .ambiguousService: return String(localized: "device.vpn.ambiguous-service", defaultValue: "Multiple local pairing services found. Reconnect the local VPN.", bundle: .module)
-            case .discoveryDenied: return String(localized: "device.vpn.discovery-denied", defaultValue: "Could not find local services. Allow Local Network access.", bundle: .module)
-            case .invalidConfiguration: return String(localized: "device.vpn.invalid-configuration", defaultValue: "The local and peer addresses must be distinct, valid IPv4 addresses.", bundle: .module)
+            case .inactive: return String(localized: "device.vpn.inactive", defaultValue: "The local VPN is off or its address does not match the configuration.", bundle: EiscueDeviceResources.bundle)
+            case .ambiguousInterface: return String(localized: "device.vpn.ambiguous-interface", defaultValue: "Multiple VPN connections found. Keep only the local VPN selected for Eiscue.", bundle: EiscueDeviceResources.bundle)
+            case .serviceNotFound: return String(localized: "device.vpn.service-not-found", defaultValue: "Pairing service not found. Check Developer Mode and the local VPN.", bundle: EiscueDeviceResources.bundle)
+            case .ambiguousService: return String(localized: "device.vpn.ambiguous-service", defaultValue: "Multiple local pairing services found. Reconnect the local VPN.", bundle: EiscueDeviceResources.bundle)
+            case .discoveryDenied: return String(localized: "device.vpn.discovery-denied", defaultValue: "Could not find local services. Allow Local Network access.", bundle: EiscueDeviceResources.bundle)
+            case .invalidConfiguration: return String(localized: "device.vpn.invalid-configuration", defaultValue: "The local and peer addresses must be distinct, valid IPv4 addresses.", bundle: EiscueDeviceResources.bundle)
             }
         }
         if let error = error as? NativeBackendError { return NativeDeviceErrorPresentation.message(error) }
         if let error = error as? NCMError { return NCMDeviceErrorPresentation.message(error) }
-        return String(localized: "device.operation.failed", defaultValue: "Device operation failed. Check Local Network permission, the connection method, and system pairing.", bundle: .module)
+        return String(localized: "device.operation.failed", defaultValue: "Device operation failed. Check Local Network permission, the connection method, and system pairing.", bundle: EiscueDeviceResources.bundle)
     }
 }
 
 enum NCMDeviceErrorPresentation {
-    static func message(_ error: NCMError, bundle: Bundle = .module) -> String {
+    static func message(_ error: NCMError, bundle: Bundle = EiscueDeviceResources.bundle) -> String {
         switch error {
         case .interfaceUnavailable:
             return String(localized: "device.board.not-attached", defaultValue: "USB network board not found. Connect a configured board to this device.", bundle: bundle)
@@ -546,7 +547,7 @@ enum NCMDeviceErrorPresentation {
 enum NativeDeviceErrorPresentation {
     private static let logger = Logger(subsystem: "org.eiscue.device", category: "connection")
 
-    static func message(_ error: NativeBackendError, bundle: Bundle = .module) -> String {
+    static func message(_ error: NativeBackendError, bundle: Bundle = EiscueDeviceResources.bundle) -> String {
         switch error {
         case .invalidIdentity: return DeviceControlError.invalidIdentity.localizedDescription
         case .protocolFailure(stage: _, cause: 2): return String(localized: "device.backend.timed-out", defaultValue: "The device did not respond in time. Keep it unlocked, then reconnect.", bundle: bundle)

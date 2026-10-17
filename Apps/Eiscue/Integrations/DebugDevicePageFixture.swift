@@ -1,10 +1,11 @@
 #if DEBUG
-import EiscueDeviceKit
+import EiscueDeviceCore
 import Foundation
 import UIKit
 
 enum DebugDevicePageFixture {
     static var isEnabled: Bool {
+        guard DeviceBuildCapabilities.supportsDeveloperServices else { return false }
         let arguments = ProcessInfo.processInfo.arguments
         return arguments.contains("--ui-testing") && arguments.contains("--local-device-ready-fixture")
     }
@@ -22,6 +23,7 @@ enum DebugDevicePageFixture {
     }
 
     static var isOnboardingEnabled: Bool {
+        guard DeviceBuildCapabilities.supportsDeveloperServices else { return false }
         let arguments = ProcessInfo.processInfo.arguments
         return arguments.contains("--ui-testing") &&
             (arguments.contains("--onboarding-pairing-fixture") || arguments.contains("--onboarding-saved-pairing-fixture"))
@@ -43,7 +45,7 @@ extension AppModel {
         activeDeviceConnectionMethod = nil
         activeDeviceControlBackend = nil
         hasPairingIdentity = saved
-        deviceStatus = .unavailable(reason: String(localized: "connection.disconnected"))
+        deviceStatus = .unavailable(reason: String(localized: "connection.disconnected", table: "Runtime"))
         deviceConnectionError = nil
         showsOnboarding = true
         isLoading = false
@@ -95,7 +97,7 @@ private actor OnboardingPairingFixtureController: DeviceController {
 
     init(hasIdentity: Bool) { self.hasIdentity = hasIdentity }
 
-    func status() async -> DeviceStatus { .unavailable(reason: String(localized: "connection.disconnected")) }
+    func status() async -> DeviceStatus { .unavailable(reason: String(localized: "connection.disconnected", table: "Runtime")) }
     func hasPairingIdentity() async throws -> Bool { hasIdentity }
     func removePairingIdentity() async throws { hasIdentity = false }
 }

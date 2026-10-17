@@ -2,6 +2,24 @@ import XCTest
 
 extension XCTestCase {
     @MainActor
+    func modelFixtureURL(_ path: String = "/v1") -> URL {
+        // Separate loopback servers keep streaming-release state isolated when
+        // two simulator suites run together. xcodebuild forwards TEST_RUNNER_.
+        let configured = ProcessInfo.processInfo.environment["EISCUE_TEST_MODEL_PORT"] ?? "18765"
+        guard let port = UInt16(configured), port > 0 else {
+            preconditionFailure("EISCUE_TEST_MODEL_PORT must be a valid loopback port")
+        }
+        return URL(string: "http://127.0.0.1:\(port)\(path)")!
+    }
+
+    @MainActor
+    func conversationRow(titled title: String, in app: XCUIApplication) -> XCUIElement {
+        // SwiftUI containment preserves the row identifier without promising a Button type.
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "conversationRow_", title)).firstMatch
+    }
+
+    @MainActor
     func assertUnchangedFrame(_ element: XCUIElement, from expected: CGRect, context: String,
                               file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(element.exists, context, file: file, line: line)

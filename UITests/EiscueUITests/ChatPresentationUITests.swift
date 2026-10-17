@@ -6,7 +6,7 @@ final class ChatPresentationUITests: XCTestCase {
     @MainActor private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = modelFixtureURL().absoluteString
         app.launch()
         XCTAssertTrue(app.buttons["composerAddButton"].waitForExistence(timeout: 10))
         return app
@@ -15,7 +15,7 @@ final class ChatPresentationUITests: XCTestCase {
     @MainActor func testLongHistoryStartsAtLatestAndKeepsReadingPositionWhileTyping() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "--reset-state", "--long-conversation-fixture", "-AppleLanguages", "(en)"]
-        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = "http://127.0.0.1:18765/v1"
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = modelFixtureURL().absoluteString
         app.launch()
         let latest = app.staticTexts["LATEST_HISTORY_MESSAGE"]
         XCTAssertTrue(latest.waitForExistence(timeout: 10))

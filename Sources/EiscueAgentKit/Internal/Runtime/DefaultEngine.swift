@@ -190,13 +190,13 @@ actor DefaultEngine: AgentEngine {
             }
             var submissions: [PiDurableKit.Submission] = []
             if request.mode == .message {
-                if !view.entries.contains(where: { RuntimeMapping.storedMessage($0)?.id == request.requestID }) {
+                if !view.entries.contains(where: { RuntimeMapping.storedMessageID($0) == request.requestID }) {
                     let message = AgentMessage(id: request.requestID, role: .user, text: request.prompt, attachments: request.attachments)
                     // Persist display metadata before admission. No model context
                     // is contributed by this entry; orphaned metadata is ignored.
                     try await opened.conversation.commit { transaction in
-                        _ = try await transaction.append(EntryDraft(kind: RuntimeMapping.attachmentEntryKind,
-                            data: ["eiscueMessage": try PiDurableKit.JSONValue(encoding: message)]), to: opened.conversation.id)
+                        _ = try await transaction.append(EntryDraft(kind: RuntimeMapping.attachmentReferenceEntryKind,
+                            data: .object(try RuntimeMapping.displayMetadata(message))), to: opened.conversation.id)
                     }
                 }
                 let submission = try await opened.conversation.submit(RuntimeMapping.userContent(text: request.prompt, attachments: request.attachments), whenBusy: .reject,
@@ -331,7 +331,10 @@ actor DefaultEngine: AgentEngine {
 
     private func open(_ id: UUID, budget: RunBudget) async throws -> Session {
         let url = try fileURL(id)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var resources = URLResourceValues(); resources.isExcludedFromBackup = true
+        try directory.setResourceValues(resources)
         let (models, model): (Models, ModelRef)
         if let modelFactory { (models, model) = try await modelFactory() }
         else if let configuration { (models, model) = try await Self.makeModels(configuration: configuration) }
@@ -340,7 +343,7 @@ actor DefaultEngine: AgentEngine {
             model = ModelRef(provider: "eiscue", modelId: "unconfigured")
         }
         let runtimeTools = try tools.map { try RuntimeMapping.tool($0, budget: budget, secret: configuration?.apiKey ?? "") }
-        var extensions = [Extension("eiscue", tools: runtimeTools)]
+        var extensions = [Extension("eiscue", tools: runtimeTools), DeviceImageContext.runtimeExtension]
         if let configuration, GoogleCompletionCompatibility.applies(to: configuration) {
             extensions.append(GoogleCompletionCompatibility.runtimeExtension)
         }
@@ -397,8 +400,9 @@ actor DefaultEngine: AgentEngine {
                     model = .assistant(AssistantMessage(content: [.text(message.text)], timestamp: message.createdAt))
                 case .system, .tool: continue
                 }
-                _ = try await transaction.append(EntryDraft(kind: kind,
-                    data: ["eiscueID": .string(message.id.uuidString), "eiscueMessage": try PiDurableKit.JSONValue(encoding: message)], model: [model]), to: conversation.id)
+                var metadata: PiDurableKit.JSONObject = ["eiscueID": .string(message.id.uuidString)]
+                if message.role == .user { metadata.merge(try RuntimeMapping.displayMetadata(message)) { _, value in value } }
+                _ = try await transaction.append(EntryDraft(kind: kind, data: .object(metadata), model: [model]), to: conversation.id)
             }
         }
     }

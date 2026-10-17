@@ -126,10 +126,6 @@ final class ToolImagePreviewStore {
     }
 
     static func returnsDeviceImage(_ name: String) -> Bool {
-        switch name {
-        case "device_screenshot", "device_tap", "device_swipe", "device_type_text",
-             "device_launch_app", "device_home", "device_press_key": true
-        default: false
-        }
+        DeviceToolSpec(rawValue: name)?.returnsImage == true
     }
 }

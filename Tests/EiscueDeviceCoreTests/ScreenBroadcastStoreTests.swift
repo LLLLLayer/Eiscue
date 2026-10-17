@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import Testing
-@testable import EiscueDeviceKit
+@testable import EiscueDeviceCore
 
 @Suite struct ScreenBroadcastStoreTests {
     @Test func anIdenticalPublicationKeepsADelayedObservationCurrent() async throws {

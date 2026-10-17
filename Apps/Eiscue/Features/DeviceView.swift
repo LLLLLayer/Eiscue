@@ -1,4 +1,4 @@
-import EiscueDeviceKit
+import EiscueDeviceCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -427,7 +427,7 @@ struct DeviceConnectionMethodPicker: View {
     @State private var showsMethods = false
     @State private var pendingMethod: DeviceConnectionMethod?
 
-    private let methods: [DeviceConnectionMethod] = [.localVPN, .bluetoothBoard, .usbBoard]
+    private let methods = DeviceBuildCapabilities.methods
     private var canChange: Bool {
         !model.isChangingDeviceConnectionMethod && !model.isSaving && !model.isStopping
             && !model.isManagingTunnel && !model.isStoppingTunnel && !model.isImportingAttachments

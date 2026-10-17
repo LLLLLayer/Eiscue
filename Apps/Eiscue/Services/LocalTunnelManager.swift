@@ -1,3 +1,21 @@
+#if EISCUE_HID_ONLY
+import EiscueDeviceCore
+import Foundation
+import Observation
+
+/// HID builds have no NetworkExtension framework, entitlement or tunnel provider.
+@MainActor @Observable
+final class LocalTunnelManager {
+    let statusTitle = String(localized: "connection.disconnected", table: "Runtime")
+    let isConnected = false
+    let isTransitioning = false
+    let lastError: String? = nil
+    @ObservationIgnored var onDisconnect: (@MainActor @Sendable () -> Void)?
+    func refresh() async throws {}
+    func start() async throws { throw DeviceControlError.unsupported }
+    func stop() async throws {}
+}
+#else
 import Foundation
 import NetworkExtension
 import Observation
@@ -524,3 +542,5 @@ private final class TunnelStatusObservation {
 
     deinit { NotificationCenter.default.removeObserver(token) }
 }
+
+#endif
