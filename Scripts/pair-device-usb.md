@@ -38,7 +38,7 @@ the USB helper below, and sends it to the **same selected device** at
 
 Eiscue detects the received file while the connection page is open. Choose **Import from computer** on that page. The command does not launch the app, automatically
 import an identity, start XCTest or connect a VPN. After importing, choose
-**Connect device** in the app and handle any system authorization there.
+**Connect** (**Connect device** during onboarding) in the app and handle any system authorization there.
 
 An existing pending transfer is not replaced. Import it on the device first,
 or resolve it in the app, before retrying. The command never reads or modifies

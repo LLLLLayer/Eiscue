@@ -24,9 +24,11 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 | --- | --- |
 | Chat, multiple models, streaming, Markdown, attachments, on-device dictation and English/Chinese UI | Implemented with simulator test coverage; known failures are listed in the test baseline below |
 | C3 / S3 Bluetooth connection, ReplayKit, four-point touch and Chinese text checks | Passed on the designated iPhone 14 Pro / iOS 26.5.2 |
+| In-app connection, iOS 26 + XCTest | Deterministic checks in Eiscue's own test page passed on iPhone 14 Pro / iOS 26.5.2 (2026-10-13): two connection cycles, taps, swipe, Unicode text, stale-frame rejection after rotation, and short background screenshots |
+| In-app connection, iOS 27 | XCTest foreground smoke check (connect, screenshot, own-button tap, cleanup) passed on iPhone 12 mini (2026-10-17). DisplayService: system pairing completed with a diagnostic build, and model-driven runs recorded Home and screenshots before a stale-frame bug; input after that fix has **not been re-accepted** |
 | Bluetooth swipe, complete cross-app agent tasks and long background runs | Integrated in code; **not yet accepted on real hardware** |
 | S3 USB input: commands over Bluetooth, keyboard/mouse output over USB | App and firmware integrated; phone-side USB input **has not passed acceptance** |
-| Local VPN / USB network adapter | Integrated in code; route-specific real-device acceptance is still required |
+| S3 USB network adapter | Firmware builds and host tests pass; **no hardware acceptance** |
 | Other backends, including iCTRL | Source research only; not integrated |
 
 **Code integration, software tests and real-device acceptance are recorded separately.** Simulators cannot validate Bluetooth HID, system screen sharing or background duration. Results from one test device do not establish compatibility with other models or OS versions.
@@ -37,13 +39,13 @@ Conversations, task orchestration and tool execution run on the phone. Models ar
 
 1. Use an Apple Silicon Mac, Xcode 26+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.45+. Run `xcodegen generate` at the repository root, open `Eiscue.xcodeproj` and select the `Eiscue` scheme.
 2. Keep the default local signing when running on an iOS 26+ simulator; Keychain is unavailable in unsigned builds. For a real device, set your development team and bundle IDs in `project.yml`, then regenerate the project. The app and broadcast extension share an App Group; the app and local-VPN extension require the Network Extension `packet-tunnel-provider` capability. The defaults are `org.eiscue.app` and `group.org.eiscue.app`. When changing them, update the suffixes, extensions and shared-group configuration together; see [AGENTS.md](AGENTS.md).
-3. Enter a service URL, model ID and API key during onboarding or under **Settings → Models**. You can save multiple configurations. Existing keys appear as saved; choose **Replace** to change one. Saving a configuration does not call the model.
+3. Enter a service URL, model ID and API key during onboarding or under **Settings → Model**. You can save multiple configurations. Existing keys appear as saved; choose **Replace** to change one. Saving a configuration does not call the model.
 
 Model service URLs must use HTTPS. OpenAI-compatible services usually include `/v1`; Anthropic uses `https://api.anthropic.com`. Device tasks also require image and tool-call support from the model. Plain chat requires neither a board nor screen sharing.
 
 ### Let the AI operate the device
 
-The default **In-app connection** route offers system pairing on iOS 27+, while retaining import of an existing compatible pairing file. Select Eiscue in the system pairing page, confirm **Pair**, return to Eiscue for the code, then enter it in Settings. On iOS 26, setup uses five steps: prepare a Mac, connect the phone by USB, run the copyable command, import pairing, and connect the device. The command and requirements appear below. Choosing a route does not start it automatically.
+The default **In-app connection** route offers system pairing on iOS 27+, while retaining import of an existing compatible pairing file. Tap **Start pairing**, open **Settings → Privacy & Security → Developer Mode**, select Eiscue and confirm **Pair**, return to Eiscue for the code, then enter it in Settings. On iOS 26, setup uses five steps: prepare a Mac, connect the phone by USB, run the copyable command, import pairing, and connect the device. The command and requirements appear below. Choosing a route does not start it automatically.
 
 System pairing completed on an iOS 27 device using a diagnostic build on 2026-10-14. That result does not establish the default publication configuration or screenshot/input acceptance. Developer Mode and a compatible prepared DDI remain separate requirements; this does not establish a fully computer-free setup.
 
@@ -51,7 +53,7 @@ To use the optional Bluetooth route:
 
 1. Prepare the Bluetooth firmware using the [C3 / S3 firmware instructions](Firmware/Passport-BLE/README.md#build-and-flash-layout), then power the board.
 2. On iPhone, enable **Settings → Accessibility → Touch → AssistiveTouch**.
-3. Open the device page at the top right of Eiscue and select **ESP32-C3 / S3 input**. Connect, start screen sharing in the system panel, then start the check. Keep the check page visible without touching or rotating the phone; the app verifies four actual touches and one text entry.
+3. Open the device page at the top right of Eiscue and select **ESP32 input**. On an S3, also choose **Bluetooth input** or **USB input**. Connect, start screen sharing in the system panel, then start the check. Keep the check page visible without touching or rotating the phone; the app verifies four actual touches and one text entry.
 4. Once ready, return to the conversation and give it a task. **Allow AI to operate device** is on by default and can be turned off on the device page. When the device is not ready, new messages use plain chat.
 
 The connection, screen sharing and calibration must all remain valid. Disconnection, rotation, a change of sharing session or screen dimensions invalidates calibration and requires another check. Routes never fall back to one another automatically.
@@ -83,7 +85,7 @@ git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" 
 python3 "$eiscue_setup_dir/Scripts/setup-device.py"
 ```
 
-The Mac needs Xcode 26+, Python 3.9+, Rust 1.96.0 and internet access. Device trust, Developer Mode and Xcode device preparation are still required; the command does not install these tools or prepare DDI. It asks you to select and confirm a USB-connected device, then generates and transfers its pairing identity to the installed Eiscue app. It does not replace a pending transfer, import the identity or start a VPN. The app detects the received file on the same page; choose **Import from computer**, then **Connect device**. The source and build cache remain in the Mac's temporary folder; the helper deletes its separate private pairing file after sending. Initial compilation may download pinned Cargo dependencies.
+The Mac needs Xcode 26+, Python 3.9+, Rust 1.96.0 and internet access. Device trust, Developer Mode and Xcode device preparation are still required; the command does not install these tools or prepare DDI. It asks you to select and confirm a USB-connected device, then generates and transfers its pairing identity to the installed Eiscue app. It does not replace a pending transfer, import the identity or start a VPN. The app detects the received file on the same page; choose **Import from computer**, then **Connect** (**Connect device** during onboarding). The source and build cache remain in the Mac's temporary folder; the helper deletes its separate private pairing file after sending. Initial compilation may download pinned Cargo dependencies.
 
 With an existing checkout, contributors can instead run `python3 Scripts/setup-device.py` from its project folder. The convenience helper is macOS-only; the lower-level pairing tool remains separate.
 
@@ -153,35 +155,26 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 To retain a check's output without masking its exit status, run `bash Scripts/run-logged-check.sh .build/<unique-name>.log <command> [arguments...]`. Existing logs are preserved; a failed check still returns a nonzero exit code.
 
-2026-10-14, commit `efb7703`, Xcode 26.3, iPhone 16e / iOS 26.3 simulator:
+Full run on 2026-10-17 at commit `f4972f5`, with the model fixture running for the app suites:
 
 | Suite | Result |
 | --- | --- |
-| Swift Kits | 149 tests / 19 suites; 4 failing tests (10 issues) |
-| App unit tests | 226 passed |
-| UI tests | 44 tests: 34 passed, 5 skipped, 5 failed |
-| Firmware host tests | Board authentication: 6 groups passed; C3 companion display: 5 groups passed. NCM relay host tests were not run in this round |
-| Device backend | 64 Rust library tests and 332 ObjC automation bridge checks passed |
+| Swift Kits | 166 tests / 19 suites passed with both Xcode 27.0 and Xcode 26.3 |
+| App unit tests | 313 run, 0 failures, on iPhone 18 Pro / iOS 27.0 and iPhone 16e / iOS 26.3.1 simulators (1 iOS 26-only test skipped on iOS 27) |
+| UI tests, iOS 27.0 | 72 run: 57 passed, 9 skipped, 6 failed |
+| UI tests, iOS 26.3.1 | 72 run: 57 passed, 13 skipped, 2 failed |
+| Firmware host tests | Board authentication 6 groups and C3 companion display 5 groups passed; 14 NCM relay Python tests passed. NCM relay C host tests were not run (ESP-IDF not installed) |
+| Device backend and tools | 72 Rust library tests, 535 ObjC automation bridge checks and 8 setup-helper tests passed |
 
-At that baseline, the 4 Kit failures and 2 UI failures were traced to outdated copy or view-hierarchy assertions. Another 3 sharing tests could not find the system panel identifier. Screenshots showed the panel open, but did not establish successful saving, dismissal or readback. Skipped cases required real hardware or an iPad; the failing suites were not green gates.
+The UI suites are not green gates. Two conversation-persistence cases fail on both OS versions: their sidebar-row query looks for buttons, which the row container no longer exposes to XCUITest. Other UI tests already query those rows differently and pass, so this is likely outdated test code. On iOS 27 only, three onboarding cases assume the iOS 26 computer-pairing flow, and one Save to Files case could not reach the local Files location; all four pass on iOS 26.3.1. Skipped cases need real hardware, an iPad or the other OS version; they are not passes. This run did not include an iPad simulator.
 
-Later targeted checks on 2026-10-14 passed 4 Kit tests, 12 app tests and 10 UI cases (8 on iPhone, 2 on iPad). Coverage includes read-only tool-image recovery, screenshot details and previews, context menus, keyboard navigation, model parameter persistence and opening/dismissing/reopening native file sharing. Saving, readback and photo sharing were not rerun. These checks do not replace the full baseline or establish real-device control acceptance; failed intermediate runs are retained in the local validation record.
+Earlier baselines (2026-10-14 at `efb7703` and 2026-10-15 at `14d154f`), their targeted reruns and failed intermediate runs are retained in the local validation record. Simulator and host tests are not physical-device acceptance.
 
-Hotspot-relay removal on 2026-10-14 additionally passed 21 Kit tests, 34 app tests, 3 device-page UI tests, 14 offline firmware-tool tests and 64 Rust library tests. All three native backend slices were rebuilt. These targeted checks do not replace the full baseline or validate physical USB/Bluetooth behavior.
+### Physical-device notes
 
-A full recheck on 2026-10-15 at `14d154f` recorded 155 Kit tests with 4 failures, 242 app tests passed, and 56 UI cases (42 passed, 5 failed, 9 skipped). Xcode 27 also exposed a concurrency compile error in the provider test fixture. Follow-up fixes passed all **155 Kit tests / 19 suites on both Xcode 26.3 and 27**, **7 model-profile app tests**, and **16 distinct targeted UI cases**, with 1 physical-device case skipped. Coverage includes model setup without custom names, credential retention, timeline/pause presentation, native file/photo sharing and exact-byte readback after Save to Files. Intermediate failed runs are retained. The 56-case suite was not rerun in full after these fixes, and this is not physical-device control acceptance.
-
-The control-backend selector added on 2026-10-15 passed 108 DeviceKit tests, 37 connection app tests on each of iOS 26.3.1 and 27.0 simulators, 2 UI cases on iOS 26 and 3 on iOS 27. These checks cover selection/persistence, unavailable choices, release and cancellation, no fallback, and the former CoreDevice voice notice. They do not validate the subsequent automatic voice release/reconnect workflow or physical iOS 27 XCTest input.
-
-A physical iPhone 12 mini / iOS 27 microphone comparison on 2026-10-15 kept pairing and VPN unchanged: input was nonzero before CoreDevice connection, all-zero with a system remote-control mute during connection, and nonzero again after confirmed screen-session release. This historical check validates microphone capture and recovery on that device, not the subsequent automatic voice release/reconnect workflow, speech recognition or coexistence on XCTest, HID or USB network routes. Apple documents camera/microphone conflicts for [Device Hub](https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub#Handle-camera-and-microphone-access-conflicts-on-physical-devices).
-
-A later physical recheck on the same phone received only zero-valued audio while iOS still reported remote-control muting after an app relaunch. Pairing and VPN can be reused, but the live screen-control session cannot be recovered from pairing credentials alone. The current implementation cannot automatically identify and release a stream left by a terminated app process. After a phone restart, a bounded check received nonzero microphone input continuously for about 10 seconds. Automatic cleanup across app-process restarts remains unimplemented.
-
-**Settings → Connection repair → Reset connection & check** disconnects Eiscue's current control connection while preserving pairing, VPN and conversations, then briefly checks microphone samples without speech recognition or saving audio. Connection release and microphone input are reported separately; no current connection or all-zero samples do not prove recovery. The check leaves control disconnected and does not identify an unrecorded stream from a previous app process.
-
-On 2026-10-15, after installing `2f74c5d`, the user reported that the microphone indicator appeared during recording after connecting in-app DisplayService on iPhone 12 mini / iOS 27, and that the connection indicator recovered afterward. A fresh diagnostic independently confirmed nonzero microphone input and capture stopping (18 buffers / 86,400 frames at 48 kHz, about 1.8 seconds). No text was recognized, and the capture ended with recognizer error 1110. The saved diagnostic does not separately establish the control-session release/reconnection requests; this is one user-reported cycle, not repeated-cycle or transcription acceptance.
-
-The automatic dictation handoff added on 2026-10-15 passed 30 connection Kit tests, 52 app connection tests and 3 iOS 27 simulator UI cases, covering media release confirmation, restoration, cancellation, failures and stable composer layout. These checks do not establish microphone capture or transcription on hardware. The subsequent correction to release only when recording starts passed 66 focused app tests and 4 simulator UI cases, including retaining the connection when merely switching input modes.
+- **iOS 27 microphone while controlled**: on iPhone 12 mini / iOS 27 (2026-10-15), microphone input was nonzero before a CoreDevice connection, all-zero with a system remote-control mute while connected, and nonzero again after confirmed screen-session release. Pairing and VPN stayed unchanged. Apple documents this conflict for [Device Hub](https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub#Handle-camera-and-microphone-access-conflicts-on-physical-devices). This led to the automatic dictation handoff; that handoff is covered by simulator tests and one user-reported device cycle with nonzero input, not by repeated-cycle or transcription acceptance.
+- **Sessions left by a terminated app**: after an app relaunch on the same phone, input stayed all-zero while iOS still reported remote-control muting. Pairing and VPN can be reused, but pairing alone cannot recover or release the previous process's screen session; a phone restart restored input. Automatic cleanup across app-process restarts is not implemented.
+- **Settings → Connection repair → Reset connection & check** releases Eiscue's current control connection while keeping pairing, VPN and conversations, then briefly samples the microphone without speech recognition or saving audio. Connection release and microphone input are reported separately; neither proves that no earlier session remains.
 
 ### Backend and firmware
 

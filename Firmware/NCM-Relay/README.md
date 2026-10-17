@@ -119,3 +119,7 @@ These offline tests cover rejected legacy CLI targets/packages before serial
 access, retained NCM/S3 HID packaging, USB-only link selection, private backup
 verification and protected S3 partitions. No firmware build or hardware checks
 were run for this removal; the historical results above remain separate.
+
+On **2026-10-17** the same Python suite passed again (**14 tests, 0 failures**).
+`Scripts/test-board-firmware.sh` was not run because `IDF_PATH` was unset, so
+the C protocol/localhost tests have no new result. No hardware was used.
