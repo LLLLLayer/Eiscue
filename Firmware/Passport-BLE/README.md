@@ -503,12 +503,19 @@ retained. Its relative probe produced 23 target events: 11 direct and 12
 indirectPointer, with only the direct sequence ending normally. Calibration
 mixed these event types and rejected multipleContacts, despite op10 ACK14.
 
-That USB calibration rejection cause is established. The App channel-selection
-fix passed 30 tests on each Xcode 26/27 toolchain, and a signed device build
-passed; Core and firmware were unchanged. Physical revalidation is pending.
-This does not explain the separate BLE zero-contact failure,
-and relative swipes remain unaccepted. Earlier failures remain recorded; all
-these checks used no model API.
+The App channel-selection fix passed 30 tests on each Xcode 26/27 toolchain.
+Its physical recheck (source `0ff1761`) then passed one portrait owned-page USB
+four-point/Chinese/six-relative-probe check and an actual swipe. Every probe
+selected direct, with one contact and normal ending. The zero-model normal host
+completed one swipe and two tools, observing 231.6667 pt row motion (including
+scroll inertia) and a fresh
+66,685-byte post-action image. Connection/sharing/calibration were retained
+through completion; HID cleanup was locally accepted with raw confirmation
+false, and diagnostic teardown then ended sharing.
+
+This single pass excludes real-model, cross-app, background, rotation and stop
+coverage. BLE zero-contact remains independently unresolved. Earlier failures
+remain recorded; Core/firmware and C3 were unchanged.
 
 ## Version 0.2 build evidence (2026-10-12)
 
