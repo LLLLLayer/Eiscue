@@ -198,6 +198,9 @@ struct BluetoothInputCheckPresentation: ViewModifier {
             }) {
                 BluetoothPointerValidation(model: model) { showsValidation = false }
                     .ignoresSafeArea().interactiveDismissDisabled()
+                    #if DEBUG && !EISCUE_HID_ONLY
+                    .overlay(alignment: .top) { DebugNetworkRunAcceptanceStatusView() }
+                    #endif
             }
     }
 }

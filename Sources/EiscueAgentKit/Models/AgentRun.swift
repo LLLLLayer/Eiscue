@@ -42,6 +42,9 @@ public enum AgentPauseReason: String, Codable, Sendable, Equatable {
 
 public enum StopCause: Codable, Sendable, Equatable {
     case cancelled, timedOut, userRequested, engineCancelled, hardwareStop, eventSaveFailed
+    /// The host received the system's background expiration callback, which
+    /// can also follow cancellation from the system activity UI.
+    case backgroundExpired
     case outcomeUnknown(toolName: String)
     case paused(AgentPauseReason)
 }

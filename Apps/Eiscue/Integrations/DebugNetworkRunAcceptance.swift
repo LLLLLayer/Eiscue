@@ -30,6 +30,13 @@ enum DebugNetworkRunAcceptance {
 
     static var usesAcceptanceTarget: Bool { installation?.plan?.usesAcceptanceTarget == true }
     static var waitsForBluetoothSetup: Bool { installation?.plan?.route == .bluetoothBoard && !targetPresentation.ready }
+    static var automationStatus: AutomationStatus? {
+        guard let installation else { return nil }
+        return AutomationStatus(installation.report.value,
+            selectedInputRoute: installation.model?.bluetoothInputRoute.rawValue,
+            needsCalibration: installation.plan?.kind == .hidBackground
+                && installation.model?.isBluetoothPointerVerified == false)
+    }
     static func armInput(width: Int, height: Int, gesture: GestureLabel = .moving) throws -> InputCoordinates {
         guard let installation else { throw Failure.invalidArguments }
         return try installation.armInput(width: width, height: height, gesture: gesture)
@@ -700,6 +707,15 @@ enum DebugNetworkRunAcceptance {
         let gapSeconds: Double
         let isExecuting: Bool
     }
+    struct BackgroundProgress: Encodable, Equatable, Sendable {
+        let uptime: TimeInterval
+        let completed: Int64
+        let total: Int64
+        let accepted: Bool
+        let applicationState: Int
+        let lowPowerMode: Bool
+        let thermalState: Int
+    }
     struct ReadinessState: Encodable, Equatable, Sendable {
         var status = "unavailable"
         var statusReasonCode: String?
@@ -781,6 +797,7 @@ enum DebugNetworkRunAcceptance {
         var retainedCalibration: Bool?
         var backgroundLaunched = false
         var backgroundExpired = false
+        var backgroundProgress: [BackgroundProgress] = []
         var systemActivityUpdated: Bool?
         var notificationRequested = false
         var notificationsEnabled: Bool?
@@ -856,9 +873,38 @@ enum DebugNetworkRunAcceptance {
             if readiness.count == 32 { readiness.remove(at: 1) }
             readiness.append(.init(phase: phase, uptime: uptime, state: state))
         }
+        mutating func recordBackgroundProgress(_ sample: BackgroundProgress) {
+            if let last = backgroundProgress.last,
+               last.completed == sample.completed, last.total == sample.total, last.accepted == sample.accepted,
+               last.applicationState == sample.applicationState, last.lowPowerMode == sample.lowPowerMode,
+               last.thermalState == sample.thermalState { return }
+            if backgroundProgress.count == 64 { backgroundProgress.remove(at: 1) }
+            backgroundProgress.append(sample)
+        }
     }
 
-    @MainActor final class Report {
+    /// Only fixed diagnostic metadata is exposed to the attach-only UI helper.
+    /// The helper can observe the transition and background immediately without
+    /// restarting the App or waiting for a second manual instruction.
+    struct AutomationStatus: Codable, Equatable, Sendable {
+        let sessionID: UUID
+        let phase: String
+        let state: String
+        let route: String?
+        let inputRoute: String?
+        let acceptanceCase: String?
+        let selectedInputRoute: String?
+        let needsCalibration: Bool
+
+        init(_ metadata: Metadata, selectedInputRoute: String? = nil, needsCalibration: Bool = false) {
+            sessionID = metadata.sessionID; phase = metadata.phase; state = metadata.state
+            route = metadata.route; inputRoute = metadata.inputRoute; acceptanceCase = metadata.acceptanceCase
+            self.selectedInputRoute = selectedInputRoute; self.needsCalibration = needsCalibration
+        }
+        var encoded: String { (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? "" }
+    }
+
+    @MainActor @Observable final class Report {
         let id: UUID
         let directory: URL
         var value: Metadata
@@ -903,11 +949,22 @@ enum DebugNetworkRunAcceptance {
                     Task { @MainActor in report.value.backgroundExpired = true; report.event("background_expired") }
                     onExpiration()
                 })
+            recordProgress(completed: 0, total: totalUnitCount, accepted: true)
             report.value.backgroundLaunched = true; report.event("background_launched")
         }
         func update(taskID: UUID, completedUnitCount: Int64, totalUnitCount: Int64, title: String?, subtitle: String?) -> Bool {
-            BackgroundExecution.shared.update(taskID: taskID, completedUnitCount: completedUnitCount,
+            let accepted = BackgroundExecution.shared.update(taskID: taskID, completedUnitCount: completedUnitCount,
                 totalUnitCount: totalUnitCount, title: title, subtitle: subtitle)
+            recordProgress(completed: completedUnitCount, total: totalUnitCount, accepted: accepted)
+            return accepted
+        }
+        private func recordProgress(completed: Int64, total: Int64, accepted: Bool) {
+            report.value.recordBackgroundProgress(.init(uptime: ProcessInfo.processInfo.systemUptime,
+                completed: completed, total: total, accepted: accepted,
+                applicationState: UIApplication.shared.applicationState.rawValue,
+                lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                thermalState: ProcessInfo.processInfo.thermalState.rawValue))
+            report.save()
         }
         func end(taskID: UUID, success: Bool) -> Bool {
             let updated = BackgroundExecution.shared.end(taskID: taskID, success: success)
@@ -938,8 +995,26 @@ enum DebugNetworkRunAcceptance {
 /// harness is not enabled, and this recognizer never prevents normal input.
 struct DebugNetworkRunAcceptanceTargetView: View {
     var body: some View {
-        if DebugNetworkRunAcceptance.waitsForBluetoothSetup { RootView(initialDestination: .device) }
-        else { OwnedDeviceCheckView().background(NetworkRunTouchProbe()).onAppear { DebugNetworkRunAcceptance.inputTargetAppeared() } }
+        Group {
+            if DebugNetworkRunAcceptance.waitsForBluetoothSetup { RootView(initialDestination: .device) }
+            else { OwnedDeviceCheckView().background(NetworkRunTouchProbe()).onAppear { DebugNetworkRunAcceptance.inputTargetAppeared() } }
+        }
+        .overlay(alignment: .top) { DebugNetworkRunAcceptanceStatusView() }
+    }
+}
+
+/// Also mounted in the calibration cover so an attach-only helper can bind to
+/// an existing diagnostic without dismissing or restarting its setup first.
+struct DebugNetworkRunAcceptanceStatusView: View {
+    var body: some View {
+        if let status = DebugNetworkRunAcceptance.automationStatus {
+            Text(verbatim: status.phase)
+                .font(.caption2.monospaced()).padding(4)
+                .background(.regularMaterial, in: Capsule())
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("networkRunAcceptanceState")
+                .accessibilityValue(status.encoded)
+        }
     }
 }
 
@@ -1209,8 +1284,14 @@ private actor ScriptEngine: AgentEngine {
                     report.value.maxSampleGapSeconds = 0
                     report.event("sampling_background")
                 }
+                var firstSample = true
                 repeat {
-                    try await Task.sleep(until: min(deadline, clock.now.advanced(by: .seconds(plan.interval))), clock: .continuous)
+                    // Observe as soon as the real background transition occurs.
+                    // Do not spend another interval idle under the system lease.
+                    if !firstSample {
+                        try await Task.sleep(until: min(deadline, clock.now.advanced(by: .seconds(plan.interval))), clock: .continuous)
+                    }
+                    firstSample = false
                     try Task.checkCancellation()
                     let awakeGap = seconds((lastSampleAt ?? backgroundStart).duration(to: clock.now))
                     maximumGap = max(maximumGap, awakeGap)

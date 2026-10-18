@@ -30,4 +30,17 @@ final class RunRecordCompatibilityTests: XCTestCase {
         XCTAssertTrue(restored.stopCause?.isOutcomeUnknown == true)
         XCTAssertNotNil(restored.cleanupFailure)
     }
+
+    func testBackgroundExpirationRoundTripsAsDistinctFromAUserStop() throws {
+        var record = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(), scope: .control,
+                               model: "fixture", skill: nil, state: .interrupted, detail: "Background execution ended", events: [])
+        record.stopCause = .backgroundExpired
+        let restored = try JSONDecoder().decode(RunRecord.self, from: JSONEncoder().encode(record))
+        XCTAssertEqual(restored, record)
+        XCTAssertEqual(restored.stopCause, .backgroundExpired)
+        XCTAssertNotEqual(restored.stopCause, .userRequested)
+        XCTAssertFalse(restored.stopCause?.isOutcomeUnknown == true)
+        let historical = try JSONDecoder().decode(StopCause.self, from: Data(#"{"userRequested":{}}"#.utf8))
+        XCTAssertEqual(historical, .userRequested)
+    }
 }

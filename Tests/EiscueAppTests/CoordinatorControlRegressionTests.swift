@@ -415,6 +415,74 @@ import XCTest
         XCTAssertFalse(fixture.model.deviceSession.hasUnconfirmedRelease)
     }
 
+    func testBackgroundExpirationPersistsItsCauseAndRetainsUnknownOutcomePriority() async throws {
+        for method in [DeviceConnectionMethod.localVPN, .bluetoothBoard] {
+            for unknown in [false, true] {
+                let fixture = try ControlCoordinatorFixture(releaseConfirmed: method != .bluetoothBoard, method: method)
+                defer { fixture.remove() }
+                fixture.factory.running.holdStream = true
+                fixture.factory.running.onStart = { _ in fixture.model.sceneChanged(.background) }
+                let expected: StopCause = unknown ? .outcomeUnknown(toolName: DeviceToolSpec.swipe.rawValue) : .backgroundExpired
+                if unknown { fixture.factory.running.cancellationOutcome = .stopped(expected) }
+                fixture.model.draft = "Background expiration fixture"
+                let work = Task { await fixture.model.sendMessage() }
+                try await coordinatorEventually { fixture.factory.running.requests.count == 1 }
+                let runID = try XCTUnwrap(fixture.model.activeRun?.id)
+                let expire = try XCTUnwrap(fixture.background.expirationCallbacks[runID])
+
+                expire()
+                await work.value
+
+                let completed = try XCTUnwrap(fixture.model.runs.first)
+                let stored = try await fixture.model.journal.load()
+                let persisted = try XCTUnwrap(stored.records.first)
+                XCTAssertEqual(completed.stopCause, expected)
+                XCTAssertEqual(completed.state, unknown ? .outcomeUnknown : .interrupted)
+                XCTAssertEqual(persisted.stopCause, expected)
+                XCTAssertEqual(persisted.state, completed.state)
+                if !unknown {
+                    XCTAssertEqual(completed.detail, String(localized: "run.background_ended", table: "Runtime"))
+                }
+                XCTAssertNil(completed.cleanupFailure)
+                XCTAssertNil(fixture.model.deviceSession.owner)
+                XCTAssertNil(fixture.model.activeRun)
+                XCTAssertFalse(fixture.model.isDeviceReady, "Expiration must not retain a stopped connection.")
+                XCTAssertFalse(fixture.model.deviceSession.hasUnconfirmedRelease)
+                XCTAssertEqual(fixture.background.successes, [false])
+                XCTAssertEqual(fixture.notifications.states, [completed.state])
+                let events = await fixture.actuator.events
+                XCTAssertEqual(events, ["disconnect", "disconnect"])
+            }
+        }
+    }
+
+    func testExpiredPriorRunCallbackCannotStopANewerRun() async throws {
+        let fixture = try ControlCoordinatorFixture(); defer { fixture.remove() }
+        fixture.model.draft = "Complete the first run"
+        await fixture.model.sendMessage()
+        let firstID = try XCTUnwrap(fixture.model.runs.first?.id)
+        let oldExpiration = try XCTUnwrap(fixture.background.expirationCallbacks[firstID])
+        fixture.model.newConversation()
+        fixture.factory.running.holdStream = true
+        fixture.model.draft = "Keep the second run active"
+        let work = Task { await fixture.model.sendMessage() }
+        try await coordinatorEventually { fixture.factory.running.requests.count == 2 }
+        let currentID = try XCTUnwrap(fixture.model.activeRun?.id)
+        let previousCancellations = fixture.factory.running.cancellations
+
+        oldExpiration()
+        // The real callback schedules its run-scoped stop onto MainActor.
+        try await Task.sleep(for: .milliseconds(30))
+
+        XCTAssertEqual(fixture.model.activeRun?.id, currentID)
+        XCTAssertNil(fixture.model.runCoordinator.current?.stopCause)
+        XCTAssertEqual(fixture.factory.running.cancellations, previousCancellations)
+        XCTAssertTrue(fixture.model.isDeviceReady)
+        _ = await fixture.model.runCoordinator.stopAndWait(runID: currentID)
+        await work.value
+        XCTAssertEqual(fixture.model.runs.first?.stopCause, .userRequested)
+    }
+
     func testStopRetainsAnUnconfirmedReleaseReceiptInTheOwningDeviceSession() async throws {
         let fixture = try ControlCoordinatorFixture(releaseConfirmed: false); defer { fixture.remove() }
         fixture.factory.running.holdStream = true
@@ -887,9 +955,11 @@ private actor CoordinatorGate {
     var blocksBegin = false
     var successes: [Bool] = []
     var onEnd: ((UUID) -> Void)?
+    var expirationCallbacks: [UUID: @Sendable () -> Void] = [:]
     func register() throws {}
     func begin(taskID: UUID, title: String, subtitle: String, totalUnitCount: Int64, onExpiration: @escaping @Sendable () -> Void) async throws {
         begins += 1; isExecuting = true
+        expirationCallbacks[taskID] = onExpiration
         if blocksBegin { try await Task.sleep(for: .seconds(30)) }
     }
     func update(taskID: UUID, completedUnitCount: Int64, totalUnitCount: Int64, title: String?, subtitle: String?) -> Bool { isExecuting }

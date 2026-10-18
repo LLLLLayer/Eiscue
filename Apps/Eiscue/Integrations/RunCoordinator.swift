@@ -122,7 +122,7 @@ final class RunCoordinator {
             if runScope != .chat {
                 let preparation = Task { [model] in try await model.background.begin(taskID: runID, title: String(localized: "run.activity_title", table: "Runtime"), subtitle: String(localized: "run.preparing_device", table: "Runtime"),
                                            totalUnitCount: TaskStatusPresentation.progressTotalUnitCount, onExpiration: { [weak model] in
-                    Task { await model?.stop(expectedRunID: runID, reason: String(localized: "run.background_ended", table: "Runtime")) }
+                    Task { await model?.stop(expectedRunID: runID, reason: String(localized: "run.background_ended", table: "Runtime"), cause: .backgroundExpired) }
                 }) }
                 session.preparation = preparation
                 try await preparation.value

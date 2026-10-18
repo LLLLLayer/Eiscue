@@ -7,6 +7,38 @@ import XCTest
 
 @MainActor
 final class DebugNetworkRunAcceptanceTests: XCTestCase {
+    func testAutomationHandoffExposesOnlyFixedSessionMetadata() throws {
+        var metadata = DebugNetworkRunAcceptance.Metadata(sessionID: UUID())
+        metadata.phase = "awaiting_external_background"
+        metadata.route = "bluetoothBoard"; metadata.inputRoute = "bluetooth"; metadata.acceptanceCase = "hidBackground"
+        metadata.registeredToolNames = ["private-untrusted-value"]
+        metadata.observationFailures = ["private-error-details"]
+        let snapshot = DebugNetworkRunAcceptance.AutomationStatus(metadata, selectedInputRoute: "bluetooth", needsCalibration: false)
+        let data = Data(snapshot.encoded.utf8)
+        let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(Set(keys.keys), ["sessionID", "phase", "state", "route", "inputRoute", "acceptanceCase", "selectedInputRoute", "needsCalibration"])
+        XCTAssertFalse(snapshot.encoded.contains("private"))
+        XCTAssertEqual(try JSONDecoder().decode(DebugNetworkRunAcceptance.AutomationStatus.self, from: data), snapshot)
+    }
+
+    func testBackgroundProgressKeepsOriginalAndRecentEvidenceWithoutCountingIdlePolls() {
+        var metadata = DebugNetworkRunAcceptance.Metadata(sessionID: UUID())
+        func sample(_ count: Int64, time: Double, accepted: Bool = true, appState: Int = 0) -> DebugNetworkRunAcceptance.BackgroundProgress {
+            .init(uptime: time, completed: count, total: 1_000_000, accepted: accepted,
+                  applicationState: appState, lowPowerMode: false, thermalState: 0)
+        }
+        metadata.recordBackgroundProgress(sample(0, time: 0))
+        metadata.recordBackgroundProgress(sample(0, time: 10))
+        XCTAssertEqual(metadata.backgroundProgress.count, 1, "Waiting alone does not produce progress evidence.")
+        metadata.recordBackgroundProgress(sample(0, time: 11, appState: 2))
+        metadata.recordBackgroundProgress(sample(0, time: 12, accepted: false, appState: 2))
+        XCTAssertEqual(metadata.backgroundProgress.count, 3, "Background transitions and refused updates remain visible.")
+        for count in 1...100 { metadata.recordBackgroundProgress(sample(Int64(count), time: Double(count + 12))) }
+        XCTAssertEqual(metadata.backgroundProgress.count, 64)
+        XCTAssertEqual(metadata.backgroundProgress.first?.uptime, 0)
+        XCTAssertEqual(metadata.backgroundProgress.last?.completed, 100)
+    }
+
     func testExistingNetworkDefaultsStillRequireAnExplicitBackend() throws {
         let plan = try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest"])
         XCTAssertEqual(plan.route, .localVPN)

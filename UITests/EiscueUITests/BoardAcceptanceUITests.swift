@@ -213,6 +213,115 @@ final class BoardAcceptanceUITests: XCTestCase {
         }
     }
 
+    /// One attach-only handoff: reuse a ready setup, or perform its existing
+    /// calibration once, then background as soon as the real run asks for it.
+    /// This helper proves navigation only; the App report owns acceptance.
+    @MainActor
+    func testPrepareAndBackgroundHIDCheck() throws {
+        struct State: Decodable {
+            let sessionID: UUID
+            let phase: String
+            let state: String
+            let route: String?
+            let inputRoute: String?
+            let acceptanceCase: String?
+            let selectedInputRoute: String?
+            let needsCalibration: Bool
+        }
+        let routeName = ProcessInfo.processInfo.environment["EISCUE_BOARD_INPUT_ROUTE"] ?? "bluetooth"
+        let route = try XCTUnwrap(BoardInputRoute(rawValue: routeName))
+        let app = XCUIApplication()
+        guard app.state == .runningForeground else {
+            XCTFail("Open the installed HID background diagnostic first; this helper never relaunches it."); return
+        }
+        let marker = app.descendants(matching: .any).matching(identifier: "networkRunAcceptanceState").firstMatch
+        guard marker.waitForExistence(timeout: 10) else {
+            XCTFail("The installed App does not expose a live network-run diagnostic."); return
+        }
+        var sessionID: UUID?
+        var calibrationRequested = false
+        var calibrationDismissed = false
+        var verifiedPlan = false
+        let deadline = Date().addingTimeInterval(600)
+        while Date() < deadline {
+            guard app.state == .runningForeground else {
+                XCTFail("Keep setup foreground until the diagnostic requests background; no relaunch is performed."); return
+            }
+            var needsCalibration = false
+            if marker.exists {
+                let encoded = try XCTUnwrap(marker.value as? String)
+                let state = try JSONDecoder().decode(State.self, from: Data(encoded.utf8))
+                if let previous = sessionID {
+                    guard previous == state.sessionID else { XCTFail("The diagnostic session changed; no input was sent."); return }
+                } else { sessionID = state.sessionID }
+                guard state.state == "running" else {
+                    XCTFail("The diagnostic already ended (\(state.state), \(state.phase)); no retry was started."); return
+                }
+                if state.acceptanceCase != nil {
+                    guard state.acceptanceCase == "hidBackground", state.route == "bluetoothBoard", state.inputRoute == route.rawValue else {
+                        XCTFail("Only the explicitly selected HID background check may use this helper."); return
+                    }
+                    verifiedPlan = true
+                }
+                if verifiedPlan {
+                    guard state.selectedInputRoute == route.rawValue else {
+                        XCTFail("The selected input route changed; no calibration was started."); return
+                    }
+                    needsCalibration = state.needsCalibration && state.phase != "bluetooth_waiting_for_dismissal"
+                }
+                if verifiedPlan, state.phase == "awaiting_external_background" {
+                    let evidence = XCTAttachment(string: encoded)
+                    evidence.name = "HID background handoff — navigation only"; evidence.lifetime = .keepAlways; add(evidence)
+                    XCUIApplication(bundleIdentifier: "com.apple.calculator").activate()
+                    let background = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                        app.state == .runningBackground || app.state == .runningBackgroundSuspended
+                    }, object: nil)
+                    XCTAssertEqual(XCTWaiter.wait(for: [background], timeout: 5), .completed)
+                    return // Do not activate, inspect or disconnect the App during sampling.
+                }
+            }
+            if verifiedPlan {
+                let status = app.staticTexts["bluetoothValidationStatus"]
+                if status.exists {
+                    calibrationRequested = true
+                    let ready = ["Device control is ready", "设备操作已就绪",
+                                 "Taps and typing are ready. Check again to enable swipes.", "点击和输入已就绪；滑动需重新检查。"]
+                    if ready.contains(status.label), !calibrationDismissed {
+                        let done = app.buttons["bluetoothValidationCloseButton"]
+                        if done.exists && done.isHittable { calibrationDismissed = true; done.tap() }
+                    } else if status.label.hasPrefix("Check incomplete") || status.label.hasPrefix("检查未完成") {
+                        XCTFail("Calibration did not pass: \(status.label). No repeated check was requested."); return
+                    }
+                } else if !calibrationRequested && needsCalibration {
+                    let button = app.buttons["bluetoothVerifyButton"].firstMatch
+                    if button.exists && button.isEnabled {
+                        for _ in 0..<4 where !button.isHittable { app.swipeUp() }
+                        if button.isHittable {
+                            let selectedRoute = app.segmentedControls["bluetoothInputRoutePicker"].buttons
+                                .matching(NSPredicate(format: "label IN %@", route.labels)).firstMatch
+                            guard selectedRoute.isSelected else {
+                                XCTFail("Select the explicitly requested input route before checking."); return
+                            }
+                            calibrationRequested = true
+                            button.tap()
+                            if route == .usb {
+                                let confirm = app.alerts.buttons.matching(NSPredicate(format: "label IN %@", [
+                                    "Connected; start check", "已连接，开始检查"
+                                ])).firstMatch
+                                guard confirm.waitForExistence(timeout: 5), confirm.isEnabled else {
+                                    XCTFail("USB input confirmation was unavailable."); return
+                                }
+                                confirm.tap()
+                            }
+                        }
+                    }
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        XCTFail("Setup did not reach the background handoff. No App restart, reset or repeated calibration was performed.")
+    }
+
     @MainActor
     private func connectBluetoothCompanion(in app: XCUIApplication) {
         let pairing = addUIInterruptionMonitor(withDescription: "Eiscue board pairing") { alert in
