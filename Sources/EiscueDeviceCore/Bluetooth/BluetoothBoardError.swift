@@ -36,6 +36,16 @@ public enum BluetoothBoardError: String, Error, LocalizedError, Sendable, Equata
     }
 }
 
+extension BluetoothBoardError {
+    /// Preserve actionable setup details without changing input-delivery classification.
+    var connectionSetupError: DeviceControlError {
+        switch self {
+        case .authenticationKeyUnavailable, .enrollmentClosed, .enrollmentConflict: .connection(localizedDescription)
+        default: deviceControlError
+        }
+    }
+}
+
 public extension BluetoothBoardError {
     var deviceControlError: DeviceControlError {
         switch self {

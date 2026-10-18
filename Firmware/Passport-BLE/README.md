@@ -458,14 +458,39 @@ The subsequent enumeration/state-fix image, SHA-256
 `26c7db94103d2fbe283653fe2ea0e5fbd737dd2c46fd86396fdbfb0adf96249d`,
 was installed after a full-Flash backup and passed Flash readback verification.
 No phone input acceptance was performed for that image. The latest physical
-quarantine image (`931fcc33…` above) has software evidence only and has not been
-installed; the board still has the `26c7db94…` image.
+quarantine image (`931fcc33…` above) had software evidence only and had not been
+installed at that checkpoint; the board then had the `26c7db94…` image. The
+2026-10-18 update below records its later state.
 
 The USB attempt used an ordinary Lightning-to-USB-C cable, rather than a USB
 host / Camera Adapter. The phone did not enumerate the board; no USB phone input
 acceptance was completed. A compatible host adapter is still required. The new
 software result does not validate USB HID on the phone, and the earlier BLE
 result applies only to its recorded image.
+
+## S3 physical follow-up (2026-10-18)
+
+After a verified 16 MB backup, the S3 application at `0x20000` was updated to
+SHA-256 `641795ec035ca9aacd8069f5de83199e687f85ec31ce83e967a14f11c0d10418`.
+The owner later authorized targeted removal of an old system Bluetooth bond.
+A one-time non-advertising maintenance app removed that peer and its six CCCDs,
+preserving two other-peer CCCDs, HMAC, LOCAL_IRK and unrelated logical settings.
+The same production image was restored; readback/full-flash verification passed,
+with all bytes outside NVS unchanged. C3 was not modified.
+
+On iPhone 12 mini / iOS 27.0, the next connection passed link encryption and both
+App notifications but failed with `authenticationKeyUnavailable`; that failure
+remains recorded. The owner subsequently gave separate permission to reset the
+App control key and enroll the 12 mini. Only `eiscue_auth/root_key` was deleted;
+Bluetooth pairing, board_id and other settings were preserved. A new verified
+16 MB backup preceded maintenance, and production-image restoration passed
+readback and full-flash verification.
+
+Authenticated BLE connection then passed, followed by another successful
+connection using the saved key after an App-process restart. Screen sharing and
+calibration are incomplete, so readiness remains false. These connection passes
+do not establish ReplayKit, calibrated BLE/USB input or swipe acceptance; no
+model API was called.
 
 ## Version 0.2 build evidence (2026-10-12)
 

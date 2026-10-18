@@ -174,7 +174,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
             isConnected = true; onChange?()
         } catch {
             if epoch == token { board.disconnect(); isConnected = false }
-            throw Self.convert(error)
+            throw (error as? BluetoothBoardError)?.connectionSetupError ?? Self.convert(error)
         }
     }
 

@@ -12,7 +12,7 @@
 "bluetooth.input-unavailable" = "Bluetooth input is not ready. Check pairing and turn on AssistiveTouch for mouse input.";
 "bluetooth.storage-unavailable" = "Could not save the Bluetooth connection. Unlock the device, then reconnect.";
 "bluetooth.authentication-failed" = "Board authorization failed. Disconnect and reconnect. Inputs will not be repeated automatically.";
-"bluetooth.authentication-key-unavailable" = "This board is linked to another app installation. Use the app that originally authorized it.";
+"bluetooth.authentication-key-unavailable" = "This app cannot read the board’s original control key. System Bluetooth pairing cannot restore that key. Use the app installation that still has the original key.";
 "bluetooth.enrollment-closed" = "For first setup, power the board off and on, then connect within one minute. Existing authorization will not be replaced automatically.";
 "bluetooth.enrollment-conflict" = "Saved authorization does not match the board’s setup state. The key will not be resent. Connect the original board; if its data was erased, explicitly reset authorization first.";
 "bluetooth.hardware-stopped" = "Stopped with the board’s OK button. Disconnect, release OK, then hold it to unlock. Reconnect and check input again.";
