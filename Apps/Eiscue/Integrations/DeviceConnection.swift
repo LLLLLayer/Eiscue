@@ -328,25 +328,29 @@ extension AppModel {
         isPairing = false; pairingCode = nil; screenshot = nil
     }
 
-    func releaseDeviceConnection(client captured: DeviceClient? = nil, operationID: UUID? = nil) async {
+    /// Returns raw remote release confirmation. HID normally returns false;
+    /// run cleanup applies the policy for the captured route separately.
+    @discardableResult
+    func releaseDeviceConnection(client captured: DeviceClient? = nil, operationID: UUID? = nil) async -> Bool {
         let target = captured ?? deviceClient
         if target.device !== deviceClient.device {
-            await target.disconnect()
-            return
+            return await target.disconnectAndConfirmRelease()
         }
         if captured == nil { await cancelDictationDeviceRestoration() }
         let pending = deviceConnectionTask
         deviceConnectionTask = nil; pending?.cancel()
-        do { _ = try await deviceSession.releaseConnection(owner: deviceSession.owner, id: operationID ?? UUID()) }
+        let confirmed: Bool
+        do { confirmed = try await deviceSession.releaseConnection(owner: deviceSession.owner, id: operationID ?? UUID()) }
         catch {
-            await target.disconnect()
+            confirmed = await target.disconnectAndConfirmRelease()
             deviceConnectionError = error.localizedDescription
         }
         if let pending { _ = await pending.result }
-        guard target.device === deviceClient.device else { return }
+        guard target.device === deviceClient.device else { return confirmed }
         screenshot = nil
         await refreshDeviceStatus()
         if case .unavailable(let reason) = deviceStatus { connectionMessage = reason }
+        return confirmed
     }
 
     func startPairing() {

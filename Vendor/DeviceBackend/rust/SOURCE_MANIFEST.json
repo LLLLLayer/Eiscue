@@ -242,10 +242,10 @@
       "modified": false
     },
     "vendor/idevice/src/services/core_device/mod.rs": {
-      "sha256": "d9c8a8da3e4c222c5f0f3a5cc512a818a4ecbc1f621166fb2ddcbf1a408c36a0",
+      "sha256": "eacd9d89376b23877fb6fe1864d3eba4356844645b54625aac0525dba1b4e52f",
       "device_hub_snapshot_sha256": "667a10b353c4be6830bf57313e34b9f89e14c2bf94d8e60cc5bf2fada9d174ab",
       "modified": true,
-      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained."
+      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained. Add an Eiscue integration for a dedicated authenticated protocol-v2 stream: retain side-channel/invocation identity, read bounded batches in order, distinguish finish/error from empty batches, and reject reuse after a failed stream. Existing bounded app-list collection remains separate. Eiscue geometry-only integration: retain the fresh getdisplayinfo invocation UUID, reject a present mismatched/malformed reply identity before reading output, and preserve missing-ID compatibility. The existing invoke method signature and unchecked legacy behavior are retained. Real HTTP/2 and RemoteXPC duplex fixtures decode the emitted request UUID and cover matching string/UUID, missing, foreign, malformed and mistyped reply IDs plus legacy compatibility."
     },
     "vendor/idevice/src/services/core_device/openstdiosocket.rs": {
       "sha256": "7991b0ca0e1210e8148fa419fe046b45ab4a388a5547489631e817835c5e598b",
@@ -692,10 +692,10 @@
         "change": "Remove the Wi-Fi hotspot board transport and /30 subnet selection; retain USB /24 interface validation."
       },
       "../Sources/PhoneAgentNCM/NativeDeveloperServices.swift": {
-        "sha256": "7e76fed122859c619df53a99f86cc8378cae0d71e6a843d5459d019d048d2e30",
+        "sha256": "3379350e39f0a2c79083d93a9266e752f46b1d313cec71de78d74e20f04aa585",
         "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/NativeDeveloperServices.swift",
         "modified": true,
-        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport. Validate DisplayService input geometry against the latest assembled-picture decode cursor instead of the RTCP-confirmed screenshot cursor, so incoming animation packets alone do not reject input; retain decoder catch-up and generation checks. Capture an explicit CoreDevice or owned XCTest control backend at session initialization; retain automatic iOS 26 XCTest / iOS 27+ CoreDevice defaults and use the immutable selection for screenshot, input, geometry and cleanup. Swift-only selection change; native archive contents and ABI are unchanged."
+        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport. Validate DisplayService input geometry against the latest assembled-picture decode cursor instead of the RTCP-confirmed screenshot cursor, so incoming animation packets alone do not reject input; retain decoder catch-up and generation checks. Capture an explicit CoreDevice or owned XCTest control backend at session initialization; retain automatic iOS 26 XCTest / iOS 27+ CoreDevice defaults and use the immutable selection for screenshot, input, geometry and cleanup. Swift-only selection change; native archive contents and ABI are unchanged. Eiscue integration: normalize owned XCTest PNG orientation outside MainActor and recheck cancellation/session/lease/geometry before publication; derive the owned native-text receipt deadline from the bounded UTF-8 byte count while retaining Home/touch deadlines and unknown/no-replay behavior. Add DEBUG-only numeric local-VPN interface snapshots at connection admission; no endpoint, identity or credential contents are recorded. Eiscue cancellation cleanup: retain accepted Rust request IDs and owned XCTest event leases after cancellation or uncertain delivery, reject new ordinary requests, drain the original request before scoped stop, and preserve the original receipt deadline (including bounded long text) in the outer release budget. Malformed/closed channels and expired cleanup remain unconfirmed; no input is resubmitted and draining never changes the work outcome. Freeze each geometry-read decode barrier at admission instead of chasing later same-epoch animation pictures; decode every already-received picture and retain epoch, sync, session and geometry-identity rejection. DEBUG-only geometry-read nil diagnostics contain numeric reason, barrier/current/decoded epoch and serial, decoder presence and elapsed milliseconds. Eiscue input geometry barrier: issue read-only action 17 before reusing CoreDevice geometry, validate its exact one-byte confirmation through the ordinary serialized request/receipt/drain path, and retain cancellation, handle and decoder checks before reading the frozen decode barrier."
       },
       "src/relay.rs": {
         "sha256": "94fe98b4d2cda66eed0a48eced9346d7d00e89f171c0e62256fb619dc14e29e0",
@@ -716,34 +716,34 @@
         "change": "Validate the empty TCP-accepted diagnostic event and log numeric pairing phases at notice level; explicit Debug-only --pairing-diagnostics writes only stage, previousStage and elapsedSeconds to a file-protected cache report. No PINs, endpoints, identifiers, packets, identities or raw errors are logged or included in that report."
       },
       "../Sources/CNCMBackend/include/ncm_backend.h": {
-        "sha256": "fb20491ec1259b54a466d3f0d1c98286a51b3aea905425964bd6c9a507177823",
+        "sha256": "cddf8451a1ab879c27f89ddffd7e6684ad4d48f9e66c6a1604072b399fdfe946",
         "source": "ncm-dev/PhoneAgentNCM/Sources/CNCMBackend/include/ncm_backend.h",
         "modified": true,
-        "change": "Document kind 10 as empty TCP-accepted stage 1 only on pairing handles, distinguished from ordinary control-handle touch preparation failures. Add a separate numeric video decode-cursor struct and getter; existing ABI layouts remain unchanged."
+        "change": "Document kind 10 as empty TCP-accepted stage 1 only on pairing handles, distinguished from ordinary control-handle touch preparation failures. Add a separate numeric video decode-cursor struct and getter; existing ABI layouts remain unchanged. Add action 17 for a read-only authenticated DisplayInfo roundtrip, using existing ABI structures and an exact one-byte event-2 result; no input, replacement metadata or replay."
       },
       "src/ffi.rs": {
-        "sha256": "de60520b4305140d374cdf87f4592a8ac7ec82fa59d4f589e462bcf47a2b9818",
+        "sha256": "549fec86bfd98e186e718c6cd0c03686a74fa02e19c48d47d04f8427505d5017",
         "source": "ncm-dev/rust/src/ffi.rs",
         "modified": true,
-        "change": "Extend the consent/listener-close fixture to validate the empty TCP-accepted event, handle revocation, connection closure and port release. Add two-attempt C ABI coverage requiring distinct UUIDv4 identifiers with matching advertisement TXT identifiers. Export the screen-authorized video decode cursor with invalid/closed handle and null-pointer coverage."
+        "change": "Extend the consent/listener-close fixture to validate the empty TCP-accepted event, handle revocation, connection closure and port release. Add two-attempt C ABI coverage requiring distinct UUIDv4 identifiers with matching advertisement TXT identifiers. Export the screen-authorized video decode cursor with invalid/closed handle and null-pointer coverage. Add SCREEN | VERIFY-gated read-only geometry action 17 to the existing serialized request/receipt queue; return one exact Boolean byte and cover its permission gate."
       },
       "src/video.rs": {
-        "sha256": "f7c9006ef92f4e5b486f35c738eb4154a63d0997866b739015906158915ec06d",
+        "sha256": "01c39b9c174770f8881f62235c1766ea9bf602b182e1d628410f0ee24ae80a77",
         "source": "ncm-dev/rust/src/video.rs",
         "modified": true,
-        "change": "Separate the latest assembled-picture decode cursor from RTCP screenshot confirmation. Receiving new RTP packets alone leaves input geometry valid; reference-chain resets, codec changes and display-size metadata changes revoke it. Cover continuous incoming pictures, queued layout changes and rotation back to the original dimensions."
+        "change": "Separate the latest assembled-picture decode cursor from RTCP screenshot confirmation. Receiving new RTP packets alone leaves input geometry valid; reference-chain resets, codec changes and display-size metadata changes revoke it. Cover continuous incoming pictures, queued layout changes and rotation back to the original dimensions. Track authenticated current/native display rotation as part of geometry identity; every metadata transition, including same-size 180-degree rotation and A-to-B-to-A updates between pictures, advances the epoch. Missing metadata forces the input decode cursor to serial zero; pixels alone still do not revoke geometry. Expose the actual mailbox reference-chain sync requirement independently of one-shot refresh requests; a discarded P-frame cannot clear recovery, and an accepted sync picture ends it. Add a geometry-reset/inter-frame/sync recovery fixture. Fresh read-only metadata can only confirm the same synchronized epoch or invalidate it, never promote a replacement geometry; reject replies for an epoch changed by the ordered stream."
       },
       "src/media.rs": {
         "source": "ncm-dev/rust/src/media.rs",
         "modified": true,
-        "sha256": "4e5e870d58964c783b593e3403ab73ce527fba9f84f344674a6b26b062c3836c",
-        "change": "Retain scoped media ownership before fallible reply parsing and HID setup. Preserve unknown/failed release state, ignore foreign server-status answers, bind fallback configuration to the owned answer, and clear ownership only after confirmed absence. Box negotiation to bound async stack usage; add synthetic partial-start/cleanup regressions."
+        "sha256": "2e409054d47bb3bae6058ef2289f3577c0df84158334d13373d0db5adcf48dc7",
+        "change": "Retain scoped media ownership before fallible reply parsing and HID setup. Preserve unknown/failed release state, ignore foreign server-status answers, bind fallback configuration to the owned answer, and clear ownership only after confirmed absence. Box negotiation to bound async stack usage; add synthetic partial-start/cleanup regressions. Eiscue integration: subscribe to a dedicated authenticated displayinfoupdates stream before media startup; apply every current/nativeOrientation update to mailbox geometry without blocking RTP/RTCP. Stream failure, finish or invalid display metadata clears geometry and input health; owned drain cancellation drops the dedicated subscription. Check the mailbox's actual sync requirement on every existing one-second feedback tick, retaining Receiver Reports and repeated PLI after geometry resets, dropped P-frames or absent RTP until a sync picture is accepted. Test lost one-shot refresh and recovery completion without resubmitting input. Before input geometry reuse, perform a two-second authenticated DeviceInfo getdisplayinfo request on a separate short-lived service client. Compare against the epoch captured before the RPC; mismatch or failure revokes authority, without writing snapshot metadata into the ordered subscription. Synthetic fixtures cover unchanged geometry, fresh mismatch, delayed old notification, stream epoch change during the RPC and failed RPC. The peer supplies no monotonic display revision; no claim of detecting an unreported A-to-B-to-A interval or bypassing peer caching. Use the narrow invocation-correlated getdisplayinfo call for the geometry-only roundtrip; older invoke callers are unchanged."
       },
       "src/lib.rs": {
         "source": "ncm-dev/rust/src/lib.rs",
         "modified": true,
-        "sha256": "a817513d71a58f087f3cd1cc3ca23c153d26234296dc015d07812cf3b5ae4c50",
-        "change": "Keep media release state separate from completed Media, refuse a new start while cleanup is unresolved, and stop an identified partial start even when no Media object exists. Add Session cleanup regression fixtures."
+        "sha256": "41524fbc9d6353c247b5a80c71a42ea0c9e78f7f0da08e6084dedc905c6ac6f2",
+        "change": "Keep media release state separate from completed Media, refuse a new start while cleanup is unresolved, and stop an identified partial start even when no Media object exists. Add Session cleanup regression fixtures. Route the explicit read-only geometry verification to the active owned Media while preserving request serialization and scoped cleanup."
       },
       "src/legacy_probe.rs": {
         "source": "ncm-dev/rust/src/legacy_probe.rs",
@@ -756,6 +756,24 @@
         "modified": true,
         "sha256": "a0933f57fb447bea76b1e48ab3c7bdef3e48e2118a93f84a0bfd0ae7c1ccf4c4",
         "change": "Initialize the separate media release state in an existing synthetic Session fixture; production XCTest path unchanged."
+      },
+      "../Sources/PhoneAgentNCM/LocalVPNDiscovery.swift": {
+        "sha256": "2bb5e48649829337d9593a58a16ada702aff6c1112d8587d8d6db7d7051dfe44",
+        "source": null,
+        "modified": true,
+        "change": "Eiscue-owned local-VPN integration changes, not attributed to upstream actell. Select only the configured active point-to-point utun, wait at most two seconds for its read-only readiness before Bonjour discovery, and reserve/cancel each request by identity without restarting VPN or replaying input. DEBUG-only snapshots contain counts, interface index/flags and uptime, never endpoint or identity contents."
+      },
+      "../Sources/CEiscueAutomation/EiscueAutomation.m": {
+        "sha256": "e06033c8578cf547e70f7ae7c2fb1eb9cf64dfd5b80823aa65366620edd59942",
+        "source": null,
+        "modified": true,
+        "change": "Eiscue-owned independently implemented Objective-C addition, not upstream actell or TouchSynthesis source. Runtime-check DDI framework signatures, create and release only the owned XCTest runner/XPC session, bind screenshots and input to lease/request/geometry revision, fail unknown delivery without replay, and send one redacted native Unicode text event without clipboard access."
+      },
+      "../Sources/CEiscueAutomation/include/EiscueAutomation.h": {
+        "sha256": "8fb7dc78e49fca313800320ef81eca8da98bcf75f90b2b39155bdebcc4c67ce8",
+        "source": null,
+        "modified": true,
+        "change": "Eiscue-owned C interface addition for the independently implemented owned XCTest integration, not an upstream actell interface. Define lease/request/geometry-bound asynchronous screenshot, touch, Home, native Unicode text, stop and abort entry points; event receipts do not prove visible effects."
       }
     }
   }

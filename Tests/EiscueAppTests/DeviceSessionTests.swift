@@ -185,7 +185,7 @@ import XCTest
     func testStaleLeaseCannotReleaseANewerLeaseWithTheSameOwnerValue() throws {
         let fixture = Fixture()
         let previous = try fixture.session.acquire(.repair)
-        let stale = DeviceLease(session: fixture.session, id: previous.id, owner: previous.owner, client: previous.client)
+        let stale = DeviceLease(session: fixture.session, id: previous.id, owner: previous.owner, client: previous.client, method: previous.method)
         previous.release()
         let current = try fixture.session.acquire(.repair)
         stale.release()

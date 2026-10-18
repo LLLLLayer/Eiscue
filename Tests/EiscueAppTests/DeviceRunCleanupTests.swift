@@ -159,6 +159,62 @@ final class DeviceRunCleanupTests: XCTestCase {
         }
     }
 
+    func testUnconfirmedDisconnectFailsCleanup() async throws {
+        for method in [DeviceConnectionMethod.localVPN, .usbBoard] {
+            let controller = CleanupDeviceController(confirmDisconnect: false)
+            var run = makeRun()
+            run.state = .outcomeUnknown
+            run.stopCause = .outcomeUnknown(toolName: "device_swipe")
+            do {
+                try await finish(run, method: method, modelRequestFailed: false, session: makeSession(controller),
+                                 stopRequested: true, controller: controller)
+                XCTFail("A local close must not count as confirmed network cleanup.")
+            } catch {
+                XCTAssertTrue(error is DeviceSession.Failure)
+            }
+            let events = await controller.events
+            XCTAssertEqual(events, ["disconnect"])
+        }
+    }
+
+    func testHIDUnconfirmedDisconnectIsAcceptedForCompletionAndStop() async throws {
+        for stopped in [false, true] {
+            let controller = CleanupDeviceController(confirmDisconnect: false)
+            var run = makeRun()
+            run.state = stopped ? .interrupted : .completed
+            try await finish(run, method: .bluetoothBoard, disconnectAfterTask: !stopped, modelRequestFailed: false,
+                             session: makeSession(controller), stopRequested: stopped, controller: controller)
+            let events = await controller.events
+            XCTAssertEqual(events, ["disconnect"])
+        }
+    }
+
+    func testFailedInputReleaseAndUnconfirmedDisconnectPreserveBothCauses() async throws {
+        let controller = CleanupDeviceController(failRelease: true, confirmDisconnect: false)
+        do {
+            try await finish(makeRun(), session: makeSession(controller), controller: controller)
+            XCTFail("Both cleanup failures must reach the caller.")
+        } catch let failure as DeviceRunCleanup.Failures {
+            XCTAssertEqual(failure.inputRelease as? DeviceControlError, .deliveryUnknown("Fixture release failed"))
+            XCTAssertEqual(failure.disconnect.localizedDescription, DeviceSession.Failure.releaseUnconfirmed.localizedDescription)
+            XCTAssertEqual(failure.localizedDescription, failure.inputRelease.localizedDescription + "\n" + failure.disconnect.localizedDescription)
+        }
+        let events = await controller.events
+        XCTAssertEqual(events, ["release", "disconnect"])
+    }
+
+    func testHIDUnconfirmedDisconnectStillPropagatesInputReleaseFailure() async throws {
+        let controller = CleanupDeviceController(failRelease: true, confirmDisconnect: false)
+        do {
+            try await finish(makeRun(), method: .bluetoothBoard, session: makeSession(controller), controller: controller)
+            XCTFail("HID cleanup must retain the input release failure.")
+        } catch {
+            XCTAssertEqual(error as? DeviceControlError, .deliveryUnknown("Fixture release failed"))
+        }
+        let events = await controller.events
+        XCTAssertEqual(events, ["release", "disconnect"])
+    }
+
     private func makeRun(scope: TaskScope = .control) -> RunRecord {
         var run = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(),
                             scope: scope, model: "fixture", skill: nil, state: .failed, detail: "", events: [])
@@ -171,14 +227,14 @@ final class DeviceRunCleanupTests: XCTestCase {
                           timeoutSeconds: 30, log: { _, _ in }, onUnknown: {})
     }
 
-    private func finish(_ run: RunRecord, disconnectAfterTask: Bool = false,
+    private func finish(_ run: RunRecord, method: DeviceConnectionMethod = .localVPN, disconnectAfterTask: Bool = false,
                         modelRequestFailed: Bool = true, session: DeviceToolSession?, stopRequested: Bool = false,
                         controller: CleanupDeviceController) async throws {
         let client = DeviceClient(actuator: controller)
-        try await DeviceRunCleanup.finish(run: run, disconnectAfterTask: disconnectAfterTask, modelRequestFailed: modelRequestFailed,
+        try await DeviceRunCleanup.finish(run: run, method: method, disconnectAfterTask: disconnectAfterTask, modelRequestFailed: modelRequestFailed,
                                           deviceTools: session, stopRequested: stopRequested,
                                           finishConnection: { try await client.finishTask() },
-                                          disconnect: { await client.disconnect() })
+                                          disconnect: { await client.disconnectAndConfirmRelease() })
     }
 }
 
@@ -189,8 +245,11 @@ private actor CleanupDeviceController: DeviceFixtureActuator {
     var fixtureGeometry: DeviceFrameGeometry?
     private(set) var events: [String] = []
     private let failRelease: Bool
+    private let confirmDisconnect: Bool
 
-    init(failRelease: Bool = false) { self.failRelease = failRelease }
+    init(failRelease: Bool = false, confirmDisconnect: Bool = true) {
+        self.failRelease = failRelease; self.confirmDisconnect = confirmDisconnect
+    }
 
     func status() async -> DeviceStatus { .ready(capabilities: [.screenshot]) }
     func captureScreenshot() async throws -> DeviceScreenshot {
@@ -202,4 +261,7 @@ private actor CleanupDeviceController: DeviceFixtureActuator {
         if failRelease { throw DeviceControlError.deliveryUnknown("Fixture release failed") }
     }
     func fixtureDisconnect() async { events.append("disconnect") }
+    func fixtureDisconnectAndConfirmRelease() async -> Bool {
+        await fixtureDisconnect(); return confirmDisconnect
+    }
 }

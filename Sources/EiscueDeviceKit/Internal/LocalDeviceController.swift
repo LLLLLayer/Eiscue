@@ -25,6 +25,9 @@ import OSLog
     private var mediaReleaseID: UUID?
     private var releaseUnconfirmed = false
     private var mediaRequested = false
+    #if DEBUG
+    private(set) var connectionDiagnostic: [String: String] = [:]
+    #endif
 
     nonisolated init(identityStore: any PairingIdentityStore, dependencies: LocalDeviceConnectionDependencies = .live) {
         self.identityStore = identityStore
@@ -209,6 +212,10 @@ import OSLog
         let resolvedBackend = backend.resolved(on: dependencies.operatingSystemVersion)
         guard resolvedBackend.isAvailable(on: dependencies.operatingSystemVersion) else { throw DeviceControlError.backendUnavailable(resolvedBackend) }
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
+        #if DEBUG
+        connectionDiagnostic = ["state": "preparing", "phase": "identity", "method": method.rawValue,
+                                "backend": resolvedBackend.rawValue]
+        #endif
         guard var data = try identityStore.load() else { throw DeviceControlError.noIdentity }
         defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
         let record = try PairingIdentityCodec.decode(data)
@@ -245,31 +252,59 @@ import OSLog
                 case .bluetoothBoard: throw DeviceControlError.routeUnsupported(.bluetoothBoard)
                 case .localVPN:
                     guard let vpn else { throw LocalVPNError.invalidConfiguration }
+                    #if DEBUG
+                    connectionDiagnostic["phase"] = "vpnInterfaceAndDiscovery"
+                    #endif
                     let discovery = dependencies.makeVPNDiscovery()
                     self.discovery = discovery
                     let port = try await discovery.discoverPort(configuration: vpn)
                     try ensureCurrent(token)
+                    #if DEBUG
+                    connectionDiagnostic["phase"] = "transport"
+                    #endif
                     try await service.connectLocalVPN(identity: identity, authorization: authorization,
                                                       pairingPort: port, configuration: vpn)
                 case .usbBoard:
+                    #if DEBUG
+                    connectionDiagnostic["phase"] = "boardDiscovery"
+                    #endif
                     let discovery = dependencies.makeBoardDiscovery()
                     boardDiscovery = discovery
                     let candidate = try await discovery.discoverRemotePairing()
                     try ensureCurrent(token)
+                    #if DEBUG
+                    connectionDiagnostic["phase"] = "transport"
+                    #endif
                     try await service.connect(identity: identity, authorization: authorization, discovery: candidate)
                 }
                 try ensureCurrent(token)
+                #if DEBUG
+                connectionDiagnostic["phase"] = "developerReadiness"
+                #endif
                 try await service.checkDeveloperReadiness()
                 try ensureCurrent(token)
                 mediaRequested = true
+                #if DEBUG
+                connectionDiagnostic["phase"] = "mediaStart"
+                #endif
                 try await service.startTouchMedia()
                 try ensureCurrent(token)
                 ready = true; failure = ""
+                #if DEBUG
+                recordConnectionInterfaces(service)
+                connectionDiagnostic["state"] = "ready"
+                connectionDiagnostic["phase"] = "ready"
+                #endif
             } onCancel: { [weak self] in
                 Task { @MainActor in if let self, self.epoch == token { self.disconnectNow() } }
             }
         } catch {
             guard epoch == token else { throw CancellationError() }
+            #if DEBUG
+            recordConnectionInterfaces(service)
+            connectionDiagnostic["state"] = "failed"
+            connectionDiagnostic.merge(LocalDeviceConnectionDiagnostic.metadata(error)) { _, latest in latest }
+            #endif
             let connectionError = Self.convert(error)
             let release = disconnectNow(), stoppedEpoch = epoch
             if let release { _ = await release.value }
@@ -279,6 +314,11 @@ import OSLog
     }
 
     #if DEBUG
+    private func recordConnectionInterfaces(_ service: any LocalDeviceSession) {
+        for (key, value) in discovery?.interfaceDiagnostic ?? [:] { connectionDiagnostic["discovery." + key] = value }
+        for (key, value) in service.connectionInterfaceDiagnostic { connectionDiagnostic["transport." + key] = value }
+    }
+
     /// Check the iOS 26 developer route with the existing identity. This creates
     /// no media/input session and does not change production readiness state.
     func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data {
@@ -344,6 +384,7 @@ import OSLog
             failure = String(localized: "device.status.releasing", defaultValue: "Device control stopped. Closing the screen connection.", bundle: EiscueDeviceResources.bundle)
             let task = Task { @MainActor [weak self] in
                 let confirmed = await BoundedMediaRelease.run(
+                    timeout: previous.mediaReleaseTimeout,
                     stop: {
                         guard try await previous.stopTouchMediaWhenIdle() else {
                             throw DeviceControlError.connection(String(localized: "device.media.start-incomplete", defaultValue: "Screen connection did not finish starting. Its closure is unconfirmed; check the system’s remote-control status.", bundle: EiscueDeviceResources.bundle))
@@ -394,7 +435,15 @@ import OSLog
         let current: NativeVideoGeometry?
         do { current = try await services.currentVideoGeometry(); try ensureCurrent(token) }
         catch { throw Self.convert(error) }
-        guard let current else { self.capturedGeometry = nil; throw DeviceControlError.staleFrame }
+        guard let current else {
+            #if DEBUG
+            print("NCM capture geometry available=0")
+            #endif
+            self.capturedGeometry = nil; throw DeviceControlError.staleFrame
+        }
+        #if DEBUG
+        if current.id.uuidString != capturedGeometry.revision { print("NCM capture geometry available=1 matches=0") }
+        #endif
         let geometry = DeviceFrameGeometry(sessionID: token, revision: current.id.uuidString,
                                           width: capturedGeometry.width, height: capturedGeometry.height)
         return DeviceFrameState(geometry: geometry, isLive: true)
@@ -512,6 +561,7 @@ import OSLog
     }
 
     private static func convert(_ error: Error) -> Error {
+        if let native = error as? NativeBackendError { NativeDeviceErrorPresentation.record(native) }
         if error is CancellationError || error is DeviceControlError { return error }
         if case NativeBackendError.coordinateSpaceChanged = error { return DeviceControlError.staleFrame }
         if case NativeBackendError.unsupportedControlAction = error { return DeviceControlError.serviceUnavailable(.input) }
@@ -525,7 +575,6 @@ import OSLog
         if let value = error as? NCMError {
             switch value { case .disconnected, .network: return DeviceControlError.connectionLost; default: break }
         }
-        if let native = error as? NativeBackendError { NativeDeviceErrorPresentation.record(native) }
         return DeviceControlError.connection(message(error))
     }
 

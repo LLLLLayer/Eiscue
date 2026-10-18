@@ -468,6 +468,7 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
         );
     }
     let result = match r.action {
+        17 => session.verify_video_geometry().await.map(|confirmed| Event::ok(r.id, 2, vec![u8::from(confirmed)])),
         16 => session.screenshot_legacy().await.map(|s| Event::ok(r.id, 4, s.png)),
         14 => session.start_xctest_session(&r.payload).await
             .map(|receipt| Event::ok(r.id, 2, receipt)),
@@ -553,6 +554,7 @@ fn required_permissions(action: u32) -> u32 {
         13 => SCREEN | VERIFY,
         14 => INPUT | VERIFY,
         16 => SCREEN | VERIFY,
+        17 => SCREEN | VERIFY,
         _ => u32::MAX,
     }
 }
@@ -784,7 +786,7 @@ pub unsafe extern "C" fn ncm_local_vpn_start_configured(
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ncm_backend_submit(handle: u64, id: u64, action: u32, x: u16, y: u16) -> i32 {
-    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 && action != 13 && action != 15 && action != 16 {
+    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 && action != 13 && action != 15 && action != 16 && action != 17 {
         return INVALID;
     }
     submit_request(
@@ -1252,6 +1254,7 @@ mod tests {
         assert_eq!(required_permissions(14), INPUT | VERIFY);
         assert_eq!(required_permissions(15), 0);
         assert_eq!(required_permissions(16), SCREEN | VERIFY);
+        assert_eq!(required_permissions(17), SCREEN | VERIFY);
         assert_eq!(Stage::LegacyTestmanagerHandshake as u32 + 1, 27);
         assert_eq!(Stage::XCTestControlConnection as u32 + 1, 28);
         assert_eq!(Stage::XCTestAuthorize as u32 + 1, 36);

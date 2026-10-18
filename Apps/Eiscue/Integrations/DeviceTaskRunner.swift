@@ -208,12 +208,21 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         try check()
         let nativeImage: DeviceScreenshot
         let image: DeviceScreenshot
+        var captureStage = "clientCapture"
+        var stageStarted = ContinuousClock.now
         do {
             nativeImage = try await client.captureScreenshot()
             try check()
+            captureStage = "prepareImage"
+            stageStarted = .now
             image = try DeviceObservationImage.prepare(nativeImage)
         }
         catch {
+            let elapsed = stageStarted.duration(to: .now).components
+            let elapsedMS = max(0, elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000)
+            // Diagnostic metadata must not replace the original error or expose
+            // a transport message, image, argument, or credential.
+            try? await log("observation.failed", "stage=\(captureStage);typedCategory=\(Self.captureFailureCategory(error));elapsedMs=\(elapsedMS)")
             try check()
             if error is CancellationError { throw error }
             if afterAction {
@@ -236,6 +245,33 @@ final class DeviceTaskRunner: DeviceDecisionExecuting {
         transition(to: .deciding)
         try check()
         return DeviceObservation(screenshot: image, feedback: feedback)
+    }
+
+    private static func captureFailureCategory(_ error: Error) -> String {
+        if error is CancellationError { return "cancelled" }
+        if let error = error as? DeviceControlError {
+            return switch error {
+            case .staleFrame: "staleFrame"
+            case .notConnected: "notConnected"
+            case .connectionLost: "connectionLost"
+            case .busy: "busy"
+            case .connection: "connection"
+            case .deliveryUnknown: "deliveryUnknown"
+            case .serviceUnavailable: "serviceUnavailable"
+            case .capabilityUnavailable: "capabilityUnavailable"
+            default: "deviceOther"
+            }
+        }
+        if let error = error as? DeviceTaskError {
+            return switch error {
+            case .arguments: "arguments"
+            case .expired: "expired"
+            case .stopped: "stopped"
+            case .busy: "busy"
+            default: "taskOther"
+            }
+        }
+        return "other"
     }
 
     private func dispatch(_ action: DeviceTaskAction, frame: DeviceObservationCoordinates) async throws {

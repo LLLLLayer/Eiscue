@@ -2,8 +2,21 @@ import SwiftUI
 
 @main
 struct EiscueApp: App {
+    #if DEBUG && !EISCUE_HID_ONLY
+    @State private var model = DebugNetworkRunAcceptance.makeModel()
+    #else
     @State private var model = AppModel()
+    #endif
     @Environment(\.scenePhase) private var scenePhase
+    #if DEBUG
+    private var networkRunUsesInputTarget: Bool {
+        #if !EISCUE_HID_ONLY
+        DebugNetworkRunAcceptance.usesInputTarget
+        #else
+        false
+        #endif
+    }
+    #endif
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +31,12 @@ struct EiscueApp: App {
                     BLEDeviceCheckView()
                 } else if ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
                     OwnedDeviceCheckView()
+                } else if networkRunUsesInputTarget {
+                    #if !EISCUE_HID_ONLY
+                    DebugNetworkRunAcceptanceTargetView()
+                    #else
+                    RootView()
+                    #endif
                 } else if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                           ProcessInfo.processInfo.arguments.contains("--message-sharing-fixture") {
                     MessageSharingFixtureView()
@@ -42,6 +61,9 @@ struct EiscueApp: App {
                     }
                     #endif
                     await model.load()
+                    #if DEBUG && !EISCUE_HID_ONLY
+                    await DebugNetworkRunAcceptance.runIfRequested(model: model)
+                    #endif
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                        ProcessInfo.processInfo.arguments.contains("--long-conversation-fixture") {

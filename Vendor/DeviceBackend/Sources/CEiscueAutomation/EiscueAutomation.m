@@ -523,8 +523,7 @@ static void eventReceipt(EiscueOwnedAutomation *owner, uint64_t request, BOOL de
     });
 }
 static int32_t submitOwnedEvent(EiscueOwnedAutomation *owner, uint64_t request,
-                               uint64_t revision, id event, BOOL deviceEvent,
-                               void (^preflight)(void)) {
+                               uint64_t revision, id event, BOOL deviceEvent) {
     BOOL invoked = NO;
     @try {
         if (!event) return EISCUE_AUTOMATION_CONFIGURATION;
@@ -543,7 +542,6 @@ static int32_t submitOwnedEvent(EiscueOwnedAutomation *owner, uint64_t request,
                 @try { eventReceipt(owner, request, delivered, error); }
                 @catch (NSException *exception) { fail(owner, EISCUE_AUTOMATION_DELIVERY_UNKNOWN); }
             };
-            if (preflight) preflight();
             invoked = YES;
             if (deviceEvent)
                 ((void (*)(id, SEL, id, id))objc_msgSend)(owner.session, NSSelectorFromString(selector), event, completion);
@@ -601,6 +599,11 @@ int32_t eiscue_automation_touch(uint64_t lease, uint64_t request, uint64_t revis
             }
             eventOrientation = 1;
         }
+        #if DEBUG
+        if ([NSProcessInfo.processInfo.arguments containsObject:@"--owned-device-check"]) {
+            NSLog(@"EiscueTouch request=%llu orientation=%ld eventOrientation=%ld legacy=%d bounds=%.1fx%.1f scale=%.1f start=%.2f,%.2f end=%.2f,%.2f durationMS=%u", request, (long)state.orientation, (long)eventOrientation, legacy, state.bounds_width, state.bounds_height, state.scale, start.x, start.y, end.x, end.y, duration);
+        }
+        #endif
         path = ((id (*)(id, SEL, CGPoint, double))objc_msgSend)(path, NSSelectorFromString(@"initForTouchAtPoint:offset:"), start, 0);
         if (duration) ((void (*)(id, SEL, CGPoint, double))objc_msgSend)(path, NSSelectorFromString(@"moveToPoint:atOffset:"), end, duration / 1000.0);
         ((void (*)(id, SEL, double))objc_msgSend)(path, NSSelectorFromString(@"liftUpAtOffset:"), duration ? duration / 1000.0 + 0.02 : 0.1);
@@ -608,7 +611,7 @@ int32_t eiscue_automation_touch(uint64_t lease, uint64_t request, uint64_t revis
             NSSelectorFromString(@"initWithName:displayID:interfaceOrientation:"), @"Eiscue", state.display_id, eventOrientation);
         if (!path || !record) return EISCUE_AUTOMATION_CONFIGURATION;
         ((void (*)(id, SEL, id))objc_msgSend)(record, NSSelectorFromString(@"addPointerEventPath:"), path);
-        return submitOwnedEvent(owner, request, revision, record, NO, nil);
+        return submitOwnedEvent(owner, request, revision, record, NO);
     } @catch (NSException *exception) { fail(owner, EISCUE_AUTOMATION_EXCEPTION); return EISCUE_AUTOMATION_EXCEPTION; }
 }
 int32_t eiscue_automation_home(uint64_t lease, uint64_t request, uint64_t revision) {
@@ -625,7 +628,7 @@ int32_t eiscue_automation_home(uint64_t lease, uint64_t request, uint64_t revisi
         // SDK XCUIDevice Home mapping: consumer page 12, usage 64, 5 ms.
         id event = ((id (*)(id, SEL, uint32_t, uint32_t, double))objc_msgSend)(eventClass,
             NSSelectorFromString(@"deviceEventWithPage:usage:duration:"), 12, 64, 0.005);
-        return submitOwnedEvent(owner, request, revision, event, YES, nil);
+        return submitOwnedEvent(owner, request, revision, event, YES);
     } @catch (NSException *exception) { fail(owner, EISCUE_AUTOMATION_EXCEPTION); return EISCUE_AUTOMATION_EXCEPTION; }
 }
 int32_t eiscue_automation_type_text(uint64_t lease, uint64_t request, uint64_t revision,
@@ -643,25 +646,21 @@ int32_t eiscue_automation_type_text(uint64_t lease, uint64_t request, uint64_t r
         id path = [pathClass alloc], record = [recordClass alloc];
         if (!text) return EISCUE_AUTOMATION_CONFIGURATION;
         if (!signature(path, @"initForTextInput", "@16@0:8") ||
-            !signature(path, @"typeKey:modifiers:atOffset:", "v40@0:8@16Q24d32") ||
+            !signature(path, @"typeText:atOffset:typingSpeed:shouldRedact:", "v44@0:8@16d24Q32B40") ||
             !signature(record, @"initWithName:displayID:interfaceOrientation:", "@40@0:8@16Q24q32") ||
             !signature(record, @"addPointerEventPath:", "v24@0:8@16")) return EISCUE_AUTOMATION_SIGNATURE;
         path = ((id (*)(id, SEL))objc_msgSend)(path, NSSelectorFromString(@"initForTextInput"));
         if (!path) return EISCUE_AUTOMATION_CONFIGURATION;
-        // A single Command-V event avoids an unbounded per-character event.
-        // XCUIElement.h defines XCUIKeyModifierCommand as bit 4.
-        ((void (*)(id, SEL, id, NSUInteger, double))objc_msgSend)(path,
-            NSSelectorFromString(@"typeKey:modifiers:atOffset:"), @"v", 1UL << 4, 0);
+        // Match XCUIElement's Unicode text event (60 characters/second), rather
+        // than a hardware shortcut whose receipt can succeed without pasting.
+        // Keep the event redacted and submit the entire bounded string once.
+        ((void (*)(id, SEL, id, double, NSUInteger, BOOL))objc_msgSend)(path,
+            NSSelectorFromString(@"typeText:atOffset:typingSpeed:shouldRedact:"), text, 0, 60, YES);
         record = ((id (*)(id, SEL, id, uint64_t, NSInteger))objc_msgSend)(record,
             NSSelectorFromString(@"initWithName:displayID:interfaceOrientation:"), @"Eiscue", state.display_id, state.orientation);
         if (!record) return EISCUE_AUTOMATION_CONFIGURATION;
         ((void (*)(id, SEL, id))objc_msgSend)(record, NSSelectorFromString(@"addPointerEventPath:"), path);
-        return submitOwnedEvent(owner, request, revision, record, NO, ^{
-            // This explicit input request owns the write. Never read the old
-            // clipboard. The final lease/revision guard remains locked through
-            // this write and the single owned-session event submission.
-            UIPasteboard.generalPasteboard.string = text;
-        });
+        return submitOwnedEvent(owner, request, revision, record, NO);
     } @catch (NSException *exception) { fail(owner, EISCUE_AUTOMATION_EXCEPTION); return EISCUE_AUTOMATION_EXCEPTION; }
 }
 void eiscue_automation_abort(uint64_t lease) {

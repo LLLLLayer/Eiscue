@@ -147,6 +147,39 @@ final class DeviceTaskRunnerTests: XCTestCase {
         XCTAssertEqual(counts.captures, 2)
     }
 
+    func testVerificationFailureDiagnosticsClassifyCaptureAndImagePreparationWithoutLeakingPayloads() async throws {
+        let scenarios: [(RunnerDeviceController, String, String)] = [
+            (RunnerDeviceController(captureFailures: [2], captureFailure: .connection("private-fixture-payload")), "clientCapture", "connection"),
+            (RunnerDeviceController(invalidLargeCaptures: [2]), "prepareImage", "arguments")
+        ]
+        for (controller, expectedStage, expectedCategory) in scenarios {
+            var failures: [String] = []
+            let runner = DeviceTaskRunner(client: DeviceClient(actuator: controller), scope: .control, timeoutSeconds: 30,
+                log: { kind, detail in if kind == "observation.failed" { failures.append(detail) } }, onUnknown: {})
+            let frame = try observation(await runner.step(.observe)).screenshot.frameID
+            await rejected(runner, .action(.home, frameID: frame), as: .paused(""))
+
+            XCTAssertEqual(failures.count, 1)
+            let failure = try XCTUnwrap(failures.first)
+            let fields = Dictionary(uniqueKeysWithValues: failure.split(separator: ";").compactMap { field -> (String, String)? in
+                let parts = field.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { return nil }
+                return (String(parts[0]), String(parts[1]))
+            })
+            XCTAssertEqual(Set(fields.keys), ["stage", "typedCategory", "elapsedMs"])
+            XCTAssertEqual(fields["stage"], expectedStage)
+            XCTAssertEqual(fields["typedCategory"], expectedCategory)
+            XCTAssertGreaterThanOrEqual(try XCTUnwrap(fields["elapsedMs"].flatMap(Int.init)), 0)
+            XCTAssertFalse(failure.contains("private-fixture-payload"))
+            XCTAssertEqual(runner.pauseReason, .verificationUnavailable)
+            XCTAssertFalse(runner.hasUnknownOutcome)
+            await rejected(runner, .observe, as: .stopped)
+            let counts = await controller.counts()
+            XCTAssertEqual(counts.actions, 1)
+            XCTAssertEqual(counts.captures, 2, "A diagnostic must never repeat the acknowledged input or its failed verification.")
+        }
+    }
+
     func testDisconnectedInitialObservationPausesWithoutImplyingSubmittedAction() async throws {
         let controller = RunnerDeviceController(captureFailures: [1])
         let runner = makeRunner(controller)
@@ -357,6 +390,8 @@ private actor RunnerDeviceController: DeviceFixtureActuator {
     var fixtureObservedFrameID: UUID?
     var fixtureGeometry: DeviceFrameGeometry?
     let captureFailures: Set<Int>
+    let captureFailure: DeviceControlError
+    let invalidLargeCaptures: Set<Int>
     let actionFailure: DeviceControlError?
     let listFailure: DeviceControlError?
     let losesConnectionOnListFailure: Bool
@@ -367,10 +402,12 @@ private actor RunnerDeviceController: DeviceFixtureActuator {
     private var lists = 0
     private var continuation: CheckedContinuation<Void, Never>?
 
-    init(captureFailures: Set<Int> = [], actionFailure: DeviceControlError? = nil,
+    init(captureFailures: Set<Int> = [], captureFailure: DeviceControlError = .notConnected,
+         invalidLargeCaptures: Set<Int> = [], actionFailure: DeviceControlError? = nil,
          listFailure: DeviceControlError? = nil, losesConnectionOnListFailure: Bool = false,
          imageAge: TimeInterval = 0, suspendCapture: Int? = nil) {
-        self.captureFailures = captureFailures; self.actionFailure = actionFailure
+        self.captureFailures = captureFailures; self.captureFailure = captureFailure
+        self.invalidLargeCaptures = invalidLargeCaptures; self.actionFailure = actionFailure
         self.listFailure = listFailure; self.losesConnectionOnListFailure = losesConnectionOnListFailure
         self.imageAge = imageAge; self.suspendCapture = suspendCapture
     }
@@ -382,8 +419,9 @@ private actor RunnerDeviceController: DeviceFixtureActuator {
     func captureScreenshot() async throws -> DeviceScreenshot {
         captures += 1
         if captures == suspendCapture { await withCheckedContinuation { continuation = $0 } }
-        if captureFailures.contains(captures) { throw DeviceControlError.notConnected }
-        return DeviceScreenshot(capturedAt: Date().addingTimeInterval(-imageAge), width: 390, height: 844,
+        if captureFailures.contains(captures) { throw captureFailure }
+        let invalidLarge = invalidLargeCaptures.contains(captures)
+        return DeviceScreenshot(capturedAt: Date().addingTimeInterval(-imageAge), width: invalidLarge ? 2_000 : 390, height: invalidLarge ? 2_000 : 844,
                                 mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
     }
     func tap(at point: DevicePoint, frameID: UUID) async throws { try performAction() }

@@ -41,6 +41,9 @@ public struct VPNLoopbackConfiguration: Equatable, Sendable {
     private var ports: [ObjectIdentifier: UInt16] = [:]
     private var continuation: CheckedContinuation<UInt16, Error>?
     private var timeout: Task<Void, Never>?
+    #if DEBUG
+    public private(set) var interfaceDiagnostic: [String: String] = [:]
+    #endif
     public override init() { super.init() }
 
     static func selectInterface(_ rows: [NCMInterfaceBinding.Row], configuration: VPNLoopbackConfiguration = .defaults) throws -> NCMInterfaceBinding.Row {
@@ -59,23 +62,83 @@ public struct VPNLoopbackConfiguration: Equatable, Sendable {
         }
         return port
     }
+    #if DEBUG
+    static func interfaceSnapshot(_ rows: [NCMInterfaceBinding.Row], configuration: VPNLoopbackConfiguration) -> [String: String] {
+        let matches = rows.filter { $0.name.hasPrefix("utun") && $0.address == configuration.localAddress }
+        var result = ["uptimeMilliseconds": String(UInt64(ProcessInfo.processInfo.systemUptime * 1000)),
+                      "ipv4Rows": String(rows.count), "utunIPv4Rows": String(rows.filter { $0.name.hasPrefix("utun") }.count),
+                      "matchingInterfaces": String(matches.count)]
+        if matches.count == 1, let row = matches.first {
+            result["interfaceIndex"] = String(row.index); result["flags"] = String(row.flags)
+            result["up"] = row.flags & UInt32(IFF_UP) != 0 ? "1" : "0"
+            result["running"] = row.flags & UInt32(IFF_RUNNING) != 0 ? "1" : "0"
+            result["pointToPoint"] = row.flags & UInt32(IFF_POINTOPOINT) != 0 ? "1" : "0"
+            result["loopback"] = row.flags & UInt32(IFF_LOOPBACK) != 0 ? "1" : "0"
+        }
+        return result
+    }
+
+    private func recordInterfaceSnapshot(_ rows: [NCMInterfaceBinding.Row], configuration: VPNLoopbackConfiguration, phase: String) {
+        interfaceDiagnostic.merge(Self.interfaceSnapshot(rows, configuration: configuration).map { (phase + "." + $0.key, $0.value) }) { _, latest in latest }
+    }
+    #endif
+    /// NEVPNStatus.connected may precede publication of the configured utun.
+    /// Wait only for read-only readiness; never restart a VPN or replay a request.
+    static func waitForInterface(
+        configuration: VPNLoopbackConfiguration, timeout: TimeInterval = 2,
+        inventory: @MainActor () throws -> [NCMInterfaceBinding.Row] = NCMInterfaceBinding.inventory,
+        uptime: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        pause: @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(50)) }
+    ) async throws -> NCMInterfaceBinding.Row {
+        let deadline = uptime() + timeout
+        while true {
+            try Task.checkCancellation()
+            do { return try selectInterface(inventory(), configuration: configuration) }
+            catch LocalVPNError.inactive {
+                guard uptime() < deadline else { throw LocalVPNError.inactive }
+            }
+            try await pause()
+        }
+    }
     public func discoverPort(configuration: VPNLoopbackConfiguration = .defaults) async throws -> UInt16 {
         try Task.checkCancellation()
-        _ = try Self.selectInterface(NCMInterfaceBinding.inventory(), configuration: configuration)
-        guard continuation == nil else { throw NativeBackendError.busy }
+        guard requestID == nil, continuation == nil else { throw NativeBackendError.busy }
         let id = UUID()
+        requestID = id
+        #if DEBUG
+        interfaceDiagnostic = [:]
+        #endif
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                self.requestID = id
-                self.continuation = continuation
-                let browser = NetServiceBrowser(); self.browser = browser
-                browser.delegate = self
-                browser.searchForServices(ofType: "_remotepairing._tcp.", inDomain: "local.")
-                timeout = Task { @MainActor [weak self] in
-                    do { try await Task.sleep(for: .seconds(4)) } catch { return }
-                    guard let self, requestID == id else { return }
-                    finish(Result { try Self.selectPort(Array(self.ports.values)) })
+            do {
+                _ = try await Self.waitForInterface(configuration: configuration, inventory: {
+                    guard self.requestID == id else { throw CancellationError() }
+                    let rows = try NCMInterfaceBinding.inventory()
+                    #if DEBUG
+                    self.recordInterfaceSnapshot(rows, configuration: configuration, phase: self.interfaceDiagnostic.isEmpty ? "initial" : "readiness")
+                    #endif
+                    return rows
+                })
+                try Task.checkCancellation()
+                guard requestID == id else { throw CancellationError() }
+                return try await withCheckedThrowingContinuation { continuation in
+                    self.continuation = continuation
+                    let browser = NetServiceBrowser(); self.browser = browser
+                    browser.delegate = self
+                    browser.searchForServices(ofType: "_remotepairing._tcp.", inDomain: "local.")
+                    timeout = Task { @MainActor [weak self] in
+                        do { try await Task.sleep(for: .seconds(4)) } catch { return }
+                        guard let self, requestID == id else { return }
+                        #if DEBUG
+                        if let rows = try? NCMInterfaceBinding.inventory() {
+                            self.recordInterfaceSnapshot(rows, configuration: configuration, phase: "discoveryEnd")
+                        }
+                        #endif
+                        finish(Result { try Self.selectPort(Array(self.ports.values)) })
+                    }
                 }
+            } catch {
+                if requestID == id { finish(.failure(error)) }
+                throw error
             }
         } onCancel: { Task { @MainActor in if self.requestID == id { self.cancel() } } }
     }

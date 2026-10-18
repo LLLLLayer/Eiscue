@@ -6,8 +6,8 @@
 #include <dlfcn.h>
 static void *fixtureDlopen(const char *path, int mode);
 static Class fixtureClassFromString(NSString *name);
-// Compile the production public UIKit setter against a process-local fake.
-// No NSPasteboard or real system clipboard is accessed by this fixture.
+// Any regression to clipboard input fails against this process-local fake;
+// no NSPasteboard or real system clipboard is accessed by this fixture.
 @interface UIPasteboard : NSObject
 @property(copy) NSString *string;
 + (UIPasteboard *)generalPasteboard;
@@ -28,16 +28,17 @@ static NSUInteger checks;
 
 static Class fakeSessionClass;
 static Class wrongSignatureSessionClass;
+static Class textPathClassOverride;
 static NSXPCConnection *sessionConnection;
 static uint32_t capturedPage, capturedUsage;
 static double capturedDuration, capturedOffset;
-static NSUInteger capturedModifiers, clipboardWrites;
-static BOOL dirtyDuringConstruction, throwOnSend, throwOnClipboardWrite;
+static NSUInteger capturedTypingSpeed, textEvents, clipboardAccesses;
+static BOOL capturedRedaction, dirtyDuringConstruction, throwOnSend, throwOnTextConstruction;
 static BOOL legacyCoordinates;
 static CGPoint capturedTouchPoint;
 static NSInteger capturedOrientation;
 static uint64_t capturedDisplay;
-static NSString *capturedText, *capturedName, *capturedKey;
+static NSString *capturedText, *capturedName;
 static id capturedPath, capturedEvent;
 static void (^lastCompletion)(BOOL, NSError *);
 static NSUInteger submissions, constructions;
@@ -64,19 +65,10 @@ static BOOL throwOnScreenshotSend;
 
 @implementation UIPasteboard
 + (UIPasteboard *)generalPasteboard {
-    static UIPasteboard *board;
-    if (!board) board=[UIPasteboard new];
-    return board;
+    clipboardAccesses++; CHECK(NO); return nil;
 }
 - (NSString *)string { CHECK(NO); return nil; }
-- (void)setString:(NSString *)value {
-    // Clipboard input is permitted only after the final submission guards,
-    // with its receipt already reserved. Store fake data in memory only.
-    CHECK(current && !current.closed && !current.geometryDirty && current.eventPending);
-    CHECK(current.status.phase==EISCUE_AUTOMATION_DELIVERING && current.status.request_id>0);
-    clipboardWrites++; capturedText=[value copy];
-    if (throwOnClipboardWrite) @throw [NSException exceptionWithName:@"FixtureClipboard" reason:nil userInfo:nil];
-}
+- (void)setString:(NSString *)value { CHECK(NO); }
 @end
 
 @interface EiscueFixturePendingConnection : NSXPCConnection
@@ -115,6 +107,7 @@ static Class fixtureClassFromString(NSString *name) {
         if ([name isEqualToString:@"XCTRunnerDaemonSession"]) return loaderRunnerReady ? NSObject.class : Nil;
         if ([name isEqualToString:@"XCPointerEventPath"]) return loaderPointerReady ? NSObject.class : Nil;
     }
+    if (textPathClassOverride && [name isEqualToString:@"XCPointerEventPath"]) return textPathClassOverride;
     return NSClassFromString(name);
 }
 static void *fixtureDlopen(const char *path, int mode) {
@@ -211,8 +204,9 @@ static id initText(id receiver, SEL selector) { constructions++; return receiver
 static id initTouch(id receiver, SEL selector, CGPoint point, double offset) { constructions++; capturedTouchPoint=point; return receiver; }
 static void moveTouch(id receiver, SEL selector, CGPoint point, double offset) {}
 static void liftTouch(id receiver, SEL selector, double offset) {}
-static void fixtureTypeKey(id receiver, SEL selector, id key, NSUInteger modifiers, double offset) {
-    capturedKey=[key copy]; capturedOffset=offset; capturedModifiers=modifiers;
+static void fixtureTypeText(id receiver, SEL selector, id text, double offset, NSUInteger speed, BOOL redact) {
+    textEvents++; capturedText=[text copy]; capturedOffset=offset; capturedTypingSpeed=speed; capturedRedaction=redact;
+    if (throwOnTextConstruction) @throw [NSException exceptionWithName:@"FixtureTextConstruction" reason:nil userInfo:nil];
 }
 static id initRecord(id receiver, SEL selector, id name, uint64_t display, NSInteger orientation) {
     capturedName=[name copy]; capturedDisplay=display; capturedOrientation=orientation;
@@ -251,7 +245,8 @@ static void installFixtures(void) {
     method(object_getClass(device),"deviceEventWithPage:usage:duration:",(IMP)deviceEvent,"@32@0:8I16I20d24");
     Class path=fixtureClass("XCPointerEventPath");
     method(path,"initForTextInput",(IMP)initText,"@16@0:8");
-    method(path,"typeKey:modifiers:atOffset:",(IMP)fixtureTypeKey,"v40@0:8@16Q24d32");
+    // Exact Xcode 26/27 device SDK method encoding, including integer speed.
+    method(path,"typeText:atOffset:typingSpeed:shouldRedact:",(IMP)fixtureTypeText,"v44@0:8@16d24Q32B40");
     method(path,"initForTouchAtPoint:offset:",(IMP)initTouch,"@40@0:8{CGPoint=dd}16d32");
     method(path,"moveToPoint:atOffset:",(IMP)moveTouch,"v40@0:8{CGPoint=dd}16d32");
     method(path,"liftUpAtOffset:",(IMP)liftTouch,"v24@0:8d16");
@@ -278,10 +273,10 @@ static void resetOwner(void) {
     current=[EiscueOwnedAutomation new]; current.lease=19;
     current.status=(eiscue_automation_state){.phase=EISCUE_AUTOMATION_READY,.revision=7,.display_id=3,.orientation=1,.scale=3,.bounds_width=390,.bounds_height=844};
     current.session=[fakeSessionClass new]; current.observers=[NSMutableArray new];
-    submissions=0; constructions=0; clipboardWrites=0;
-    dirtyDuringConstruction=NO; throwOnSend=NO; throwOnClipboardWrite=NO;
+    submissions=0; constructions=0; textEvents=0; clipboardAccesses=0; capturedTypingSpeed=0; capturedRedaction=NO;
+    dirtyDuringConstruction=NO; throwOnSend=NO; throwOnTextConstruction=NO; textPathClassOverride=Nil;
     legacyCoordinates=NO;
-    capturedText=nil; capturedName=nil; capturedKey=nil; capturedPath=nil; capturedEvent=nil; lastCompletion=nil;
+    capturedText=nil; capturedName=nil; capturedPath=nil; capturedEvent=nil; lastCompletion=nil;
     capturedImageType=nil; capturedImageQuality=0; capturedScreenID=-1; capturedCaptureRect=CGRectZero;
     capturedEncoding=nil; capturedScreenshotRequest=nil; lastScreenshotReply=nil;
     screenshotSubmissions=0; throwOnScreenshotSend=NO;
@@ -292,9 +287,9 @@ static void receipt(BOOL success, NSError *error) {
     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
 }
 static void expectInvalid(const uint8_t *bytes, size_t length) {
-    NSUInteger before=submissions, built=constructions, writes=clipboardWrites;
+    NSUInteger before=submissions, built=constructions, events=textEvents;
     CHECK(eiscue_automation_type_text(19,1,7,bytes,length)==EISCUE_AUTOMATION_CONFIGURATION);
-    CHECK(submissions==before && constructions==built && clipboardWrites==writes);
+    CHECK(submissions==before && constructions==built && textEvents==events && clipboardAccesses==0);
     CHECK(current.status.phase==EISCUE_AUTOMATION_READY && current.status.request_id==0);
 }
 static void expectEnvironment(const char *name, const char *expected) {
@@ -438,7 +433,7 @@ static void screenshotFixtures(void) {
     CHECK(eiscue_automation_home(19,2,7)==EISCUE_AUTOMATION_BUSY);
     CHECK(eiscue_automation_type_text(19,2,7,(const uint8_t *)"x",1)==EISCUE_AUTOMATION_BUSY);
     CHECK(eiscue_automation_touch(19,2,7,1170,2532,0,0,0,0,0)==EISCUE_AUTOMATION_BUSY);
-    CHECK(screenshotSubmissions==1 && submissions==0 && clipboardWrites==0);
+    CHECK(screenshotSubmissions==1 && submissions==0 && clipboardAccesses==0);
     CHECK(eiscue_automation_copy_screenshot(19,1,NULL,0,&length)==EISCUE_AUTOMATION_BUSY && length==0);
 
     // The framework callback may arrive off-main; it must not publish there.
@@ -580,7 +575,20 @@ int main(void) { @autoreleasepool {
     current.session=[wrongSignatureSessionClass new];
     CHECK(eiscue_automation_home(19,1,7)==EISCUE_AUTOMATION_SIGNATURE);
     CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"hello",5)==EISCUE_AUTOMATION_SIGNATURE);
-    CHECK(submissions==0 && !current.eventPending && current.status.request_id==0 && clipboardWrites==0);
+    CHECK(submissions==0 && !current.eventPending && current.status.request_id==0 && clipboardAccesses==0);
+    // An absent or changed private text ABI must fail before creating an event.
+    resetOwner();
+    Class absentTextPath=fixtureClass("EiscueFixtureAbsentTextPath");
+    method(absentTextPath,"initForTextInput",(IMP)initText,"@16@0:8");
+    textPathClassOverride=absentTextPath;
+    CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"hello",5)==EISCUE_AUTOMATION_SIGNATURE);
+    CHECK(submissions==0 && constructions==0 && textEvents==0 && clipboardAccesses==0 && !current.eventPending);
+    Class changedTextPath=fixtureClass("EiscueFixtureChangedTextPath");
+    method(changedTextPath,"initForTextInput",(IMP)initText,"@16@0:8");
+    method(changedTextPath,"typeText:atOffset:typingSpeed:shouldRedact:",(IMP)fixtureTypeText,"v44@0:8@16d24d32B40");
+    textPathClassOverride=changedTextPath;
+    CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"hello",5)==EISCUE_AUTOMATION_SIGNATURE);
+    CHECK(submissions==0 && constructions==0 && textEvents==0 && current.status.request_id==0);
     resetOwner();
     __block int32_t wrongThreadHome=0, wrongThreadText=0;
     dispatch_semaphore_t workerFinished=dispatch_semaphore_create(0);
@@ -611,42 +619,56 @@ int main(void) { @autoreleasepool {
     uint8_t unicode[]={0xe4,0xbd,0xa0,0xe5,0xa5,0xbd,0xf0,0x9f,0x98,0x80};
     CHECK(eiscue_automation_type_text(19,1,7,unicode,sizeof(unicode))==0 && submissions==1);
     memset(unicode,'x',sizeof(unicode)); CHECK([capturedText isEqualToString:@"你好😀"]);
-    CHECK(capturedModifiers==(1UL<<4) && capturedOffset==0 && [capturedKey isEqualToString:@"v"]);
-    CHECK(clipboardWrites==1 && [capturedName isEqualToString:@"Eiscue"]);
+    CHECK(textEvents==1 && capturedOffset==0 && capturedTypingSpeed==60 && capturedRedaction);
+    CHECK(clipboardAccesses==0 && [capturedName isEqualToString:@"Eiscue"]);
     CHECK(capturedDisplay==3 && capturedOrientation==1 && capturedPath && capturedEvent);
+    CHECK(eiscue_automation_stop(19)==EISCUE_AUTOMATION_BUSY);
     CHECK(eiscue_automation_type_text(19,2,7,(const uint8_t *)"blocked",7)==EISCUE_AUTOMATION_BUSY);
-    CHECK(clipboardWrites==1 && submissions==1);
+    CHECK(textEvents==1 && clipboardAccesses==0 && submissions==1);
     receipt(YES,nil); CHECK(current.status.phase==EISCUE_AUTOMATION_READY);
     CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"duplicate",9)==EISCUE_AUTOMATION_BUSY);
-    CHECK(clipboardWrites==1 && submissions==1);
+    CHECK(textEvents==1 && clipboardAccesses==0 && submissions==1);
     CHECK(eiscue_automation_type_text(19,2,7,huge,8192)==0);
-    CHECK(capturedText.length==8192 && submissions==2 && clipboardWrites==2 && capturedKey.length==1);
+    CHECK(capturedText.length==8192 && submissions==2 && textEvents==2 && clipboardAccesses==0);
+    // Cleanup must retain the session for the original (potentially long)
+    // event. Stop cannot abort it or pretend the callback was received.
+    id pendingTextSession=current.session;
+    CHECK(eiscue_automation_stop(19)==EISCUE_AUTOMATION_BUSY);
+    CHECK(current.eventPending && !current.closed && current.session==pendingTextSession);
     receipt(YES,nil);
-    CHECK(eiscue_automation_home(19,3,7)==0);
+    CHECK(!current.eventPending && !current.closed && current.session==pendingTextSession);
+    // Preserve composed Unicode and control characters without per-scalar
+    // events or shortcut fallback. This also covers the physical check's text.
+    NSString *complexText=@"你好，Eiscue 🧊 e\u0301 👨‍👩‍👧‍👦\r\n";
+    NSData *complexBytes=[complexText dataUsingEncoding:NSUTF8StringEncoding];
+    CHECK(eiscue_automation_type_text(19,3,7,complexBytes.bytes,complexBytes.length)==0);
+    CHECK([capturedText isEqualToString:complexText] && textEvents==3 && submissions==3 && clipboardAccesses==0);
+    CHECK(capturedRedaction && capturedTypingSpeed==60); receipt(YES,nil);
+    CHECK(eiscue_automation_home(19,4,7)==0);
     invalidateGeometry(current);
     receipt(YES,nil);
     CHECK(current.geometryDirty && current.status.revision==8 && current.status.phase==EISCUE_AUTOMATION_READY);
-    CHECK(eiscue_automation_home(19,4,8)==EISCUE_AUTOMATION_GEOMETRY && submissions==3);
+    CHECK(eiscue_automation_home(19,5,8)==EISCUE_AUTOMATION_GEOMETRY && submissions==4);
     // Revalidation after building an event stops a changed orientation/revision.
     resetOwner(); dirtyDuringConstruction=YES;
     CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"hello",5)==EISCUE_AUTOMATION_GEOMETRY);
-    CHECK(submissions==0 && clipboardWrites==0 && current.geometryDirty && current.status.revision==8 && current.status.request_id==0);
+    CHECK(submissions==0 && clipboardAccesses==0 && current.geometryDirty && current.status.revision==8 && current.status.request_id==0);
     resetOwner();
     CHECK(eiscue_automation_type_text(19,1,6,(const uint8_t *)"stale",5)==EISCUE_AUTOMATION_GEOMETRY);
-    CHECK(clipboardWrites==0 && submissions==0);
+    CHECK(textEvents==0 && clipboardAccesses==0 && submissions==0);
     eiscue_automation_abort(19);
     CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"closed",6)==EISCUE_AUTOMATION_CLOSED);
-    CHECK(clipboardWrites==0 && submissions==0);
-    resetOwner(); throwOnClipboardWrite=YES;
+    CHECK(textEvents==0 && clipboardAccesses==0 && submissions==0);
+    resetOwner(); throwOnTextConstruction=YES;
     CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"hello",5)==EISCUE_AUTOMATION_EXCEPTION);
-    CHECK(clipboardWrites==1 && submissions==0 && current.status.phase==EISCUE_AUTOMATION_FAILED);
+    CHECK(textEvents==1 && clipboardAccesses==0 && submissions==0 && current.status.phase==EISCUE_AUTOMATION_FAILED);
     CHECK(eiscue_automation_type_text(19,2,7,(const uint8_t *)"retry",5)==EISCUE_AUTOMATION_BUSY);
-    CHECK(clipboardWrites==1 && submissions==0);
+    CHECK(textEvents==1 && clipboardAccesses==0 && submissions==0);
     resetOwner(); throwOnSend=YES;
     CHECK(eiscue_automation_type_text(19,1,7,(const uint8_t *)"hello",5)==EISCUE_AUTOMATION_DELIVERY_UNKNOWN);
-    CHECK(clipboardWrites==1 && submissions==1 && current.eventPending && current.status.phase==EISCUE_AUTOMATION_FAILED);
+    CHECK(textEvents==1 && clipboardAccesses==0 && submissions==1 && current.eventPending && current.status.phase==EISCUE_AUTOMATION_FAILED);
     CHECK(eiscue_automation_type_text(19,2,7,(const uint8_t *)"retry",5)==EISCUE_AUTOMATION_BUSY);
-    CHECK(clipboardWrites==1 && submissions==1);
+    CHECK(textEvents==1 && clipboardAccesses==0 && submissions==1);
     resetOwner(); throwOnSend=YES;
     CHECK(eiscue_automation_home(19,1,7)==EISCUE_AUTOMATION_DELIVERY_UNKNOWN);
     CHECK(submissions==1 && current.eventPending && current.status.phase==EISCUE_AUTOMATION_FAILED);
@@ -660,6 +682,9 @@ int main(void) { @autoreleasepool {
     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
     CHECK(old.closed && old.status.phase==EISCUE_AUTOMATION_STOPPED);
     CHECK(current.status.phase==EISCUE_AUTOMATION_DELIVERING && current.eventPending && current.status.request_id==1);
+    id pendingTouchSession=current.session;
+    CHECK(eiscue_automation_stop(19)==EISCUE_AUTOMATION_BUSY);
+    CHECK(!current.closed && current.session==pendingTouchSession);
     void (^backgroundReceipt)(BOOL,NSError *)=[lastCompletion copy];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT,0), ^{
         backgroundReceipt(YES,nil); dispatch_semaphore_signal(workerFinished);

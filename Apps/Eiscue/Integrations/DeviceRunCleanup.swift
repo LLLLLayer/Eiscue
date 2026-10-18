@@ -1,10 +1,23 @@
 import EiscueDeviceCore
+import Foundation
 
 @MainActor
 enum DeviceRunCleanup {
-    static func finish(run: RunRecord, disconnectAfterTask: Bool,
+    struct Failures: LocalizedError {
+        let inputRelease: any Error
+        let disconnect: DeviceSession.Failure
+        var errorDescription: String? { inputRelease.localizedDescription + "\n" + disconnect.localizedDescription }
+    }
+
+    /// HID has no owned remote media session to confirm. Network routes still
+    /// require the disconnect receipt; this does not change its raw value.
+    static func acceptsRelease(confirmed: Bool, method: DeviceConnectionMethod) -> Bool {
+        method == .bluetoothBoard || confirmed
+    }
+
+    static func finish(run: RunRecord, method: DeviceConnectionMethod, disconnectAfterTask: Bool,
                        modelRequestFailed: Bool, deviceTools: DeviceToolSession?, stopRequested: Bool,
-                       finishConnection: () async throws -> Void, disconnect: () async -> Void) async throws {
+                       finishConnection: () async throws -> Void, disconnect: () async -> Bool) async throws {
         guard run.scope != .chat else { return }
         // Runtime cleanup must have confirmed a model-only failure, and the
         // host gate must still be unused. Event delivery alone can lag execution.
@@ -15,7 +28,7 @@ enum DeviceRunCleanup {
         let safePause = run.state == .paused && run.submission == .accepted
             && run.pauseReason != nil && run.pauseReason != .connection
         guard run.cleanupFailure == nil, deviceTools?.hasUnknownOutcome != true, !disconnectAfterTask, !stopRequested, run.state == .completed || safePause || unusedModelFailure else {
-            await disconnect()
+            guard acceptsRelease(confirmed: await disconnect(), method: method) else { throw DeviceSession.Failure.releaseUnconfirmed }
             return
         }
         do {
@@ -23,7 +36,9 @@ enum DeviceRunCleanup {
             // the selected connection. An unconfirmed release still disconnects.
             try await finishConnection()
         } catch {
-            await disconnect()
+            guard acceptsRelease(confirmed: await disconnect(), method: method) else {
+                throw Failures(inputRelease: error, disconnect: .releaseUnconfirmed)
+            }
             throw error
         }
     }

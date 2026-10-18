@@ -22,6 +22,127 @@ import XCTest
         XCTAssertEqual(fixture.background.successes, [true])
     }
 
+    func testCompletedHIDControlAcceptsUnconfirmedAutomaticDisconnect() async throws {
+        for disconnectAfterTask in [false, true] {
+            let fixture = try ControlCoordinatorFixture(releaseConfirmed: false, method: .bluetoothBoard)
+            defer { fixture.remove() }
+            fixture.model.disconnectAfterTask = disconnectAfterTask
+            fixture.factory.running.onStart = { _ in fixture.model.sceneChanged(.background) }
+            fixture.model.draft = "Complete HID task"
+
+            await fixture.model.sendMessage()
+
+            let completed = try XCTUnwrap(fixture.model.runs.first)
+            let persisted = try await fixture.model.journal.load().records.first
+            XCTAssertEqual(completed.state, .completed)
+            XCTAssertNil(completed.cleanupFailure)
+            XCTAssertEqual(persisted?.state, .completed)
+            XCTAssertNil(persisted?.cleanupFailure)
+            XCTAssertEqual(fixture.background.successes, [true])
+            XCTAssertEqual(fixture.notifications.states, [.completed])
+            XCTAssertFalse(fixture.model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertEqual(fixture.model.isDeviceReady, !disconnectAfterTask)
+            XCTAssertEqual(fixture.model.activeDeviceConnectionMethod, disconnectAfterTask ? nil : .bluetoothBoard)
+            XCTAssertNil(fixture.model.deviceSession.owner)
+            XCTAssertNil(fixture.model.activeRun)
+            let events = await fixture.actuator.events
+            XCTAssertEqual(events, disconnectAfterTask ? ["disconnect"] : ["release"])
+        }
+    }
+
+    func testUserStopAcceptsCapturedHIDUnconfirmedReleaseAfterClientReplacement() async throws {
+        for replaceClient in [false, true] {
+            let fixture = try ControlCoordinatorFixture(releaseConfirmed: false, method: .bluetoothBoard)
+            defer { fixture.remove() }
+            let replacement = CoordinatorActuator()
+            fixture.factory.running.holdStream = true
+            fixture.factory.running.onStart = { _ in
+                fixture.model.sceneChanged(.background)
+                if replaceClient {
+                    fixture.model.deviceClient = DeviceClient(actuator: replacement)
+                    fixture.model.activeDeviceConnectionMethod = .usbBoard
+                    fixture.model.activeDeviceControlBackend = .xcTest
+                }
+            }
+            fixture.model.draft = "Stop HID task"
+            let work = Task { await fixture.model.sendMessage() }
+            try await coordinatorEventually { fixture.factory.running.requests.count == 1 }
+            let runID = try XCTUnwrap(fixture.model.activeRun?.id)
+
+            let result = await fixture.model.runCoordinator.stopAndWait(runID: runID)
+            let completed = try XCTUnwrap(result)
+            await work.value
+
+            let persisted = try await fixture.model.journal.load().records.first
+            XCTAssertEqual(completed.state, .interrupted)
+            XCTAssertEqual(completed.stopCause, .userRequested)
+            XCTAssertNil(completed.cleanupFailure)
+            XCTAssertEqual(persisted?.state, .interrupted)
+            XCTAssertNil(persisted?.cleanupFailure)
+            XCTAssertEqual(fixture.notifications.states, [.interrupted])
+            XCTAssertFalse(fixture.model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertEqual(fixture.model.activeDeviceConnectionMethod, replaceClient ? .usbBoard : nil)
+            XCTAssertNil(fixture.model.deviceSession.owner)
+            XCTAssertNil(fixture.model.activeRun)
+            let events = await fixture.actuator.events
+            let replacementEvents = await replacement.events
+            XCTAssertEqual(events, ["disconnect", "disconnect"])
+            XCTAssertTrue(replacementEvents.isEmpty)
+        }
+    }
+
+    func testAutomaticDisconnectUsesCapturedRouteAfterClientReplacement() async throws {
+        for method in [DeviceConnectionMethod.bluetoothBoard, .localVPN] {
+            let fixture = try ControlCoordinatorFixture(releaseConfirmed: false, method: method)
+            defer { fixture.remove() }
+            let replacement = CoordinatorActuator()
+            let replacementMethod: DeviceConnectionMethod = method == .bluetoothBoard ? .usbBoard : .bluetoothBoard
+            fixture.model.disconnectAfterTask = true
+            fixture.factory.running.onStart = { _ in
+                fixture.model.deviceClient = DeviceClient(actuator: replacement)
+                fixture.model.activeDeviceConnectionMethod = replacementMethod
+            }
+            fixture.model.draft = "Complete captured route task"
+
+            await fixture.model.sendMessage()
+
+            let completed = try XCTUnwrap(fixture.model.runs.first)
+            XCTAssertEqual(completed.state, .completed)
+            XCTAssertEqual(completed.cleanupFailure, method == .bluetoothBoard ? nil : fixture.model.safeError(DeviceSession.Failure.releaseUnconfirmed))
+            XCTAssertEqual(fixture.background.successes, [method == .bluetoothBoard])
+            XCTAssertEqual(fixture.model.activeDeviceConnectionMethod, replacementMethod)
+            let events = await fixture.actuator.events
+            let replacementEvents = await replacement.events
+            XCTAssertEqual(events, ["disconnect"])
+            XCTAssertTrue(replacementEvents.isEmpty)
+        }
+    }
+
+    func testInputReleaseAndDisconnectFailuresAreBothRedactedAndPersisted() async throws {
+        let releaseFailureMessage = "Fixture input release failed: isolated-coordinator-fixture " + String(repeating: "detail ", count: 180)
+        let fixture = try ControlCoordinatorFixture(failRelease: true, releaseConfirmed: false,
+                                                   releaseFailureMessage: releaseFailureMessage)
+        defer { fixture.remove() }
+        fixture.factory.running.onStart = { _ in fixture.model.sceneChanged(.background) }
+        fixture.model.draft = "Complete with cleanup failures"
+
+        await fixture.model.sendMessage()
+
+        let completed = try XCTUnwrap(fixture.model.runs.first)
+        let persisted = try await fixture.model.journal.load().records.first
+        let inputFailure = fixture.model.safeError(DeviceControlError.deliveryUnknown(releaseFailureMessage))
+        let expected = inputFailure + "\n" + fixture.model.safeError(DeviceSession.Failure.releaseUnconfirmed)
+        XCTAssertEqual(completed.state, .completed)
+        XCTAssertEqual(completed.cleanupFailure, expected)
+        XCTAssertEqual(persisted?.state, .completed)
+        XCTAssertEqual(persisted?.cleanupFailure, expected)
+        XCTAssertFalse(completed.cleanupFailure?.contains("isolated-coordinator-fixture") ?? true)
+        XCTAssertEqual(fixture.background.successes, [false])
+        XCTAssertEqual(fixture.notifications.states, [.failed])
+        let events = await fixture.actuator.events
+        XCTAssertEqual(events, ["release", "disconnect"])
+    }
+
     func testCleanupUsesCapturedClientWhenSelectedClientHasBeenReplaced() async throws {
         for fails in [false, true] {
             let fixture = try ControlCoordinatorFixture(failRelease: fails); defer { fixture.remove() }
@@ -59,6 +180,166 @@ import XCTest
         XCTAssertEqual(stored?.state, .completed)
         XCTAssertEqual(stored?.cleanupFailure, run.cleanupFailure)
         XCTAssertEqual(fixture.background.successes, [false], "Failed cleanup must not publish completed progress.")
+    }
+
+    func testCompletedControlPersistsUnconfirmedAutomaticDisconnectBeforeEndingActivity() async throws {
+        let fixture = try ControlCoordinatorFixture(releaseConfirmed: false); defer { fixture.remove() }
+        fixture.model.disconnectAfterTask = true
+        fixture.factory.running.onStart = { _ in fixture.model.sceneChanged(.background) }
+        let expectedFailure = fixture.model.safeError(DeviceSession.Failure.releaseUnconfirmed)
+        var summaryAtActivityEnd: RunRecord?
+        fixture.background.onEnd = { runID in
+            XCTAssertEqual(fixture.model.deviceSession.owner, .run(runID))
+            let summary = fixture.directory.appendingPathComponent("Runs/\(runID.uuidString).json")
+            summaryAtActivityEnd = (try? Data(contentsOf: summary)).flatMap { try? JSONDecoder().decode(RunRecord.self, from: $0) }
+        }
+        fixture.model.draft = "Complete and disconnect"
+
+        await fixture.model.sendMessage()
+
+        let completed = try XCTUnwrap(fixture.model.runs.first)
+        let stored = try await fixture.model.journal.load()
+        let persisted = try XCTUnwrap(stored.records.first)
+        XCTAssertEqual(completed.scope, .control)
+        XCTAssertEqual(completed.state, .completed, "Cleanup failure must not rewrite successful work.")
+        XCTAssertEqual(completed.cleanupFailure, expectedFailure)
+        XCTAssertEqual(persisted.id, completed.id)
+        XCTAssertEqual(persisted.state, .completed)
+        XCTAssertEqual(persisted.cleanupFailure, expectedFailure)
+        XCTAssertNotNil(persisted.endedAt)
+        XCTAssertEqual(summaryAtActivityEnd?.cleanupFailure, expectedFailure,
+                       "The final failure must be durable before the system activity ends.")
+        XCTAssertEqual(fixture.background.successes, [false])
+        XCTAssertEqual(fixture.notifications.states, [.failed], "Cleanup failure cannot announce successful work as completed.")
+        XCTAssertFalse(fixture.background.isExecuting)
+        XCTAssertTrue(fixture.model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertFalse(fixture.model.isDeviceReady)
+        XCTAssertNil(fixture.model.activeDeviceConnectionMethod)
+        XCTAssertNil(fixture.model.deviceSession.owner)
+        XCTAssertNil(fixture.model.activeRun)
+        XCTAssertFalse(fixture.model.isBusy)
+        XCTAssertThrowsError(try fixture.model.deviceSession.acquire(.run(UUID())))
+        let events = await fixture.actuator.events
+        XCTAssertEqual(events, ["disconnect"])
+    }
+
+    func testUnknownStopPersistsFailedReleaseEvenWhenFinalDisconnectIsConfirmed() async throws {
+        let fixture = try ControlCoordinatorFixture(); defer { fixture.remove() }
+        // Isolate stop's receipt propagation: the final cleanup later succeeds,
+        // so it cannot supply the failure that the stop operation must record.
+        await fixture.actuator.setReleaseConfirmations([false, true])
+        fixture.factory.running.holdStream = true
+        fixture.factory.running.onStart = { _ in fixture.model.sceneChanged(.background) }
+        let cause = StopCause.outcomeUnknown(toolName: DeviceToolSpec.swipe.rawValue)
+        fixture.factory.running.cancellationOutcome = .stopped(cause)
+        let expectedFailure = fixture.model.safeError(DeviceSession.Failure.releaseUnconfirmed)
+        var summaryAtActivityEnd: RunRecord?
+        fixture.background.onEnd = { runID in
+            XCTAssertEqual(fixture.model.deviceSession.owner, .run(runID))
+            let summary = fixture.directory.appendingPathComponent("Runs/\(runID.uuidString).json")
+            summaryAtActivityEnd = (try? Data(contentsOf: summary)).flatMap { try? JSONDecoder().decode(RunRecord.self, from: $0) }
+        }
+        fixture.model.draft = "Stop an uncertain swipe"
+        let work = Task { await fixture.model.sendMessage() }
+        try await coordinatorEventually { fixture.factory.running.requests.count == 1 }
+        let runID = try XCTUnwrap(fixture.model.activeRun?.id)
+
+        let result = await fixture.model.runCoordinator.stopAndWait(runID: runID)
+        let completed = try XCTUnwrap(result)
+        await work.value
+
+        let stored = try await fixture.model.journal.load()
+        let persisted = try XCTUnwrap(stored.records.first)
+        XCTAssertEqual(completed.state, .outcomeUnknown)
+        XCTAssertEqual(completed.stopCause, cause)
+        XCTAssertEqual(completed.cleanupFailure, expectedFailure)
+        XCTAssertEqual(persisted.id, runID)
+        XCTAssertEqual(persisted.state, .outcomeUnknown)
+        XCTAssertEqual(persisted.stopCause, cause)
+        XCTAssertEqual(persisted.cleanupFailure, expectedFailure)
+        XCTAssertEqual(summaryAtActivityEnd?.state, .outcomeUnknown)
+        XCTAssertEqual(summaryAtActivityEnd?.cleanupFailure, expectedFailure)
+        XCTAssertEqual(fixture.background.successes, [false])
+        XCTAssertEqual(fixture.notifications.states, [.outcomeUnknown], "Cleanup failure must retain uncertainty in the terminal notification state.")
+        XCTAssertFalse(fixture.background.isExecuting)
+        XCTAssertFalse(fixture.model.isDeviceReady)
+        XCTAssertNil(fixture.model.activeDeviceConnectionMethod)
+        XCTAssertNil(fixture.model.deviceSession.owner)
+        XCTAssertNil(fixture.model.activeRun)
+        XCTAssertFalse(fixture.model.isBusy)
+        XCTAssertTrue(fixture.model.interruptedConversationIDs.contains(completed.conversationID))
+        let events = await fixture.actuator.events
+        XCTAssertEqual(events, ["disconnect", "disconnect"])
+    }
+
+    func testUnknownStopAccumulatesAndRedactsReleaseAndEngineCloseFailuresInEitherOrder() async throws {
+        for releaseFirst in [true, false] {
+            let cancellation = CoordinatorGate(), disconnect = CoordinatorGate()
+            let fixture = try ControlCoordinatorFixture(disconnectGate: disconnect); defer { fixture.remove() }
+            await fixture.actuator.setReleaseConfirmations([false, true])
+            fixture.factory.running.holdStream = true
+            fixture.factory.running.cancellationGate = cancellation
+            let closeFailure = AgentError.cleanupFailed("Runtime close failed: isolated-coordinator-fixture")
+            fixture.factory.running.cancellationFailure = closeFailure
+            fixture.factory.running.onStart = { _ in fixture.model.sceneChanged(.background) }
+            let cause = StopCause.outcomeUnknown(toolName: DeviceToolSpec.swipe.rawValue)
+            fixture.factory.running.cancellationOutcome = .stopped(cause)
+            let releaseFailure = fixture.model.safeError(DeviceSession.Failure.releaseUnconfirmed)
+            let engineFailure = fixture.model.safeError(closeFailure)
+            var summaryAtActivityEnd: RunRecord?
+            fixture.background.onEnd = { runID in
+                XCTAssertEqual(fixture.model.deviceSession.owner, .run(runID))
+                let summary = fixture.directory.appendingPathComponent("Runs/\(runID.uuidString).json")
+                summaryAtActivityEnd = (try? Data(contentsOf: summary)).flatMap { try? JSONDecoder().decode(RunRecord.self, from: $0) }
+            }
+            fixture.model.draft = "Stop with two cleanup failures"
+            let work = Task { await fixture.model.sendMessage() }
+            try await coordinatorEventually {
+                fixture.factory.running.requests.count == 1 && fixture.model.activeRun?.submission == .accepted
+            }
+            let runID = try XCTUnwrap(fixture.model.activeRun?.id)
+            let stopping = Task { await fixture.model.runCoordinator.stopAndWait(runID: runID) }
+            addTeardownBlock {
+                await cancellation.open(); await disconnect.open()
+                _ = await stopping.value; await work.value
+            }
+            try await coordinatorEventually {
+                let disconnectStarted = await fixture.actuator.firstDisconnectStarted
+                return fixture.factory.running.cancellations == 1 && disconnectStarted
+            }
+            if releaseFirst {
+                await disconnect.open()
+                try await coordinatorEventually { fixture.model.activeRun?.cleanupFailure == releaseFailure }
+                await cancellation.open()
+            } else {
+                await cancellation.open()
+                try await coordinatorEventually { fixture.model.activeRun?.cleanupFailure == engineFailure }
+                await disconnect.open()
+            }
+            let result = await stopping.value
+            let completed = try XCTUnwrap(result)
+            await work.value
+            let stored = try await fixture.model.journal.load()
+            let persisted = try XCTUnwrap(stored.records.first)
+            let expected = (releaseFirst ? [releaseFailure, engineFailure] : [engineFailure, releaseFailure]).joined(separator: "\n")
+            XCTAssertEqual(completed.state, .outcomeUnknown)
+            XCTAssertEqual(completed.stopCause, cause)
+            XCTAssertEqual(completed.cleanupFailure, expected,
+                           "The stream and cancel error report the same engine failure; each distinct failure must appear once.")
+            XCTAssertFalse(completed.cleanupFailure?.contains("isolated-coordinator-fixture") ?? true)
+            XCTAssertEqual(persisted.id, runID)
+            XCTAssertEqual(persisted.state, .outcomeUnknown)
+            XCTAssertEqual(persisted.stopCause, cause)
+            XCTAssertEqual(persisted.cleanupFailure, expected)
+            XCTAssertEqual(summaryAtActivityEnd?.cleanupFailure, expected)
+            XCTAssertEqual(fixture.background.successes, [false])
+            XCTAssertEqual(fixture.notifications.states, [.outcomeUnknown])
+            XCTAssertNil(fixture.model.deviceSession.owner)
+            XCTAssertNil(fixture.model.activeRun)
+            XCTAssertFalse(fixture.model.isBusy)
+            let events = await fixture.actuator.events
+            XCTAssertEqual(events, ["disconnect", "disconnect"])
+        }
     }
 
     func testRuntimeCleanupFailureDisconnectsWithoutChangingCompletedOutcome() async throws {
@@ -465,9 +746,11 @@ import XCTest
     let background = CoordinatorBackground()
     let notifications = CoordinatorNotifications()
 
-    init(failRelease: Bool = false, releaseGate: CoordinatorGate? = nil, disconnectGate: CoordinatorGate? = nil, statusGate: CoordinatorGate? = nil, releaseConfirmed: Bool = true) throws {
+    init(failRelease: Bool = false, releaseGate: CoordinatorGate? = nil, disconnectGate: CoordinatorGate? = nil, statusGate: CoordinatorGate? = nil, releaseConfirmed: Bool = true,
+         method: DeviceConnectionMethod = .localVPN, releaseFailureMessage: String = "Fixture release failed") throws {
         preferences = try XCTUnwrap(UserDefaults(suiteName: suite)); credentials = CredentialStore(service: suite)
-        actuator = CoordinatorActuator(failRelease: failRelease, releaseGate: releaseGate, disconnectGate: disconnectGate, statusGate: statusGate, releaseConfirmed: releaseConfirmed)
+        actuator = CoordinatorActuator(failRelease: failRelease, releaseGate: releaseGate, disconnectGate: disconnectGate, statusGate: statusGate, releaseConfirmed: releaseConfirmed,
+                                       releaseFailureMessage: releaseFailureMessage)
         let factory = factory
         model = AppModel(storageDirectory: directory, preferences: preferences, credentialStore: credentials,
                          background: background, notifications: notifications,
@@ -476,10 +759,10 @@ import XCTest
         var settings = ModelSettings(); settings.model = "fixture"
         try model.saveModelSettings(settings, newKey: "isolated-coordinator-fixture")
         factory.producingRun = true
-        model.deviceClient = DeviceClient(actuator: actuator)
+        try model.deviceSession.configure(method: method, backend: .automatic, client: DeviceClient(actuator: actuator))
         model.deviceStatus = .ready(capabilities: Set(DeviceCapability.allCases))
-        model.activeDeviceConnectionMethod = .localVPN
-        model.activeDeviceControlBackend = .coreDevice
+        model.activeDeviceConnectionMethod = method
+        model.activeDeviceControlBackend = method == .bluetoothBoard ? nil : .coreDevice
     }
     func record(scope: TaskScope, conversationID: UUID, requestID: UUID) -> RunRecord {
         var record = RunRecord(id: UUID(), conversationID: conversationID, requestID: requestID, startedAt: Date(),
@@ -524,6 +807,8 @@ import XCTest
     var onCancel: (() -> Void)?
     var holdStream = false
     var cancellationOutcome = AgentRunOutcome.cancelled
+    var cancellationGate: CoordinatorGate?
+    var cancellationFailure: AgentError?
     var trailingEvents: [AgentEvent] = [.finished(.completed)]
     private var stream: AsyncThrowingStream<AgentEvent, Error>.Continuation?
     func run(request: AgentRequest) async throws -> AsyncThrowingStream<AgentEvent, Error> {
@@ -536,7 +821,13 @@ import XCTest
     func recover(conversationID: UUID) async throws -> AgentRecovery { recoveries += 1; return recovery }
     func toolResult(conversationID: UUID, requestID: UUID, toolCallID: String) async throws -> AgentToolCompletion? { nil }
     func yield(_ event: AgentEvent) { stream?.yield(event) }
-    func cancel() async throws { cancellations += 1; onCancel?(); stream?.yield(.finished(cancellationOutcome)); stream?.finish(); stream = nil }
+    func cancel() async throws {
+        cancellations += 1; onCancel?()
+        if let cancellationGate { await cancellationGate.wait() }
+        if let cancellationFailure { stream?.yield(.cleanupFailed(cancellationFailure.localizedDescription)) }
+        stream?.yield(.finished(cancellationOutcome)); stream?.finish(); stream = nil
+        if let cancellationFailure { throw cancellationFailure }
+    }
     func cancel(conversationID: UUID) async throws { try await cancel() }
     func removeConversation(id: UUID) async throws {}
 }
@@ -553,8 +844,12 @@ private actor CoordinatorActuator: DeviceFixtureActuator {
     let failRelease: Bool
     let releaseGate: CoordinatorGate?
     let releaseConfirmed: Bool
-    init(failRelease: Bool = false, releaseGate: CoordinatorGate? = nil, disconnectGate: CoordinatorGate? = nil, statusGate: CoordinatorGate? = nil, releaseConfirmed: Bool = true) {
+    let releaseFailureMessage: String
+    private var releaseConfirmations: [Bool] = []
+    init(failRelease: Bool = false, releaseGate: CoordinatorGate? = nil, disconnectGate: CoordinatorGate? = nil, statusGate: CoordinatorGate? = nil, releaseConfirmed: Bool = true,
+         releaseFailureMessage: String = "Fixture release failed") {
         self.failRelease = failRelease; self.releaseGate = releaseGate; self.disconnectGate = disconnectGate; self.statusGate = statusGate; self.releaseConfirmed = releaseConfirmed
+        self.releaseFailureMessage = releaseFailureMessage
     }
     func status() async -> DeviceStatus {
         statusStarted = true; await statusGate?.wait()
@@ -563,7 +858,7 @@ private actor CoordinatorActuator: DeviceFixtureActuator {
     func fixtureReleaseInput() async throws {
         events.append("release"); releaseStarted = true
         await releaseGate?.wait()
-        if failRelease { throw DeviceControlError.deliveryUnknown("Fixture release failed") }
+        if failRelease { throw DeviceControlError.deliveryUnknown(releaseFailureMessage) }
     }
     func fixtureDisconnect() async {
         events.append("disconnect"); connected = false
@@ -572,7 +867,11 @@ private actor CoordinatorActuator: DeviceFixtureActuator {
             await disconnectGate?.wait()
         }
     }
-    func fixtureDisconnectAndConfirmRelease() async -> Bool { await fixtureDisconnect(); return releaseConfirmed }
+    func setReleaseConfirmations(_ values: [Bool]) { releaseConfirmations = values }
+    func fixtureDisconnectAndConfirmRelease() async -> Bool {
+        await fixtureDisconnect()
+        return releaseConfirmations.isEmpty ? releaseConfirmed : releaseConfirmations.removeFirst()
+    }
 }
 
 private actor CoordinatorGate {

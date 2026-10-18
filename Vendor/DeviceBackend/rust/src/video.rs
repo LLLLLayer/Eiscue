@@ -11,6 +11,13 @@ use std::{
 };
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 const MAX_FRAMES: usize = 64;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DisplayGeometry {
+    pub width: u32,
+    pub height: u32,
+    pub native_rotation: u16,
+    pub rotation: u16,
+}
 struct Sample {
     unit: HevcAccessUnit,
     params: HevcParameterSets,
@@ -28,7 +35,7 @@ struct Queue {
     epoch: u64,
     revision: Option<u64>,
     reset: bool,
-    visible: Option<(u32, u32)>,
+    geometry: Option<DisplayGeometry>,
     report: u64,
     confirmed_serial: u64,
 }
@@ -69,7 +76,7 @@ impl VideoMailbox {
     pub fn decode_cursor(&self) -> VideoDecodeCursor {
         self.0.lock().map(|q| VideoDecodeCursor {
             epoch: q.epoch,
-            serial: if q.have_sync { q.serial } else { 0 },
+            serial: if q.have_sync && q.geometry.is_some() { q.serial } else { 0 },
         }).unwrap_or_default()
     }
     pub fn packet_pending(&self) {
@@ -88,11 +95,11 @@ impl VideoMailbox {
         }
         self.1.store(false, Ordering::SeqCst);
         self.reset();
-        self.set_visible_size(None);
+        self.set_display_geometry(None);
     }
-    pub fn set_visible_size(&self, size: Option<(u32, u32)>) {
+    pub fn set_display_geometry(&self, geometry: Option<DisplayGeometry>) {
         if let Ok(mut q) = self.0.lock() {
-            if q.visible != size && q.have_sync {
+            if q.geometry != geometry {
                 // Display metadata can announce a rotation before its first
                 // video picture arrives. Revoke old geometry immediately.
                 q.samples.clear();
@@ -104,8 +111,14 @@ impl VideoMailbox {
                 q.confirmed_serial = 0;
                 self.request_refresh();
             }
-            q.visible = size;
+            q.geometry = geometry;
         }
+    }
+    #[cfg(test)]
+    fn set_visible_size(&self, size: Option<(u32, u32)>) {
+        self.set_display_geometry(size.map(|(width, height)| DisplayGeometry {
+            width, height, native_rotation: 0, rotation: 0,
+        }));
     }
     pub fn count(&self, index: usize) {
         self.2[index].fetch_add(1, Ordering::Relaxed);
@@ -132,6 +145,23 @@ impl VideoMailbox {
     }
     pub fn take_refresh(&self) -> bool {
         self.1.swap(false, Ordering::SeqCst)
+    }
+    /// Geometry changes can revoke the reference chain independently of RTP.
+    /// Dropping an inter frame is not evidence that synchronization recovered.
+    pub fn needs_sync(&self) -> bool {
+        self.0.lock().map(|q| !q.have_sync).unwrap_or(true)
+    }
+    /// A fresh reply can revoke cached geometry, never publish a replacement.
+    /// Only the ordered subscription may advance display metadata. In-flight
+    /// replies from an older epoch cannot overwrite a newer notification.
+    pub fn verify_display_geometry(&self, epoch: u64, fresh: DisplayGeometry) -> bool {
+        let Ok(mut q) = self.0.lock() else { return false; };
+        if q.epoch != epoch { return false; }
+        if q.geometry == Some(fresh) { return q.have_sync && q.serial > 0; }
+        q.samples.clear(); q.bytes = 0; q.have_sync = false; q.revision = None;
+        q.epoch += 1; q.reset = true; q.confirmed_serial = 0;
+        self.request_refresh();
+        false
     }
     pub fn reset(&self) {
         if let Ok(mut q) = self.0.lock() {
@@ -171,7 +201,7 @@ impl VideoMailbox {
             q.bytes = 0;
             q.have_sync = true;
         }
-        let visible = q.visible.filter(|&(w, h)| {
+        let visible = q.geometry.map(|g| (g.width, g.height)).filter(|&(w, h)| {
             w > 0
                 && h > 0
                 && w <= params.pixel_width
@@ -310,6 +340,7 @@ mod tests {
     #[test]
     fn input_geometry_cursor_does_not_require_an_idle_sender_report() {
         let q = VideoMailbox::default(); q.begin_stream(); q.poll(0);
+        q.set_visible_size(Some((10, 20)));
         assert_eq!(q.decode_cursor().serial, 0);
         for _ in 0..100 {
             q.packet_pending();
@@ -329,6 +360,7 @@ mod tests {
     #[test]
     fn input_geometry_cursor_advances_before_queued_layout_is_decoded() {
         let q = VideoMailbox::default(); q.begin_stream(); q.poll(0);
+        q.set_visible_size(Some((10, 20)));
         let (u, p) = sample(true); assert!(q.push(u, p));
         let old = q.decode_cursor();
         let (u, p) = sample(false); assert!(q.push(u, p));
@@ -355,11 +387,57 @@ mod tests {
         assert_ne!(q.decode_cursor().epoch, old.epoch, "Returning to old dimensions must not revive an observation");
     }
     #[test]
+    fn same_size_rotation_and_return_revoke_old_input_without_pixel_changes() {
+        let q = VideoMailbox::default(); q.begin_stream();
+        let geometry = DisplayGeometry { width: 10, height: 20, native_rotation: 0, rotation: 0 };
+        q.set_display_geometry(Some(geometry)); q.poll(0);
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        let original = q.decode_cursor();
+        q.set_display_geometry(Some(DisplayGeometry { rotation: 180, ..geometry }));
+        assert_eq!(q.decode_cursor().serial, 0);
+        assert_ne!(q.decode_cursor().epoch, original.epoch);
+        let rotated_epoch = q.decode_cursor().epoch;
+        q.set_display_geometry(Some(geometry));
+        assert_ne!(q.decode_cursor().epoch, rotated_epoch, "Even A→B→A before new pixels cannot revive A");
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        assert_ne!(q.decode_cursor().epoch, original.epoch);
+        q.set_display_geometry(None);
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        assert_eq!(q.decode_cursor().serial, 0, "Lost direction metadata must not authorize coordinates");
+    }
+    #[test]
+    fn geometry_reset_keeps_sync_demand_while_inter_frames_are_discarded() {
+        let q = VideoMailbox::default(); q.begin_stream();
+        let geometry = DisplayGeometry { width: 10, height: 20, native_rotation: 0, rotation: 0 };
+        q.set_display_geometry(Some(geometry)); q.poll(0);
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        assert!(!q.needs_sync());
+        let previous = q.decode_cursor();
+        q.poll(1024);
+        q.set_display_geometry(Some(DisplayGeometry { rotation: 180, ..geometry }));
+        assert!(q.take_refresh());
+        assert!(!q.take_refresh(), "A one-shot refresh is not the reference-chain state");
+        assert_eq!(q.poll(0).0, 14);
+        for _ in 0..100 {
+            let (u, p) = sample(false); assert!(q.push(u, p));
+            assert!(q.needs_sync(), "An accepted but discarded P-frame cannot end keyframe recovery");
+            assert_eq!(q.decode_cursor().serial, 0);
+            assert_eq!(q.poll(1024).0, 0);
+        }
+        assert_eq!(q.status().overflows, 0);
+        let (u, p) = sample(true); assert!(q.push(u, p));
+        assert!(!q.needs_sync());
+        assert_ne!(q.decode_cursor().epoch, previous.epoch);
+        assert!(q.decode_cursor().serial > previous.serial);
+        assert_eq!(q.poll(1024).0, 13);
+    }
+    #[test]
     fn display_geometry_is_snapshotted_and_checked_against_each_picture() {
         let q = VideoMailbox::default();
         q.begin_stream();
         q.poll(0);
         q.set_visible_size(Some((9, 18)));
+        assert_eq!(q.poll(0).0, 14);
         let (u, p) = sample(true);
         assert!(q.push(u, p));
         let (_, size, data) = q.poll(1024);

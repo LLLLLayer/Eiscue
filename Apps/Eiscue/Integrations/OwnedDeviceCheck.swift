@@ -22,6 +22,7 @@ import Synchronization
     var windowBounds = CGRect.zero
     var screenScale: CGFloat = 0
     var orientation = UIInterfaceOrientation.unknown
+    var usesFixedScreenCoordinates = false
 
     func observeWindow(_ window: UIWindow?) {
         self.window = window
@@ -118,6 +119,7 @@ struct OwnedDeviceCheckView: View {
     let windowBounds: CGRect
     let scale: CGFloat
     let orientation: UIInterfaceOrientation
+    let usesFixedScreenCoordinates: Bool
     let button: CGRect
     let scroll: CGRect
     let field: CGRect
@@ -125,8 +127,11 @@ struct OwnedDeviceCheckView: View {
     let rowY: CGFloat
 
     init(proof: OwnedDeviceCheckState, orientation expected: UIInterfaceOrientation? = nil) throws {
+        // effectiveGeometry changes before UIKit's rotation animation finishes.
+        // A settled model layout alone is not a stationary input target.
         guard let window = proof.window, let scene = window.windowScene,
               scene.activationState == .foregroundActive,
+              window.rootViewController?.transitionCoordinator == nil,
               scene.effectiveGeometry.interfaceOrientation != .unknown,
               expected == nil || scene.effectiveGeometry.interfaceOrientation == expected,
               proof.orientation == scene.effectiveGeometry.interfaceOrientation,
@@ -139,7 +144,9 @@ struct OwnedDeviceCheckView: View {
                   !$0.isEmpty && window.bounds.insetBy(dx: -1, dy: -1).contains($0)
               }) else { throw DeviceControlError.invalidCoordinates }
         self.window = window; self.scene = scene
-        screenBounds = scene.screen.bounds; windowBounds = window.bounds
+        usesFixedScreenCoordinates = proof.usesFixedScreenCoordinates
+        screenBounds = proof.usesFixedScreenCoordinates ? scene.screen.fixedCoordinateSpace.bounds : scene.screen.bounds
+        windowBounds = window.bounds
         scale = scene.screen.scale; orientation = scene.effectiveGeometry.interfaceOrientation
         button = proof.button; scroll = proof.scroll; field = proof.field
         layout = proof.layout; rowY = proof.rowY
@@ -163,7 +170,8 @@ struct OwnedDeviceCheckView: View {
     }
 
     func point(_ point: CGPoint, frame: DeviceScreenshot) throws -> DevicePoint {
-        let screenPoint = window.convert(point, to: scene.screen.coordinateSpace)
+        let space = usesFixedScreenCoordinates ? scene.screen.fixedCoordinateSpace : scene.screen.coordinateSpace
+        let screenPoint = window.convert(point, to: space)
         guard screenPoint.x.isFinite, screenPoint.y.isFinite, screenBounds.contains(screenPoint) else {
             throw DeviceControlError.invalidCoordinates
         }
@@ -191,8 +199,8 @@ struct OwnedDeviceCheckView: View {
               width == frame.width, height == frame.height, image.width == width, image.height == height,
               abs(CGFloat(width) - screenBounds.width * scale) <= 1,
               abs(CGFloat(height) - screenBounds.height * scale) <= 1,
-              (width > height) == orientation.isLandscape else {
-            throw DeviceControlError.connection("Owned screenshot did not match the current scene orientation and screen bounds")
+              (width > height) == (screenBounds.width > screenBounds.height) else {
+            throw DeviceControlError.connection("Owned screenshot did not match scene: frame=\(frame.width)x\(frame.height), expected=\(screenBounds.width * scale)x\(screenBounds.height * scale), orientation=\(orientation.rawValue)")
         }
     }
 }
@@ -241,7 +249,20 @@ extension AppModel {
                 print("Owned capture changed geometry: \(before.changedGeometryNames(comparedTo: after).joined(separator: ","))")
                 continue
             }
-            try after.validateImage(frame)
+            do { try after.validateImage(frame) }
+            catch {
+                let suffix = frame.mimeType == "image/jpeg" ? "jpg" : "png"
+                try? frame.data.write(to: URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceFrameMismatch.\(suffix)"),
+                                      options: [.atomic, .completeFileProtection])
+                // Retain a later observation to distinguish transition frames
+                // from a persistent coordinate-space difference. No input retry.
+                try? await Task.sleep(for: .seconds(2))
+                if let later = try? await deviceClient.captureScreenshot() {
+                    try? later.data.write(to: URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceFrameMismatchLater.\(suffix)"),
+                                          options: [.atomic, .completeFileProtection])
+                }
+                throw error
+            }
             return (frame, after)
         }
         throw DeviceControlError.staleFrame
@@ -274,14 +295,31 @@ extension AppModel {
         let destination = URL.cachesDirectory.appendingPathComponent("EiscueOwnedDeviceCheck.json")
         let arguments = ProcessInfo.processInfo.arguments
         let backend = deviceControlBackend
-        let smoke = arguments.contains("--owned-device-check") && arguments.contains("--owned-device-smoke")
-        var report: [String: Any] = ["version": 5, "kind": smoke ? "smoke" : "full",
+        // DisplayService returns the fixed physical display canvas. Owned
+        // XCTest normalizes screenshots to the active interface orientation.
+        proof.usesFixedScreenCoordinates = backend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion) == .coreDevice
+        let repeatCheck = arguments.contains("--owned-device-check") && arguments.contains("--owned-device-repeat-check")
+        let smoke = arguments.contains("--owned-device-check") && (arguments.contains("--owned-device-smoke") || repeatCheck)
+        let backgroundOnly = !smoke && arguments.contains("--owned-device-background-check")
+        let textOnly = !smoke && arguments.contains("--owned-device-text-check")
+        let portrait = !smoke && (backgroundOnly || textOnly || arguments.contains("--owned-device-portrait-check"))
+        var report: [String: Any] = ["version": 7, "sessionID": UUID().uuidString, "startedAt": Date().timeIntervalSince1970,
+            "kind": repeatCheck ? "repeat" : smoke ? "smoke" : (backgroundOnly ? "background" : textOnly ? "text" : (portrait ? "portrait" : "full")),
             "state": "started", "phase": "preparation", "completedSteps": [String](),
             "connectionMethod": DeviceConnectionMethod.localVPN.rawValue, "controlBackend": backend.rawValue,
             "effectiveControlBackend": backend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion).rawValue,
             "localTunnelConnectedAtStart": localTunnel.isConnected,
-            "disconnectVerification": "localOnly"]
-        if smoke { report["plannedSteps"] = ["connect_1", "screenshot_1", "tap_1", "post_tap_screenshot_1", "disconnect_1"] }
+            "disconnectVerification": "confirmedReleaseRequired"]
+        report["coordinateSpace"] = proof.usesFixedScreenCoordinates ? "fixedPhysicalDisplay" : "interfaceOrientedDisplay"
+        if portrait {
+            report["excludedChecks"] = ["rotation180", "oldOrientationFrameRejection", "freshOrientationTap"]
+                + (backgroundOnly ? ["focus", "text"] : []) + (textOnly ? ["swipe"] : [])
+        }
+        if smoke {
+            report["plannedSteps"] = (1...(repeatCheck ? 5 : 1)).flatMap { cycle in
+                ["connect_\(cycle)", "screenshot_\(cycle)", "tap_\(cycle)", "post_tap_screenshot_\(cycle)", "disconnect_\(cycle)"]
+            }
+        }
         var completedSteps: [String] = []
         var requiresDisconnect = true
         var orientationToRestore: (scene: UIWindowScene, orientation: UIInterfaceOrientation)?
@@ -307,8 +345,9 @@ extension AppModel {
             guard localTunnel.isConnected else { throw DeviceControlError.notConnected }
             // Require the native target's attached scene and settled view frames.
             save("geometry")
-            _ = try await ownedGeometry(proof)
-            for cycle in 1...(smoke ? 1 : 2) {
+            let initialGeometry = try await ownedGeometry(proof, orientation: portrait ? .portrait : nil)
+            report["initialInterfaceOrientation"] = initialGeometry.orientation.rawValue
+            for cycle in 1...(repeatCheck ? 5 : smoke ? 1 : 2) {
                 save("connect_\(cycle)")
                 // The same entry point used by AppModel.connectDevice. This
                 // returns only after identity verification, developer readiness
@@ -354,68 +393,121 @@ extension AppModel {
                     report["postTapMimeType"] = afterTap.frame.mimeType
                 }
                 if cycle == 1 && !smoke {
-                    let original = afterTap.geometry
-                    orientationToRestore = (original.scene, original.orientation)
-                    save("rotate_landscape_left")
-                    _ = try await ownedRotate(proof, scene: original.scene, orientation: .landscapeLeft)
-                    // This observation remains unused until after the 180° turn.
-                    // Capturing again before testing it would invalidate the
-                    // ledger by replacement and would not test rotation guards.
-                    let left = try await ownedCapture(proof, orientation: .landscapeLeft)
-                    let rotationCount = proof.count
-                    let oldPoint = try left.geometry.point(CGPoint(x: left.geometry.button.midX, y: left.geometry.button.midY), frame: left.frame)
-                    save("rotate_landscape_right")
-                    let rightGeometry = try await ownedRotate(proof, scene: original.scene, orientation: .landscapeRight)
-                    guard rightGeometry.screenBounds.size == left.geometry.screenBounds.size,
-                          rightGeometry.scale == left.geometry.scale else {
-                        throw DeviceControlError.connection("Owned 180 degree rotation changed the screen dimensions")
+                    if !portrait {
+                        let original = afterTap.geometry
+                        orientationToRestore = (original.scene, original.orientation)
+                        save("rotate_landscape_left")
+                        _ = try await ownedRotate(proof, scene: original.scene, orientation: .landscapeLeft)
+                        // This observation remains unused until after the 180° turn.
+                        // Capturing again before testing it would invalidate the
+                        // ledger by replacement and would not test rotation guards.
+                        let left = try await ownedCapture(proof, orientation: .landscapeLeft)
+                        let leftFile = "EiscueOwnedRotationLeft.\(left.frame.mimeType == "image/jpeg" ? "jpg" : "png")"
+                        try left.frame.data.write(to: URL.cachesDirectory.appendingPathComponent(leftFile), options: [.atomic, .completeFileProtection])
+                        report["rotationLeftFrameFile"] = leftFile
+                        report["rotationLeftInterfaceOrientation"] = left.geometry.orientation.rawValue
+                        let rotationCount = proof.count
+                        let oldPoint = try left.geometry.point(CGPoint(x: left.geometry.button.midX, y: left.geometry.button.midY), frame: left.frame)
+                        save("rotate_landscape_right")
+                        let rightGeometry = try await ownedRotate(proof, scene: original.scene, orientation: .landscapeRight)
+                        guard rightGeometry.screenBounds.size == left.geometry.screenBounds.size,
+                              rightGeometry.scale == left.geometry.scale else {
+                            throw DeviceControlError.connection("Owned 180 degree rotation changed the screen dimensions")
+                        }
+                        save("reject_old_orientation_frame")
+                        report["rotationRightInterfaceOrientation"] = rightGeometry.orientation.rawValue
+                        var oldFrameRejected = false
+                        do {
+                            try await deviceClient.tap(at: oldPoint, frameID: left.frame.frameID)
+                        } catch DeviceControlError.staleFrame {
+                            oldFrameRejected = true
+                        }
+                        if !oldFrameRejected {
+                            report["rotationOldFrameAccepted"] = true
+                            // Capture only after the old grant was exercised, so
+                            // evidence collection cannot replace the grant first.
+                            if let rightEvidence = try? await ownedCapture(proof, orientation: .landscapeRight) {
+                                let rightFile = "EiscueOwnedRotationRight.\(rightEvidence.frame.mimeType == "image/jpeg" ? "jpg" : "png")"
+                                try? rightEvidence.frame.data.write(to: URL.cachesDirectory.appendingPathComponent(rightFile), options: [.atomic, .completeFileProtection])
+                                report["rotationRightFrameFile"] = rightFile
+                            }
+                            throw DeviceControlError.connection("Owned old orientation frame was accepted")
+                        }
+                        try await Task.sleep(for: .milliseconds(400))
+                        guard proof.count == rotationCount else { throw DeviceControlError.connection("Owned stale orientation frame changed the button") }
+                        let right = try await ownedCapture(proof, orientation: .landscapeRight)
+                        let rightFile = "EiscueOwnedRotationRight.\(right.frame.mimeType == "image/jpeg" ? "jpg" : "png")"
+                        try right.frame.data.write(to: URL.cachesDirectory.appendingPathComponent(rightFile), options: [.atomic, .completeFileProtection])
+                        report["rotationRightFrameFile"] = rightFile
+                        guard right.frame.width == left.frame.width, right.frame.height == left.frame.height else {
+                            throw DeviceControlError.connection("Owned opposite landscape screenshot dimensions did not match")
+                        }
+                        save("tap_new_orientation_frame")
+                        let rightPoint = try right.geometry.point(CGPoint(x: right.geometry.button.midX, y: right.geometry.button.midY), frame: right.frame)
+                        report["rotationRightTapPoint"] = [rightPoint.x, rightPoint.y]
+                        report["rotationRightWindowButton"] = [right.geometry.button.midX, right.geometry.button.midY]
+                        try await deviceClient.tap(at: rightPoint, frameID: right.frame.frameID)
+                        try await Task.sleep(for: .milliseconds(400))
+                        guard proof.count == rotationCount + 1 else { throw DeviceControlError.connection("Owned fresh orientation frame did not increment") }
+                        report["rotation180Verified"] = true
+                        report["rotation180OldFrameRejectedWithoutEffect"] = true
+                        report["rotation180FreshFrameTapVerified"] = true
+                        report["rotationLandscapeWidth"] = right.frame.width
+                        report["rotationLandscapeHeight"] = right.frame.height
+                        save("restore_orientation")
+                        _ = try await ownedRotate(proof, scene: original.scene, orientation: original.orientation)
+                        orientationToRestore = nil
+                        report["originalOrientationRestored"] = true
                     }
-                    save("reject_old_orientation_frame")
-                    do {
-                        try await deviceClient.tap(at: oldPoint, frameID: left.frame.frameID)
-                        throw DeviceControlError.connection("Owned old orientation frame was accepted")
-                    } catch DeviceControlError.staleFrame {
-                        // Require rejection at the API and no visible button effect.
+                    if !textOnly {
+                        let swipeCapture = try await ownedCapture(proof)
+                        let oldY = swipeCapture.geometry.rowY, rect = swipeCapture.geometry.scroll
+                        let start = try swipeCapture.geometry.point(CGPoint(x: rect.midX, y: rect.maxY - 30), frame: swipeCapture.frame)
+                        let end = try swipeCapture.geometry.point(CGPoint(x: rect.midX, y: rect.minY + 30), frame: swipeCapture.frame)
+                        report["swipeStart"] = [start.x, start.y]; report["swipeEnd"] = [end.x, end.y]
+                        report["swipeRowBefore"] = oldY
+                        save("swipe")
+                        try await deviceClient.swipe(from: start, to: end, frameID: swipeCapture.frame.frameID)
+                        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+                        while proof.rowY >= oldY - 30, ContinuousClock.now < deadline {
+                            try await Task.sleep(for: .milliseconds(50))
+                        }
+                        report["swipeRowAfter"] = proof.rowY
+                        let afterSwipe = try await deviceClient.captureScreenshot()
+                        let swipeFile = "EiscueOwnedDeviceAfterSwipe." + (afterSwipe.mimeType == "image/png" ? "png" : "jpg")
+                        try afterSwipe.data.write(to: URL.cachesDirectory.appendingPathComponent(swipeFile), options: [.atomic, .completeFileProtection])
+                        report["swipeFrameFile"] = swipeFile
+                        guard proof.rowY < oldY - 30 else { throw DeviceControlError.connection("Owned scroll did not move") }
+                        report["swipeVerified"] = true
                     }
-                    try await Task.sleep(for: .milliseconds(400))
-                    guard proof.count == rotationCount else { throw DeviceControlError.connection("Owned stale orientation frame changed the button") }
-                    let right = try await ownedCapture(proof, orientation: .landscapeRight)
-                    guard right.frame.width == left.frame.width, right.frame.height == left.frame.height else {
-                        throw DeviceControlError.connection("Owned opposite landscape screenshot dimensions did not match")
+                    if !backgroundOnly {
+                        let fieldCapture = try await ownedCapture(proof)
+                        save("focus")
+                        try await deviceClient.tap(at: fieldCapture.geometry.point(CGPoint(x: fieldCapture.geometry.field.midX, y: fieldCapture.geometry.field.midY), frame: fieldCapture.frame), frameID: fieldCapture.frame.frameID)
+                        try await Task.sleep(for: .milliseconds(300))
+                        let typingFrame = try await ownedCapture(proof)
+                        save("text")
+                        let testText = "你好，Eiscue 🧊"
+                        try await deviceClient.typeText(testText, frameID: typingFrame.frame.frameID)
+                        // A physical run may need the user's system paste grant.
+                        // Observe without reissuing input while that dialog is open.
+                        let textDeadline = ContinuousClock.now.advanced(by: .seconds(60))
+                        while proof.input != testText, ContinuousClock.now < textDeadline {
+                            try await Task.sleep(for: .milliseconds(100))
+                        }
+                        report["observedTextScalarCount"] = proof.input.unicodeScalars.count
+                        report["unicodeTextVerified"] = proof.input == testText
+                        if proof.input != testText {
+                            guard portrait else { throw DeviceControlError.connection("Owned text input did not match") }
+                            // This narrower diagnostic still fails overall, but can
+                            // observe independent Home/background/launch behavior.
+                            // Never resend the text whose visible effect failed.
+                            report["failedChecks"] = ["text"]
+                            report["failedPhase"] = "text"
+                            report["reason"] = "Owned text input did not match"
+                        }
                     }
-                    save("tap_new_orientation_frame")
-                    try await deviceClient.tap(at: right.geometry.point(CGPoint(x: right.geometry.button.midX, y: right.geometry.button.midY), frame: right.frame), frameID: right.frame.frameID)
-                    try await Task.sleep(for: .milliseconds(400))
-                    guard proof.count == rotationCount + 1 else { throw DeviceControlError.connection("Owned fresh orientation frame did not increment") }
-                    report["rotation180Verified"] = true
-                    report["rotation180OldFrameRejectedWithoutEffect"] = true
-                    report["rotation180FreshFrameTapVerified"] = true
-                    report["rotationLandscapeWidth"] = right.frame.width
-                    report["rotationLandscapeHeight"] = right.frame.height
-                    save("restore_orientation")
-                    _ = try await ownedRotate(proof, scene: original.scene, orientation: original.orientation)
-                    orientationToRestore = nil
-                    report["originalOrientationRestored"] = true
-                    let swipeCapture = try await ownedCapture(proof)
-                    let oldY = swipeCapture.geometry.rowY, rect = swipeCapture.geometry.scroll
-                    save("swipe")
-                    try await deviceClient.swipe(from: swipeCapture.geometry.point(CGPoint(x: rect.midX, y: rect.maxY - 30), frame: swipeCapture.frame),
-                        to: swipeCapture.geometry.point(CGPoint(x: rect.midX, y: rect.minY + 30), frame: swipeCapture.frame), frameID: swipeCapture.frame.frameID)
-                    try await Task.sleep(for: .milliseconds(500))
-                    guard proof.rowY < oldY - 30 else { throw DeviceControlError.connection("Owned scroll did not move") }
-                    report["swipeVerified"] = true
-                    let fieldCapture = try await ownedCapture(proof)
-                    save("focus")
-                    try await deviceClient.tap(at: fieldCapture.geometry.point(CGPoint(x: fieldCapture.geometry.field.midX, y: fieldCapture.geometry.field.midY), frame: fieldCapture.frame), frameID: fieldCapture.frame.frameID)
-                    try await Task.sleep(for: .milliseconds(300))
-                    let typingFrame = try await ownedCapture(proof)
-                    save("text")
-                    let testText = "你好，Eiscue 🧊"
-                    try await deviceClient.typeText(testText, frameID: typingFrame.frame.frameID)
-                    try await Task.sleep(for: .milliseconds(400))
-                    guard proof.input == testText else { throw DeviceControlError.connection("Owned text input did not match") }
-                    report["unicodeTextVerified"] = true
-                    save("after_text_screenshot")
+                    save(backgroundOnly ? "before_home_screenshot" : "after_text_screenshot")
                     let beforeHome = try await ownedCapture(proof)
                     let leaseID = UUID(), expired = Mutex(false)
                     save("background_lease")
@@ -424,7 +516,11 @@ extension AppModel {
                     backgroundCheckID = leaseID
                     save("home")
                     try await deviceClient.home(frameID: beforeHome.frame.frameID)
-                    try await Task.sleep(for: .milliseconds(300))
+                    let homeDeadline = ContinuousClock.now.advanced(by: .seconds(4))
+                    while currentScenePhase != .background, ContinuousClock.now < homeDeadline {
+                        try await Task.sleep(for: .milliseconds(50))
+                    }
+                    report["scenePhaseAfterHome"] = String(describing: currentScenePhase)
                     guard currentScenePhase == .background else { throw DeviceControlError.connection("Home did not background the App") }
                     report["homeVerified"] = true
                     // The former probe reopened Eiscue immediately after Home,
@@ -458,15 +554,16 @@ extension AppModel {
                     background.end(taskID: leaseID, success: true); backgroundCheckID = nil
                 }
                 save("stop_\(cycle)")
-                await deviceClient.disconnect()
+                let released = await deviceClient.disconnectAndConfirmRelease()
+                report["releaseConfirmed_\(cycle)"] = released
+                guard released else { throw DeviceControlError.connection("Owned media release was not confirmed") }
                 if case .ready = await deviceClient.status() { throw DeviceControlError.connection("Owned connection still ready after stop") }
                 requiresDisconnect = false
-                // Status no longer ready proves local disconnection only. The
-                // public API does not expose a daemon teardown acknowledgement.
+                // Report local readiness separately from the release receipt above.
                 report["locallyDisconnected_\(cycle)"] = true
                 completedSteps.append("disconnect_\(cycle)")
             }
-            report["state"] = "passed"
+            report["state"] = report["failedChecks"] == nil ? "passed" : "failed"
         } catch {
             report["state"] = "failed"
             report["failedPhase"] = report["phase"]
@@ -476,7 +573,7 @@ extension AppModel {
         // Every failure or cancellation reaches teardown, including a partially
         // completed connect. Keep the await here rather than an unawaited Task
         // in defer so the report cannot finish before input is released.
-        if requiresDisconnect { await deviceClient.disconnect() }
+        if requiresDisconnect { report["failureCleanupReleaseConfirmed"] = await deviceClient.disconnectAndConfirmRelease() }
         if let restoration = orientationToRestore {
             save("restore_orientation_after_failure")
             do {
@@ -484,6 +581,7 @@ extension AppModel {
                 report["originalOrientationRestored"] = true
             } catch { report["orientationRestore"] = "failed" }
         }
+        report["connectionDiagnostic"] = await deviceClient.debugConnectionDiagnostic()
         save("finished")
     }
     #endif

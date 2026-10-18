@@ -116,7 +116,7 @@ final class DeviceSession {
               !hasUnconfirmedRelease || requested == .repair || requested == .setup else { throw DeviceControlError.busy }
         if canCancelConnection { for task in connectionTasks.values { task.cancel() } }
         let id = UUID(); confirmedRelease = nil; owner = requested; leaseID = id
-        return DeviceLease(session: self, id: id, owner: requested, client: client)
+        return DeviceLease(session: self, id: id, owner: requested, client: client, method: activeMethod ?? selectedMethod)
     }
     fileprivate func release(_ expected: Owner, id: UUID) {
         guard owner == expected, leaseID == id else { return }
@@ -373,11 +373,12 @@ final class DeviceSession {
 @MainActor
 final class DeviceLease {
     let client: DeviceClient
+    let method: DeviceConnectionMethod
     let owner: DeviceSession.Owner
     let id: UUID
     private weak var session: DeviceSession?
-    init(session: DeviceSession, id: UUID, owner: DeviceSession.Owner, client: DeviceClient) {
-        self.session = session; self.id = id; self.owner = owner; self.client = client
+    init(session: DeviceSession, id: UUID, owner: DeviceSession.Owner, client: DeviceClient, method: DeviceConnectionMethod) {
+        self.session = session; self.id = id; self.owner = owner; self.client = client; self.method = method
     }
     func release() { session?.release(owner, id: id); session = nil }
 }

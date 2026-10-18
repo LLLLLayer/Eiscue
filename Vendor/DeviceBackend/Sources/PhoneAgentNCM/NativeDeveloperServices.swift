@@ -85,6 +85,9 @@ public enum NativeControlBackend: Sendable, Equatable {
     private var videoPump: Task<Void, Never>?
     private var videoDecoder: NCMVideoDecoder?
     public private(set) var videoSnapshotDiagnostics: String?
+    #if DEBUG
+    public private(set) var connectionInterfaceDiagnostic: [String: String] = [:]
+    #endif
     private var videoDecodeFailure: NativeBackendError?
     private var mediaStartCompleted = false
     private var automationLease: UInt64 = 0
@@ -94,11 +97,19 @@ public enum NativeControlBackend: Sendable, Equatable {
     private var automationStopping = false
     private var ownsXCTestChannels = false
     private var automationStopConfirmed = false
+    private let submittedRequest = NCMSubmittedRequest()
+    private let ownedDelivery = NCMOwnedDelivery()
+    private var cleanupRequired = false
     let controlBackend: NativeControlBackend
     private var usesOwnedXCTest: Bool { controlBackend == .xcTest }
     public var supportedControlActions: Set<NativeControlAction> {
-        guard mediaStartCompleted else { return [] }
+        guard mediaStartCompleted, !cleanupRequired else { return [] }
         return Set(NativeControlAction.allCases)
+    }
+    /// Preserve an accepted request's original receipt budget before closing its
+    /// channels. A timeout still closes locally and reports unconfirmed release.
+    public var mediaReleaseTimeout: Duration {
+        max(submittedRequest.releaseTimeout(), ownedDelivery.receipt.releaseTimeout())
     }
     public init(controlBackend: NativeControlBackend) { self.controlBackend = controlBackend }
     public convenience init() {
@@ -120,6 +131,7 @@ public enum NativeControlBackend: Sendable, Equatable {
     public func close() {
         if automationLease != 0 { eiscue_automation_abort(automationLease) }
         automationLease = 0; automationLayout = nil; automationGeometry.reset()
+        submittedRequest.reset(); ownedDelivery.receipt.reset(); cleanupRequired = false
         ownsXCTestChannels = false
         videoPump?.cancel(); videoPump = nil
         videoDecoder = nil; videoDecodeFailure = nil; mediaStartCompleted = false
@@ -181,7 +193,11 @@ public enum NativeControlBackend: Sendable, Equatable {
         guard !busy, handle == 0 else { throw NativeBackendError.busy }
         guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
         guard pairingPort != 0 else { throw NativeBackendError.invalidCandidate }
-        let row = try LocalVPNDiscovery.selectInterface(NCMInterfaceBinding.inventory(), configuration: configuration)
+        let rows = try NCMInterfaceBinding.inventory()
+        #if DEBUG
+        connectionInterfaceDiagnostic = LocalVPNDiscovery.interfaceSnapshot(rows, configuration: configuration)
+        #endif
+        let row = try LocalVPNDiscovery.selectInterface(rows, configuration: configuration)
         let values = [identity.signingSeed, Data(identity.controllerID.utf8), Data(identity.peerID.utf8), identity.peerPublicKey,
                       identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
         var started: UInt64 = 0
@@ -241,9 +257,12 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// or DisplayService/HID resources without revoking the authentication tunnel.
     public func stopTouchMedia() async throws {
         if usesOwnedXCTest { try await stopOwnedAutomation(); return }
+        guard !busy else { throw NativeBackendError.busy }
+        busy = true; defer { busy = false }
         videoPump?.cancel(); videoPump = nil
         let decoder = videoDecoder; videoDecoder = nil; videoDecodeFailure = nil
-        _ = try await operation(11)
+        try await drainSubmittedRequest()
+        _ = try await performOperation(11)
         mediaStartCompleted = false
         if let decoder { await decoder.reset() }
     }
@@ -251,7 +270,7 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// request drain before sending this session's explicit media-stop request.
     /// The caller owns the outer deadline and always calls close afterwards.
     public func stopTouchMediaWhenIdle() async throws -> Bool {
-        if usesOwnedXCTest { automationStopping = true }
+        automationStopping = true
         defer { automationStopping = false }
         videoPump?.cancel(); videoPump = nil
         videoDecoder = nil; videoDecodeFailure = nil
@@ -280,6 +299,7 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// A fresh screenshot and its coordinate-space identity. XCTest returns PNG;
     /// DisplayService returns JPEG. Callers must use the snapshot's MIME type.
     public func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
+        guard !cleanupRequired else { throw NativeBackendError.busy }
         if usesOwnedXCTest { return try await captureOwnedAutomationSnapshot() }
         guard ready, handle != 0, let decoder = videoDecoder else { throw NativeBackendError.closed }
         videoSnapshotDiagnostics = nil
@@ -330,31 +350,21 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// Lightweight input guard: never compresses another image. Unknown/pending
     /// geometry fails closed, including a reset not yet consumed by the video pump.
     public func currentVideoGeometry() async throws -> NativeVideoGeometry? {
+        guard !cleanupRequired else { throw NativeBackendError.busy }
         if usesOwnedXCTest { return try await currentOwnedAutomationGeometry() }
         guard ready, handle != 0, let decoder = videoDecoder else { throw NativeBackendError.closed }
-        let token = handle, deadline = ContinuousClock.now.advanced(by: .milliseconds(250))
-        repeat {
+        let token = handle
+        let confirmed = try NCMVideoGeometryRead.peerConfirmed(try await operation(UInt32(NCM_ACTION_VIDEO_GEOMETRY_CHECK)))
+        try Task.checkCancellation()
+        guard token == handle, ready, videoDecoder === decoder else { throw NativeBackendError.closed }
+        guard confirmed else { return nil }
+        return try await NCMVideoGeometryRead.read(cursor: {
             try Task.checkCancellation()
-            guard token == handle, ready, videoDecoder === decoder else { throw NativeBackendError.closed }
-            // RTCP confirmation is for fresh pixels on a static display. It is
-            // cleared by every new RTP packet, so requiring it here makes an
-            // animated Home screen reject every tap despite unchanged geometry.
-            var before = ncm_video_decode_cursor()
-            guard ncm_backend_video_get_decode_cursor(token, &before) == 0 else { throw NativeBackendError.closed }
-            let state = await decoder.currentGeometry()
-            try Task.checkCancellation()
-            guard token == handle, ready, videoDecoder === decoder else { throw NativeBackendError.closed }
-            var after = ncm_video_decode_cursor()
-            guard ncm_backend_video_get_decode_cursor(token, &after) == 0 else { throw NativeBackendError.closed }
-            if let state,
-               before.epoch == after.epoch, state.geometry.epoch == after.epoch,
-               before.serial > 0, after.serial > 0,
-               state.serial >= before.serial, state.serial >= after.serial {
-                return state.geometry
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        } while ContinuousClock.now < deadline
-        return nil
+            guard token == self.handle, self.ready, self.videoDecoder === decoder else { throw NativeBackendError.closed }
+            var current = ncm_video_decode_cursor()
+            guard ncm_backend_video_get_decode_cursor(token, &current) == 0 else { throw NativeBackendError.closed }
+            return .init(epoch: current.epoch, serial: current.serial)
+        }, decoded: { await decoder.currentGeometry() })
     }
     private func receiveVideoPicture(token: UInt64, decoder: NCMVideoDecoder) async throws -> Bool {
         var header = ncm_event()
@@ -426,7 +436,7 @@ public enum NativeControlBackend: Sendable, Equatable {
         _ = try await operation(10, payload: JSONSerialization.data(withJSONObject: ["text": text]))
     }
     func operation(_ action: UInt32, x: UInt16 = 0, y: UInt16 = 0, expectedKind: UInt32 = 2, drag: (UInt16, UInt16, UInt16)? = nil, payload: Data? = nil) async throws -> Data {
-        guard !busy else { throw NativeBackendError.busy }
+        guard !busy, !automationStopping, !cleanupRequired, submittedRequest.pending == nil else { throw NativeBackendError.busy }
         guard ready, handle != 0 else { throw NativeBackendError.closed }
         busy = true; defer { busy = false }
         return try await performOperation(action, x: x, y: y, expectedKind: expectedKind, drag: drag, payload: payload)
@@ -434,11 +444,13 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// Called only while the public operation holds the session's busy lease.
     private func performOperation(_ action: UInt32, x: UInt16 = 0, y: UInt16 = 0, expectedKind: UInt32 = 2,
                                   drag: (UInt16, UInt16, UInt16)? = nil, payload: Data? = nil) async throws -> Data {
+        try Task.checkCancellation()
         let token = handle
         guard ready, token != 0 else { throw NativeBackendError.closed }
+        guard submittedRequest.pending == nil else { throw NativeBackendError.busy }
         serial += 1; let id = serial
+        var submitted = false
         do {
-            try Task.checkCancellation()
             let code: Int32
             if action == UInt32(NCM_ACTION_XCTEST_START), let payload {
                 code = withSlices([payload]) { ncm_backend_xctest_start(token, id, $0[0]) }
@@ -447,16 +459,26 @@ public enum NativeControlBackend: Sendable, Equatable {
             else if let drag { code = ncm_backend_drag(token, id, x, y, drag.0, drag.1, drag.2) }
             else { code = ncm_backend_submit(token, id, action, x, y) }
             guard code == 0 else { throw NativeBackendError.transport(code: code) }
-            let (header, data) = try await receive(token, requestID: id)
+            try submittedRequest.begin(token: token, requestID: id, expectedKind: expectedKind, timeout: .seconds(120))
+            submitted = true
+            let (header, data) = try await receive(token, requestID: id, deadline: submittedRequest.pending?.deadline)
             guard header.kind == expectedKind else { throw NativeBackendError.malformedEvent }
+            if action == UInt32(NCM_ACTION_VIDEO_GEOMETRY_CHECK) { _ = try NCMVideoGeometryRead.peerConfirmed(data) }
             return data
         } catch {
             #if DEBUG
             operationDiagnostic(error, action: action)
             #endif
+            // The worker may still be executing an accepted request. Retain its
+            // exact receipt and owned channels for the separate cleanup task;
+            // no ordinary request may run after this uncertain outcome.
+            if submitted, error is CancellationError || (error as? NCMError) == .timeout {
+                cleanupRequired = true
+                throw error
+            }
             // A screenshot owns a fresh, read-only service stream. Dropping that
             // stream does not revoke the authenticated tunnel or replay any input.
-            // Cancellation, worker closure and malformed ABI events remain fatal.
+            // Worker closure and malformed ABI events remain fatal.
             if [UInt32(2), UInt32(NCM_ACTION_LEGACY_SCREENSHOT)].contains(action),
                case NativeBackendError.protocolFailure(let stage, let cause) = error,
                [UInt32(9), 19, 20, 22, 23, 24, 25].contains(stage) {
@@ -469,6 +491,12 @@ public enum NativeControlBackend: Sendable, Equatable {
             }
             if case NativeBackendError.touchPreparationFailure = error { throw error }
             if case NativeBackendError.applicationQueryFailure = error { throw error }
+            if submitted, case NativeBackendError.protocolFailure = error {
+                // This failure receipt was fully consumed. Still retain owned
+                // resources for an explicit stop, without reissuing the input.
+                cleanupRequired = true
+                throw error
+            }
             if handle == token { close() }; throw error
         }
     }
@@ -495,7 +523,8 @@ public enum NativeControlBackend: Sendable, Equatable {
     #endif
     private func startOwnedAutomation() async throws {
         try Task.checkCancellation()
-        guard !busy, !automationStopping, automationLease == 0, !ownsXCTestChannels else { throw NativeBackendError.busy }
+        guard !busy, !automationStopping, !cleanupRequired, submittedRequest.pending == nil,
+              automationLease == 0, !ownsXCTestChannels else { throw NativeBackendError.busy }
         guard ready, handle != 0 else { throw NativeBackendError.closed }
         busy = true; defer { busy = false }
         automationStopConfirmed = false
@@ -537,8 +566,9 @@ public enum NativeControlBackend: Sendable, Equatable {
         automationStopConfirmed = false
         let token = handle, lease = automationLease
         automationLayout = nil; automationGeometry.reset()
+        try await drainSubmittedRequest()
         if lease != 0 {
-            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            let deadline = ownedDelivery.receipt.stopDeadline()
             var code = eiscue_automation_stop(lease)
             while code == EISCUE_AUTOMATION_BUSY, ContinuousClock.now < deadline {
                 try Task.checkCancellation()
@@ -551,6 +581,7 @@ public enum NativeControlBackend: Sendable, Equatable {
                 throw NativeBackendError.automationDeliveryUnknown(cause: UInt32(max(code, 1)))
             }
             automationLease = 0
+            ownedDelivery.receipt.reset()
         }
         // Idempotent stop also acknowledges cleanup after partial preparation.
         _ = try await performOperation(UInt32(NCM_ACTION_XCTEST_STOP))
@@ -622,7 +653,7 @@ public enum NativeControlBackend: Sendable, Equatable {
     }
     private func captureOwnedAutomationSnapshot() async throws -> NativeVideoSnapshot {
         try Task.checkCancellation()
-        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard !busy, !automationStopping, !cleanupRequired else { throw NativeBackendError.busy }
         guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
         busy = true; defer { busy = false }
         let token = handle, lease = automationLease
@@ -687,7 +718,7 @@ public enum NativeControlBackend: Sendable, Equatable {
     }
     private func currentOwnedAutomationGeometry() async throws -> NativeVideoGeometry? {
         try Task.checkCancellation()
-        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard !busy, !automationStopping, !cleanupRequired else { throw NativeBackendError.busy }
         guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
         busy = true; defer { busy = false }
         let token = handle, lease = automationLease
@@ -699,7 +730,7 @@ public enum NativeControlBackend: Sendable, Equatable {
     }
     private func deliverOwnedTouch(x: UInt16, y: UInt16, endX: UInt16, endY: UInt16, durationMS: UInt16) async throws -> InputDelivery {
         try Task.checkCancellation()
-        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard !busy, !automationStopping, !cleanupRequired, ownedDelivery.receipt.pending == nil else { throw NativeBackendError.busy }
         guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
         guard let layout = automationLayout else { throw NativeBackendError.coordinateSpaceChanged }
         busy = true; defer { busy = false }
@@ -713,63 +744,69 @@ public enum NativeControlBackend: Sendable, Equatable {
         automationLayout = nil; automationGeometry.reset()
         automationRequest += 1
         let request = automationRequest
+        try ownedDelivery.receipt.begin(token: token, requestID: request, timeout: .seconds(15))
         let code = eiscue_automation_touch(lease, request, screen.revision, UInt32(layout.width), UInt32(layout.height),
                                            x, y, endX, endY, durationMS)
         try checkAutomationSubmission(code)
         return try await awaitOwnedDelivery(lease: lease, token: token, request: request)
     }
-    /// Delivers Home or text through the owned iOS 26 XCTest session, with the
+    /// Delivers Home or text through the owned XCTest session, with the
     /// same bounded receipt and no-replay rules as touch input.
     private func deliverOwnedNonCoordinate(text: Data?) async throws -> InputDelivery {
         try Task.checkCancellation()
-        guard !busy, !automationStopping else { throw NativeBackendError.busy }
+        guard !busy, !automationStopping, !cleanupRequired, ownedDelivery.receipt.pending == nil else { throw NativeBackendError.busy }
         guard mediaStartCompleted, automationLease != 0 else { throw NativeBackendError.closed }
         busy = true; defer { busy = false }
         let token = handle, lease = automationLease
         automationLayout = nil; automationGeometry.reset()
         let screen = try await refreshOwnedScreen(lease: lease, token: token)
         try Task.checkCancellation()
+        let timeout = try text.map { try NCMXCTestDelivery.textTimeout(byteCount: $0.count) } ?? .seconds(15)
         automationRequest += 1; let request = automationRequest
+        try ownedDelivery.receipt.begin(token: token, requestID: request, timeout: timeout)
         let code: Int32
         if let text {
             code = text.withUnsafeBytes { eiscue_automation_type_text(lease, request, screen.revision,
                 $0.bindMemory(to: UInt8.self).baseAddress, $0.count) }
         } else { code = eiscue_automation_home(lease, request, screen.revision) }
         try checkAutomationSubmission(code)
-        // Whole-text paste uses a single bounded key event. A delivered shortcut
-        // still requires a screenshot to confirm focus, paste consent and content.
+        // Native text is paced at 60 characters/second. Receipt time scales
+        // with the bounded input; visual confirmation and the run deadline remain.
         return try await awaitOwnedDelivery(lease: lease, token: token, request: request)
     }
     private func checkAutomationSubmission(_ code: Int32) throws {
-        if code == EISCUE_AUTOMATION_GEOMETRY { throw NativeBackendError.coordinateSpaceChanged }
-        if code == EISCUE_AUTOMATION_BUSY { throw NativeBackendError.busy }
-        guard code == 0 else { throw NativeBackendError.automationDeliveryUnknown(cause: UInt32(max(code, 1))) }
+        if code == EISCUE_AUTOMATION_GEOMETRY { ownedDelivery.receipt.reset(); throw NativeBackendError.coordinateSpaceChanged }
+        if code == EISCUE_AUTOMATION_BUSY { ownedDelivery.receipt.reset(); throw NativeBackendError.busy }
+        guard code == 0 else {
+            cleanupRequired = true
+            throw NativeBackendError.automationDeliveryUnknown(cause: UInt32(max(code, 1)))
+        }
     }
-    private func awaitOwnedDelivery(lease: UInt64, token: UInt64, request: UInt64, timeout: Duration = .seconds(15)) async throws -> InputDelivery {
+    private func awaitOwnedDelivery(lease: UInt64, token: UInt64, request: UInt64) async throws -> InputDelivery {
         do {
-            let deadline = ContinuousClock.now.advanced(by: timeout)
-            repeat {
-                try Task.checkCancellation()
-                let state = try automationState(lease: lease, token: token)
-                guard state.request_id == request else { throw NativeBackendError.malformedEvent }
-                if state.phase == UInt32(EISCUE_AUTOMATION_READY) { return .reportsWrittenVisualEffectUnverified }
-                guard state.phase == UInt32(EISCUE_AUTOMATION_DELIVERING) else {
-                    throw NativeBackendError.automationDeliveryUnknown(cause: max(state.error, 1))
-                }
-                try await Task.sleep(for: .milliseconds(20))
-            } while ContinuousClock.now < deadline
-            throw NativeBackendError.automationDeliveryUnknown(cause: 14)
+            return try await ownedDelivery.wait(token: token, request: request) {
+                try self.automationState(lease: lease, token: token)
+            }
         } catch {
-            if handle == token { close() }
+            cleanupRequired = true
+            if case NativeBackendError.malformedEvent = error { if handle == token { close() } }
+            if case NativeBackendError.closed = error { if handle == token { close() } }
             throw NativeBackendError.automationDeliveryUnknown(cause: (error as? NativeBackendError).flatMap {
                 if case .automationDeliveryUnknown(let cause) = $0 { return cause }; return nil
             } ?? 11)
         }
     }
-    private func receive(_ token: UInt64, requestID: UInt64) async throws -> (ncm_event, Data) {
+    private func drainSubmittedRequest() async throws {
+        try await submittedRequest.drain { pending in
+            _ = try await self.receive(pending.token, requestID: pending.requestID,
+                                       deadline: pending.deadline, discardFailure: true)
+        }
+    }
+    private func receive(_ token: UInt64, requestID: UInt64, deadline: ContinuousClock.Instant? = nil,
+                         discardFailure: Bool = false) async throws -> (ncm_event, Data) {
         // Overall connect/readiness/media stages can contain multiple 15s protocol
         // steps. This bound is independent of the Rust per-stage deadlines.
-        let deadline = ContinuousClock.now.advanced(by: .seconds(120))
+        let deadline = deadline ?? ContinuousClock.now.advanced(by: .seconds(120))
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
             guard handle == token else { throw NativeBackendError.closed }
@@ -784,6 +821,8 @@ public enum NativeControlBackend: Sendable, Equatable {
                 guard copied == 0 else { throw NativeBackendError.transport(code: copied) }
             } else if status != 0 { throw NativeBackendError.transport(code: status) }
             guard event.request_id == requestID, event.reserved == 0 else { throw NativeBackendError.malformedEvent }
+            try submittedRequest.received(token: token, requestID: requestID, kind: event.kind)
+            if discardFailure { return (event, data) }
             if event.kind == 10 { throw NativeBackendError.touchPreparationFailure(stage: event.stage, cause: event.cause) }
             if event.kind == 12 { throw NativeBackendError.applicationQueryFailure(stage: event.stage, cause: event.cause) }
             if event.kind == 3 { throw NativeBackendError.protocolFailure(stage: event.stage, cause: event.cause) }
@@ -814,6 +853,81 @@ public enum NativeControlBackend: Sendable, Equatable {
         handle = started; try await finishConnect(started)
     }
     #endif
+}
+/// One accepted native request. Cancellation retains its identity and original
+/// deadline so cleanup can drain that receipt before issuing a different ID.
+@MainActor final class NCMSubmittedRequest {
+    struct Pending: Equatable {
+        let token: UInt64, requestID: UInt64, expectedKind: UInt32
+        let deadline: ContinuousClock.Instant
+    }
+    private(set) var pending: Pending?
+    func begin(token: UInt64, requestID: UInt64, expectedKind: UInt32 = 2,
+               timeout: Duration, now: ContinuousClock.Instant = .now) throws {
+        guard pending == nil else { throw NativeBackendError.busy }
+        pending = Pending(token: token, requestID: requestID, expectedKind: expectedKind,
+                          deadline: now.advanced(by: timeout))
+    }
+    func received(token: UInt64, requestID: UInt64, kind: UInt32) throws {
+        guard let pending else {
+            guard requestID == 0 else { throw NativeBackendError.malformedEvent }
+            return
+        }
+        guard pending.token == token, pending.requestID == requestID,
+              kind == pending.expectedKind || [UInt32(3), 10, 12].contains(kind) else {
+            throw NativeBackendError.malformedEvent
+        }
+        self.pending = nil
+    }
+    func drain(receive: (Pending) async throws -> Void) async throws {
+        guard let pending else { return }
+        try await receive(pending)
+        guard self.pending == nil else { throw NativeBackendError.malformedEvent }
+    }
+    func stopDeadline(now: ContinuousClock.Instant = .now) -> ContinuousClock.Instant {
+        max(now.advanced(by: .seconds(3)), pending?.deadline ?? now)
+    }
+    func releaseTimeout(now: ContinuousClock.Instant = .now) -> Duration {
+        max(.seconds(5), now.duration(to: pending?.deadline ?? now) + .seconds(5))
+    }
+    func reset() { pending = nil }
+}
+
+/// The actual owned-event receipt loop, shared with host fixtures. Neither a
+/// cancellation nor a failed delivery discards the lease needed by stop().
+@MainActor final class NCMOwnedDelivery {
+    let receipt = NCMSubmittedRequest()
+    func wait(token: UInt64, request: UInt64,
+              now: () -> ContinuousClock.Instant = { .now },
+              pause: () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) },
+              poll: () throws -> eiscue_automation_state) async throws -> InputDelivery {
+        guard let pending = receipt.pending, pending.token == token, pending.requestID == request else {
+            throw NativeBackendError.malformedEvent
+        }
+        repeat {
+            try Task.checkCancellation()
+            let state = try poll()
+            guard state.request_id == request else { throw NativeBackendError.malformedEvent }
+            if state.phase == UInt32(EISCUE_AUTOMATION_READY) {
+                try receipt.received(token: token, requestID: request, kind: 2)
+                return .reportsWrittenVisualEffectUnverified
+            }
+            guard state.phase == UInt32(EISCUE_AUTOMATION_DELIVERING) else {
+                throw NativeBackendError.automationDeliveryUnknown(cause: max(state.error, 1))
+            }
+            try await pause()
+        } while now() < pending.deadline
+        throw NativeBackendError.automationDeliveryUnknown(cause: 14)
+    }
+}
+
+enum NCMXCTestDelivery {
+    static func textTimeout(byteCount: Int) throws -> Duration {
+        guard (1...8192).contains(byteCount) else { throw NativeBackendError.malformedEvent }
+        // UTF-8 bytes conservatively bound the native string's UTF-16 length.
+        // Reserve typing time plus the ordinary 15-second event receipt margin.
+        return .seconds(15 + (byteCount + 59) / 60)
+    }
 }
 /// Strict host receipt checks; a successful control-channel handshake is not
 /// automation readiness and cannot authorize a different process or UUID.
@@ -1077,6 +1191,71 @@ struct NCMVideoGeometryTracker {
             current = NativeVideoGeometry(id: UUID(), epoch: epoch, revision: revision)
         }
         return current!
+    }
+}
+
+/// Decode every picture already received when this check starts. Later pixels
+/// cannot move that barrier, but a stream epoch change or lost sync still revokes it.
+@MainActor enum NCMVideoGeometryRead {
+    struct Cursor { let epoch: UInt64; let serial: UInt64 }
+    static func peerConfirmed(_ receipt: Data) throws -> Bool {
+        guard receipt.count == 1, let value = receipt.first, value <= 1 else { throw NativeBackendError.malformedEvent }
+        return value == 1
+    }
+    static func read(cursor: () throws -> Cursor,
+                     decoded: () async -> (geometry: NativeVideoGeometry, serial: UInt64)?,
+                     timeout: Duration = .milliseconds(250),
+                     wait: () async throws -> Void = { try await Task.sleep(for: .milliseconds(10)) }) async throws -> NativeVideoGeometry? {
+        #if DEBUG
+        let began = ContinuousClock.now
+        var lastDecoded: (geometry: NativeVideoGeometry, serial: UInt64)?
+        var lastCurrent: Cursor?
+        func reportNil(_ reason: UInt32, barrier: Cursor) {
+            let elapsed = began.duration(to: .now).components
+            let milliseconds = max(0, elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000)
+            // Numeric allowlist only: 1 initial sync, 2 epoch change,
+            // 3 current sync, 4 timeout. No image, peer, or error text.
+            print("NCM geometry read reason=\(reason) barrierEpoch=\(barrier.epoch) barrierSerial=\(barrier.serial) currentAvailable=\(lastCurrent == nil ? 0 : 1) currentEpoch=\(lastCurrent?.epoch ?? 0) currentSerial=\(lastCurrent?.serial ?? 0) decodedNil=\(lastDecoded == nil ? 1 : 0) decodedEpoch=\(lastDecoded?.geometry.epoch ?? 0) decodedSerial=\(lastDecoded?.serial ?? 0) elapsedMs=\(milliseconds)")
+            fflush(stdout)
+        }
+        #endif
+        let barrier = try cursor()
+        guard barrier.serial > 0 else {
+            #if DEBUG
+            reportNil(1, barrier: barrier)
+            #endif
+            return nil
+        }
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        repeat {
+            try Task.checkCancellation()
+            let state = await decoded()
+            try Task.checkCancellation()
+            let current = try cursor()
+            #if DEBUG
+            lastDecoded = state; lastCurrent = current
+            #endif
+            guard current.epoch == barrier.epoch else {
+                #if DEBUG
+                reportNil(2, barrier: barrier)
+                #endif
+                return nil
+            }
+            guard current.serial > 0 else {
+                #if DEBUG
+                reportNil(3, barrier: barrier)
+                #endif
+                return nil
+            }
+            if let state, state.geometry.epoch == barrier.epoch, state.serial >= barrier.serial {
+                return state.geometry
+            }
+            try await wait()
+        } while ContinuousClock.now < deadline
+        #if DEBUG
+        reportNil(4, barrier: barrier)
+        #endif
+        return nil
     }
 }
 

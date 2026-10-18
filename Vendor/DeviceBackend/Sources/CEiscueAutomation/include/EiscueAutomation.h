@@ -67,10 +67,9 @@ int32_t eiscue_automation_touch(uint64_t lease, uint64_t request_id,
 // Both use the same monotonic request receipt and current geometry revision as
 // touch. Home is submitted through this lease's runner, never a shared device.
 int32_t eiscue_automation_home(uint64_t lease, uint64_t request_id, uint64_t revision);
-// Pastes into the currently focused field using this lease's Command-V event.
-// Copies 1..8192 strict UTF-8 bytes to the system clipboard only after the final
-// submission guards pass; does not read the previous clipboard. NUL is rejected.
-// Text is not included in receipts; an event receipt does not prove visible paste.
+// Sends 1..8192 strict UTF-8 bytes to the currently focused field in one owned,
+// redacted Unicode text event, without accessing the clipboard. NUL is rejected.
+// Text is not included in receipts; an event receipt does not prove visible input.
 int32_t eiscue_automation_type_text(uint64_t lease, uint64_t request_id,
     uint64_t revision, const uint8_t *utf8, size_t length);
 // Busy while an event receipt is outstanding. Timeout requires abort, which

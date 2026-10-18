@@ -371,8 +371,14 @@ final class SpeechInputController {
         guard ProcessInfo.processInfo.arguments.contains("--speech-diagnostics") else { return }
         let session = AVAudioSession.sharedInstance()
         let sample = pipe?.snapshot ?? capture
+        let mode: String
+        switch gate.mode {
+        case .hold: mode = "hold"
+        case .toggle: mode = "toggle"
+        case nil: mode = "none"
+        }
         var row: [String: Any] = [
-            "stage": stage, "state": String(describing: state), "time": Date().timeIntervalSince1970,
+            "stage": stage, "state": String(describing: state), "mode": mode, "time": Date().timeIntervalSince1970,
             "speechPermission": SFSpeechRecognizer.authorizationStatus().rawValue,
             "microphonePermission": AVAudioApplication.shared.recordPermission.rawValue,
             "inputMuted": AVAudioApplication.shared.isInputMuted,

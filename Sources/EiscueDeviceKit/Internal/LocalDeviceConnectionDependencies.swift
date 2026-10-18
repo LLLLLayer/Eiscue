@@ -5,6 +5,9 @@ import Foundation
 /// Internal seams exercise lifecycle and transport isolation without attaching
 /// a device or starting a VPN. Production uses the native implementations only.
 @MainActor protocol LocalVPNDiscovering: AnyObject, Sendable {
+    #if DEBUG
+    var interfaceDiagnostic: [String: String] { get }
+    #endif
     func discoverPort(configuration: VPNLoopbackConfiguration) async throws -> UInt16
     func cancel()
 }
@@ -17,7 +20,11 @@ extension LocalVPNDiscovery: LocalVPNDiscovering {}
 extension NCMProbeClient: USBBoardDiscovering {}
 
 @MainActor protocol LocalDeviceSession: AnyObject, Sendable {
+    #if DEBUG
+    var connectionInterfaceDiagnostic: [String: String] { get }
+    #endif
     var supportedControlActions: Set<NativeControlAction> { get }
+    var mediaReleaseTimeout: Duration { get }
     func connectLocalVPN(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                          pairingPort: UInt16, configuration: VPNLoopbackConfiguration) async throws
     func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,

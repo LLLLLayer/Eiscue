@@ -89,6 +89,20 @@ import Testing
         #expect(fixture.vpnFactoryCalls == 0 && fixture.boardFactoryCalls == 0)
     }
 
+    @Test(arguments: [true, false])
+    func pendingReceiptUsesTheNativeReleaseBudgetAndTimeoutRemainsUnconfirmed(fitsBudget: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        try await client.connectUSBBoard(backend: .coreDevice)
+        fixture.session.mediaStopDelay = .milliseconds(30)
+        fixture.session.mediaReleaseTimeout = fitsBudget ? .seconds(1) : .milliseconds(5)
+        #expect(await client.disconnectAndConfirmRelease() == fitsBudget)
+        #expect(fixture.session.mediaStops == 1 && fixture.session.closed)
+        #expect(fixture.session.boardConnections == 1 && fixture.session.vpnConnections == 0)
+        #expect(try await client.hasPairingIdentity())
+        #expect(await client.disconnectAndConfirmRelease() == fitsBudget)
+        #expect(fixture.session.mediaStops == 1)
+    }
+
     @Test func backendChoicesResolveWithoutChangingExplicitSelections() throws {
         #expect(Set(DeviceControlBackend.allCases) == [.automatic, .coreDevice, .xcTest])
         for backend in DeviceControlBackend.allCases {
@@ -250,6 +264,42 @@ import Testing
         #expect(fixture.session.boardConnections == 0)
         await fixture.client().disconnect()
     }
+
+    #if DEBUG
+    @Test(arguments: ["transport", "developerReadiness", "mediaStart"])
+    func connectionDiagnosticsRetainNativeFailureBeforeTranslationAndCleanup(phase: String) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let native = NativeBackendError.protocolFailure(stage: 5, cause: 4)
+        fixture.vpn.interfaceDiagnostic = ["initial.matchingInterfaces": "1"]
+        fixture.session.connectionInterfaceDiagnostic = ["matchingInterfaces": "0"]
+        switch phase {
+        case "transport": fixture.session.connectionFailure = native
+        case "developerReadiness": fixture.session.developerFailure = native
+        default: fixture.session.mediaFailure = native
+        }
+        await #expect(throws: (any Error).self) { try await client.connectLocalVPN(backend: .xcTest) }
+        let diagnostic = try #require(await client.debugConnectionDiagnostic())
+        #expect(diagnostic["state"] == "failed" && diagnostic["phase"] == phase)
+        #expect(diagnostic["category"] == "nativeProtocol" && diagnostic["stage"] == "5" && diagnostic["cause"] == "4")
+        #expect(diagnostic["method"] == "localVPN" && diagnostic["backend"] == "xcTest")
+        #expect(diagnostic["discovery.initial.matchingInterfaces"] == "1" && diagnostic["transport.matchingInterfaces"] == "0")
+        await client.disconnect()
+        #expect(await client.debugConnectionDiagnostic() == diagnostic)
+        #expect(try await client.hasPairingIdentity())
+        #expect(fixture.sessionBackends == [.xcTest] && fixture.vpn.calls == 1)
+        #expect(fixture.boardFactoryCalls == 0)
+    }
+
+    @Test func inactiveVPNDiagnosticDoesNotStartNativeTransportOrFallback() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        fixture.vpn.failure = LocalVPNError.inactive
+        await #expect(throws: (any Error).self) { try await client.connectLocalVPN(backend: .coreDevice) }
+        let diagnostic = try #require(await client.debugConnectionDiagnostic())
+        #expect(diagnostic["phase"] == "vpnInterfaceAndDiscovery" && diagnostic["category"] == "vpnInactive")
+        #expect(fixture.session.vpnConnections == 0 && fixture.session.mediaStarts == 0 && fixture.boardFactoryCalls == 0)
+        #expect(try await client.hasPairingIdentity())
+    }
+    #endif
 
     @Test(arguments: [DeviceConnectionMethod.localVPN, .usbBoard])
     func taskCompletionRetainsSessionAndRequiresNewObservationForTheNextTask(method: DeviceConnectionMethod) async throws {
@@ -561,9 +611,15 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
 }
 
 @MainActor private final class TestVPNDiscovery: LocalVPNDiscovering {
+    #if DEBUG
+    var interfaceDiagnostic: [String: String] = [:]
+    #endif
     var calls = 0
     var cancelled = false
-    func discoverPort(configuration: VPNLoopbackConfiguration) async throws -> UInt16 { calls += 1; return 12345 }
+    var failure: (any Error)?
+    func discoverPort(configuration: VPNLoopbackConfiguration) async throws -> UInt16 {
+        calls += 1; if let failure { throw failure }; return 12345
+    }
     func cancel() { cancelled = true }
 }
 
@@ -595,11 +651,18 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
 }
 
 @MainActor private final class TestDeviceSession: LocalDeviceSession {
+    #if DEBUG
+    var connectionInterfaceDiagnostic: [String: String] = [:]
+    #endif
     var supportedControlActions = Set(NativeControlAction.allCases)
+    var mediaReleaseTimeout: Duration = .seconds(5)
+    var mediaStopDelay: Duration = .zero
     var boardConnections = 0, vpnConnections = 0, developerChecks = 0, mediaStarts = 0, mediaStops = 0, taps = 0
     var closed = false, authorizedExistingIdentity = false, authorizedInput = false
     var peerID: String?
     var mediaFailure: (any Error)?
+    var connectionFailure: (any Error)?
+    var developerFailure: (any Error)?
     var captureFailure: (any Error)?
     var geometryFailure: (any Error)?
     var geometryReads = 0
@@ -620,7 +683,7 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
     }
     func connectLocalVPN(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                          pairingPort: UInt16, configuration: VPNLoopbackConfiguration) async throws {
-        vpnConnections += 1; record(identity, authorization)
+        vpnConnections += 1; if let connectionFailure { throw connectionFailure }; record(identity, authorization)
     }
     func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                  discovery: NCMDiscoveredEndpoint) async throws {
@@ -632,9 +695,13 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
         authorizedExistingIdentity = authorization.verifyExistingIdentity; authorizedInput = authorization.input
         geometry = NativeVideoGeometry(id: UUID(), epoch: 1, revision: 1)
     }
-    func checkDeveloperReadiness() async throws { developerChecks += 1 }
+    func checkDeveloperReadiness() async throws { developerChecks += 1; if let developerFailure { throw developerFailure } }
     func startTouchMedia() async throws { mediaStarts += 1; if let mediaFailure { throw mediaFailure } }
-    func stopTouchMediaWhenIdle() async throws -> Bool { mediaStops += 1; return mediaFailure == nil }
+    func stopTouchMediaWhenIdle() async throws -> Bool {
+        mediaStops += 1
+        try await Task.sleep(for: mediaStopDelay)
+        return mediaFailure == nil
+    }
     func close() { closed = true }
     func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
         if let captureFailure { throw captureFailure }

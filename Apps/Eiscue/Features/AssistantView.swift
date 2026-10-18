@@ -27,6 +27,11 @@ struct AssistantView: View {
 
     var body: some View {
         speechPresentation
+        #if DEBUG && !EISCUE_HID_ONLY
+        .overlay(alignment: .bottomLeading) {
+            if DebugRealModelAcceptance.isEnabled { DebugRealModelAcceptanceProjection() }
+        }
+        #endif
         #if DEBUG
         .task {
             let arguments = ProcessInfo.processInfo.arguments

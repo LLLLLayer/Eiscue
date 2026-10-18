@@ -14,6 +14,7 @@ extern "C" {
 #define NCM_ACTION_XCTEST_START 14u
 #define NCM_ACTION_XCTEST_STOP 15u
 #define NCM_ACTION_LEGACY_SCREENSHOT 16u
+#define NCM_ACTION_VIDEO_GEOMETRY_CHECK 17u
 /* All pointers are borrowed only for start(); caller owns/clears its secrets.
  * No disk/keychain lookup, identity generation, pairing or logging occurs. */
 typedef struct { const uint8_t *data; size_t size; } ncm_bytes;
@@ -100,7 +101,11 @@ int32_t ncm_lockdown_start(uint32_t interface_index,uint32_t permissions,ncm_byt
 int32_t ncm_backend_drag(uint64_t handle,uint64_t request_id,uint16_t x,uint16_t y,uint16_t end_x,uint16_t end_y,uint16_t duration_ms);
 /* Action 16: one Instruments PNG capture over the same prepared adapter.
  * SCREEN | EXISTING_VERIFY required, kind 4 actual validated PNG bytes. No input,
- * no screenshot cache or automatic retry; temporary DTX closes on every path. */
+ * no screenshot cache or automatic retry; temporary DTX closes on every path.
+ * Action 17: read-only authenticated DisplayInfo geometry check, SCREEN |
+ * EXISTING_VERIFY required. Event 2 contains exactly one byte: 1 confirms the
+ * same synchronized epoch, 0 refuses it. It never publishes replacement metadata
+ * or sends input. Uses the ordinary request-id/receipt and cleanup sequence. */
 int32_t ncm_backend_submit(uint64_t handle,uint64_t request_id,uint32_t action,uint16_t x,uint16_t y);
 /* 7 Home, 8 installed applications (event 11 JSON name/bundle_id/version).
  * 9 launch {bundle_id,arguments:[strings]}, 10 type {text}: all text via pasteboard + Cmd-V

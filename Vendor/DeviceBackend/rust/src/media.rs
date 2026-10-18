@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Authenticated DisplayService video negotiation and discard-only consumer.
 //! Complete HEVC units are handed to the owning App decoder; no media is persisted.
-use crate::{Cause, Error, Stage, Stream, bounded, error};
+use crate::{Cause, Error, Stage, Stream, bounded, bounded_for, error, video::DisplayGeometry};
 use idevice::{
     RsdService,
     core_device::{
@@ -42,20 +42,35 @@ impl RsdService for DisplayInfoClient {
         ))
     }
 }
-async fn read_display_geometry(info: &mut DisplayInfoClient, id: i64) -> Option<(u32, u32)> {
-    let value = tokio::time::timeout(
-        Duration::from_secs(2),
-        info.0.invoke_with_plist(
-            "com.apple.coredevice.feature.getdisplayinfo",
-            plist::Dictionary::new(),
-        ),
-    )
-    .await
-    .ok()?
-    .ok()?;
-    display_geometry(&value, id)
+async fn subscribe_display_geometry(info: &mut DisplayInfoClient, id: i64) -> Result<DisplayGeometry, idevice::IdeviceError> {
+    info.0.begin_stream_with_plist(
+        "com.apple.coredevice.feature.displayinfoupdates", plist::Dictionary::new(),
+        Some("com.apple.coredevice.action.displayinfoupdates"),
+    ).await?;
+    loop {
+        let rows = info.0.next_stream_batch().await?
+            .ok_or(idevice::core_device::CoreDeviceError::MalformedField("display stream finished"))?;
+        if rows.is_empty() { continue; }
+        let mut current = None;
+        for row in rows {
+            current = Some(display_geometry(&row, id)
+                .ok_or(idevice::core_device::CoreDeviceError::MalformedField("display geometry"))?);
+        }
+        return current.ok_or(idevice::core_device::CoreDeviceError::MalformedField("display geometry").into());
+    }
 }
-fn display_geometry(value: &plist::Value, id: i64) -> Option<(u32, u32)> {
+async fn verify_current_geometry(
+    mailbox: &crate::video::VideoMailbox,
+    fresh: impl std::future::Future<Output = Result<DisplayGeometry, Error>>,
+) -> Result<bool, Error> {
+    let before = mailbox.decode_cursor();
+    if before.serial == 0 { return Ok(false); }
+    match fresh.await {
+        Ok(geometry) => Ok(mailbox.verify_display_geometry(before.epoch, geometry)),
+        Err(error) => { mailbox.reset(); Err(error) }
+    }
+}
+fn display_geometry(value: &plist::Value, id: i64) -> Option<DisplayGeometry> {
     let root = value.as_dictionary()?;
     if !root.get("current")?.as_boolean()? {
         return None;
@@ -96,7 +111,17 @@ fn display_geometry(value: &plist::Value, id: i64) -> Option<(u32, u32)> {
     {
         return None;
     }
-    Some((w as u32, h as u32))
+    fn rotation(value: &plist::Value) -> Option<u16> {
+        match value.as_string()? {
+            "rot0" => Some(0), "rot90" => Some(90), "rot180" => Some(180), "rot270" => Some(270),
+            _ => None,
+        }
+    }
+    Some(DisplayGeometry {
+        width: w as u32, height: h as u32,
+        native_rotation: rotation(display.get("nativeOrientation")?)?,
+        rotation: rotation(display.get("currentOrientation")?)?,
+    })
 }
 #[derive(Default)]
 struct Drains(Vec<JoinHandle<()>>);
@@ -176,6 +201,21 @@ fn owned_start_identifier(answer: &plist::Value) -> Option<u32> {
 }
 
 impl Media {
+    /// Correlated read-only roundtrip before reusing input geometry. This uses
+    /// a separate short-lived client, never the notification stream's channel.
+    pub async fn verify_geometry(
+        &self, adapter: &mut AdapterHandle, handshake: &mut RsdHandshake,
+        mailbox: &crate::video::VideoMailbox,
+    ) -> Result<bool, Error> {
+        if !self.healthy.load(Ordering::SeqCst) { return Ok(false); }
+        let confirmed = verify_current_geometry(mailbox, bounded_for(Stage::VideoService, Duration::from_secs(2), async {
+            let mut info = DisplayInfoClient::connect_rsd(adapter, handshake).await?;
+            let value = info.0.current_display_info().await?;
+            display_geometry(&value, 1)
+                .ok_or_else(|| idevice::IdeviceError::from(idevice::core_device::CoreDeviceError::MalformedField("display geometry")))
+        })).await?;
+        Ok(confirmed && self.healthy.load(Ordering::SeqCst))
+    }
     pub async fn start(
         adapter: &mut AdapterHandle,
         handshake: &mut RsdHandshake,
@@ -212,17 +252,10 @@ impl Media {
         .await?;
         const DISPLAY_ID: i64 = 1;
         let mut display_info = bounded(
-            Stage::VideoService,
-            DisplayInfoClient::connect_rsd(adapter, handshake),
-        )
-        .await
-        .ok();
-        let initial_geometry = if let Some(info) = &mut display_info {
-            read_display_geometry(info, DISPLAY_ID).await
-        } else {
-            None
-        };
-        if initial_geometry.is_none() { display_info = None; }
+            Stage::VideoService, DisplayInfoClient::connect_rsd(adapter, handshake),
+        ).await?;
+        let initial_geometry = bounded(Stage::VideoService,
+            subscribe_display_geometry(&mut display_info, DISPLAY_ID)).await?;
         let (answer, negotiated) = start_reply(release, Box::pin(bounded(
             Stage::VideoNegotiation,
             video.start_media_stream(build_start_video_parameters(
@@ -248,19 +281,22 @@ impl Media {
         // Refresh outside the receiver: service latency must not block RTP/ACKs.
         // Each frame carries a snapshot, validated against that frame's SPS.
         mailbox.begin_stream();
-        mailbox.set_visible_size(initial_geometry);
-        if let Some(mut info) = display_info {
-            let geometry_mailbox = mailbox.clone();
-            drains.0.push(tokio::spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    let size = read_display_geometry(&mut info, DISPLAY_ID).await;
-                    geometry_mailbox.set_visible_size(size);
-                    // A timed-out XPC request cannot safely reuse this channel.
-                    if size.is_none() { break; }
+        mailbox.set_display_geometry(Some(initial_geometry));
+        let geometry_mailbox = mailbox.clone();
+        let geometry_health = healthy.clone();
+        drains.0.push(tokio::spawn(async move {
+            // Consume every peer update, including A→B→A between video frames.
+            // Physical pose and image dimensions are not interface direction.
+            while let Ok(Some(rows)) = display_info.0.next_stream_batch().await {
+                for row in rows {
+                    let geometry = display_geometry(&row, DISPLAY_ID);
+                    geometry_mailbox.set_display_geometry(geometry);
+                    if geometry.is_none() { geometry_health.store(false, Ordering::SeqCst); return; }
                 }
-            }));
-        }
+            }
+            geometry_mailbox.set_display_geometry(None);
+            geometry_health.store(false, Ordering::SeqCst);
+        }));
         let video_health = healthy.clone();
         drains.0.push(tokio::spawn(async move {
             let mut assembler = HevcAccessUnitAssembler::new(negotiated.payload_type, negotiated.ssrc);
@@ -316,15 +352,7 @@ impl Media {
                         }
                     },
                     _=feedback.tick()=> {
-                        let refresh = mailbox.take_refresh();
-                        // Receiver Reports must continue during recovery; a PLI
-                        // does not satisfy the sender's RTCP reception timeout.
-                        let mut report = reports.liveness_report();
-                        if needs_sync || refresh {
-                            mailbox.count(6);
-                            let request = reports.keyframe_request();
-                            report.extend_from_slice(&request);
-                        }
+                        let report = reports.recovery_report(&mailbox, needs_sync);
                         if video_udp.send_to(feedback_port,report).await.is_err() { break; }
                     }
                 }
@@ -532,6 +560,18 @@ impl VideoFeedback {
         // generated "Request key frame too soon, discard" for the duplicate.
         build_pli(self.our_ssrc, self.media_ssrc)
     }
+    fn recovery_report(&mut self, mailbox: &crate::video::VideoMailbox, needs_sync: bool) -> Vec<u8> {
+        let refresh = mailbox.take_refresh();
+        // RR liveness continues during recovery. Geometry changes run outside
+        // the RTP loop, and push(true) can mean a discarded inter frame, so the
+        // mailbox's actual reference chain must also gate every 1 Hz PLI.
+        let mut report = self.liveness_report();
+        if needs_sync || mailbox.needs_sync() || refresh {
+            mailbox.count(6);
+            report.extend_from_slice(&self.keyframe_request());
+        }
+        report
+    }
 
 }
 /// Authenticated stream configuration, never infer RTCP destination from the offer.
@@ -687,6 +727,8 @@ mod tests {
         fn display(id: i64, w: f64, h: f64) -> V {
             V::Dictionary(plist::Dictionary::from_iter([
                 (String::from("displayId"), V::Integer(id.into())),
+                (String::from("nativeOrientation"), V::String("rot0".into())),
+                (String::from("currentOrientation"), V::String("rot0".into())),
                 (
                     String::from("frame"),
                     V::Array(vec![
@@ -708,11 +750,11 @@ mod tests {
                 &root(true, vec![display(3, 1184.0, 2560.0), phone.clone()]),
                 1
             ),
-            Some((1179, 2556))
+            Some(DisplayGeometry { width: 1179, height: 2556, native_rotation: 0, rotation: 0 })
         );
         assert_eq!(
             super::display_geometry(&root(true, vec![display(1, 2556.0, 1179.0)]), 1),
-            Some((2556, 1179))
+            Some(DisplayGeometry { width: 2556, height: 1179, native_rotation: 0, rotation: 0 })
         );
         for value in [
             root(false, vec![phone.clone()]),
@@ -816,6 +858,112 @@ mod tests {
         let request = f.keyframe_request();
         assert_eq!(request, build_pli(11,22));
         assert_eq!(f.unique_packets, 3, "Duplicates must not satisfy a sender progress barrier");
+    }
+    #[test]
+    fn lost_geometry_refresh_repeats_pli_until_a_sync_picture_is_accepted() {
+        use idevice::core_device::display_stream::hevc::{HevcAccessUnit, HevcParameterSets};
+        let mailbox = crate::video::VideoMailbox::default(); mailbox.begin_stream();
+        let geometry = DisplayGeometry { width: 10, height: 20, native_rotation: 0, rotation: 0 };
+        mailbox.set_display_geometry(Some(geometry)); mailbox.poll(0);
+        let push = |sync| {
+            mailbox.push(HevcAccessUnit {
+                ssrc: 22, rtp_timestamp: 1, first_sequence_number: 1, last_sequence_number: 1,
+                parameter_set_revision: 1, is_sync: sync, bytes: vec![0, 0, 0, 2, 2, 1],
+            }, HevcParameterSets {
+                revision: 1, pixel_width: 10, pixel_height: 20,
+                video_parameter_set: vec![1], sequence_parameter_set: vec![2], picture_parameter_set: vec![3],
+            })
+        };
+        let mut reports = VideoFeedback::new(11, 22, "public-sync-recovery".into());
+        let pli = build_pli(11, 22);
+        assert!(push(true));
+        // Consume the initial explicit refresh and ignore the generated packet.
+        reports.recovery_report(&mailbox, false);
+        assert!(!reports.recovery_report(&mailbox, false).ends_with(&pli));
+        mailbox.set_display_geometry(Some(DisplayGeometry { rotation: 180, ..geometry }));
+        let first = reports.recovery_report(&mailbox, false);
+        assert_eq!(first[1], 201, "Recovery must retain Receiver Reports");
+        assert!(first.ends_with(&pli)); // Simulate a lost PLI / absent IDR.
+        assert!(!mailbox.take_refresh(), "The one-shot geometry request is consumed");
+        assert!(reports.recovery_report(&mailbox, false).ends_with(&pli),
+                "An asynchronous geometry reset also needs recovery without another RTP frame");
+        for _ in 0..3 {
+            // Production's local needs_sync becomes false for this push(true).
+            assert!(push(false));
+            let repeated = reports.recovery_report(&mailbox, false);
+            assert_eq!(repeated[1], 201);
+            assert!(repeated.ends_with(&pli));
+            assert_eq!(mailbox.decode_cursor().serial, 0);
+        }
+        assert!(push(true));
+        for _ in 0..3 {
+            assert!(push(false));
+            let recovered = reports.recovery_report(&mailbox, false);
+            assert_eq!(recovered[1], 201);
+            assert!(!recovered.ends_with(&pli), "A valid sync picture must end periodic PLI recovery");
+        }
+        assert_eq!(mailbox.status().refreshes, 6);
+    }
+    fn geometry_probe_fixture() -> (crate::video::VideoMailbox, DisplayGeometry) {
+        use idevice::core_device::display_stream::hevc::{HevcAccessUnit, HevcParameterSets};
+        let mailbox = crate::video::VideoMailbox::default(); mailbox.begin_stream();
+        let geometry = DisplayGeometry { width: 10, height: 20, native_rotation: 0, rotation: 0 };
+        mailbox.set_display_geometry(Some(geometry));
+        assert!(mailbox.push(HevcAccessUnit {
+            ssrc: 22, rtp_timestamp: 1, first_sequence_number: 1, last_sequence_number: 1,
+            parameter_set_revision: 1, is_sync: true, bytes: vec![0, 0, 0, 2, 2, 1],
+        }, HevcParameterSets {
+            revision: 1, pixel_width: 10, pixel_height: 20,
+            video_parameter_set: vec![1], sequence_parameter_set: vec![2], picture_parameter_set: vec![3],
+        }));
+        (mailbox, geometry)
+    }
+    #[tokio::test]
+    async fn same_fresh_geometry_keeps_the_observed_epoch() {
+        let (mailbox, geometry) = geometry_probe_fixture();
+        let before = mailbox.decode_cursor();
+        assert!(super::verify_current_geometry(&mailbox, async { Ok(geometry) }).await.unwrap());
+        assert_eq!(mailbox.decode_cursor(), before);
+    }
+    #[tokio::test]
+    async fn fresh_rotation_refuses_cached_geometry_without_publishing_or_restoring_the_old_grant() {
+        let (mailbox, geometry) = geometry_probe_fixture();
+        let before = mailbox.decode_cursor();
+        let rotated = DisplayGeometry { rotation: 180, ..geometry };
+        assert!(!super::verify_current_geometry(&mailbox, async { Ok(rotated) }).await.unwrap());
+        let rejected = mailbox.decode_cursor();
+        assert_ne!(rejected.epoch, before.epoch);
+        assert_eq!(rejected.serial, 0);
+        // A buffered notification of the old layout cannot recover this grant.
+        mailbox.set_display_geometry(Some(geometry));
+        assert_eq!(mailbox.decode_cursor(), rejected);
+        assert!(!mailbox.verify_display_geometry(before.epoch, geometry));
+        // A second fresh check cannot promote the RPC's newer layout either.
+        assert!(!mailbox.verify_display_geometry(rejected.epoch, rotated));
+        assert_eq!(mailbox.decode_cursor().serial, 0);
+    }
+    #[tokio::test]
+    async fn notification_during_fresh_geometry_rpc_refuses_the_older_epoch_without_overwriting_it() {
+        let (mailbox, geometry) = geometry_probe_fixture();
+        let before = mailbox.decode_cursor();
+        let rotated = DisplayGeometry { rotation: 180, ..geometry };
+        assert!(!super::verify_current_geometry(&mailbox, async {
+            mailbox.set_display_geometry(Some(rotated));
+            Ok(geometry) // The earlier RPC reply arrives after the newer push.
+        }).await.unwrap());
+        let current = mailbox.decode_cursor();
+        assert_ne!(current.epoch, before.epoch);
+        assert!(!mailbox.verify_display_geometry(before.epoch, geometry));
+        assert_eq!(mailbox.decode_cursor(), current, "An old reply cannot overwrite or invalidate the newer push.");
+    }
+    #[tokio::test]
+    async fn failed_fresh_geometry_rpc_revokes_previous_authority() {
+        let (mailbox, _) = geometry_probe_fixture();
+        let before = mailbox.decode_cursor();
+        let failure = super::error(super::Stage::VideoService, super::Cause::Timeout);
+        assert_eq!(super::verify_current_geometry(&mailbox, async { Err(failure) }).await, Err(failure));
+        assert_ne!(mailbox.decode_cursor().epoch, before.epoch);
+        assert_eq!(mailbox.decode_cursor().serial, 0);
     }
     #[test]
     fn reordered_marker_is_received_and_acknowledged_without_false_loss() {

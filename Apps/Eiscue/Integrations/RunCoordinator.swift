@@ -15,6 +15,7 @@ final class RunCoordinator {
         let settings: ModelSettings
         let skill: AgentSkill?
         let device: DeviceClient
+        let method: DeviceConnectionMethod
     }
 
     init(model: AppModel,
@@ -36,7 +37,8 @@ final class RunCoordinator {
     @discardableResult
     func perform(conversationID: UUID, requestID: UUID, prompt: String, history: [AgentMessage], resume: Bool, attachments: [AgentAttachment] = [], runScope: TaskScope) async -> Bool {
         guard !model.isRunning else { return false }
-        let context = Context(settings: model.modelSettings, skill: model.selectedSkill, device: model.deviceClient)
+        let context = Context(settings: model.modelSettings, skill: model.selectedSkill, device: model.deviceClient,
+                              method: model.deviceSession.activeMethod ?? model.deviceSession.selectedMethod)
         // The transcript's pending marker covers the earlier message-save
         // boundary; this journal owns preparation and runtime admission.
         let preparationInterrupted = model.isBusy || model.currentScenePhase != .active || (runScope != .chat && !model.isDeviceReady)
@@ -139,7 +141,7 @@ final class RunCoordinator {
             let events = try await runningAgent!.run(request: request)
             if session.stopCause != nil {
                 do { try await runningAgent?.cancel() }
-                catch { session.record.cleanupFailure = model.safeError(error) }
+                catch { recordCleanupFailure(model.safeError(error), session: session) }
             }
             // Admission and a tool outcome can already be committed while the
             // stream crosses actors. Cancellation must drain those facts too.
@@ -165,11 +167,11 @@ final class RunCoordinator {
                 try await runningAgent?.cancel()
                 if case AgentError.modelRequestFailed = error { modelRequestFailed = true }
             } catch {
-                session.record.cleanupFailure = model.safeError(error)
+                recordCleanupFailure(model.safeError(error), session: session)
                 reportedError = error
             }
             if let eventSaveFailure {
-                session.record.cleanupFailure = session.record.cleanupFailure.map { $0 + "\n" + eventSaveFailure } ?? eventSaveFailure
+                recordCleanupFailure(eventSaveFailure, session: session)
                 model.errorMessage = eventSaveFailure
             }
             let persistenceFailed = eventSaveFailure != nil
@@ -209,7 +211,7 @@ final class RunCoordinator {
         do {
             let run = session.record
             do {
-                try await DeviceRunCleanup.finish(run: run, disconnectAfterTask: model.disconnectAfterTask,
+                try await DeviceRunCleanup.finish(run: run, method: session.lease?.method ?? context.method, disconnectAfterTask: model.disconnectAfterTask,
                     modelRequestFailed: modelRequestFailed, deviceTools: session.tools, stopRequested: (session.stopCause != nil),
                     finishConnection: { [model] in
                         try await context.device.finishTask()
@@ -220,7 +222,7 @@ final class RunCoordinator {
                     },
                     disconnect: { [model] in await model.releaseDeviceConnection(client: context.device) })
             } catch {
-                session.record.cleanupFailure = model.safeError(error)
+                recordCleanupFailure(error, session: session)
                 model.errorMessage = model.safeError(error)
             }
         }
@@ -230,7 +232,7 @@ final class RunCoordinator {
         do { try await persist(session) }
         catch {
             let message = String(format: String(localized: "error.save_run", table: "Runtime"), model.safeError(error))
-            session.record.cleanupFailure = session.record.cleanupFailure.map { $0 + "\n" + message } ?? message
+            recordCleanupFailure(message, session: session)
             if session.record.stopCause?.isOutcomeUnknown != true {
                 session.record.state = .failed
                 session.record.pauseReason = nil
@@ -244,7 +246,9 @@ final class RunCoordinator {
         let systemActivityUpdated = model.background.end(taskID: runID, success: session.record.state == .completed && session.record.cleanupFailure == nil)
         if model.currentScenePhase == .background {
             let completed = session.record
-            await model.taskNotifications.notify(runID: completed.id, state: completed.state,
+            let notificationState = completed.cleanupFailure != nil && completed.state != .outcomeUnknown
+                ? RunState.failed : completed.state
+            await model.taskNotifications.notify(runID: completed.id, state: notificationState,
                                            systemActivityUpdated: systemActivityUpdated)
         }
         let completed = session.record
@@ -267,12 +271,15 @@ final class RunCoordinator {
         updateTaskStatus(session: session, isFinishing: true)
         let cleanup = Task { [self] in
             let cancellation = Task { try await session.engine?.cancel() }
-            if let device = session.device {
-                await model.releaseDeviceConnection(client: device)
+            if let lease = session.lease {
+                let confirmed = await model.releaseDeviceConnection(client: lease.client)
+                if !DeviceRunCleanup.acceptsRelease(confirmed: confirmed, method: lease.method) {
+                    recordCleanupFailure(model.safeError(DeviceSession.Failure.releaseUnconfirmed), session: session)
+                }
             }
             do { try await cancellation.value }
             catch {
-                session.record.cleanupFailure = model.safeError(error)
+                recordCleanupFailure(model.safeError(error), session: session)
                 if current === session { model.errorMessage = String(format: String(localized: "error.stop_requested", table: "Runtime"), model.safeError(error)) }
             }
             session.isCancelling = false
@@ -299,6 +306,29 @@ final class RunCoordinator {
 
     func persistActiveRun() async throws { if let current { try await persist(current) } }
     private func persist(_ session: RunSession) async throws { try await model.journal.save(session.record) }
+
+    private func recordCleanupFailure(_ error: any Error, session: RunSession) {
+        if let failures = error as? DeviceRunCleanup.Failures {
+            // Sanitize and bound each cause separately so a long input error
+            // cannot hide the failed remote disconnect receipt.
+            recordCleanupFailure(model.safeError(failures.inputRelease), session: session)
+            recordCleanupFailure(model.safeError(failures.disconnect), session: session)
+        } else {
+            recordCleanupFailure(model.safeError(error), session: session)
+        }
+    }
+
+    private func recordCleanupFailure(_ message: String, session: RunSession) {
+        let message = model.sanitizedText(message)
+        guard let previous = session.record.cleanupFailure, !previous.isEmpty else {
+            session.record.cleanupFailure = message
+            return
+        }
+        // Cancellation, streamed cleanup and final device release can report the
+        // same failure. Preserve each distinct receipt without replacing earlier ones.
+        guard !message.isEmpty, !("\n" + previous + "\n").contains("\n" + message + "\n") else { return }
+        session.record.cleanupFailure = previous + "\n" + message
+    }
 
     func logEvent(_ kind: String, _ summary: String) async throws {
         if let current { try await logEvent(session: current, kind, summary) }
@@ -396,7 +426,7 @@ final class RunCoordinator {
                 try await logEvent(session: session, "tool.error", model.sanitizedText(text))
             }
         case .cleanupFailed(let message):
-            session.record.cleanupFailure = model.sanitizedText(message)
+            recordCleanupFailure(message, session: session)
         case .finished(let outcome):
             if outcome == .cancelled {
                 session.requestStop(.engineCancelled)

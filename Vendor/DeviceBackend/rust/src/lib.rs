@@ -346,6 +346,11 @@ impl Session {
         self.video.reset();
         result
     }
+    pub async fn verify_video_geometry(&mut self) -> Result<bool, Error> {
+        self.check()?;
+        let Some(media) = self.media.as_ref() else { return Ok(false); };
+        media.verify_geometry(&mut self.adapter, &mut self.handshake, &self.video).await
+    }
     /// No replay on timeout/uncertain release. A negotiated screen session must belong to
     /// this same authenticated generation; result never claims a visible tap.
     pub async fn tap(&mut self, x: u16, y: u16) -> Result<TouchDelivery, Error> {
