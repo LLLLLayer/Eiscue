@@ -122,7 +122,8 @@ final class BluetoothCalibrationContactTraceTests: XCTestCase {
     }
 
     func testOnlyPageContactsHittingTargetAuthorizeRelativeObservation() throws {
-        var diagnostics = BluetoothCalibrationTouchDiagnostics()
+        var diagnostics = diagnosticsWithBaseline(types: Array(repeating: .indirectPointer, count: 4))
+        XCTAssertEqual(diagnostics.selectedTouchType, .indirectPointer)
         diagnostics.beginRelative()
         for phase in [UITouch.Phase.began, .moved, .ended] {
             diagnostics.record(source: .page, id: 1, phase: phase, type: .indirectPointer,
@@ -149,25 +150,91 @@ final class BluetoothCalibrationContactTraceTests: XCTestCase {
     }
 
     func testNonTargetContactRejectsOtherwiseCompleteTargetDrag() throws {
-        var diagnostics = BluetoothCalibrationTouchDiagnostics()
-        diagnostics.beginRelative()
-        diagnostics.record(source: .page, id: 1, phase: .began, type: .direct,
-            point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
-        diagnostics.record(source: .page, id: 2, phase: .began, type: .direct,
-            point: DevicePoint(x: 0.8, y: 0.8), uptime: 10.01, hitTarget: false)
-        diagnostics.record(source: .page, id: 1, phase: .moved, type: .direct,
-            point: DevicePoint(x: 0.55, y: 0.35), uptime: 10.1, hitTarget: true)
-        diagnostics.record(source: .page, id: 1, phase: .ended, type: .direct,
-            point: DevicePoint(x: 0.55, y: 0.35), uptime: 10.2, hitTarget: true)
+        for secondHitsTarget in [false, true] {
+            var diagnostics = diagnosticsWithBaseline(types: Array(repeating: .direct, count: 4))
+            diagnostics.beginRelative()
+            diagnostics.record(source: .page, id: 1, phase: .began, type: .direct,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+            diagnostics.record(source: .page, id: 2, phase: .began, type: .direct,
+                point: DevicePoint(x: 0.8, y: 0.8), uptime: 10.01, hitTarget: secondHitsTarget)
+            diagnostics.record(source: .page, id: 1, phase: .moved, type: .direct,
+                point: DevicePoint(x: 0.55, y: 0.35), uptime: 10.1, hitTarget: true)
+            diagnostics.record(source: .page, id: 1, phase: .ended, type: .direct,
+                point: DevicePoint(x: 0.55, y: 0.35), uptime: 10.2, hitTarget: true)
 
-        XCTAssertEqual(diagnostics.relativeTrace.contactCount, 1)
-        XCTAssertNotNil(diagnostics.relativeTrace.observation(probe: .horizontalSmall, receipt: UUID()))
+            XCTAssertEqual(diagnostics.relativeTrace.contactCount, secondHitsTarget ? 2 : 1)
+            XCTAssertEqual(diagnostics.selectedPageContactCount, 2)
+            XCTAssertNil(diagnostics.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
+            XCTAssertEqual(diagnostics.relativeObservationFailureReason, .multipleContacts)
+            let report = diagnostics.relativeTrace.diagnostic(probe: .horizontalSmall, commandCompleted: true,
+                failureReason: diagnostics.relativeObservationFailureReason)
+            XCTAssertEqual(report["failureReason"] as? String, "multipleContacts")
+        }
+    }
+
+    func testAbsoluteDirectChannelCompletesDespiteUnterminatedPointerMirrorWithoutFallback() throws {
+        var diagnostics = diagnosticsWithBaseline(types: Array(repeating: .direct, count: 4))
+        diagnostics.beginRelative()
+        for phase in [UITouch.Phase.began, .moved, .ended] {
+            if phase != .ended {
+                diagnostics.record(source: .page, id: 1, phase: phase, type: .indirectPointer,
+                    point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+            }
+            diagnostics.record(source: .page, id: 2, phase: phase, type: .direct,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+        }
+        XCTAssertEqual(diagnostics.selectedTouchTypeName, "direct")
         XCTAssertEqual(diagnostics.pageTrace.contactCount, 2)
-        XCTAssertNil(diagnostics.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
-        XCTAssertEqual(diagnostics.relativeObservationFailureReason, .multipleContacts)
-        let report = diagnostics.relativeTrace.diagnostic(probe: .horizontalSmall, commandCompleted: true,
-            failureReason: diagnostics.relativeObservationFailureReason)
-        XCTAssertEqual(report["failureReason"] as? String, "multipleContacts")
+        XCTAssertFalse(diagnostics.pageTrace.hasTerminated)
+        XCTAssertEqual(diagnostics.selectedPageContactCount, 1)
+        let observation = try XCTUnwrap(diagnostics.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertEqual(observation.contactCount, 1)
+        XCTAssertEqual(observation.movedEventCount, 1)
+        XCTAssertTrue(observation.endedNormally)
+
+        diagnostics.beginRelative()
+        for phase in [UITouch.Phase.began, .moved, .ended] {
+            diagnostics.record(source: .page, id: 3, phase: phase, type: .indirectPointer,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 11, hitTarget: true)
+        }
+        XCTAssertEqual(diagnostics.selectedTouchType, .direct)
+        XCTAssertNil(diagnostics.relativeObservation(probe: .horizontalLarge, receipt: UUID()))
+        XCTAssertEqual(diagnostics.relativeObservationFailureReason, .contactMissing)
+    }
+
+    func testMissingIncompleteMixedUnsealedAndLegacyBaselinesCannotSelectChannel() {
+        let direct = Array(repeating: UITouch.TouchType.direct, count: 4)
+        let cases: [([UITouch.TouchType], BluetoothCalibrationTouchDiagnostics.Source, Bool, Bool)] = [
+            ([], .page, true, true), (direct, .page, false, true),
+            ([.direct, .indirectPointer, .direct, .indirectPointer], .page, true, true),
+            (direct, .page, true, false), (direct, .legacyTarget, true, true)]
+        for (types, source, complete, seal) in cases {
+            var diagnostics = diagnosticsWithBaseline(types: types, source: source, complete: complete, seal: seal)
+            XCTAssertNil(diagnostics.selectedTouchType)
+            diagnostics.beginRelative()
+            for phase in [UITouch.Phase.began, .moved, .ended] {
+                diagnostics.record(source: .page, id: 10, phase: phase, type: .direct,
+                    point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+            }
+            XCTAssertNil(diagnostics.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
+            XCTAssertEqual(diagnostics.relativeObservationFailureReason, .touchChannelUnconfirmed)
+        }
+    }
+
+    private func diagnosticsWithBaseline(types: [UITouch.TouchType],
+                                         source: BluetoothCalibrationTouchDiagnostics.Source = .page,
+                                         complete: Bool = true, seal: Bool = true) -> BluetoothCalibrationTouchDiagnostics {
+        var diagnostics = BluetoothCalibrationTouchDiagnostics()
+        diagnostics.beginAbsolute()
+        for (id, type) in types.enumerated() {
+            for phase in complete ? [UITouch.Phase.began, .ended] : [.began] {
+                diagnostics.record(source: source, id: id, phase: phase, type: type,
+                    point: DevicePoint(x: 0.25, y: 0.25), uptime: Double(id), hitTarget: true)
+            }
+        }
+        diagnostics.endStage()
+        if seal { diagnostics.sealAbsoluteBaseline() }
+        return diagnostics
     }
 
     func testAbsoluteBaselineSeparatesSourcesAndIgnoresInactiveStages() throws {
@@ -231,5 +298,15 @@ final class BluetoothCalibrationContactTraceTests: XCTestCase {
         XCTAssertEqual(observer.state, .possible)
         XCTAssertTrue(observer.allowedTouchTypes.contains(NSNumber(value: UITouch.TouchType.direct.rawValue)))
         XCTAssertTrue(observer.allowedTouchTypes.contains(NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)))
+        XCTAssertFalse(BluetoothCalibrationPageTouchObserver.shouldFinish(
+            endedTypes: [.indirectPointer], activeTypes: [.direct], selectedType: .direct))
+        XCTAssertFalse(BluetoothCalibrationPageTouchObserver.shouldFinish(
+            endedTypes: [.indirectPointer], activeTypes: [], selectedType: .direct))
+        XCTAssertTrue(BluetoothCalibrationPageTouchObserver.shouldFinish(
+            endedTypes: [.direct], activeTypes: [.indirectPointer], selectedType: .direct))
+        XCTAssertFalse(BluetoothCalibrationPageTouchObserver.shouldFinish(
+            endedTypes: [.direct], activeTypes: [.direct], selectedType: .direct))
+        XCTAssertFalse(BluetoothCalibrationPageTouchObserver.shouldFinish(
+            endedTypes: [.direct], activeTypes: [.indirectPointer], selectedType: nil))
     }
 }

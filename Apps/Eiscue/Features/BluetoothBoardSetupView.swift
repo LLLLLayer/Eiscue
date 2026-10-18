@@ -503,6 +503,7 @@ private final class BluetoothPointerValidationController: UIViewController {
             }
             stopTouchDiagnostics()
             try await controller.completeCalibration(observed: touches)
+            touchDiagnostics.sealAbsoluteBaseline()
             if controller.supportsRelativeDrag {
                 heading.text = text("bluetooth.validationSwipeTitle")
                 status.text = text("bluetooth.checkingSwipe")
@@ -562,6 +563,10 @@ private final class BluetoothPointerValidationController: UIViewController {
             relativeFailureReason = .relativeInputNotReady
             return false
         }
+        guard touchDiagnostics.selectedTouchType != nil else {
+            relativeFailureReason = .touchChannelUnconfirmed
+            return false
+        }
         do {
             for probe in BluetoothRelativeCalibrationProbe.allCases {
                 try requireVisible()
@@ -583,11 +588,14 @@ private final class BluetoothPointerValidationController: UIViewController {
     }
     private func observeRelativeProbe(_ probe: BluetoothRelativeCalibrationProbe) async throws -> BluetoothRelativeCalibrationObservation? {
         touchDiagnostics.beginRelative()
+        pageTouchObserver.selectedTouchType = touchDiagnostics.selectedTouchType
         pageTouchObserver.isRecording = true
         var commandCompleted = false
         defer {
             var attempt = touchDiagnostics.relativeTrace.diagnostic(probe: probe, commandCompleted: commandCompleted,
                 failureReason: relativeFailureReason)
+            attempt["selectedTouchType"] = touchDiagnostics.selectedTouchTypeName as Any? ?? NSNull()
+            attempt["selectedPageContacts"] = touchDiagnostics.selectedPageContactCount
             attempt["pageTrace"] = touchDiagnostics.pageTrace.diagnostic(probe: probe, commandCompleted: commandCompleted)
             attempt["legacyTargetTrace"] = touchDiagnostics.legacyTargetTrace.diagnostic(probe: probe, commandCompleted: commandCompleted)
             relativeProbeAttempts.append(attempt)
@@ -620,6 +628,7 @@ private final class BluetoothPointerValidationController: UIViewController {
             "relativeReadyAtStart": relativeReadyAtStart as Any? ?? NSNull(),
             "relativeFailureReason": relativeFailureReason?.rawValue as Any? ?? NSNull(),
             "relativeProbeAttempts": relativeProbeAttempts,
+            "selectedTouchType": touchDiagnostics.selectedTouchTypeName as Any? ?? NSNull(),
             "absoluteTouches": touchDiagnostics.absoluteDiagnostic,
             "relativeProbes": relativeObservations.map { ["probe": $0.probe.rawValue,
                 "contacts": $0.contactCount, "movedEvents": $0.movedEventCount,
@@ -641,11 +650,11 @@ private final class BluetoothPointerValidationController: UIViewController {
 
 /// Fixed diagnostic codes never include transport messages, credentials or input text.
 enum BluetoothCalibrationFailureReason: String {
-    case relativeInputNotReady, contactMissing, contactBeganMissing, contactIncomplete, multipleContacts
+    case relativeInputNotReady, touchChannelUnconfirmed, contactMissing, contactBeganMissing, contactIncomplete, multipleContacts
     case probeCommandFailed, probeObservationInterrupted, relativeValidationRejected, relativeCheckInterrupted
 }
 
-/// Only page-observed contacts that UIKit hit-tests to the target may authorize a probe.
+/// Only target contacts in the sealed absolute-calibration channel may authorize a probe.
 struct BluetoothCalibrationTouchDiagnostics {
     enum Source { case page, legacyTarget }
     private enum Stage { case absolute, relative }
@@ -653,16 +662,25 @@ struct BluetoothCalibrationTouchDiagnostics {
     private var absolutePage = BluetoothCalibrationTouchSummary()
     private var absoluteTarget = BluetoothCalibrationTouchSummary()
     private var absoluteLegacyTarget = BluetoothCalibrationTouchSummary()
+    private var absoluteBaseline = BluetoothCalibrationTouchBaseline()
+    private var selectedPageContacts = Set<Int>()
+    private(set) var selectedTouchType: UITouch.TouchType?
     private(set) var relativeTrace = BluetoothCalibrationContactTrace()
     private(set) var pageTrace = BluetoothCalibrationContactTrace()
     private(set) var legacyTargetTrace = BluetoothCalibrationContactTrace()
 
-    mutating func beginAbsolute() { stage = .absolute }
+    mutating func beginAbsolute() {
+        stage = .absolute
+        absoluteBaseline = BluetoothCalibrationTouchBaseline()
+        selectedTouchType = nil
+    }
+    mutating func sealAbsoluteBaseline() { selectedTouchType = absoluteBaseline.completedTouchType }
     mutating func beginRelative() {
         stage = .relative
         relativeTrace = BluetoothCalibrationContactTrace()
         pageTrace = BluetoothCalibrationContactTrace()
         legacyTargetTrace = BluetoothCalibrationContactTrace()
+        selectedPageContacts.removeAll()
     }
     mutating func endStage() { stage = nil }
     mutating func record(source: Source, id: Int, phase: UITouch.Phase, type: UITouch.TouchType,
@@ -671,12 +689,18 @@ struct BluetoothCalibrationTouchDiagnostics {
         switch (stage, source) {
         case (.absolute, .page):
             absolutePage.record(phase: phase, type: type, point: point, hitTarget: hitTarget)
-            if hitTarget { absoluteTarget.record(phase: phase, type: type, point: point, hitTarget: true) }
+            if hitTarget {
+                absoluteTarget.record(phase: phase, type: type, point: point, hitTarget: true)
+                absoluteBaseline.record(id: id, phase: phase, type: type)
+            }
         case (.absolute, .legacyTarget):
             absoluteLegacyTarget.record(phase: phase, type: type, point: point, hitTarget: hitTarget)
         case (.relative, .page):
             pageTrace.record(id: id, phase: phase, point: point, uptime: uptime, type: type, hitTarget: hitTarget)
-            if hitTarget { relativeTrace.record(id: id, phase: phase, point: point, uptime: uptime, type: type) }
+            if type == selectedTouchType {
+                selectedPageContacts.insert(id)
+                if hitTarget { relativeTrace.record(id: id, phase: phase, point: point, uptime: uptime, type: type) }
+            }
         case (.relative, .legacyTarget):
             legacyTargetTrace.record(id: id, phase: phase, point: point, uptime: uptime, type: type, hitTarget: hitTarget)
         }
@@ -686,11 +710,44 @@ struct BluetoothCalibrationTouchDiagnostics {
          "legacyTargetTrace": absoluteLegacyTarget.diagnostic]
     }
     var relativeObservationFailureReason: BluetoothCalibrationFailureReason? {
-        pageTrace.contactCount > 1 ? .multipleContacts : relativeTrace.incompleteReason
+        if selectedTouchType == nil { return .touchChannelUnconfirmed }
+        return selectedPageContacts.count > 1 ? .multipleContacts : relativeTrace.incompleteReason
     }
     func relativeObservation(probe: BluetoothRelativeCalibrationProbe, receipt: UUID) -> BluetoothRelativeCalibrationObservation? {
-        guard pageTrace.contactCount == 1 else { return nil }
+        guard selectedTouchType != nil, selectedPageContacts.count == 1 else { return nil }
         return relativeTrace.observation(probe: probe, receipt: receipt)
+    }
+    var selectedPageContactCount: Int { selectedPageContacts.count }
+    var selectedTouchTypeName: String? {
+        selectedTouchType.map { $0 == .direct ? "direct" : "indirectPointer" }
+    }
+}
+
+/// Sealed only after Core accepts all four absolute taps; relative events cannot select a channel.
+struct BluetoothCalibrationTouchBaseline {
+    private var type: UITouch.TouchType?
+    private var began = Set<Int>()
+    private var ended = Set<Int>()
+    private var invalid = false
+
+    mutating func record(id: Int, phase: UITouch.Phase, type: UITouch.TouchType) {
+        guard !invalid else { return }
+        guard type == .direct || type == .indirectPointer, self.type == nil || self.type == type else {
+            invalid = true; return
+        }
+        self.type = type
+        switch phase {
+        case .began:
+            if !began.insert(id).inserted || began.count > 4 { invalid = true }
+        case .ended:
+            if !began.contains(id) || !ended.insert(id).inserted { invalid = true }
+        case .moved, .stationary:
+            if !began.contains(id) || ended.contains(id) { invalid = true }
+        default: invalid = true
+        }
+    }
+    var completedTouchType: UITouch.TouchType? {
+        !invalid && began.count == 4 && began == ended ? type : nil
     }
 }
 
@@ -794,7 +851,8 @@ struct BluetoothCalibrationContactTrace {
     weak var calibrationTarget: UIView?
     var onContact: ((Int, UITouch.Phase, UITouch.TouchType, CGPoint, TimeInterval, Bool) -> Void)?
     var isRecording = false { didSet { if !isRecording { contactIDs.removeAll() } } }
-    private var contactIDs: [ObjectIdentifier: Int] = [:]
+    var selectedTouchType: UITouch.TouchType?
+    private var contactIDs: [ObjectIdentifier: (id: Int, type: UITouch.TouchType)] = [:]
     private var nextContactID = 0
 
     override init(target: Any?, action: Selector?) {
@@ -810,18 +868,30 @@ struct BluetoothCalibrationContactTrace {
         guard isRecording, let view else { return }
         for touch in touches {
             let key = ObjectIdentifier(touch)
-            if contactIDs[key] == nil { nextContactID += 1; contactIDs[key] = nextContactID }
+            if contactIDs[key] == nil { nextContactID += 1; contactIDs[key] = (nextContactID, touch.type) }
             let hitTarget = calibrationTarget.map { target in
                 touch.view === target || touch.view?.isDescendant(of: target) == true
             } ?? false
-            onContact?(contactIDs[key]!, touch.phase, touch.type, touch.location(in: view), touch.timestamp, hitTarget)
+            onContact?(contactIDs[key]!.id, touch.phase, touch.type, touch.location(in: view), touch.timestamp, hitTarget)
             if touch.phase == .ended || touch.phase == .cancelled { contactIDs[key] = nil }
         }
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches) }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches) }
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches); state = .failed }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches); state = .failed }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches) }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { finish(touches) }
+    override func reset() { super.reset(); contactIDs.removeAll() }
+    private func finish(_ touches: Set<UITouch>) {
+        observe(touches)
+        if Self.shouldFinish(endedTypes: touches.map { $0.type }, activeTypes: contactIDs.values.map { $0.type },
+                             selectedType: selectedTouchType) { state = .failed }
+    }
+    static func shouldFinish(endedTypes: [UITouch.TouchType], activeTypes: [UITouch.TouchType],
+                             selectedType: UITouch.TouchType?) -> Bool {
+        // An auxiliary channel ending must not stop delivery of the calibrated channel.
+        if let selectedType { return endedTypes.contains(selectedType) && !activeTypes.contains(selectedType) }
+        return !endedTypes.isEmpty && activeTypes.isEmpty
+    }
 }
 
 @MainActor private final class BluetoothCalibrationTarget: UIButton {

@@ -497,9 +497,18 @@ and relative-swipe calibration did not pass. Final observer App tests passed
 The first foregroundSwipe host sent no swipe because device_swipe was absent.
 After normal BLE disconnection, USB host enumeration and authenticated route
 connection passed; interfaces 0/1/2 were enumerated, and the Mac had only the
-COM bridge rather than an accidental S3 HID connection. Actual USB input still
-awaits phone screen sharing/calibration. Earlier failures remain recorded;
-three BLE rounds used no model API.
+COM bridge rather than an accidental S3 HID connection. A subsequent USB check
+(source `6db39b9`) passed actual four-point taps and Chinese text with ReplayKit
+retained. Its relative probe produced 23 target events: 11 direct and 12
+indirectPointer, with only the direct sequence ending normally. Calibration
+mixed these event types and rejected multipleContacts, despite op10 ACK14.
+
+That USB calibration rejection cause is established. The App channel-selection
+fix passed 30 tests on each Xcode 26/27 toolchain, and a signed device build
+passed; Core and firmware were unchanged. Physical revalidation is pending.
+This does not explain the separate BLE zero-contact failure,
+and relative swipes remain unaccepted. Earlier failures remain recorded; all
+these checks used no model API.
 
 ## Version 0.2 build evidence (2026-10-12)
 
