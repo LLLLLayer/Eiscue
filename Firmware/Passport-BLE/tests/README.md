@@ -15,6 +15,12 @@ release tail with a simulated busy USB endpoint, and legacy command/reply bytes.
 It does not exercise NimBLE callbacks, actual timer jitter, BLE/USB transport or
 phone contact continuity; those remain separate hardware acceptance work.
 
+`bash Scripts/test-board-ble-button-source.sh` compiles the production BLE report
+planner with UBSan. Four groups check the S3-only single Button 1 descriptor,
+unchanged C3/USB descriptors, absolute DOWN/UP ordering, partial-send counts,
+separate logical hold state and subscription requirements. It does not exercise
+NimBLE timers, host descriptor caching or physical phone input.
+
 ## Authentication
 
 This fixture compiles the production `board_auth.c` against in-memory ESP-IDF

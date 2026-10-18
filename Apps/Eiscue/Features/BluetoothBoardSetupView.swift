@@ -224,10 +224,22 @@ final class BluetoothCalibrationOwnership {
     let lease: DeviceLease
     private var cleanupTask: Task<Void, Never>?
     private var calibrationStarted = false
+    #if DEBUG
+    private weak var diagnosticSession: DeviceSession?
+    private let diagnosticIdentity: DeviceSession.Identity
+    func requireDiagnosticOwnership() throws {
+        guard calibrationStarted, cleanupTask == nil, let diagnosticSession,
+              diagnosticSession.owner == .setup, diagnosticSession.isCurrent(diagnosticIdentity),
+              lease.method == .bluetoothBoard else { throw CancellationError() }
+    }
+    #endif
 
     init(session: DeviceSession) throws {
         lease = try session.acquire(.setup)
         lease.client.device.invalidate()
+        #if DEBUG
+        diagnosticSession = session; diagnosticIdentity = session.identity
+        #endif
     }
     func beginCalibration(_ begin: @MainActor () async throws -> Void) async throws {
         try Task.checkCancellation()
@@ -294,6 +306,12 @@ private final class BluetoothPointerValidationController: UIViewController {
     private var relativeReadyAtStart: Bool?
     private var relativeProbeAttempts: [[String: Any]] = []
     private var relativeFailureReason: BluetoothCalibrationFailureReason?
+    #if DEBUG
+    private var stationaryGate = BluetoothStationaryComparisonGate(arguments: ProcessInfo.processInfo.arguments)
+    private var relativeCommandCompleted = false
+    private var stationaryCapture: BluetoothStationaryComparisonCapture?
+    private var stationaryComparison: [String: Any]?
+    #endif
     private var relativeCheckPassed = false
     private var armed = false
     private var stableBounds = CGRect.zero
@@ -456,9 +474,16 @@ private final class BluetoothPointerValidationController: UIViewController {
     private func recordContact(source: BluetoothCalibrationTouchDiagnostics.Source, id: Int, phase: UITouch.Phase,
                                type: UITouch.TouchType, location: CGPoint, uptime: TimeInterval, hitTarget: Bool) {
         guard !ending, view.bounds.width > 0, view.bounds.height > 0 else { return }
+        let point = DevicePoint(x: location.x / view.bounds.width, y: location.y / view.bounds.height)
+        #if DEBUG
+        if stationaryCapture != nil {
+            stationaryCapture?.record(source: source, id: id, phase: phase, type: type,
+                point: point, uptime: uptime, hitTarget: hitTarget)
+            return
+        }
+        #endif
         touchDiagnostics.record(source: source, id: id, phase: phase, type: type,
-            point: DevicePoint(x: location.x / view.bounds.width, y: location.y / view.bounds.height),
-            uptime: uptime, hitTarget: hitTarget)
+            point: point, uptime: uptime, hitTarget: hitTarget)
     }
     private func stopTouchDiagnostics() {
         pageTouchObserver.isRecording = false
@@ -570,7 +595,12 @@ private final class BluetoothPointerValidationController: UIViewController {
         do {
             for probe in BluetoothRelativeCalibrationProbe.allCases {
                 try requireVisible()
-                guard let observation = try await observeRelativeProbe(probe) else { return false }
+                guard let observation = try await observeRelativeProbe(probe) else {
+                    #if DEBUG
+                    try await compareStationaryInputIfRequested(after: probe)
+                    #endif
+                    return false
+                }
                 relativeObservations.append(observation)
                 progress.setProgress(Float(4 + relativeObservations.count) / Float(checkCount), animated: true)
                 try await Task.sleep(for: .milliseconds(150))
@@ -587,6 +617,9 @@ private final class BluetoothPointerValidationController: UIViewController {
         }
     }
     private func observeRelativeProbe(_ probe: BluetoothRelativeCalibrationProbe) async throws -> BluetoothRelativeCalibrationObservation? {
+        #if DEBUG
+        relativeCommandCompleted = false
+        #endif
         touchDiagnostics.beginRelative()
         pageTouchObserver.selectedTouchType = touchDiagnostics.selectedTouchType
         pageTouchObserver.isRecording = true
@@ -604,6 +637,9 @@ private final class BluetoothPointerValidationController: UIViewController {
         do {
             let receipt = try await controller.runRelativeCalibrationProbe(probe)
             commandCompleted = true
+            #if DEBUG
+            relativeCommandCompleted = true
+            #endif
             let until = Date().addingTimeInterval(2)
             while !touchDiagnostics.relativeTrace.hasTerminated && Date() < until {
                 try await Task.sleep(for: .milliseconds(50)); try requireVisible()
@@ -618,9 +654,53 @@ private final class BluetoothPointerValidationController: UIViewController {
             throw error
         }
     }
+    #if DEBUG
+    private func requireStationaryComparisonContext() throws {
+        try requireVisible()
+        guard let ownership else { throw CancellationError() }
+        try ownership.requireDiagnosticOwnership()
+    }
+    private func compareStationaryInputIfRequested(after probe: BluetoothRelativeCalibrationProbe) async throws {
+        guard stationaryGate.claim(probe: probe, isFirstProbe: relativeProbeAttempts.count == 1,
+            commandCompleted: relativeCommandCompleted, failureReason: relativeFailureReason) else { return }
+        stationaryCapture = BluetoothStationaryComparisonCapture()
+        var commandCompleted = false
+        var interval: (dispatchUptime: TimeInterval, completedUptime: TimeInterval)?
+        var failureReason: String?
+        defer {
+            var report = stationaryCapture?.diagnostic(commandCompleted: commandCompleted) ?? [:]
+            report["selectedTouchType"] = touchDiagnostics.selectedTouchTypeName as Any? ?? NSNull()
+            report["failureReason"] = failureReason as Any? ?? NSNull()
+            report["dispatchUptime"] = interval?.dispatchUptime as Any? ?? NSNull()
+            report["completedUptime"] = interval?.completedUptime as Any? ?? NSNull()
+            stationaryComparison = report
+            stationaryCapture = nil
+            stopTouchDiagnostics()
+        }
+        do {
+            try requireStationaryComparisonContext()
+            pageTouchObserver.selectedTouchType = touchDiagnostics.selectedTouchType
+            pageTouchObserver.isRecording = true
+            interval = try await controller.debugRunStationaryRelativeComparison { [self] in
+                try requireStationaryComparisonContext()
+            }
+            commandCompleted = true
+            let until = ProcessInfo.processInfo.systemUptime + 2
+            while ProcessInfo.processInfo.systemUptime < until {
+                try requireStationaryComparisonContext()
+                try await Task.sleep(for: .milliseconds(50))
+                try requireStationaryComparisonContext()
+            }
+        } catch {
+            failureReason = (error as? DeviceControlError)?.isDeliveryUnknown == true ? "deliveryUnknown"
+                : error is CancellationError ? "cancelled" : commandCompleted ? "observationInterrupted" : "commandFailed"
+            throw error
+        }
+    }
+    #endif
     private func saveReport(passed: Bool) {
         guard ownership != nil else { return }
-        let report: [String: Any] = ["passed": passed, "timestamp": Date().timeIntervalSince1970,
+        var report: [String: Any] = ["passed": passed, "timestamp": Date().timeIntervalSince1970,
             "pointCount": touches.count, "points": touches.map { ["x": $0.x, "y": $0.y] },
             "width": view.bounds.width, "height": view.bounds.height, "keyboardVerified": passed,
             "relativeDragSupported": controller.supportsRelativeDrag,
@@ -637,6 +717,9 @@ private final class BluetoothPointerValidationController: UIViewController {
                 "contactDuration": $0.endedUptime - $0.startedUptime] as [String: Any] },
             "inputRoute": controller.inputRoute.rawValue, "isS3": controller.outputInfo?.isS3 == true,
             "authenticated": controller.board.usesAuthenticatedCommands]
+        #if DEBUG
+        if let stationaryComparison { report["stationaryComparison"] = stationaryComparison }
+        #endif
         let directory = URL.applicationSupportDirectory.appendingPathComponent("EiscueBluetoothSetup")
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
@@ -653,6 +736,48 @@ enum BluetoothCalibrationFailureReason: String {
     case relativeInputNotReady, touchChannelUnconfirmed, contactMissing, contactBeganMissing, contactIncomplete, multipleContacts
     case probeCommandFailed, probeObservationInterrupted, relativeValidationRejected, relativeCheckInterrupted
 }
+
+#if DEBUG
+struct BluetoothStationaryComparisonGate {
+    private let enabled: Bool
+    private var used = false
+    init(arguments: [String]) { enabled = arguments.contains("--bluetooth-stationary-relative-check") }
+    mutating func claim(probe: BluetoothRelativeCalibrationProbe, isFirstProbe: Bool,
+                        commandCompleted: Bool, failureReason: BluetoothCalibrationFailureReason?) -> Bool {
+        guard enabled, !used, isFirstProbe, probe == .horizontalSmall, commandCompleted,
+              failureReason == .contactMissing else { return false }
+        used = true
+        return true
+    }
+}
+
+/// Diagnostic captures have no API that produces a calibration observation or receipt.
+struct BluetoothStationaryComparisonCapture {
+    private var target = BluetoothCalibrationContactTrace()
+    private var page = BluetoothCalibrationContactTrace()
+    private var legacy = BluetoothCalibrationContactTrace()
+    mutating func record(source: BluetoothCalibrationTouchDiagnostics.Source, id: Int, phase: UITouch.Phase,
+                         type: UITouch.TouchType, point: DevicePoint, uptime: TimeInterval, hitTarget: Bool) {
+        switch source {
+        case .page:
+            page.record(id: id, phase: phase, point: point, uptime: uptime, type: type, hitTarget: hitTarget)
+            if hitTarget { target.record(id: id, phase: phase, point: point, uptime: uptime, type: type) }
+        case .legacyTarget:
+            legacy.record(id: id, phase: phase, point: point, uptime: uptime, type: type, hitTarget: hitTarget)
+        }
+    }
+    func diagnostic(commandCompleted: Bool) -> [String: Any] {
+        func summary(_ trace: BluetoothCalibrationContactTrace) -> [String: Any] {
+            var result = trace.diagnostic(probe: .horizontalSmall, commandCompleted: commandCompleted)
+            result.removeValue(forKey: "probe")
+            return result
+        }
+        return ["kind": "stationaryRelativeHold", "commandCompleted": commandCompleted,
+            "anchor": ["x": 0.35, "y": 0.35], "totalDX": 0, "totalDY": 0, "steps": 12, "durationMS": 192,
+            "targetTrace": summary(target), "pageTrace": summary(page), "legacyTargetTrace": summary(legacy)]
+    }
+}
+#endif
 
 /// Only target contacts in the sealed absolute-calibration channel may authorize a probe.
 struct BluetoothCalibrationTouchDiagnostics {

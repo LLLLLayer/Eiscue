@@ -68,7 +68,9 @@ Mode, three Input Report characteristics and their Report Reference descriptors,
 plus boot mouse/keyboard input characteristics and boot keyboard LED output.
 Report ID **1** is the 4-byte relative mouse report; report ID **2** is the 8-byte
 US keyboard report. Report ID **3** is a 5-byte absolute mouse report: one left
-button byte followed by X and Y, both UInt16 LE in `0...32767`. Its HID usages are
+button byte on C3, or constant zero padding on S3 BLE, followed by X and Y,
+both UInt16 LE in `0...32767`. S3 BLE sends all button state through report 1;
+the USB absolute report retains its original button byte. Its HID usages are
 Generic Desktop Mouse / Pointer with absolute X/Y; it is unavailable in boot
 protocol mode. HOGP notifications do not prefix the report ID: the Report
 Reference descriptor identifies each characteristic. Device Information `180A`
@@ -141,6 +143,62 @@ selection / mount flags and HID descriptor query metadata only. IRQ hooks update
 atomic counters; task callbacks and readiness queries emit logs. No command
 payload, pointer coordinate, key value, authentication material or raw USB data
 is logged.
+
+### Relative-contact diagnostics: BLE stationary comparison
+
+The App's opt-in DEBUG flag `--bluetooth-stationary-relative-check` runs one
+stationary comparison only after the first horizontalSmall probe fails with
+contactMissing. It reuses the same verified anchor and requests zero displacement
+for 192 ms / 12 steps. The result is recorded separately from the six calibration
+probes and never grants swipe capability.
+
+Firmware diagnostics record HID report-map read length/fingerprint at most once
+per connection, plus stroke output, mode, handle, report length and subscription
+state before DOWN and when the sequence settles (including failures). These are metadata only: no keys, input bytes or
+report-map contents are logged. The tested metadata-only image kept the report
+map unchanged.
+
+On 2026-10-18, a fifth manual S3 BLE check on iPhone 12 mini / iOS 27 passed
+four-point taps and Chinese text. Both the first moving horizontalSmall probe
+and the separate stationary comparison completed with op10 ACK14, while
+authority, full-page and legacy UIKit observers each recorded zero
+contacts/events. Both strokes reported output=0, protocol/mode=1, handle=24,
+length=4, mouse=1, boot=0, ABS=1 and suspended=0. Done retained connection,
+sharing, pointer verification and ready, but relativeDragVerified remained
+false/contactMissing. No Agent/host task or model ran.
+
+The diagnostic S3 app image SHA-256 is
+`ef144cb03a3788c88352b64bfcb5ebcffb410af14016f59bbc54c1e4d62b12f2`.
+C3/S3 builds passed; only S3 was flashed, following a verified full backup and
+verified app-only readback, with no bond/key reset. C3 was not flashed.
+Focused stationary diagnostics tests and signed Debug/HID Release builds
+passed; these software results do not establish BLE swipe acceptance.
+
+The earlier BLE zero-contact failures remain recorded. The S3 BLE
+single-button-source change passes four UBSan fixture groups plus C3/S3 builds
+and the bounded physical check below. The candidate map is 136 bytes with FNV-1a
+fingerprint `5bf24bdb`. Report IDs, characteristic handles and report widths stay
+unchanged. Before evaluating input, confirm the phone fetched this new map;
+the existing Service Changed notification alone is not proof of cache refresh.
+
+S3 BLE ABS_POINT sends position then mouse DOWN for a held point, or mouse UP
+then position for an unpressed point. It requires both report-mode mouse and
+absolute subscriptions. The logical absolute hold has separate watchdog state;
+wire caches contain only the actual reports. USB and C3 retain their original
+single-report ABS path. Removing the duplicate Button1 source empirically restored contacts in the
+bounded check below; it does not prove the internal iOS mechanism.
+
+The S3 image `6e410d83a6fb0a6acc9e8171b48c924b84b7cf1ca4c5416fec933ff1989290eb`
+passed one portrait owned-page BLE check on the same phone: four taps, Chinese
+text, all six relative probes with one normally ended direct contact each, and
+one actual foreground swipe through the normal zero-model host. The phone had
+read the 136-byte/`5bf24bdb` map. The first probe passed, so the stationary
+diagnostic did not run. Connection/sharing/calibration/ready were retained
+through completion, with engine closed and owner released; HID cleanup retained
+raw confirmation=false and was locally accepted. Normal diagnostic teardown
+then disconnected and ended sharing. C3 was not changed; USB's older-firmware
+pass was not rerun. Cross-app, background, rotation, stop and real-model coverage
+remain open.
 
 ### S3 authentication v2
 
@@ -328,6 +386,11 @@ envelope):
 | 6 | Current connection encrypted **and** bonded (`1` / `0`) |
 | 7 | Reserved `0` |
 
+S3 BLE ABS_POINT reports 2 on full success, or 0/1 with failure if only part of
+its two-notification plan was queued. C3/USB ABS_POINT still reports 1 on
+success. RELATIVE_STROKE still reports `steps + 2`. Cleanup reports are not
+added to the failed action's count; STOP counts its own raw channel releases.
+
 Status: `0` reports queued / `1` invalid or duplicate request / `2` insecure /
 `3` busy / `4` corresponding HID notification not subscribed or suspended /
 `5` send/interruption failure / `6` authentication required. S3 authentication failures
@@ -514,8 +577,15 @@ through completion; HID cleanup was locally accepted with raw confirmation
 false, and diagnostic teardown then ended sharing.
 
 This single pass excludes real-model, cross-app, background, rotation and stop
-coverage. BLE zero-contact remains independently unresolved. Earlier failures
-remain recorded; Core/firmware and C3 were unchanged.
+coverage. A subsequent comparison with the same installed App (`0ff1761`) and
+firmware passed BLE four-point/Chinese checks with selected direct, but the
+first relative command completed with zero contacts/events in all three
+observers. Host preflight stopped before submission (zero swipe/tool/model
+calls), then local cleanup ended sharing. At that stage BLE zero-contact remained unresolved;
+this does not overturn the USB pass. Earlier failures remain recorded;
+Core/firmware and C3 were unchanged.
+
+The later metadata-only stationary comparison above is a new firmware/App diagnostic stage: taps/text passed again, while both moving and stationary relative commands completed without UIKit contacts. It preserves the fourth comparison’s unchanged-source history and the bounded USB pass; it adds no Agent/host or model acceptance.
 
 ## Version 0.2 build evidence (2026-10-12)
 

@@ -1,5 +1,12 @@
 import Foundation
 
+#if DEBUG
+enum BluetoothStationaryRelativeComparison {
+    static let anchor = BluetoothRelativeCalibrationProbe.horizontalSmall.anchor
+    static let stroke = BluetoothRelativeStroke(totalDX: 0, totalDY: 0, steps: 12, durationMS: 192)
+}
+#endif
+
 #if os(iOS)
 import UIKit
 
@@ -459,6 +466,51 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
             throw error
         }
     }
+
+    #if DEBUG
+    /// A fixed diagnostic hold on the owned calibration page. No calibration receipt or grant is issued.
+    public func debugRunStationaryRelativeComparison(requireHost: @MainActor () throws -> Void) async throws
+        -> (dispatchUptime: TimeInterval, completedUptime: TimeInterval) {
+        try requireHost()
+        guard isCalibrating, calibration != nil, !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
+        guard supportsRelativeDrag, isRelativeDragReady else { throw DeviceControlError.capabilityUnavailable(.swipe) }
+        try operations.beginExclusive(); defer { operations.endAction() }
+        try await checkCalibrationGeometry()
+        try requireHost()
+        guard let calibration, let frame = calibrationFrame else { throw DeviceControlError.staleFrame }
+        let point = BluetoothStationaryRelativeComparison.anchor
+        let anchor = try calibration.hidPoint(DevicePoint(x: point.x * Double(frame.screenshot.width),
+            y: point.y * Double(frame.screenshot.height)), in: frame.screenshot)
+        let token = epoch
+        do {
+            // Match the normal unpressed reposition, with host checks after each wait.
+            let nudge = DevicePoint(x: anchor.x <= 0.985 ? anchor.x + 0.015 : anchor.x - 0.015, y: anchor.y)
+            try await absolute(nudge, pressed: false)
+            try await Task.sleep(for: .milliseconds(32))
+            try requireHost()
+            try await requireCurrent(calibration, token: token)
+            try requireHost()
+            try await absolute(anchor, pressed: false)
+            try await Task.sleep(for: .milliseconds(180))
+            try requireHost()
+            try requireEpoch(token)
+            try await checkCalibrationGeometry()
+            try requireHost()
+            let dispatchUptime = ProcessInfo.processInfo.systemUptime
+            try await sendRelativeStroke(BluetoothStationaryRelativeComparison.stroke, token: token)
+            let completedUptime = ProcessInfo.processInfo.systemUptime
+            try await checkCalibrationGeometry()
+            try requireHost()
+            return (dispatchUptime, completedUptime)
+        } catch {
+            await releaseHeldInput()
+            if (error as? DeviceControlError)?.isDeliveryUnknown != true {
+                throw DeviceControlError.deliveryUnknown(message("bluetooth.interrupted"))
+            }
+            throw error
+        }
+    }
+    #endif
 
     public func completeRelativeCalibration(observed: [BluetoothRelativeCalibrationObservation]) async throws {
         guard isCalibrating, calibration != nil, !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }

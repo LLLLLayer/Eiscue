@@ -4,6 +4,57 @@ import XCTest
 @testable import Eiscue
 
 final class BluetoothCalibrationContactTraceTests: XCTestCase {
+    #if DEBUG
+    func testStationaryComparisonRequiresExplicitFirstCompletedMissingContactAndRunsOnce() {
+        let arguments = ["--bluetooth-stationary-relative-check"]
+        var disabled = BluetoothStationaryComparisonGate(arguments: [])
+        XCTAssertFalse(disabled.claim(probe: .horizontalSmall, isFirstProbe: true,
+            commandCompleted: true, failureReason: .contactMissing))
+        var gate = BluetoothStationaryComparisonGate(arguments: arguments)
+        XCTAssertFalse(gate.claim(probe: .horizontalSmall, isFirstProbe: false,
+            commandCompleted: true, failureReason: .contactMissing))
+        XCTAssertFalse(gate.claim(probe: .horizontalLarge, isFirstProbe: true,
+            commandCompleted: true, failureReason: .contactMissing))
+        XCTAssertFalse(gate.claim(probe: .horizontalSmall, isFirstProbe: true,
+            commandCompleted: false, failureReason: .contactMissing))
+        let reasons: [BluetoothCalibrationFailureReason?] = [nil, .contactIncomplete, .multipleContacts,
+            .touchChannelUnconfirmed, .probeCommandFailed, .probeObservationInterrupted]
+        for reason in reasons {
+            XCTAssertFalse(gate.claim(probe: .horizontalSmall, isFirstProbe: true,
+                commandCompleted: true, failureReason: reason))
+        }
+        XCTAssertTrue(gate.claim(probe: .horizontalSmall, isFirstProbe: true,
+            commandCompleted: true, failureReason: .contactMissing))
+        XCTAssertFalse(gate.claim(probe: .horizontalSmall, isFirstProbe: true,
+            commandCompleted: true, failureReason: .contactMissing))
+    }
+
+    func testStationaryCaptureKeepsBothTypesSeparateFromNormalCalibrationAndReceipts() throws {
+        var calibration = diagnosticsWithBaseline(types: Array(repeating: .direct, count: 4))
+        calibration.beginRelative()
+        var comparison = BluetoothStationaryComparisonCapture()
+        for phase in [UITouch.Phase.began, .ended] {
+            comparison.record(source: .page, id: 1, phase: phase, type: .direct,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+            comparison.record(source: .legacyTarget, id: 3, phase: phase, type: .direct,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+        }
+        comparison.record(source: .page, id: 2, phase: .began, type: .indirectPointer,
+            point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+        let report = comparison.diagnostic(commandCompleted: true)
+        XCTAssertEqual(report["kind"] as? String, "stationaryRelativeHold")
+        XCTAssertNil(report["probe"])
+        XCTAssertNil(calibration.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
+        for key in ["targetTrace", "pageTrace", "legacyTargetTrace"] {
+            let trace = try XCTUnwrap(report[key] as? [String: Any])
+            XCTAssertNil(trace["probe"])
+            XCTAssertNil(trace["receiptToken"])
+            XCTAssertEqual(trace["contacts"] as? Int, key == "legacyTargetTrace" ? 1 : 2)
+        }
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: report))
+    }
+    #endif
+
     func testContinuousContactRecordsActualDisplacementAndReceipt() throws {
         var trace = BluetoothCalibrationContactTrace()
         let start = DevicePoint(x: 0.35, y: 0.35), end = DevicePoint(x: 0.55, y: 0.36)

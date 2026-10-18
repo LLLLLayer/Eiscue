@@ -3,6 +3,28 @@ import Testing
 @testable import EiscueDeviceCore
 
 @Suite struct BluetoothRelativeDragTests {
+    #if DEBUG
+    @Test func stationaryDiagnosticHasFixedPayloadAndCannotReplaceCalibrationEvidence() {
+        let stroke = BluetoothStationaryRelativeComparison.stroke
+        #expect(stroke.payload == [0, 0, 0, 0, 12, 192, 0])
+        #expect(stroke.isValid)
+        #expect(stroke.deltas.allSatisfy { $0.x == 0 && $0.y == 0 })
+        #expect(stroke.intervals == Array(repeating: 16, count: 12))
+        #expect(BluetoothBoardProtocol.payloadIsValid(opcode: 10, payload: stroke.payload))
+        #expect(BluetoothStationaryRelativeComparison.anchor == DevicePoint(x: 0.35, y: 0.35))
+        #expect(BluetoothRelativeCalibrationProbe.allCases == [
+            .horizontalSmall, .horizontalLarge, .vertical, .independentDiagonal, .paceFast, .paceSlow])
+        var samples = observations()
+        let old = samples[0]
+        samples[0] = BluetoothRelativeCalibrationObservation(probe: old.probe, receiptToken: old.receiptToken,
+            start: old.start, end: old.start, contactCount: 1, movedEventCount: 0, endedNormally: true,
+            startedUptime: old.startedUptime, endedUptime: old.endedUptime)
+        #expect(throws: DeviceControlError.invalidCoordinates) {
+            try BluetoothRelativeDragCalibration(observed: samples, viewport: DevicePoint(x: 400, y: 800))
+        }
+    }
+    #endif
+
     @Test func wireDDAIsSignedExactRadiallyBoundedAndUsesCumulativeTiming() {
         let stroke = BluetoothRelativeStroke(totalDX: -73, totalDY: 35, steps: 13, durationMS: 109)
         #expect(stroke.isValid)

@@ -4,6 +4,7 @@
 #include "hid_peripheral.h"
 #include "command_protocol.h"
 #include "hid_descriptors.h"
+#include "ble_report_plan.h"
 #include "usb_hid.h"
 #include "board_auth.h"
 #if CONFIG_IDF_TARGET_ESP32C3
@@ -45,14 +46,23 @@ static struct ble_npl_event companion_stop_event,companion_unlock_event;
 
 // Report ID 1: buttons + relative X/Y/wheel (4 bytes).
 // Report ID 2: boot-compatible 6-key keyboard (8 bytes).
-// Report ID 3: left button + absolute X/Y, each 0...32767 (5 bytes).
+// Report ID 3: button (C3) / padding (S3) + absolute X/Y (5 bytes).
 // HOGP Report Reference descriptors identify each characteristic, therefore
 // notifications contain report data only, without a prefixed report ID.
 static const uint8_t report_map[]={
     EISCUE_MOUSE_DESCRIPTOR,
     EISCUE_KEYBOARD_DESCRIPTOR,
+#if CONFIG_IDF_TARGET_ESP32S3
+    EISCUE_S3_BLE_ABSOLUTE_DESCRIPTOR
+#else
     EISCUE_ABSOLUTE_DESCRIPTOR
+#endif
 };
+#if CONFIG_IDF_TARGET_ESP32S3
+#define BLE_SINGLE_BUTTON_SOURCE true
+#else
+#define BLE_SINGLE_BUTTON_SOURCE false
+#endif
 enum attribute_kind { HID_INFO=1,HID_MAP,HID_CONTROL,HID_PROTOCOL,
     HID_MOUSE,HID_KEYBOARD,HID_MOUSE_REF,HID_KEYBOARD_REF,CUSTOM_COMMAND,CUSTOM_RESPONSE,
     BOOT_MOUSE,BOOT_KEYBOARD,BOOT_KEYBOARD_OUTPUT,MANUFACTURER,PNP_ID,BATTERY_LEVEL,
@@ -62,9 +72,13 @@ static uint16_t subscription_connection=BLE_HS_CONN_HANDLE_NONE;
 static uint16_t mouse_handle,keyboard_handle,absolute_handle,response_handle,boot_mouse_handle,boot_keyboard_handle;
 static bool mouse_subscribed,keyboard_subscribed,absolute_subscribed,response_subscribed,boot_mouse_subscribed,boot_keyboard_subscribed;
 static bool suspended;
+static bool report_map_read_logged;
 static uint8_t protocol_mode=1;
 static uint8_t output=EISCUE_OUTPUT_BLE;
 static uint8_t mouse_state[4],keyboard_state[8],absolute_state[5];
+// S3 BLE's absolute report contains padding, so its watchdog ownership cannot
+// be inferred from the physical report cache. C3 and USB retain their byte.
+static bool ble_absolute_held;
 static uint8_t last_response[BOARD_AUTH_REPLY_SIZE]={1,0,0,0,EISCUE_INSECURE,0,0,0};
 static unsigned last_response_length=EISCUE_RESPONSE_SIZE;
 static uint32_t command_sequence;
@@ -108,15 +122,30 @@ static uint16_t report_handle(uint8_t kind) {
     if (kind==EISCUE_MOUSE_REPORT) return protocol_mode==1?mouse_handle:boot_mouse_handle;
     return protocol_mode==1?keyboard_handle:boot_keyboard_handle;
 }
+static void log_stroke_channel(unsigned phase) {
+    // Transport metadata only: no input values, device identities or keys.
+    // Log before DOWN and when the sequence settles (including failure),
+    // never between timed movement reports. A log is not a host input receipt.
+    ESP_LOGI(TAG,"stroke channel phase=%u output=%u mode=%u handle=%u length=%u mouse=%u boot=%u absolute=%u suspended=%u",
+        phase,output,protocol_mode,report_handle(EISCUE_MOUSE_REPORT),protocol_mode==1?4:3,
+        mouse_subscribed,boot_mouse_subscribed,absolute_subscribed,suspended);
+}
 static bool report_subscribed(uint8_t kind) {
     if(output==EISCUE_OUTPUT_USB)return eiscue_usb_hid_online();
-    if (kind==EISCUE_ABSOLUTE_REPORT) return protocol_mode==1 && absolute_subscribed;
+    if (kind==EISCUE_ABSOLUTE_REPORT) return eiscue_ble_absolute_ready(
+        BLE_SINGLE_BUTTON_SOURCE,protocol_mode,absolute_subscribed,mouse_subscribed);
     if (kind==EISCUE_MOUSE_REPORT) return protocol_mode==1?mouse_subscribed:boot_mouse_subscribed;
     return protocol_mode==1?keyboard_subscribed:boot_keyboard_subscribed;
 }
 static uint8_t *report_state(uint8_t kind) {
     if (kind==EISCUE_ABSOLUTE_REPORT) return absolute_state;
     return kind==EISCUE_MOUSE_REPORT?mouse_state:keyboard_state;
+}
+static bool absolute_held(void) {
+    return output==EISCUE_OUTPUT_BLE && BLE_SINGLE_BUTTON_SOURCE?ble_absolute_held:absolute_state[0]!=0;
+}
+static void clear_absolute_hold(void) {
+    absolute_state[0]=0;ble_absolute_held=false;
 }
 static uint8_t notify_report(const eiscue_report *report,uint16_t handle,uint8_t length) {
     if (!secure_connection()) return EISCUE_INSECURE;
@@ -127,7 +156,13 @@ static uint8_t notify_report(const eiscue_report *report,uint16_t handle,uint8_t
     memcpy(report_state(report->kind),report->bytes,report->length);
     return EISCUE_SENT;
 }
-static uint8_t emit(const eiscue_report *report) {
+static uint8_t emit_ble_notification(const eiscue_report *report,void *context) {
+    (void)context;
+    uint8_t length=report->length;
+    if(protocol_mode==0 && report->kind==EISCUE_MOUSE_REPORT)length=3;
+    return notify_report(report,report_handle(report->kind),length);
+}
+static uint8_t emit(const eiscue_report *report,uint8_t *emitted) {
     if (!secure_connection()) return EISCUE_INSECURE;
 #if CONFIG_IDF_TARGET_ESP32C3
     if(companion_input_stopped())return EISCUE_SEND_FAILED;
@@ -137,13 +172,15 @@ static uint8_t emit(const eiscue_report *report) {
 #endif
     if(output==EISCUE_OUTPUT_USB) {
         uint8_t status=eiscue_usb_hid_send(report);
-        if(status==EISCUE_SENT)memcpy(report_state(report->kind),report->bytes,report->length);
+        if(status==EISCUE_SENT) {
+            memcpy(report_state(report->kind),report->bytes,report->length);
+            if(emitted)(*emitted)++;
+        }
         return status;
     }
     if (!report_subscribed(report->kind) || suspended) return EISCUE_NOT_SUBSCRIBED;
-    uint8_t length=report->length;
-    if (protocol_mode==0 && report->kind==EISCUE_MOUSE_REPORT) length=3;
-    return notify_report(report,report_handle(report->kind),length);
+    return eiscue_ble_send_report(report,BLE_SINGLE_BUTTON_SOURCE,
+        emit_ble_notification,NULL,emitted,&ble_absolute_held);
 }
 static eiscue_report absolute_release(void) {
     eiscue_report report={.kind=EISCUE_ABSOLUTE_REPORT,.length=sizeof absolute_state};
@@ -168,7 +205,7 @@ static uint8_t release_all(uint8_t *emitted) {
             }
         } else eiscue_usb_hid_revoke();
         if(status!=EISCUE_SENT)eiscue_usb_hid_revoke();
-        memset(mouse_state,0,sizeof mouse_state);memset(keyboard_state,0,sizeof keyboard_state);absolute_state[0]=0;
+        memset(mouse_state,0,sizeof mouse_state);memset(keyboard_state,0,sizeof keyboard_state);clear_absolute_hold();
         return status;
     }
     // Only release subscribed channels; never manufacture a success for a
@@ -190,7 +227,7 @@ static uint8_t release_all(uint8_t *emitted) {
         else if(emitted)(*emitted)++;
     }
     memset(mouse_state,0,sizeof mouse_state);memset(keyboard_state,0,sizeof keyboard_state);
-    absolute_state[0]=0;
+    clear_absolute_hold();
     return status;
 }
 static void revoke_connection(void) {
@@ -231,10 +268,10 @@ void eiscue_ble_companion_stop(int unlock) {
 #endif
 static void expire_hold(struct ble_npl_event *event) {
     (void)event;
-    if(!absolute_state[0])return;
+    if(!absolute_held())return;
     const eiscue_report release=absolute_release();
     ESP_LOGW(TAG,"absolute button hold expired after %u ms",ABSOLUTE_HOLD_MS);
-    if(emit(&release)!=EISCUE_SENT) {
+    if(emit(&release,NULL)!=EISCUE_SENT) {
         interrupt_and_release();
         if(connection!=BLE_HS_CONN_HANDLE_NONE)
             revoke_connection();
@@ -249,6 +286,9 @@ static bool update_relative_hold(void) {
 }
 static void expire_relative_hold(struct ble_npl_event *event) {
     (void)event;
+    // A previously queued relative watchdog must not release the shared mouse
+    // button after a new S3 BLE ABS command transferred ownership to ABS.
+    if(output==EISCUE_OUTPUT_BLE && BLE_SINGLE_BUTTON_SOURCE && absolute_held())return;
     if(!mouse_state[0])return;
     int32_t remaining=(int32_t)(relative_hold_until-ble_npl_time_get());
     if(remaining>0) {
@@ -274,6 +314,7 @@ static int advance_stroke(uint16_t milliseconds) {
     return ble_npl_callout_reset(&release_timer,(ble_npl_time_t)remaining);
 }
 static void finish_pending(uint8_t status) {
+    if(pending.action.stroke.steps)log_stroke_channel(1);
     active=false;
     respond_at_sequence(pending.command,status,pending.emitted,pending.sequence);
     if(status!=EISCUE_SENT && release_all(NULL)!=EISCUE_SENT && connection!=BLE_HS_CONN_HANDLE_NONE)
@@ -299,8 +340,8 @@ static void finish_later(struct ble_npl_event *event) {
         if(!eiscue_stroke_report(&pending.action.stroke,pending.stroke_step+1,&report)) {
             finish_pending(EISCUE_SEND_FAILED);return;
         }
-        uint8_t status=emit(&report);
-        if(status==EISCUE_SENT){pending.emitted++;pending.stroke_step++;pending.last_report_at=ble_npl_time_get();}
+        uint8_t status=emit(&report,&pending.emitted);
+        if(status==EISCUE_SENT){pending.stroke_step++;pending.last_report_at=ble_npl_time_get();}
         if(status!=EISCUE_SENT || !update_relative_hold()) {
             finish_pending(status==EISCUE_SENT?EISCUE_SEND_FAILED:status);return;
         }
@@ -309,8 +350,7 @@ static void finish_later(struct ble_npl_event *event) {
         if(advance_stroke(interval))finish_pending(EISCUE_SEND_FAILED);
         return;
     }
-    uint8_t status=emit(&pending.action.reports[1]);
-    if (status==EISCUE_SENT) pending.emitted++;
+    uint8_t status=emit(&pending.action.reports[1],&pending.emitted);
     if(pending.action.reports[1].kind==EISCUE_MOUSE_REPORT && !update_relative_hold())status=EISCUE_SEND_FAILED;
     finish_pending(status);
 }
@@ -381,7 +421,7 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
         respond(command,EISCUE_SENT,value);return 0;
     }
     if(command[1]==EISCUE_SELECT_OUTPUT) {
-        bool held=mouse_state[0] || absolute_state[0];
+        bool held=mouse_state[0] || absolute_held();
         for(unsigned i=0;i<sizeof keyboard_state;i++)if(keyboard_state[i])held=true;
         if(active || held){respond(command,EISCUE_BUSY,0);return 0;}
         if(command[4]==EISCUE_OUTPUT_USB && !eiscue_usb_hid_supported()) {
@@ -394,33 +434,41 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
         respond(command,EISCUE_SENT,0);return 0;
     }
     if (active) {respond(command,EISCUE_BUSY,0);return 0;}
-    if(command[1]==EISCUE_RELATIVE_STROKE && (mouse_state[0] || absolute_state[0])) {
+    if(output==EISCUE_OUTPUT_BLE && BLE_SINGLE_BUTTON_SOURCE && absolute_held() &&
+       action.reports[0].kind==EISCUE_MOUSE_REPORT) {
+        respond(command,EISCUE_BUSY,0);return 0;
+    }
+    if(command[1]==EISCUE_RELATIVE_STROKE && (mouse_state[0] || absolute_held())) {
         respond(command,EISCUE_BUSY,0);return 0;
     }
     if (!response_subscribed) {respond(command,EISCUE_NOT_SUBSCRIBED,0);return 0;}
-    uint8_t status=emit(&action.reports[0]);
+    if(command[1]==EISCUE_RELATIVE_STROKE)log_stroke_channel(0);
+    uint8_t emitted=0,status=emit(&action.reports[0],&emitted);
     if (status!=EISCUE_SENT) {
         // A failed absolute update must not extend an earlier drag. Try a
         // release immediately; the watchdog remains a second line of defense.
-        if((command[1]==EISCUE_ABS_POINT && absolute_state[0]) || command[1]==EISCUE_RELATIVE_STROKE)interrupt_and_release();
-        respond(command,status,0);return 0;
+        if((command[1]==EISCUE_ABS_POINT &&
+            ((output==EISCUE_OUTPUT_BLE && BLE_SINGLE_BUTTON_SOURCE) || absolute_held())) ||
+           command[1]==EISCUE_RELATIVE_STROKE)interrupt_and_release();
+        respond(command,status,emitted);return 0;
     }
     if(command[1]==EISCUE_ABS_POINT) {
         ble_npl_callout_stop(&held_timer);
-        if(absolute_state[0] && ble_npl_callout_reset(&held_timer,ble_npl_time_ms_to_ticks32(ABSOLUTE_HOLD_MS))) {
-            interrupt_and_release();respond(command,EISCUE_SEND_FAILED,1);return 0;
+        if(output==EISCUE_OUTPUT_BLE && BLE_SINGLE_BUTTON_SOURCE)ble_npl_callout_stop(&relative_held_timer);
+        if(absolute_held() && ble_npl_callout_reset(&held_timer,ble_npl_time_ms_to_ticks32(ABSOLUTE_HOLD_MS))) {
+            interrupt_and_release();respond(command,EISCUE_SEND_FAILED,emitted);return 0;
         }
     }
     if(action.reports[0].kind==EISCUE_MOUSE_REPORT && !update_relative_hold()) {
-        interrupt_and_release();respond(command,EISCUE_SEND_FAILED,1);return 0;
+        interrupt_and_release();respond(command,EISCUE_SEND_FAILED,emitted);return 0;
     }
-    if (action.count==1) {respond(command,EISCUE_SENT,1);return 0;}
-    memcpy(pending.command,command,sizeof command);pending.action=action;pending.emitted=1;pending.stroke_step=0;
+    if (action.count==1) {respond(command,EISCUE_SENT,emitted);return 0;}
+    memcpy(pending.command,command,sizeof command);pending.action=action;pending.emitted=emitted;pending.stroke_step=0;
     pending.sequence=command_sequence;pending.last_report_at=ble_npl_time_get();active=true;
     pending.stroke_deadline=pending.last_report_at+ble_npl_time_ms_to_ticks32(action.stroke.duration_ms+8+50);
     int rc=schedule_pending(action.stroke.steps?eiscue_stroke_interval(&action.stroke,1):25);
     if (rc) {
-        active=false;uint8_t released=release_all(NULL);respond(command,EISCUE_SEND_FAILED,1);
+        active=false;uint8_t released=release_all(NULL);respond(command,EISCUE_SEND_FAILED,emitted);
         if (released!=EISCUE_SENT) revoke_connection();
     }
     return 0;
@@ -432,6 +480,9 @@ static int access(uint16_t conn,uint16_t attribute,struct ble_gatt_access_ctxt *
     const uint8_t mouse_ref[]={1,1},keyboard_ref[]={2,1},absolute_ref[]={3,1};
     const uint8_t pnp[]={1,0xFF,0xFF,1,0,1,0}; // Experimental identity, no claimed vendor registration.
     const void *bytes=NULL;unsigned length=0;
+#if CONFIG_IDF_TARGET_ESP32S3
+    uint8_t absolute_read[sizeof absolute_state];
+#endif
     if (ctx->op==BLE_GATT_ACCESS_OP_WRITE_CHR) {
         if (kind==CUSTOM_COMMAND) return control_write(conn,ctx->om);
 #if CONFIG_IDF_TARGET_ESP32C3
@@ -446,7 +497,7 @@ static int access(uint16_t conn,uint16_t attribute,struct ble_gatt_access_ctxt *
 #if BOARD_AUTH_REQUIRED
         if(kind==AUTH_PROOF) {
             uint8_t request[BOARD_AUTH_REQUEST_SIZE],reply[BOARD_AUTH_RESPONSE_SIZE];
-            bool held=mouse_state[0] || absolute_state[0];
+            bool held=mouse_state[0] || absolute_held();
             for(unsigned i=0;i<sizeof keyboard_state;i++)if(keyboard_state[i])held=true;
             if(conn!=connection || !secure_connection())return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
             if(active || held || !auth_subscribed || OS_MBUF_PKTLEN(ctx->om)!=sizeof request ||
@@ -485,11 +536,24 @@ static int access(uint16_t conn,uint16_t attribute,struct ble_gatt_access_ctxt *
     }
 #endif
     case HID_INFO:bytes=hid_info;length=sizeof hid_info;break;
-    case HID_MAP:bytes=report_map;length=sizeof report_map;break;
+    case HID_MAP:
+        bytes=report_map;length=sizeof report_map;
+        if(!report_map_read_logged) {
+            uint32_t fingerprint=2166136261u;
+            for(unsigned i=0;i<length;i++)fingerprint=(fingerprint^report_map[i])*16777619u;
+            ESP_LOGI(TAG,"report map read length=%u fingerprint=%08lx",length,(unsigned long)fingerprint);
+            report_map_read_logged=true;
+        }
+        break;
     case HID_PROTOCOL:bytes=&protocol_mode;length=1;break;
     case HID_MOUSE:bytes=mouse_state;length=sizeof mouse_state;break;
     case HID_KEYBOARD:bytes=keyboard_state;length=sizeof keyboard_state;break;
-    case HID_ABSOLUTE:bytes=absolute_state;length=sizeof absolute_state;break;
+    case HID_ABSOLUTE:
+        bytes=absolute_state;length=sizeof absolute_state;
+#if CONFIG_IDF_TARGET_ESP32S3
+        memcpy(absolute_read,absolute_state,sizeof absolute_read);absolute_read[0]=0;bytes=absolute_read;
+#endif
+        break;
     case BOOT_MOUSE:bytes=mouse_state;length=3;break;
     case BOOT_KEYBOARD:bytes=keyboard_state;length=8;break;
     case BOOT_KEYBOARD_OUTPUT: {static const uint8_t zero=0;bytes=&zero;length=1;break;}
@@ -581,6 +645,7 @@ void eiscue_ble_on_connect(uint16_t conn) {
     if(subscription_connection!=conn)reset_subscriptions(conn);
     memset(mouse_state,0,sizeof mouse_state);memset(keyboard_state,0,sizeof keyboard_state);
     memset(absolute_state,0,sizeof absolute_state);
+    ble_absolute_held=false;
 #if BOARD_AUTH_REQUIRED
     board_auth_begin_connection();
     memset(last_response,0,sizeof last_response);last_response[0]=BOARD_AUTH_VERSION;last_response[4]=EISCUE_AUTH_REQUIRED;
@@ -593,10 +658,12 @@ void eiscue_ble_on_connect(uint16_t conn) {
 #endif
 }
 void eiscue_ble_on_disconnect(void) {
+    report_map_read_logged=false;
     ble_npl_callout_stop(&release_timer);ble_npl_callout_stop(&held_timer);ble_npl_callout_stop(&relative_held_timer);active=false;
     if(output==EISCUE_OUTPUT_USB){(void)release_all(NULL);eiscue_usb_hid_revoke();}
     memset(mouse_state,0,sizeof mouse_state);memset(keyboard_state,0,sizeof keyboard_state);
     memset(absolute_state,0,sizeof absolute_state);
+    ble_absolute_held=false;
     connection=BLE_HS_CONN_HANDLE_NONE;seen_request=false;output=EISCUE_OUTPUT_BLE;
     reset_subscriptions(BLE_HS_CONN_HANDLE_NONE);
 #if CONFIG_IDF_TARGET_ESP32C3
@@ -621,7 +688,8 @@ void eiscue_ble_on_subscribe(uint16_t conn,uint16_t attribute,int enabled) {
 #endif
     bool affected=output==EISCUE_OUTPUT_BLE && active && attribute==report_handle(pending.action.reports[0].kind);
     if(output==EISCUE_OUTPUT_BLE && attribute==report_handle(EISCUE_MOUSE_REPORT) && mouse_state[0]) affected=true;
-    if(output==EISCUE_OUTPUT_BLE && attribute==absolute_handle && absolute_state[0]) affected=true;
+    if(output==EISCUE_OUTPUT_BLE && attribute==absolute_handle && absolute_held()) affected=true;
+    if(output==EISCUE_OUTPUT_BLE && BLE_SINGLE_BUTTON_SOURCE && attribute==mouse_handle && absolute_held())affected=true;
     if(output==EISCUE_OUTPUT_BLE && attribute==report_handle(EISCUE_KEYBOARD_REPORT))
         for(unsigned i=0;i<sizeof keyboard_state;i++)if(keyboard_state[i])affected=true;
     if(attribute==mouse_handle)mouse_subscribed=enabled;
@@ -663,7 +731,7 @@ void eiscue_ble_on_security_change(void) {
     companion_connection_changed(connection!=BLE_HS_CONN_HANDLE_NONE,secure_connection());
 #endif
     if(!secure_connection()){
-        bool held=active || mouse_state[0]!=0 || absolute_state[0]!=0;
+        bool held=active || mouse_state[0]!=0 || absolute_held();
         for(unsigned i=0;i<sizeof keyboard_state;i++) if(keyboard_state[i])held=true;
         ble_npl_callout_stop(&release_timer);ble_npl_callout_stop(&held_timer);ble_npl_callout_stop(&relative_held_timer);active=false;
         if(output==EISCUE_OUTPUT_USB){(void)release_all(NULL);eiscue_usb_hid_revoke();}
@@ -671,7 +739,7 @@ void eiscue_ble_on_security_change(void) {
         board_auth_end_connection();
 #endif
         memset(mouse_state,0,sizeof mouse_state);memset(keyboard_state,0,sizeof keyboard_state);
-        absolute_state[0]=0;
+        clear_absolute_hold();
         // An unencrypted link cannot transmit a release. Revoke the HID
         // transport itself if a report could still hold an input down.
         if((held || BOARD_AUTH_REQUIRED) && connection!=BLE_HS_CONN_HANDLE_NONE)
