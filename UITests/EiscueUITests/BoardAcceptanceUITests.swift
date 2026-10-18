@@ -25,6 +25,118 @@ final class BoardAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
+    func testInspectSystemBluetooth() {
+        let app = XCUIApplication()
+        guard app.state != .notRunning else { XCTFail("Open Eiscue before inspecting system Bluetooth."); return }
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        let reachedBluetooth = openSystemBluetooth(in: settings)
+        attachSystemBluetoothEvidence(in: settings, name: "System Bluetooth inspection")
+        app.activate()
+        XCTAssertTrue(reachedBluetooth, "Settings did not reach the Bluetooth page; no device or switch was selected.")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    @MainActor
+    func testForgetSpecifiedBoardPairing() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EISCUE_FORGET_BROKEN_BOARD"] == "1" else {
+            throw XCTSkip("Set TEST_RUNNER_EISCUE_FORGET_BROKEN_BOARD=1 only for the specified broken system pairing.")
+        }
+        let targetID = try XCTUnwrap(UUID(uuidString: environment["EISCUE_SYSTEM_BOARD_ID"] ?? ""),
+                                     "EISCUE_SYSTEM_BOARD_ID must be a valid UUID.")
+        let preserveID = try XCTUnwrap(UUID(uuidString: environment["EISCUE_PRESERVE_BOARD_ID"] ?? ""),
+                                       "EISCUE_PRESERVE_BOARD_ID must be a valid UUID.")
+        guard targetID != preserveID else { XCTFail("Target and preserved board UUIDs must differ."); return }
+        let app = XCUIApplication()
+        guard app.state != .notRunning else { XCTFail("Open Eiscue before repairing the specified system pairing."); return }
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        defer {
+            attachSystemBluetoothEvidence(in: settings, name: "Specified board pairing after repair")
+            app.activate()
+        }
+        guard openSystemBluetooth(in: settings) else { XCTFail("Settings did not reach Bluetooth."); return }
+        attachSystemBluetoothEvidence(in: settings, name: "Specified board pairing before repair")
+        let target = settings.cells[targetID.uuidString]
+        let preserved = settings.cells[preserveID.uuidString]
+        let boardNames = ["Eiscue BLE", "Eiscue S3"]
+        let knownName = target.staticTexts.matching(NSPredicate(format: "label IN %@", boardNames)).firstMatch
+        guard target.exists, boardNames.contains(target.label) || knownName.exists else {
+            XCTFail("The specified target must be an Eiscue BLE or Eiscue S3 cell."); return
+        }
+        let targetInfo = systemBluetoothMoreInfo(in: target)
+        let preservedInfo = systemBluetoothMoreInfo(in: preserved)
+        guard preserved.exists, preservedInfo.exists, preservedInfo.isEnabled else {
+            XCTFail("The preserved board and its More Info button must exist before repair."); return
+        }
+        guard targetInfo.exists, targetInfo.isEnabled, targetInfo.isHittable else {
+            XCTFail("Only the specified target's More Info button may open its pairing details."); return
+        }
+        targetInfo.tap()
+        let forget = settings.buttons.matching(NSPredicate(format: "label IN %@", ["Forget This Device", "忽略此设备"])).firstMatch
+        guard forget.waitForExistence(timeout: 5), forget.isHittable else {
+            XCTFail("The specified target did not expose Forget This Device."); return
+        }
+        forget.tap()
+        let confirmationLabels = ["Forget Device", "忽略设备"]
+        let alert = settings.alerts.buttons.matching(NSPredicate(format: "label IN %@", confirmationLabels)).firstMatch
+        let sheet = settings.sheets.buttons.matching(NSPredicate(format: "label IN %@", confirmationLabels)).firstMatch
+        let confirmation = alert.waitForExistence(timeout: 3) ? alert : sheet
+        guard confirmation.waitForExistence(timeout: 3), confirmation.isHittable, confirmation.isEnabled else {
+            XCTFail("The system Forget Device confirmation did not appear."); return
+        }
+        confirmation.tap()
+        guard openSystemBluetooth(in: settings) else { XCTFail("Settings did not return to Bluetooth after repair."); return }
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == NO"), object: targetInfo)
+        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 10), .completed,
+                       "The specified target's More Info must disappear; its Other Devices row may remain.")
+        XCTAssertTrue(preserved.exists && preservedInfo.exists && preservedInfo.isEnabled,
+                      "The preserved board's More Info must remain available.")
+    }
+
+    @MainActor
+    private func systemBluetoothMoreInfo(in cell: XCUIElement) -> XCUIElement {
+        cell.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@",
+                                         ["More Info", "更多信息"], ["More Info", "更多信息"])).firstMatch
+    }
+
+    @MainActor
+    private func openSystemBluetooth(in settings: XCUIApplication) -> Bool {
+        settings.activate()
+        let bluetoothTitles = ["Bluetooth", "蓝牙"]
+        let settingsTitles = ["Settings", "设置"]
+        let bluetoothPage = settings.navigationBars.matching(NSPredicate(
+            format: "identifier IN %@ OR label IN %@", bluetoothTitles, bluetoothTitles)).firstMatch
+        let bluetoothSwitch = settings.switches["BLUETOOTH"]
+        let settingsRoot = settings.navigationBars.matching(NSPredicate(
+            format: "identifier IN %@ OR label IN %@", settingsTitles, settingsTitles)).firstMatch
+        // Settings may retain an AssistiveTouch subpage. Only its navigation
+        // bar's back button is eligible until the root or Bluetooth page.
+        for _ in 0..<12 {
+            if bluetoothSwitch.exists || bluetoothPage.exists || settingsRoot.exists { break }
+            let back = settings.navigationBars.firstMatch.buttons.firstMatch
+            guard back.exists && back.isHittable else { break }
+            back.tap()
+        }
+        if !bluetoothSwitch.exists, !bluetoothPage.exists, settingsRoot.exists {
+            let bluetooth = settings.staticTexts.matching(NSPredicate(format: "label IN %@", bluetoothTitles)).firstMatch
+            for _ in 0..<8 where !bluetooth.isHittable { settings.swipeDown() }
+            if bluetooth.exists && bluetooth.isHittable { bluetooth.tap() }
+        }
+        if bluetoothSwitch.exists || bluetoothPage.exists { return true }
+        return bluetoothSwitch.waitForExistence(timeout: 5) || bluetoothPage.exists
+    }
+
+    @MainActor
+    private func attachSystemBluetoothEvidence(in settings: XCUIApplication, name: String) {
+        let image = XCTAttachment(screenshot: settings.screenshot())
+        image.name = name
+        image.lifetime = .keepAlways; add(image)
+        let hierarchy = XCTAttachment(string: settings.debugDescription)
+        hierarchy.name = name + " hierarchy"
+        hierarchy.lifetime = .keepAlways; add(hierarchy)
+    }
+
+    @MainActor
     func testConnectBluetoothCompanion() {
         let app = XCUIApplication()
         app.launchArguments = ["--skip-onboarding", "--bluetooth-setup-check"]
@@ -68,19 +180,27 @@ final class BoardAcceptanceUITests: XCTestCase {
         XCTAssertTrue(connect.isEnabled)
         connect.tap()
         let connected = app.buttons["bluetoothDisconnectButton"]
+        let connectionError = app.descendants(matching: .any).matching(identifier: "bluetoothConnectionError").firstMatch
         let deadline = Date().addingTimeInterval(90)
         // Only the inert navigation title drives system Pair interruption
         // handling; no calibration or input target receives runner gestures.
         while Date() < deadline {
             if connected.waitForExistence(timeout: 1) { break }
+            if connectionError.exists { break }
             app.navigationBars.firstMatch.tap()
         }
-        XCTAssertTrue(connected.exists && connected.isEnabled,
-                      "The selected \(route.rawValue) input route did not connect; a companion display is not required.")
-        XCTAssertTrue(option.isSelected, "The connected input route must match the explicit selection.")
         let image = XCTAttachment(screenshot: app.screenshot())
-        image.name = "Board \(route.rawValue) input connected (calibration not verified)"
+        image.name = "Board \(route.rawValue) connection result (calibration not verified)"
         image.lifetime = .keepAlways; add(image)
+        if !connected.exists || !connected.isEnabled || connectionError.exists {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Board \(route.rawValue) connection failure hierarchy"
+            hierarchy.lifetime = .keepAlways; add(hierarchy)
+        }
+        let errorLabel = connectionError.exists ? connectionError.label : "none"
+        XCTAssertTrue(connected.exists && connected.isEnabled && !connectionError.exists,
+                      "The selected \(route.rawValue) input route did not connect. Current connection error: \(errorLabel)")
+        XCTAssertTrue(option.isSelected, "The connected input route must match the explicit selection.")
     }
 
     private enum BoardInputRoute: String {

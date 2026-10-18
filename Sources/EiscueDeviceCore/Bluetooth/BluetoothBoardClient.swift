@@ -28,6 +28,29 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     public private(set) var state: State = .idle
+    #if DEBUG
+    /// Bounded, payload-free transport diagnostics for explicitly opened setup checks.
+    public struct ConnectionDiagnostic: Sendable {
+        public let operation: UInt8
+        public let channel: UInt8
+        /// 0: no error, 1: CoreBluetooth, 2: ATT, 3: other domain (name omitted).
+        public let domain: UInt8
+        public let code: Int
+        public let notifying: Bool
+        /// Local CoreBluetooth identity, used only to match the intended Settings entry.
+        public let peripheralID: UUID?
+    }
+    public private(set) var connectionDiagnostics: [ConnectionDiagnostic] = []
+    private func recordConnectionDiagnostic(operation: UInt8, channel: UInt8 = 0,
+                                            error: (any Error)?, notifying: Bool = false) {
+        let native = error.map { $0 as NSError }
+        let domain: UInt8 = native.map { $0.domain == CBErrorDomain ? 1 : ($0.domain == CBATTErrorDomain ? 2 : 3) } ?? 0
+        connectionDiagnostics.append(.init(operation: operation, channel: channel,
+                                           domain: domain, code: native?.code ?? 0, notifying: notifying,
+                                           peripheralID: peripheral?.identifier))
+        if connectionDiagnostics.count > 16 { connectionDiagnostics.removeFirst(connectionDiagnostics.count - 16) }
+    }
+    #endif
     public var onStateChange: (@MainActor (State) -> Void)?
     public var connectedBoardID: UUID? { peripheral?.identifier }
     public var connectedBoardName: String? { peripheral?.name }
@@ -102,6 +125,9 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         try Task.checkCancellation()
         if state == .ready { return }
         guard connectWaiter == nil, peripheral == nil else { throw BluetoothBoardError.busy }
+        #if DEBUG
+        connectionDiagnostics.removeAll()
+        #endif
         let token = UUID()
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
@@ -390,11 +416,17 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
 
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: (any Error)?) {
         guard central === self.central, peripheral === self.peripheral else { return }
+        #if DEBUG
+        recordConnectionDiagnostic(operation: 1, error: error)
+        #endif
         failConnection(.connectionFailed)
     }
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: (any Error)?) {
         guard central === self.central, peripheral === self.peripheral else { return }
+        #if DEBUG
+        recordConnectionDiagnostic(operation: 2, error: error)
+        #endif
         closeSession(connectError: BluetoothBoardError.disconnected, finalState: .disconnected)
     }
 
@@ -443,6 +475,13 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: (any Error)?) {
+        #if DEBUG
+        if peripheral === self.peripheral, closingState == nil {
+            let channel: UInt8 = characteristic === proofCharacteristic ? 1
+                : (characteristic === responseCharacteristic ? 2 : (characteristic === hardwareStopCharacteristic ? 3 : 4))
+            recordConnectionDiagnostic(operation: 3, channel: channel, error: error, notifying: characteristic.isNotifying)
+        }
+        #endif
         if peripheral === self.peripheral, characteristic === hardwareStopCharacteristic {
             guard closingState == nil else { return }
             guard error == nil, characteristic.isNotifying else { failConnection(.notificationFailed); return }

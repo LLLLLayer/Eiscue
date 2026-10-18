@@ -175,6 +175,11 @@ extension AppModel {
             "companionSteps": companionLastStatus?.completedActions ?? 0,
             "connecting": isConnecting, "stage": String(describing: bluetoothController.board.state),
             "connectionStages": bluetoothSetupStages.map { ["stage": $0.stage, "timestamp": $0.timestamp] },
+            "transportDiagnostics": bluetoothController.board.connectionDiagnostics.map {
+                ["operation": Int($0.operation), "channel": Int($0.channel), "domain": Int($0.domain),
+                 "code": $0.code, "notifying": $0.notifying,
+                 "peripheralID": $0.peripheralID?.uuidString ?? ""] as [String: Any]
+            },
             "screenPhase": state.map { String(describing: $0.phase) } ?? "unavailable",
             "screenWidth": state?.width ?? 0, "screenHeight": state?.height ?? 0,
             "message": connectionMessage, "error": deviceConnectionError ?? "",
