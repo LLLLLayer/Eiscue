@@ -164,6 +164,9 @@ extension AppModel {
         let report: [String: Any] = [
             "connected": isBluetoothConnected, "sharing": isBluetoothScreenShared,
             "pointerVerified": isBluetoothPointerVerified, "ready": isDeviceReady,
+            "relativeDragSupported": bluetoothController.supportsRelativeDrag,
+            "relativeDragReady": bluetoothController.isRelativeDragReady,
+            "relativeDragVerified": bluetoothController.isRelativeDragVerified,
             "inputRoute": bluetoothController.inputRoute.rawValue,
             "s3": bluetoothController.outputInfo?.isS3 ?? false,
             "supportsUSB": bluetoothController.outputInfo?.supportsUSB ?? false,

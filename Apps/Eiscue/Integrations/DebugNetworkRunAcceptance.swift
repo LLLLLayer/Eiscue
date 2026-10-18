@@ -82,6 +82,14 @@ enum DebugNetworkRunAcceptance {
             let names = Set(tools.map(\.name))
             return requiredTools.first { !names.contains($0.rawValue) }
         }
+        func validateBluetoothSetup(_ status: DeviceStatus) throws {
+            guard route == .bluetoothBoard else { return }
+            // Both HID acceptance cases need an observed drag. Tap/text-ready
+            // must not start a run that can only fail with a missing swipe tool.
+            guard case .ready(let capabilities) = status, capabilities.contains(.swipe) else {
+                throw Failure.bluetoothSwipeCheckRequired
+            }
+        }
 
         init(arguments: [String]) throws {
             func argument(_ flag: String) -> String? {
@@ -134,7 +142,7 @@ enum DebugNetworkRunAcceptance {
         case unexpectedRequest, budget, persistence, cleanupUnconfirmed
         case backgroundGapExceeded, backgroundLeaseInactive
         case inputTargetUnavailable, inflightStopMissed, didNotReturnToApp
-        case bluetoothSetupTimedOut, postActionObservationMissing, swipeDidNotMove, retentionFailed
+        case bluetoothSetupTimedOut, bluetoothSwipeCheckRequired, postActionObservationMissing, swipeDidNotMove, retentionFailed
     }
 
     struct SwipeEvidence: Sendable {
@@ -369,6 +377,7 @@ enum DebugNetworkRunAcceptance {
                 if gate.update(eligible: ready && !model.deviceSession.isBusy && settled,
                     value: model.deviceSession.identity, uptime: ProcessInfo.processInfo.systemUptime) {
                     captureReadiness(model: model, phase: "bluetooth_dismissal_stable", force: true)
+                    try plan?.validateBluetoothSetup(model.deviceStatus)
                     return
                 }
                 try await Task.sleep(for: .milliseconds(200))
@@ -476,6 +485,7 @@ enum DebugNetworkRunAcceptance {
                 report.value.readyBeforeSubmission = model.isDeviceReady
                 guard model.newRunScope == .control, model.activeDeviceConnectionMethod == plan.route,
                       !model.deviceSession.isBusy else { throw Failure.wrongScope }
+                try plan.validateBluetoothSetup(model.deviceStatus)
                 model.draft = DebugNetworkRunAcceptance.prompt
                 report.value.submissionAttempted = true
                 report.event("run_requested")

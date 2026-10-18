@@ -41,4 +41,195 @@ final class BluetoothCalibrationContactTraceTests: XCTestCase {
         cancelled.record(id: 1, phase: .cancelled, point: point, uptime: 10.2)
         XCTAssertFalse(try XCTUnwrap(cancelled.observation(probe: .horizontalLarge, receipt: UUID())).endedNormally)
     }
+
+    func testEmptyAttemptReportsCompletedCommandWithoutUIKitContact() throws {
+        let trace = BluetoothCalibrationContactTrace()
+        let report = trace.diagnostic(probe: .horizontalSmall, commandCompleted: true)
+
+        XCTAssertEqual(report["probe"] as? String, "horizontalSmall")
+        XCTAssertEqual(report["commandCompleted"] as? Bool, true)
+        XCTAssertEqual(report["failureReason"] as? String, "contactMissing")
+        XCTAssertEqual(report["contacts"] as? Int, 0)
+        XCTAssertEqual(report["receivedEvents"] as? Int, 0)
+        XCTAssertEqual(report["hasBegan"] as? Bool, false)
+        XCTAssertEqual(report["hasTerminated"] as? Bool, false)
+        XCTAssertTrue(report["start"] is NSNull)
+        XCTAssertTrue(report["end"] is NSNull)
+        XCTAssertTrue(report["contactDuration"] is NSNull)
+        XCTAssertNil(trace.observation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: report))
+    }
+
+    func testIncompleteAttemptRetainsMovementWithoutAuthorizingObservation() throws {
+        var trace = BluetoothCalibrationContactTrace()
+        trace.record(id: 1, phase: .began, point: DevicePoint(x: 0.35, y: 0.35), uptime: 10)
+        trace.record(id: 1, phase: .moved, point: DevicePoint(x: 0.5, y: 0.36), uptime: 10.1)
+        let report = trace.diagnostic(probe: .horizontalSmall, commandCompleted: true)
+
+        XCTAssertEqual(report["failureReason"] as? String, "contactIncomplete")
+        XCTAssertEqual(report["contacts"] as? Int, 1)
+        XCTAssertEqual(report["receivedEvents"] as? Int, 2)
+        XCTAssertEqual(report["movedEvents"] as? Int, 1)
+        XCTAssertEqual(report["hasBegan"] as? Bool, true)
+        XCTAssertEqual(report["hasTerminated"] as? Bool, false)
+        XCTAssertEqual(report["end"] as? [String: Double], ["x": 0.5, "y": 0.36])
+        XCTAssertEqual(try XCTUnwrap(report["observedDuration"] as? Double), 0.1, accuracy: 0.0001)
+        XCTAssertTrue(report["contactDuration"] is NSNull)
+        XCTAssertNil(trace.observation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: report))
+    }
+
+    func testContactWithoutBeganIsDistinctFromNoContact() throws {
+        var trace = BluetoothCalibrationContactTrace()
+        trace.record(id: 1, phase: .ended, point: DevicePoint(x: 0.5, y: 0.35), uptime: 10)
+        let report = trace.diagnostic(probe: .horizontalSmall, commandCompleted: true)
+
+        XCTAssertEqual(report["failureReason"] as? String, "contactBeganMissing")
+        XCTAssertEqual(report["contacts"] as? Int, 1)
+        XCTAssertEqual(report["receivedEvents"] as? Int, 1)
+        XCTAssertEqual(report["hasBegan"] as? Bool, false)
+        XCTAssertEqual(report["hasTerminated"] as? Bool, false)
+        XCTAssertNil(trace.observation(probe: .horizontalSmall, receipt: UUID()))
+    }
+
+    func testFailedProbeReportRetainsPartialTraceWithControlledReason() throws {
+        var trace = BluetoothCalibrationContactTrace()
+        trace.record(id: 1, phase: .began, point: DevicePoint(x: 0.35, y: 0.35), uptime: 10)
+        let report = trace.diagnostic(probe: .horizontalSmall, commandCompleted: false,
+                                      failureReason: .probeCommandFailed)
+
+        XCTAssertEqual(report["failureReason"] as? String, "probeCommandFailed")
+        XCTAssertEqual(report["commandCompleted"] as? Bool, false)
+        XCTAssertEqual(report["contacts"] as? Int, 1)
+        XCTAssertEqual(report["start"] as? [String: Double], ["x": 0.35, "y": 0.35])
+        XCTAssertEqual(Set(report.keys), ["probe", "commandCompleted", "failureReason", "contacts", "receivedEvents",
+            "movedEvents", "hasBegan", "hasTerminated", "endedNormally", "start", "end", "contactDuration", "observedDuration", "eventSummary"])
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: report))
+    }
+
+    func testNonFiniteTraceStatisticsRemainJSONSerializable() throws {
+        var trace = BluetoothCalibrationContactTrace()
+        trace.record(id: 1, phase: .began, point: DevicePoint(x: .nan, y: 0.35), uptime: 10)
+        trace.record(id: 1, phase: .ended, point: DevicePoint(x: 0.35, y: .infinity), uptime: .infinity)
+        let report = trace.diagnostic(probe: .horizontalSmall, commandCompleted: true)
+
+        XCTAssertTrue(report["start"] is NSNull)
+        XCTAssertTrue(report["end"] is NSNull)
+        XCTAssertTrue(report["contactDuration"] is NSNull)
+        XCTAssertTrue(report["observedDuration"] is NSNull)
+        XCTAssertEqual(report["hasTerminated"] as? Bool, true)
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: report))
+    }
+
+    func testOnlyPageContactsHittingTargetAuthorizeRelativeObservation() throws {
+        var diagnostics = BluetoothCalibrationTouchDiagnostics()
+        diagnostics.beginRelative()
+        for phase in [UITouch.Phase.began, .moved, .ended] {
+            diagnostics.record(source: .page, id: 1, phase: phase, type: .indirectPointer,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: false)
+            diagnostics.record(source: .legacyTarget, id: 2, phase: phase, type: .direct,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+        }
+        XCTAssertNil(diagnostics.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertNotNil(diagnostics.pageTrace.observation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertNotNil(diagnostics.legacyTargetTrace.observation(probe: .horizontalSmall, receipt: UUID()))
+
+        diagnostics.beginRelative()
+        for phase in [UITouch.Phase.began, .moved, .ended] {
+            diagnostics.record(source: .page, id: 3, phase: phase, type: .indirectPointer,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+            diagnostics.record(source: .legacyTarget, id: 4, phase: phase, type: .direct,
+                point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+        }
+        let observation = try XCTUnwrap(diagnostics.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertEqual(observation.contactCount, 1)
+        XCTAssertEqual(observation.movedEventCount, 1)
+        let report = diagnostics.relativeTrace.diagnostic(probe: .horizontalSmall, commandCompleted: true)
+        XCTAssertEqual(report["receivedEvents"] as? Int, 3)
+    }
+
+    func testNonTargetContactRejectsOtherwiseCompleteTargetDrag() throws {
+        var diagnostics = BluetoothCalibrationTouchDiagnostics()
+        diagnostics.beginRelative()
+        diagnostics.record(source: .page, id: 1, phase: .began, type: .direct,
+            point: DevicePoint(x: 0.35, y: 0.35), uptime: 10, hitTarget: true)
+        diagnostics.record(source: .page, id: 2, phase: .began, type: .direct,
+            point: DevicePoint(x: 0.8, y: 0.8), uptime: 10.01, hitTarget: false)
+        diagnostics.record(source: .page, id: 1, phase: .moved, type: .direct,
+            point: DevicePoint(x: 0.55, y: 0.35), uptime: 10.1, hitTarget: true)
+        diagnostics.record(source: .page, id: 1, phase: .ended, type: .direct,
+            point: DevicePoint(x: 0.55, y: 0.35), uptime: 10.2, hitTarget: true)
+
+        XCTAssertEqual(diagnostics.relativeTrace.contactCount, 1)
+        XCTAssertNotNil(diagnostics.relativeTrace.observation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertEqual(diagnostics.pageTrace.contactCount, 2)
+        XCTAssertNil(diagnostics.relativeObservation(probe: .horizontalSmall, receipt: UUID()))
+        XCTAssertEqual(diagnostics.relativeObservationFailureReason, .multipleContacts)
+        let report = diagnostics.relativeTrace.diagnostic(probe: .horizontalSmall, commandCompleted: true,
+            failureReason: diagnostics.relativeObservationFailureReason)
+        XCTAssertEqual(report["failureReason"] as? String, "multipleContacts")
+    }
+
+    func testAbsoluteBaselineSeparatesSourcesAndIgnoresInactiveStages() throws {
+        var diagnostics = BluetoothCalibrationTouchDiagnostics()
+        func record(_ source: BluetoothCalibrationTouchDiagnostics.Source, id: Int, phase: UITouch.Phase) {
+            diagnostics.record(source: source, id: id, phase: phase, type: .indirectPointer,
+                point: DevicePoint(x: 0.25, y: 0.25), uptime: 10, hitTarget: true)
+        }
+        record(.page, id: 0, phase: .began)
+        diagnostics.beginAbsolute()
+        for id in 1...4 {
+            for phase in [UITouch.Phase.began, .ended] {
+                record(.page, id: id, phase: phase)
+                record(.legacyTarget, id: id, phase: phase)
+            }
+        }
+        diagnostics.endStage()
+        record(.page, id: 5, phase: .began)
+        for key in ["pageTrace", "targetTrace", "legacyTargetTrace"] {
+            let summary = try XCTUnwrap(diagnostics.absoluteDiagnostic[key] as? [String: Any])
+            XCTAssertEqual(summary["events"] as? Int, 8)
+            XCTAssertEqual((summary["phases"] as? [String: Int])?["began"], 4)
+            XCTAssertEqual((summary["types"] as? [String: Int])?["indirectPointer"], 8)
+        }
+        diagnostics.beginRelative()
+        diagnostics.endStage()
+        record(.page, id: 6, phase: .began)
+        XCTAssertEqual(diagnostics.relativeTrace.incompleteReason, .contactMissing)
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: diagnostics.absoluteDiagnostic))
+    }
+
+    func testTouchSummaryBoundsSamplesAndPreservesFinalPhaseAndTypeCounts() throws {
+        var summary = BluetoothCalibrationTouchSummary()
+        for index in 0..<100 {
+            summary.record(phase: index == 99 ? .ended : .moved,
+                type: index.isMultiple(of: 2) ? .direct : .indirectPointer,
+                point: DevicePoint(x: Double(index) / 100, y: 0.35), hitTarget: index < 50)
+        }
+        let report = summary.diagnostic
+        let samples = try XCTUnwrap(report["samples"] as? [[String: Any]])
+        XCTAssertEqual(samples.count, BluetoothCalibrationTouchSummary.sampleLimit)
+        XCTAssertEqual(report["droppedSamples"] as? Int, 68)
+        XCTAssertEqual(report["targetHitEvents"] as? Int, 50)
+        XCTAssertEqual(report["types"] as? [String: Int], ["direct": 50, "indirectPointer": 50, "other": 0])
+        XCTAssertEqual(samples.last?["phase"] as? String, "ended")
+        XCTAssertEqual(samples.last?["x"] as? Double, 0.99)
+        XCTAssertEqual(Set(try XCTUnwrap(samples.first).keys), ["type", "phase", "hitTarget", "x", "y"])
+        XCTAssertNoThrow(try JSONSerialization.data(withJSONObject: report))
+    }
+
+    @MainActor func testPageObserverDoesNotDelayCancelOrPreventInput() {
+        let observer = BluetoothCalibrationPageTouchObserver(target: nil, action: nil)
+        let other = UITapGestureRecognizer()
+        XCTAssertFalse(observer.cancelsTouchesInView)
+        XCTAssertFalse(observer.delaysTouchesBegan)
+        XCTAssertFalse(observer.delaysTouchesEnded)
+        XCTAssertFalse(observer.requiresExclusiveTouchType)
+        XCTAssertFalse(observer.canPrevent(other))
+        XCTAssertFalse(observer.canBePrevented(by: other))
+        XCTAssertFalse(observer.isRecording)
+        XCTAssertEqual(observer.state, .possible)
+        XCTAssertTrue(observer.allowedTouchTypes.contains(NSNumber(value: UITouch.TouchType.direct.rawValue)))
+        XCTAssertTrue(observer.allowedTouchTypes.contains(NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)))
+    }
 }

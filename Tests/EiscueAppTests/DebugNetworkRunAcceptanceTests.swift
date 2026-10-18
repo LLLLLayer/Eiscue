@@ -34,6 +34,18 @@ final class DebugNetworkRunAcceptanceTests: XCTestCase {
         }
     }
 
+    func testBluetoothSwipePreflightRejectsTapAndTextOnlyBeforeSubmission() throws {
+        for kind in ["foregroundSwipe", "inflightStop"] {
+            let plan = try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments(kind: kind))
+            XCTAssertThrowsError(try plan.validateBluetoothSetup(.ready(capabilities: [.screenshot, .tap, .textInput]))) {
+                XCTAssertEqual($0 as? DebugNetworkRunAcceptance.Failure, .bluetoothSwipeCheckRequired)
+            }
+            XCTAssertNoThrow(try plan.validateBluetoothSetup(.ready(capabilities: [.screenshot, .tap, .textInput, .swipe])))
+        }
+        let network = try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest"])
+        XCTAssertNoThrow(try network.validateBluetoothSetup(.ready(capabilities: [.screenshot, .home])))
+    }
+
     func testRestrictedBLEToolRegistrationSupportsOnlyTheOwnedSwipeCases() throws {
         let session = DeviceToolSession(capabilities: [.screenshot, .swipe],
             client: DeviceClient(actuator: RestrictedBLEAcceptanceActuator()), scope: .control,

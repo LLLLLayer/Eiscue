@@ -278,6 +278,7 @@ private final class BluetoothPointerValidationController: UIViewController {
     private let ownership: BluetoothCalibrationOwnership?
     private let acquisitionFailure: Error?
     private let target = BluetoothCalibrationTarget(type: .custom)
+    private let pageTouchObserver = BluetoothCalibrationPageTouchObserver(target: nil, action: nil)
     private let symbol = UIImageView()
     private let heading = UILabel()
     private let status = UILabel()
@@ -288,8 +289,11 @@ private final class BluetoothPointerValidationController: UIViewController {
     private var task: Task<Void, Never>?
     private enum ValidationFailure: Error { case touchMissing }
     private var touches: [DevicePoint] = []
-    private var relativeTrace: BluetoothCalibrationContactTrace?
+    private var touchDiagnostics = BluetoothCalibrationTouchDiagnostics()
     private var relativeObservations: [BluetoothRelativeCalibrationObservation] = []
+    private var relativeReadyAtStart: Bool?
+    private var relativeProbeAttempts: [[String: Any]] = []
+    private var relativeFailureReason: BluetoothCalibrationFailureReason?
     private var relativeCheckPassed = false
     private var armed = false
     private var stableBounds = CGRect.zero
@@ -317,13 +321,18 @@ private final class BluetoothPointerValidationController: UIViewController {
         target.backgroundColor = .systemBackground
         target.isMultipleTouchEnabled = true
         target.addTarget(self, action: #selector(observedTouch(_:event:)), for: .touchUpInside)
-        target.onContact = { [weak self] id, phase, location, uptime in
-            guard let self, view.bounds.width > 0, view.bounds.height > 0 else { return }
-            relativeTrace?.record(id: id, phase: phase,
-                point: DevicePoint(x: location.x / view.bounds.width, y: location.y / view.bounds.height), uptime: uptime)
+        target.onContact = { [weak self] id, phase, type, location, uptime in
+            self?.recordContact(source: .legacyTarget, id: id, phase: phase, type: type,
+                                location: location, uptime: uptime, hitTarget: true)
         }
         target.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(target)
+        pageTouchObserver.calibrationTarget = target
+        pageTouchObserver.onContact = { [weak self] id, phase, type, location, uptime, hitTarget in
+            self?.recordContact(source: .page, id: id, phase: phase, type: type,
+                                location: location, uptime: uptime, hitTarget: hitTarget)
+        }
+        view.addGestureRecognizer(pageTouchObserver)
         symbol.image = UIImage(systemName: "hand.tap")
         symbol.preferredSymbolConfiguration = .init(pointSize: 32, weight: .regular)
         symbol.contentMode = .center; symbol.tintColor = .label
@@ -426,6 +435,8 @@ private final class BluetoothPointerValidationController: UIViewController {
     }
     func finishPresentation(close shouldClose: Bool) {
         ending = true
+        stopTouchDiagnostics()
+        view.removeGestureRecognizer(pageTouchObserver)
         task?.cancel()
         Task {
             await ownership?.finish(after: task) { [self] in
@@ -441,6 +452,17 @@ private final class BluetoothPointerValidationController: UIViewController {
     }
     private func cancelCalibration() async {
         await ownership?.cancelCalibration { await controller.cancelCalibration() }
+    }
+    private func recordContact(source: BluetoothCalibrationTouchDiagnostics.Source, id: Int, phase: UITouch.Phase,
+                               type: UITouch.TouchType, location: CGPoint, uptime: TimeInterval, hitTarget: Bool) {
+        guard !ending, view.bounds.width > 0, view.bounds.height > 0 else { return }
+        touchDiagnostics.record(source: source, id: id, phase: phase, type: type,
+            point: DevicePoint(x: location.x / view.bounds.width, y: location.y / view.bounds.height),
+            uptime: uptime, hitTarget: hitTarget)
+    }
+    private func stopTouchDiagnostics() {
+        pageTouchObserver.isRecording = false
+        touchDiagnostics.endStage()
     }
     private func requireVisible() throws {
         try Task.checkCancellation()
@@ -463,6 +485,8 @@ private final class BluetoothPointerValidationController: UIViewController {
             // Only this full-screen, harmless target is eligible. No edge search.
             field.isHidden = true; close.isEnabled = true
             let checkCount = controller.supportsRelativeDrag ? 11 : 5
+            touchDiagnostics.beginAbsolute()
+            pageTouchObserver.isRecording = true
             for p in [DevicePoint(x: 0.25, y: 0.25), DevicePoint(x: 0.75, y: 0.25), DevicePoint(x: 0.25, y: 0.75), DevicePoint(x: 0.62, y: 0.61)] {
                 try requireVisible()
                 let count = touches.count
@@ -477,6 +501,7 @@ private final class BluetoothPointerValidationController: UIViewController {
                 progress.setProgress(Float(touches.count) / Float(checkCount), animated: true)
                 try await Task.sleep(for: .milliseconds(150))
             }
+            stopTouchDiagnostics()
             try await controller.completeCalibration(observed: touches)
             if controller.supportsRelativeDrag {
                 heading.text = text("bluetooth.validationSwipeTitle")
@@ -515,7 +540,7 @@ private final class BluetoothPointerValidationController: UIViewController {
             saveReport(passed: true)
             view.setNeedsLayout()
         } catch {
-            armed = false; relativeTrace = nil
+            armed = false; stopTouchDiagnostics()
             await cancelCalibration()
             field.resignFirstResponder()
             failed = true; field.isHidden = true; progress.isHidden = true
@@ -532,27 +557,58 @@ private final class BluetoothPointerValidationController: UIViewController {
         }
     }
     private func checkRelativeInput(checkCount: Int) async throws -> Bool {
-        guard controller.isRelativeDragReady else { return false }
-        defer { relativeTrace = nil }
-        for probe in BluetoothRelativeCalibrationProbe.allCases {
-            try requireVisible()
-            relativeTrace = BluetoothCalibrationContactTrace()
+        relativeReadyAtStart = controller.isRelativeDragReady
+        guard relativeReadyAtStart == true else {
+            relativeFailureReason = .relativeInputNotReady
+            return false
+        }
+        do {
+            for probe in BluetoothRelativeCalibrationProbe.allCases {
+                try requireVisible()
+                guard let observation = try await observeRelativeProbe(probe) else { return false }
+                relativeObservations.append(observation)
+                progress.setProgress(Float(4 + relativeObservations.count) / Float(checkCount), animated: true)
+                try await Task.sleep(for: .milliseconds(150))
+            }
+            do { try await controller.completeRelativeCalibration(observed: relativeObservations) }
+            catch DeviceControlError.invalidCoordinates {
+                relativeFailureReason = .relativeValidationRejected
+                return false
+            }
+            return true
+        } catch {
+            if relativeFailureReason == nil { relativeFailureReason = .relativeCheckInterrupted }
+            throw error
+        }
+    }
+    private func observeRelativeProbe(_ probe: BluetoothRelativeCalibrationProbe) async throws -> BluetoothRelativeCalibrationObservation? {
+        touchDiagnostics.beginRelative()
+        pageTouchObserver.isRecording = true
+        var commandCompleted = false
+        defer {
+            var attempt = touchDiagnostics.relativeTrace.diagnostic(probe: probe, commandCompleted: commandCompleted,
+                failureReason: relativeFailureReason)
+            attempt["pageTrace"] = touchDiagnostics.pageTrace.diagnostic(probe: probe, commandCompleted: commandCompleted)
+            attempt["legacyTargetTrace"] = touchDiagnostics.legacyTargetTrace.diagnostic(probe: probe, commandCompleted: commandCompleted)
+            relativeProbeAttempts.append(attempt)
+            stopTouchDiagnostics()
+        }
+        do {
             let receipt = try await controller.runRelativeCalibrationProbe(probe)
+            commandCompleted = true
             let until = Date().addingTimeInterval(2)
-            while relativeTrace?.hasTerminated != true && Date() < until {
+            while !touchDiagnostics.relativeTrace.hasTerminated && Date() < until {
                 try await Task.sleep(for: .milliseconds(50)); try requireVisible()
             }
             // A completed command without the expected UIKit contact cannot
             // enable swipe, but doesn't invalidate the verified tap mapping.
-            guard let observation = relativeTrace?.observation(probe: probe, receipt: receipt) else { return false }
-            relativeTrace = nil
-            relativeObservations.append(observation)
-            progress.setProgress(Float(4 + relativeObservations.count) / Float(checkCount), animated: true)
-            try await Task.sleep(for: .milliseconds(150))
+            let observation = touchDiagnostics.relativeObservation(probe: probe, receipt: receipt)
+            if observation == nil { relativeFailureReason = touchDiagnostics.relativeObservationFailureReason }
+            return observation
+        } catch {
+            relativeFailureReason = commandCompleted ? .probeObservationInterrupted : .probeCommandFailed
+            throw error
         }
-        do { try await controller.completeRelativeCalibration(observed: relativeObservations) }
-        catch DeviceControlError.invalidCoordinates { return false }
-        return true
     }
     private func saveReport(passed: Bool) {
         guard ownership != nil else { return }
@@ -561,6 +617,10 @@ private final class BluetoothPointerValidationController: UIViewController {
             "width": view.bounds.width, "height": view.bounds.height, "keyboardVerified": passed,
             "relativeDragSupported": controller.supportsRelativeDrag,
             "relativeDragVerified": controller.isRelativeDragVerified,
+            "relativeReadyAtStart": relativeReadyAtStart as Any? ?? NSNull(),
+            "relativeFailureReason": relativeFailureReason?.rawValue as Any? ?? NSNull(),
+            "relativeProbeAttempts": relativeProbeAttempts,
+            "absoluteTouches": touchDiagnostics.absoluteDiagnostic,
             "relativeProbes": relativeObservations.map { ["probe": $0.probe.rawValue,
                 "contacts": $0.contactCount, "movedEvents": $0.movedEventCount,
                 "endedNormally": $0.endedNormally, "start": ["x": $0.start.x, "y": $0.start.y],
@@ -579,6 +639,94 @@ private final class BluetoothPointerValidationController: UIViewController {
     private func text(_ key: String) -> String { NSLocalizedString(key, tableName: "Bluetooth", comment: "") }
 }
 
+/// Fixed diagnostic codes never include transport messages, credentials or input text.
+enum BluetoothCalibrationFailureReason: String {
+    case relativeInputNotReady, contactMissing, contactBeganMissing, contactIncomplete, multipleContacts
+    case probeCommandFailed, probeObservationInterrupted, relativeValidationRejected, relativeCheckInterrupted
+}
+
+/// Only page-observed contacts that UIKit hit-tests to the target may authorize a probe.
+struct BluetoothCalibrationTouchDiagnostics {
+    enum Source { case page, legacyTarget }
+    private enum Stage { case absolute, relative }
+    private var stage: Stage?
+    private var absolutePage = BluetoothCalibrationTouchSummary()
+    private var absoluteTarget = BluetoothCalibrationTouchSummary()
+    private var absoluteLegacyTarget = BluetoothCalibrationTouchSummary()
+    private(set) var relativeTrace = BluetoothCalibrationContactTrace()
+    private(set) var pageTrace = BluetoothCalibrationContactTrace()
+    private(set) var legacyTargetTrace = BluetoothCalibrationContactTrace()
+
+    mutating func beginAbsolute() { stage = .absolute }
+    mutating func beginRelative() {
+        stage = .relative
+        relativeTrace = BluetoothCalibrationContactTrace()
+        pageTrace = BluetoothCalibrationContactTrace()
+        legacyTargetTrace = BluetoothCalibrationContactTrace()
+    }
+    mutating func endStage() { stage = nil }
+    mutating func record(source: Source, id: Int, phase: UITouch.Phase, type: UITouch.TouchType,
+                         point: DevicePoint, uptime: TimeInterval, hitTarget: Bool) {
+        guard let stage else { return }
+        switch (stage, source) {
+        case (.absolute, .page):
+            absolutePage.record(phase: phase, type: type, point: point, hitTarget: hitTarget)
+            if hitTarget { absoluteTarget.record(phase: phase, type: type, point: point, hitTarget: true) }
+        case (.absolute, .legacyTarget):
+            absoluteLegacyTarget.record(phase: phase, type: type, point: point, hitTarget: hitTarget)
+        case (.relative, .page):
+            pageTrace.record(id: id, phase: phase, point: point, uptime: uptime, type: type, hitTarget: hitTarget)
+            if hitTarget { relativeTrace.record(id: id, phase: phase, point: point, uptime: uptime, type: type) }
+        case (.relative, .legacyTarget):
+            legacyTargetTrace.record(id: id, phase: phase, point: point, uptime: uptime, type: type, hitTarget: hitTarget)
+        }
+    }
+    var absoluteDiagnostic: [String: Any] {
+        ["pageTrace": absolutePage.diagnostic, "targetTrace": absoluteTarget.diagnostic,
+         "legacyTargetTrace": absoluteLegacyTarget.diagnostic]
+    }
+    var relativeObservationFailureReason: BluetoothCalibrationFailureReason? {
+        pageTrace.contactCount > 1 ? .multipleContacts : relativeTrace.incompleteReason
+    }
+    func relativeObservation(probe: BluetoothRelativeCalibrationProbe, receipt: UUID) -> BluetoothRelativeCalibrationObservation? {
+        guard pageTrace.contactCount == 1 else { return nil }
+        return relativeTrace.observation(probe: probe, receipt: receipt)
+    }
+}
+
+struct BluetoothCalibrationTouchSummary {
+    static let sampleLimit = 32
+    private var eventCount = 0
+    private var targetHitEvents = 0
+    private var types = ["direct": 0, "indirectPointer": 0, "other": 0]
+    private var phases = ["began": 0, "moved": 0, "stationary": 0, "ended": 0, "cancelled": 0, "other": 0]
+    private var samples: [[String: Any]] = []
+
+    mutating func record(phase: UITouch.Phase, type: UITouch.TouchType, point: DevicePoint, hitTarget: Bool) {
+        let typeName = type == .direct ? "direct" : type == .indirectPointer ? "indirectPointer" : "other"
+        let phaseName: String
+        switch phase {
+        case .began: phaseName = "began"
+        case .moved: phaseName = "moved"
+        case .stationary: phaseName = "stationary"
+        case .ended: phaseName = "ended"
+        case .cancelled: phaseName = "cancelled"
+        default: phaseName = "other"
+        }
+        eventCount += 1
+        if hitTarget { targetHitEvents += 1 }
+        types[typeName, default: 0] += 1; phases[phaseName, default: 0] += 1
+        let sample: [String: Any] = ["type": typeName, "phase": phaseName, "hitTarget": hitTarget,
+            "x": point.x.isFinite ? point.x as Any : NSNull(), "y": point.y.isFinite ? point.y as Any : NSNull()]
+        if samples.count < Self.sampleLimit { samples.append(sample) }
+        else { samples[Self.sampleLimit - 1] = sample }
+    }
+    var diagnostic: [String: Any] {
+        ["events": eventCount, "targetHitEvents": targetHitEvents, "types": types, "phases": phases,
+         "samples": samples, "droppedSamples": max(0, eventCount - Self.sampleLimit)]
+    }
+}
+
 /// Tracks UIKit's real contact, independently of the HID command acknowledgement.
 struct BluetoothCalibrationContactTrace {
     private var contacts = Set<Int>()
@@ -587,15 +735,22 @@ struct BluetoothCalibrationContactTrace {
     private var end: DevicePoint?
     private var startedUptime: TimeInterval?
     private var endedUptime: TimeInterval?
+    private var lastUptime: TimeInterval?
+    private var receivedEvents = 0
+    private var eventSummary = BluetoothCalibrationTouchSummary()
     private var movedEvents = 0
     private var endedNormally = false
     private(set) var hasTerminated = false
+    var contactCount: Int { contacts.count }
 
-    mutating func record(id: Int, phase: UITouch.Phase, point: DevicePoint, uptime: TimeInterval) {
+    mutating func record(id: Int, phase: UITouch.Phase, point: DevicePoint, uptime: TimeInterval,
+                         type: UITouch.TouchType = .direct, hitTarget: Bool = true) {
+        receivedEvents += 1
+        eventSummary.record(phase: phase, type: type, point: point, hitTarget: hitTarget)
         contacts.insert(id)
         if phase == .began, primary == nil { primary = id; start = point; startedUptime = uptime }
         guard primary == id, !hasTerminated else { return }
-        end = point
+        end = point; lastUptime = uptime
         switch phase {
         case .moved: movedEvents += 1
         case .ended: hasTerminated = true; endedNormally = true; endedUptime = uptime
@@ -609,10 +764,68 @@ struct BluetoothCalibrationContactTrace {
                      contactCount: contacts.count, movedEventCount: movedEvents, endedNormally: endedNormally,
                      startedUptime: startedUptime, endedUptime: endedUptime)
     }
+    var incompleteReason: BluetoothCalibrationFailureReason? {
+        if contacts.isEmpty { return .contactMissing }
+        if primary == nil { return .contactBeganMissing }
+        if !hasTerminated { return .contactIncomplete }
+        return nil
+    }
+    func diagnostic(probe: BluetoothRelativeCalibrationProbe, commandCompleted: Bool,
+                    failureReason: BluetoothCalibrationFailureReason? = nil) -> [String: Any] {
+        func point(_ value: DevicePoint?) -> Any {
+            guard let value, value.x.isFinite, value.y.isFinite else { return NSNull() }
+            return ["x": value.x, "y": value.y]
+        }
+        func duration(until uptime: TimeInterval?) -> Any {
+            guard let startedUptime, let uptime, startedUptime.isFinite, uptime.isFinite,
+                  (uptime - startedUptime).isFinite, uptime >= startedUptime else { return NSNull() }
+            return uptime - startedUptime
+        }
+        return ["probe": probe.rawValue, "commandCompleted": commandCompleted,
+            "failureReason": (failureReason ?? incompleteReason)?.rawValue as Any? ?? NSNull(),
+            "contacts": contacts.count, "receivedEvents": receivedEvents, "movedEvents": movedEvents,
+            "hasBegan": primary != nil, "hasTerminated": hasTerminated, "endedNormally": endedNormally,
+            "start": point(start), "end": point(end), "contactDuration": duration(until: endedUptime),
+            "observedDuration": duration(until: lastUptime), "eventSummary": eventSummary.diagnostic]
+    }
+}
+
+@MainActor final class BluetoothCalibrationPageTouchObserver: UIGestureRecognizer {
+    weak var calibrationTarget: UIView?
+    var onContact: ((Int, UITouch.Phase, UITouch.TouchType, CGPoint, TimeInterval, Bool) -> Void)?
+    var isRecording = false { didSet { if !isRecording { contactIDs.removeAll() } } }
+    private var contactIDs: [ObjectIdentifier: Int] = [:]
+    private var nextContactID = 0
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        cancelsTouchesInView = false; delaysTouchesBegan = false; delaysTouchesEnded = false
+        requiresExclusiveTouchType = false
+        allowedTouchTypes = [UITouch.TouchType.direct, .indirect, .pencil, .indirectPointer].map { NSNumber(value: $0.rawValue) }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    private func observe(_ touches: Set<UITouch>) {
+        guard isRecording, let view else { return }
+        for touch in touches {
+            let key = ObjectIdentifier(touch)
+            if contactIDs[key] == nil { nextContactID += 1; contactIDs[key] = nextContactID }
+            let hitTarget = calibrationTarget.map { target in
+                touch.view === target || touch.view?.isDescendant(of: target) == true
+            } ?? false
+            onContact?(contactIDs[key]!, touch.phase, touch.type, touch.location(in: view), touch.timestamp, hitTarget)
+            if touch.phase == .ended || touch.phase == .cancelled { contactIDs[key] = nil }
+        }
+    }
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches) }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches) }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches); state = .failed }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { observe(touches); state = .failed }
 }
 
 @MainActor private final class BluetoothCalibrationTarget: UIButton {
-    var onContact: ((Int, UITouch.Phase, CGPoint, TimeInterval) -> Void)?
+    var onContact: ((Int, UITouch.Phase, UITouch.TouchType, CGPoint, TimeInterval) -> Void)?
     private var contactIDs: [ObjectIdentifier: Int] = [:]
     private var nextContactID = 0
 
@@ -620,7 +833,7 @@ struct BluetoothCalibrationContactTrace {
         for touch in touches {
             let key = ObjectIdentifier(touch)
             if contactIDs[key] == nil { nextContactID += 1; contactIDs[key] = nextContactID }
-            onContact?(contactIDs[key]!, touch.phase, touch.location(in: self), touch.timestamp)
+            onContact?(contactIDs[key]!, touch.phase, touch.type, touch.location(in: self), touch.timestamp)
             if touch.phase == .ended || touch.phase == .cancelled { contactIDs[key] = nil }
         }
     }

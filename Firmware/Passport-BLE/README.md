@@ -486,11 +486,20 @@ Bluetooth pairing, board_id and other settings were preserved. A new verified
 16 MB backup preceded maintenance, and production-image restoration passed
 readback and full-flash verification.
 
-Authenticated BLE connection then passed, followed by another successful
-connection using the saved key after an App-process restart. Screen sharing and
-calibration are incomplete, so readiness remains false. These connection passes
-do not establish ReplayKit, calibrated BLE/USB input or swipe acceptance; no
-model API was called.
+Authenticated BLE connection and saved-key reconnection passed, as did three
+manual ReplayKit/four-point/Chinese checks. Later relative probes were sent and
+received op10 ACK14, but page, gesture and legacy observers all recorded zero
+contacts; ABS controls produced eight direct events per observer. This excludes
+only a UIButton-only observation gap. The HID/observation cause is unresolved,
+and relative-swipe calibration did not pass. Final observer App tests passed
+28 cases and the App built; these are software evidence.
+
+The first foregroundSwipe host sent no swipe because device_swipe was absent.
+After normal BLE disconnection, USB host enumeration and authenticated route
+connection passed; interfaces 0/1/2 were enumerated, and the Mac had only the
+COM bridge rather than an accidental S3 HID connection. Actual USB input still
+awaits phone screen sharing/calibration. Earlier failures remain recorded;
+three BLE rounds used no model API.
 
 ## Version 0.2 build evidence (2026-10-12)
 
