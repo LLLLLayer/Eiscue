@@ -16,6 +16,7 @@
 "device.error.invalid-bundle-id" = "The app bundle ID is invalid.";
 "device.error.invalid-coordinates" = "Coordinates must be inside the current screenshot.";
 "device.error.invalid-duration" = "Swipe duration must be between 0.1 and 2 seconds.";
+"device.error.relative-drag-unrepresentable" = "This swipe exceeds the calibrated movement or timing limits. Try a shorter swipe or a different duration.";
 "device.error.invalid-identity" = "The pairing identity is invalid or incomplete. A completed version 1 RemotePairing identity is required.";
 "device.error.invalid-text" = "Input text must not be empty or exceed 8 KB in UTF-8. The encoded request must not exceed 16 KB.";
 "device.error.keychain" = "Could not access secure storage (%@).";

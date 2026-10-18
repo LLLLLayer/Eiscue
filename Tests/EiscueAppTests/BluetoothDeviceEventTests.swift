@@ -126,10 +126,13 @@ import XCTest
     func testCalibrationKeepsOwnershipUntilCancelledInputAndCleanupBothFinish() async throws {
         let session = makeSession(), input = Barrier(), cleanup = Barrier()
         let calibration = try BluetoothCalibrationOwnership(session: session)
+        try await calibration.beginCalibration {}
         let operation = Task { await input.wait() }
         var cleanupCalls = 0
         let completion = Task {
-            await calibration.finish(after: operation) { cleanupCalls += 1; await cleanup.wait() }
+            await calibration.finish(after: operation) {
+                await calibration.cancelCalibration { cleanupCalls += 1; await cleanup.wait() }
+            }
         }
         await input.waitUntilEntered()
         operation.cancel()
@@ -146,13 +149,45 @@ import XCTest
         XCTAssertNil(session.owner); XCTAssertEqual(cleanupCalls, 1)
     }
 
-    func testLateCalibrationDismissalCannotReleaseANewerSetupOwner() async throws {
+    func testUnstartedCalibrationDismissalPreservesTheRetainedMapping() async throws {
         let session = makeSession(), calibration = try BluetoothCalibrationOwnership(session: session)
+        var retainedMapping = true
+        await calibration.finish(after: nil) {
+            await calibration.cancelCalibration { retainedMapping = false }
+        }
+        XCTAssertTrue(retainedMapping)
+        XCTAssertNil(session.owner)
+    }
+
+    func testCalibrationBeginFailureStillCancelsExactlyOnce() async throws {
+        let session = makeSession(), calibration = try BluetoothCalibrationOwnership(session: session)
+        var beginCalls = 0, cancelCalls = 0
+        do {
+            try await calibration.beginCalibration { beginCalls += 1; throw DeviceControlError.staleFrame }
+            XCTFail("The begin failure must propagate.")
+        } catch { XCTAssertEqual(error as? DeviceControlError, .staleFrame) }
+        await calibration.finish(after: nil) {
+            await calibration.cancelCalibration { cancelCalls += 1; XCTAssertEqual(session.owner, .setup) }
+            await calibration.cancelCalibration { cancelCalls += 100 }
+        }
+        XCTAssertEqual(beginCalls, 1); XCTAssertEqual(cancelCalls, 1)
+        XCTAssertNil(session.owner)
+    }
+
+    func testLateCalibrationDismissalCannotCancelOrReleaseANewerSetupOwner() async throws {
+        let session = makeSession(), calibration = try BluetoothCalibrationOwnership(session: session)
+        try await calibration.beginCalibration {}
         await calibration.finish(after: nil) {}
-        let next = try session.acquire(.setup)
+        let next = try BluetoothCalibrationOwnership(session: session)
+        try await next.beginCalibration {}
+        var newerMapping = true
         await calibration.finish(after: nil) { XCTFail("Cleanup must run once.") }
+        await calibration.cancelCalibration { newerMapping = false }
+        XCTAssertTrue(newerMapping)
         XCTAssertEqual(session.owner, .setup)
-        next.release()
+        await next.finish(after: nil) { await next.cancelCalibration { newerMapping = false } }
+        XCTAssertFalse(newerMapping)
+        XCTAssertNil(session.owner)
     }
 
     private let sessionID = UUID()

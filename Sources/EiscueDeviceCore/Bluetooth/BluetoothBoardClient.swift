@@ -21,7 +21,8 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         public let opcode: UInt8
         public let requestID: UInt16
         /// Firmware's response byte 5. For INFO (opcode 7) this is a capability
-        /// bitmask (absolute pointer: 1, keyboard: 2), not a report count.
+        /// bitmask (absolute pointer: 1, keyboard: 2, relative stroke ready: 0x20,
+        /// relative stroke supported: 0x40, output selection: 0x80), not a count.
         public let emittedReports: UInt8
         public let encrypted: Bool
     }
@@ -130,7 +131,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
     /// timeout or loss of connection is `DeviceControlError.deliveryUnknown`,
     /// never a reason to retry. Read-only INFO/QUERY failures are BluetoothBoardError.
     /// Firmware v1 opcodes: STOP 0, MOVE 1, CLICK 2, ASCII 3, KEY 4, ABS_POINT 5,
-    /// KEY_COMBO 6, INFO 7. INFO reports capability bits only.
+    /// KEY_COMBO 6, INFO 7, SELECT_OUTPUT 8, OUTPUT_INFO 9, RELATIVE_STROKE 10.
     public func command(opcode: UInt8, payload: [UInt8] = [], pairingHandshake: Bool = false) async throws -> Receipt {
         try Task.checkCancellation()
         guard commandWaiter == nil, closingState == nil else { throw BluetoothBoardError.busy }
@@ -139,7 +140,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
         guard state == .ready, let peripheral, peripheral.state == .connected,
               let characteristic = commandCharacteristic,
               responseCharacteristic?.isNotifying == true else { throw BluetoothBoardError.disconnected }
-        if (1...6).contains(opcode) || opcode == 8 {
+        if (1...6).contains(opcode) || opcode == 8 || opcode == 10 {
             guard !supportsCompanionDisplay || companionStop.isKnown else { throw BluetoothBoardError.boardBusy }
             guard !isHardwareStopLatched else { throw BluetoothBoardError.hardwareStopped }
         }
@@ -154,7 +155,7 @@ public final class BluetoothBoardClient: NSObject, @preconcurrency CBCentralMana
                 pendingID = requestID
                 pendingOpcode = opcode
                 pendingSequence = encoded.sequence
-                if (1...6).contains(opcode) { inputMayBeHeld = true }
+                if (1...6).contains(opcode) || opcode == 10 { inputMayBeHeld = true }
                 commandDeadline = Task { [weak self] in
                     do { try await Task.sleep(for: .seconds(pairingHandshake ? 90 : 5)) } catch { return }
                     guard let self, commandToken == token else { return }

@@ -10,6 +10,29 @@ static int16_t signed_le(const uint8_t *bytes) {
     uint16_t raw = (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
     return raw <= INT16_MAX ? (int16_t)raw : (int16_t)((int32_t)raw - 65536);
 }
+static bool valid_stroke(const eiscue_stroke *stroke) {
+    return stroke && stroke->steps>=1 && stroke->steps<=250 &&
+        stroke->duration_ms>=100 && stroke->duration_ms<=2000 &&
+        stroke->duration_ms>=stroke->steps*8 && stroke->duration_ms<=stroke->steps*50;
+}
+bool eiscue_stroke_report(const eiscue_stroke *stroke,unsigned step,eiscue_report *report) {
+    if(!valid_stroke(stroke) || !report || step>(unsigned)stroke->steps+1)return false;
+    if(step==0 || step==(unsigned)stroke->steps+1) {
+        *report=(eiscue_report){.kind=EISCUE_MOUSE_REPORT,.length=4,.bytes={step==0?1:0,0,0,0}};
+        return true;
+    }
+    int32_t x=(int32_t)stroke->dx*(int32_t)step/stroke->steps-(int32_t)stroke->dx*(int32_t)(step-1)/stroke->steps;
+    int32_t y=(int32_t)stroke->dy*(int32_t)step/stroke->steps-(int32_t)stroke->dy*(int32_t)(step-1)/stroke->steps;
+    if(x*x+y*y>64)return false;
+    *report=(eiscue_report){.kind=EISCUE_MOUSE_REPORT,.length=4,.bytes={1,(uint8_t)x,(uint8_t)y,0}};
+    return true;
+}
+uint16_t eiscue_stroke_interval(const eiscue_stroke *stroke,unsigned step) {
+    if(!valid_stroke(stroke) || step<1 || step>(unsigned)stroke->steps+1)return 0;
+    if(step==(unsigned)stroke->steps+1)return 8;
+    return (uint16_t)((uint32_t)stroke->duration_ms*step/stroke->steps-
+        (uint32_t)stroke->duration_ms*(step-1)/stroke->steps);
+}
 static bool ascii_key(uint8_t c, uint8_t *usage, uint8_t *modifier) {
     *modifier = 0;
     if (c >= 'a' && c <= 'z') { *usage = 4 + c - 'a'; return true; }
@@ -81,6 +104,16 @@ bool eiscue_parse_action(const uint8_t command[EISCUE_COMMAND_SIZE], eiscue_acti
         action->reports[0]=(eiscue_report){.kind=EISCUE_ABSOLUTE_REPORT, .length=5,
             .bytes={command[8],command[4],command[5],command[6],command[7]}};
         action->count=1;return true;
+    case EISCUE_RELATIVE_STROKE: {
+        action->stroke=(eiscue_stroke){.dx=signed_le(command+4),.dy=signed_le(command+6),
+            .steps=command[8],.duration_ms=(uint16_t)command[9]|((uint16_t)command[10]<<8)};
+        if(!zero_tail(command,11) || !valid_stroke(&action->stroke))return false;
+        eiscue_report step;
+        for(unsigned i=1;i<=action->stroke.steps;i++)if(!eiscue_stroke_report(&action->stroke,i,&step))return false;
+        if(!eiscue_stroke_report(&action->stroke,0,&action->reports[0]) ||
+           !eiscue_stroke_report(&action->stroke,action->stroke.steps+1,&action->reports[1]))return false;
+        action->count=2;return true;
+    }
     default: return false;
     }
 }

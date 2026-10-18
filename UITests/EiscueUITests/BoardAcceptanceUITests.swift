@@ -29,14 +29,55 @@ final class BoardAcceptanceUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--skip-onboarding", "--bluetooth-setup-check"]
         app.launch()
+        connectBluetoothCompanion(in: app)
+    }
+
+    @MainActor
+    func testAttachAndConnectBluetoothCompanion() {
+        let app = XCUIApplication()
+        guard app.state != .notRunning else { XCTFail("Open the real board setup first."); return }
+        app.activate()
+        connectBluetoothCompanion(in: app)
+    }
+
+    @MainActor
+    private func connectBluetoothCompanion(in app: XCUIApplication) {
+        let pairing = addUIInterruptionMonitor(withDescription: "Eiscue board pairing") { alert in
+            guard alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Eiscue BLE")).firstMatch.exists else { return false }
+            let pair = alert.buttons.matching(NSPredicate(format: "label IN %@", ["Pair", "配对"])).firstMatch
+            guard pair.exists else { return false }
+            pair.tap(); return true
+        }
+        defer { removeUIInterruptionMonitor(pairing) }
         let route = app.segmentedControls["bluetoothInputRoutePicker"]
         XCTAssertTrue(route.waitForExistence(timeout: 15))
         route.buttons.matching(NSPredicate(format: "label IN %@", ["Bluetooth input", "蓝牙输入"])).firstMatch.tap()
         let connect = app.buttons["bluetoothConnectButton"]
         XCTAssertTrue(connect.waitForExistence(timeout: 10))
         connect.tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "boardCompanionHint").firstMatch.waitForExistence(timeout: 45),
+        let companion = app.descendants(matching: .any).matching(identifier: "boardCompanionHint").firstMatch
+        // Drive interruption handling while iOS asks to pair. The navigation
+        // title is inert; no calibration/input target is touched by the test.
+        for _ in 0..<10 {
+            if companion.waitForExistence(timeout: 1) { break }
+            app.navigationBars.firstMatch.tap()
+        }
+        XCTAssertTrue(companion.waitForExistence(timeout: 90),
             "The C3 screen firmware must expose its optional status channel.")
+    }
+
+    @MainActor
+    func testDisconnectBluetoothBoard() {
+        let app = XCUIApplication()
+        guard app.state != .notRunning else { XCTFail("Open the connected board setup first."); return }
+        app.activate()
+        let button = app.buttons["bluetoothDisconnectButton"]
+        XCTAssertTrue(button.waitForExistence(timeout: 10))
+        XCTAssertTrue(button.isEnabled)
+        button.tap()
+        let connect = app.buttons["bluetoothConnectButton"]
+        let disconnected = NSPredicate(format: "exists == YES AND enabled == YES")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: disconnected, object: connect)], timeout: 15), .completed)
     }
 
     @MainActor

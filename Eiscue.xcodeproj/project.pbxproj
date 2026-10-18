@@ -192,6 +192,7 @@
 		8AEB58F5C83457808F171A20 /* ModelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17BB1912D4603DC0C1F335F1 /* ModelSettingsView.swift */; };
 		8D63DAD3BE3E7636F13CFD04 /* BLEDeviceCheck.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D4377AB2A53B09E91C850162 /* BLEDeviceCheck.xcstrings */; };
 		8EC325FDBB087D46326994A1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3F3E6236EEE44C09DE94043 /* OnboardingView.swift */; };
+		8EF184709B890B289BB528E5 /* BluetoothCalibrationContactTraceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8250EBB562DFC3DFACEA66 /* BluetoothCalibrationContactTraceTests.swift */; };
 		91FC5A70F2C467FC8B1E92C4 /* ToolImagePreviewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 948A45ED7381643983116E60 /* ToolImagePreviewStore.swift */; };
 		938002817B2BFE9218AF6752 /* MessageSharing.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 7338105B6EC033F9E970BC32 /* MessageSharing.xcstrings */; };
 		93923A433779533C2F3B232D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52BD4DE32F6EAD3627D0B45F /* SettingsView.swift */; };
@@ -214,6 +215,7 @@
 		9DE47B041261AEEF75F702FE /* BackgroundStatus.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 90CF9E90D067F4E45B51B53B /* BackgroundStatus.xcstrings */; };
 		9E6CEE86B64E063DE470A033 /* RunToolDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B12666903CB3A85C18FB0E3 /* RunToolDetails.swift */; };
 		9ED6AFBE210C44754E8DA6F4 /* DebugDeviceSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CB21C2665301FA81BFDCAD9 /* DebugDeviceSetup.swift */; };
+		9EDF38B5DD5FAD741DD5B133 /* DebugNetworkRunAcceptanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63225F5A39BEB6D2A03D56DE /* DebugNetworkRunAcceptanceTests.swift */; };
 		9F1A029EFBC258823A795A9D /* ComputerPairingHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D27710EAD73938B8EE4B11C0 /* ComputerPairingHelpView.swift */; };
 		9FBA2E40AF1AB05D1AE84647 /* BLEBoardCheckClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5756FE9D03C2FBFB3D6C15 /* BLEBoardCheckClient.swift */; };
 		A084BB52CCE59522D9332EB2 /* DeviceRunCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409D745B9EDAFB3293291E0C /* DeviceRunCleanup.swift */; };
@@ -477,6 +479,7 @@
 		6080F8988EBB9AEC418760BD /* HIDBuildTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HIDBuildTests.swift; sourceTree = "<group>"; };
 		614206C8EB24F44CA9F448F5 /* RealModelCalculatorAcceptanceUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealModelCalculatorAcceptanceUITests.swift; sourceTree = "<group>"; };
 		61CCF7D1613FCC89E14553DD /* EiscueApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EiscueApp.swift; sourceTree = "<group>"; };
+		63225F5A39BEB6D2A03D56DE /* DebugNetworkRunAcceptanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugNetworkRunAcceptanceTests.swift; sourceTree = "<group>"; };
 		6492B951A834E9F2C0B45B9F /* TestNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestNavigation.swift; sourceTree = "<group>"; };
 		64C475638AAA22A532A6A8A1 /* ConversationSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationSidebarView.swift; sourceTree = "<group>"; };
 		653FC56B0DAD643030BB9528 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -588,6 +591,7 @@
 		F5987C49F03E1A6006180D2D /* LocalTunnelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTunnelManagerTests.swift; sourceTree = "<group>"; };
 		F80E4AB67A788FB05C085814 /* SystemPromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemPromptBuilder.swift; sourceTree = "<group>"; };
 		FB114FC77E476530E9F17EEA /* DeviceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSession.swift; sourceTree = "<group>"; };
+		FD8250EBB562DFC3DFACEA66 /* BluetoothCalibrationContactTraceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothCalibrationContactTraceTests.swift; sourceTree = "<group>"; };
 		FEEE0EF6854D6CE4E91FF1DD /* BoardCompanionPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardCompanionPresentationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -1008,6 +1012,7 @@
 				8CCA2E1255BE860C03B2D7D2 /* AppLocalizationTests.swift */,
 				E7918D00D6DDDDBDA049D803 /* AppStartupLoadTests.swift */,
 				01B9BDDFD7C06B9D7C358D71 /* BackgroundTaskStatusTests.swift */,
+				FD8250EBB562DFC3DFACEA66 /* BluetoothCalibrationContactTraceTests.swift */,
 				5A9C7DB242BDC9B2A71432DB /* BluetoothDeviceEventTests.swift */,
 				2AFDFD8A51DDFA1BCADF319F /* BluetoothScreenStateTests.swift */,
 				FEEE0EF6854D6CE4E91FF1DD /* BoardCompanionPresentationTests.swift */,
@@ -1018,6 +1023,7 @@
 				02F279EADF83B018334CB6E5 /* ConversationOrderingTests.swift */,
 				74A505109E0ECA9E58007AD2 /* ConversationReconciliationTests.swift */,
 				11249FDA3B315423C09E2406 /* CoordinatorControlRegressionTests.swift */,
+				63225F5A39BEB6D2A03D56DE /* DebugNetworkRunAcceptanceTests.swift */,
 				ADB99E05C4F646B5E96F4300 /* DeviceConnectionMethodTests.swift */,
 				799EFE3DD385A103E3BFFA06 /* DeviceConnectionRepairTests.swift */,
 				4176D65E49201247DEEA42CC /* DeviceFixtureActuator.swift */,
@@ -1630,6 +1636,7 @@
 				AFE01C39F200061750F93B6E /* AppLocalizationTests.swift in Sources */,
 				3C2A6A8F0F7253FFFB464343 /* AppStartupLoadTests.swift in Sources */,
 				C21D2869B88F7F2A784C65F9 /* BackgroundTaskStatusTests.swift in Sources */,
+				8EF184709B890B289BB528E5 /* BluetoothCalibrationContactTraceTests.swift in Sources */,
 				F6794399F20486D5457A6007 /* BluetoothDeviceEventTests.swift in Sources */,
 				25D8CC9C620B71FE279D410F /* BluetoothScreenStateTests.swift in Sources */,
 				4EDDD128E6CEEB9DD69F32F8 /* BoardCompanionPresentationTests.swift in Sources */,
@@ -1641,6 +1648,7 @@
 				27827981D2B65DEDAB95DBDC /* ConversationOrderingTests.swift in Sources */,
 				896303C2BDDBBDC6DD804881 /* ConversationReconciliationTests.swift in Sources */,
 				3C1D1C8D20ECF6516DA40005 /* CoordinatorControlRegressionTests.swift in Sources */,
+				9EDF38B5DD5FAD741DD5B133 /* DebugNetworkRunAcceptanceTests.swift in Sources */,
 				7356EB83AAE2B1A3D1B0122D /* DeviceConnectionMethodTests.swift in Sources */,
 				997957F5EE0BBA90FD254396 /* DeviceConnectionRepairTests.swift in Sources */,
 				4AC3A0725406D4B6684BF1A6 /* DeviceFixtureActuator.swift in Sources */,

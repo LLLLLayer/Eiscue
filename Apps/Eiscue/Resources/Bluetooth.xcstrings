@@ -228,13 +228,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Checks taps and typing; keep the screen untouched. Repeat after rotation or reconnection."
+            "value": "Checks taps, swipes and typing; keep the screen untouched. Repeat after rotation or reconnection."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检查点击和输入时请勿触屏；旋转或重连后需重查。"
+            "value": "检查点击、滑动和输入时请勿触屏；旋转或重连后需重查。"
           }
         }
       }
@@ -762,6 +762,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "检查未完成"
+          }
+        }
+      }
+    },
+    "bluetooth.swipeFirmwareUpdate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swipe needs a firmware update. Taps and typing remain available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "滑动需更新固件，点击和输入仍可用。"
+          }
+        }
+      }
+    },
+    "bluetooth.validationSwipeTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking swipes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查滑动"
+          }
+        }
+      }
+    },
+    "bluetooth.checkingSwipe": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking touch movement…\nPlease leave the screen untouched."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查触摸移动…\n请勿触屏。"
+          }
+        }
+      }
+    },
+    "bluetooth.swipeCheckNeeded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taps and typing are ready. Check again to enable swipes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击和输入已就绪；滑动需重新检查。"
           }
         }
       }

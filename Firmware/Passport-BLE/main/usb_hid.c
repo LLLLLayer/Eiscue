@@ -109,6 +109,9 @@ void eiscue_usb_hid_init(void) {
 bool eiscue_usb_hid_supported(void) {return true;}
 bool eiscue_usb_hid_mounted(void) {diagnostics();return atomic_load(&ever_mounted) && atomic_load(&online) && tud_mounted() && !tud_suspended();}
 bool eiscue_usb_hid_online(void) {return atomic_load(&selected) && eiscue_usb_hid_mounted();}
+bool eiscue_usb_hid_relative_ready(void) {
+    return eiscue_usb_hid_online() && tud_hid_n_get_protocol(0)==HID_PROTOCOL_REPORT && tud_hid_n_ready(0);
+}
 void eiscue_usb_hid_select(bool value) {
     if(value) {
         (void)esp_timer_stop(reconnect_timer);
@@ -162,6 +165,7 @@ void tud_hid_set_report_cb(uint8_t instance,uint8_t report_id,hid_report_type_t 
 void eiscue_usb_hid_init(void) {}
 bool eiscue_usb_hid_supported(void) {return false;}
 bool eiscue_usb_hid_online(void) {return false;}
+bool eiscue_usb_hid_relative_ready(void) {return false;}
 bool eiscue_usb_hid_mounted(void) {return false;}
 void eiscue_usb_hid_select(bool selected) {(void)selected;}
 void eiscue_usb_hid_revoke(void) {}

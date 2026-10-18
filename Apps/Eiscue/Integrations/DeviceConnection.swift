@@ -148,6 +148,17 @@ extension AppModel {
     }
 
     #if DEBUG
+    func recordBluetoothSetupStage() {
+        guard ProcessInfo.processInfo.arguments.contains("--bluetooth-setup-check") else { return }
+        let stage: String
+        if case .failed(let error) = bluetoothController.board.state { stage = "failed(\(error.rawValue))" }
+        else { stage = String(describing: bluetoothController.board.state) }
+        guard bluetoothSetupStages.last?.stage != stage else { return }
+        bluetoothSetupStages.append((stage, Date().timeIntervalSince1970))
+        if bluetoothSetupStages.count > 32 { bluetoothSetupStages.removeFirst(bluetoothSetupStages.count - 32) }
+        recordBluetoothSetupSnapshot()
+    }
+
     private func recordBluetoothSetupSnapshot() {
         let state = bluetoothController.screenState
         let report: [String: Any] = [
@@ -163,6 +174,7 @@ extension AppModel {
             "companionPhase": companionLastStatus?.phase.rawValue ?? 0,
             "companionSteps": companionLastStatus?.completedActions ?? 0,
             "connecting": isConnecting, "stage": String(describing: bluetoothController.board.state),
+            "connectionStages": bluetoothSetupStages.map { ["stage": $0.stage, "timestamp": $0.timestamp] },
             "screenPhase": state.map { String(describing: $0.phase) } ?? "unavailable",
             "screenWidth": state?.width ?? 0, "screenHeight": state?.height ?? 0,
             "message": connectionMessage, "error": deviceConnectionError ?? "",

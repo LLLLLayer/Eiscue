@@ -5,6 +5,7 @@
 void eiscue_usb_hid_init(void);
 bool eiscue_usb_hid_supported(void);
 bool eiscue_usb_hid_online(void);
+bool eiscue_usb_hid_relative_ready(void);
 bool eiscue_usb_hid_mounted(void);
 void eiscue_usb_hid_select(bool selected);
 void eiscue_usb_hid_revoke(void);

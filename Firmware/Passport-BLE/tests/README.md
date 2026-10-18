@@ -8,6 +8,13 @@ status precedence, debounced stop and deliberate unlock, and every row of all
 This does not validate ADC thresholds, the ST7789, DMA callbacks, NimBLE event
 ordering or physical input; those require separate board/phone acceptance.
 
+`bash Scripts/test-board-relative-drag.sh` compiles the production command parser
+and relative-stroke report/interval planner with UBSan. Four groups cover wire
+bounds, 1,494 signed paths with exact totals and bounded rounded deltas, the 8 ms
+release tail with a simulated busy USB endpoint, and legacy command/reply bytes.
+It does not exercise NimBLE callbacks, actual timer jitter, BLE/USB transport or
+phone contact continuity; those remain separate hardware acceptance work.
+
 ## Authentication
 
 This fixture compiles the production `board_auth.c` against in-memory ESP-IDF

@@ -17,7 +17,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
     public private(set) var inputRoute: BluetoothBoardInputRoute = .bluetooth
     public private(set) var outputInfo: BluetoothBoardOutputInfo?
     private var store: ScreenBroadcastStore?
-    private var calibration: Calibration?
+    var calibration: Calibration?
     private var calibrationFrame: ObservedFrame?
     private var calibrationObservation: (frame: ObservedFrame, issuedUptime: TimeInterval)?
     private weak var calibrationWindow: UIWindow?
@@ -29,6 +29,10 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
     private var keyboardAvailable = false
     private var keyboardVerified = false
     private var absoluteAvailable = false
+    public private(set) var supportsRelativeDrag = false
+    public private(set) var isRelativeDragReady = false
+    var relativeCalibration: BluetoothRelativeDragCalibration?
+    private var relativeProbeReceipts: [BluetoothRelativeCalibrationProbe: BluetoothRelativeCalibrationReceipt] = [:]
     private var navigationAvailable = false
     private var probeFailure: DeviceControlError?
     private var geometryRevision = UUID()
@@ -46,6 +50,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
                 if isConnected || isCalibrating { epoch = UUID() }
                 isConnected = false; clearCalibration()
                 outputInfo = nil; navigationAvailable = false
+                supportsRelativeDrag = false; isRelativeDragReady = false
             }
             onChange?()
         }
@@ -71,10 +76,10 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
     }
     public var isInputReady: Bool { isConnected && !isHardwareStopLatched && absoluteAvailable && keyboardAvailable }
     public var isPointerVerified: Bool {
-        guard !isHardwareStopLatched, !isCalibrating, let calibration, let state = screenState else { return false }
-        return state.isActive && state.sessionID == calibration.sessionID && state.orientation == calibration.orientation
-            && state.width == calibration.width && state.height == calibration.height
+        guard !isHardwareStopLatched, !isCalibrating, let calibration else { return false }
+        return calibration.matches(screenState)
     }
+    public var isRelativeDragVerified: Bool { isPointerVerified && isRelativeDragReady && relativeCalibration != nil }
 
     public func cachedStatus() async -> DeviceStatus {
         guard !isHardwareStopLatched else { return .unavailable(reason: BluetoothBoardError.hardwareStopped.localizedDescription) }
@@ -83,7 +88,8 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         guard isInputReady else { return .unavailable(reason: message(inputRoute == .usb ? "bluetooth.usbMissing" : "bluetooth.hidMissing")) }
         guard screenState?.isActive == true else { return .unavailable(reason: message("bluetooth.share")) }
         guard isPointerVerified else { return .unavailable(reason: message("bluetooth.calibrate")) }
-        var capabilities: Set<DeviceCapability> = [.screenshot, .tap, .swipe]
+        var capabilities: Set<DeviceCapability> = [.screenshot, .tap]
+        if isRelativeDragVerified { capabilities.insert(.swipe) }
         if keyboardAvailable && keyboardVerified {
             capabilities.insert(.textInput)
             if navigationAvailable { capabilities.insert(.keyboardNavigation) }
@@ -101,6 +107,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
             try requireEpoch(token)
             absoluteAvailable = receipt.emittedReports & 1 != 0
             keyboardAvailable = receipt.emittedReports & 2 != 0
+            updateRelativeReadiness(receipt.emittedReports)
             if outputInfo != nil {
                 let info = try await readOutputInfo(token: token)
                 guard info.selectedRoute == inputRoute else { throw DeviceControlError.serviceUnavailable(.input) }
@@ -151,6 +158,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
                 try requireConnectionEpoch(token)
                 absoluteAvailable = receipt.emittedReports & 1 != 0
                 keyboardAvailable = receipt.emittedReports & 2 != 0
+                updateRelativeReadiness(receipt.emittedReports)
                 if selectable {
                     let info = try await readOutputInfo(token: token)
                     guard info.selectedRoute == inputRoute else { throw DeviceControlError.connection(message("bluetooth.outputMismatch")) }
@@ -230,6 +238,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
 
     public func perform(_ action: DeviceAction, frame: FrameGrant) async throws -> SubmissionResult {
         // Prove all route-specific admission failures before entering input.
+        var relativeStroke: BluetoothRelativeStroke?
         do {
             try requireEpoch(epoch)
             guard !operations.isBusy, releaseToken == nil, !isCalibrating else { throw DeviceControlError.busy }
@@ -237,6 +246,13 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
             guard let calibration, calibration.matches(current),
                   try await frameState().geometry == frame.geometry else { throw DeviceControlError.staleFrame }
             for point in action.points { _ = try calibration.hidPoint(point, in: current.screenshot) }
+            if case .swipe(let from, let to, let duration) = action {
+                guard isRelativeDragReady, let relativeCalibration else { throw DeviceControlError.capabilityUnavailable(.swipe) }
+                relativeStroke = try relativeCalibration.plan(displacement: DevicePoint(
+                    x: (to.x - from.x) / Double(current.screenshot.width),
+                    y: (to.y - from.y) / Double(current.screenshot.height)), duration: duration,
+                    start: DevicePoint(x: from.x / Double(current.screenshot.width), y: from.y / Double(current.screenshot.height)))
+            }
             guard action.capability != .home && action.capability != .launchApplication else {
                 throw DeviceControlError.capabilityUnavailable(action.capability)
             }
@@ -248,7 +264,9 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         do {
             switch action {
             case .tap(let p): try await tap(at: p, frame: frame)
-            case .swipe(let from, let to, let duration): try await swipe(from: from, to: to, duration: duration, frame: frame)
+            case .swipe(let from, _, _):
+                guard let relativeStroke else { return .notSubmitted(.capabilityUnavailable(.swipe)) }
+                try await swipe(from: from, stroke: relativeStroke, frame: frame)
             case .typeText(let text): try await paste(text, frameID: frame.frameID, validation: false, grant: frame)
             case .pressKey(let key): try await pressKey(key, frame: frame)
             case .home, .launch: return .notSubmitted(.capabilityUnavailable(action.capability))
@@ -284,32 +302,23 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         let (frame, mapping) = try await mapping(for: frame)
         let position = try mapping.hidPoint(point, in: frame.screenshot)
         let token = epoch
-        try await absolute(position, pressed: false)
+        try await repositionRelativePointer(position, mapping: mapping, token: token)
         try await requireCurrent(mapping, token: token)
         try await absolute(position, pressed: true)
         try await release(position, token: token)
     }
 
-    private func swipe(from: DevicePoint, to: DevicePoint, duration: Duration, frame: FrameGrant) async throws {
-        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
-        guard duration >= DeviceInputValidation.minimumSwipeDuration, duration <= DeviceInputValidation.maximumSwipeDuration else { throw DeviceControlError.invalidDuration }
+    private func swipe(from: DevicePoint, stroke: BluetoothRelativeStroke, frame: FrameGrant) async throws {
         try await beginAction(); defer { operations.endAction() }
         let (frame, mapping) = try await mapping(for: frame)
-        let start = try mapping.hidPoint(from, in: frame.screenshot), end = try mapping.hidPoint(to, in: frame.screenshot)
+        let start = try mapping.hidPoint(from, in: frame.screenshot)
         let token = epoch
-        try await absolute(start, pressed: false)
         do {
+            try await repositionRelativePointer(start, mapping: mapping, token: token)
+            try await Task.sleep(for: .milliseconds(180))
             try await requireCurrent(mapping, token: token)
-            try await absolute(start, pressed: true)
-            let steps = max(2, Int(ceil(seconds / 0.06)))
-            for step in 1...steps {
-                try await Task.sleep(for: .seconds(seconds / Double(steps)))
-                try await requireCurrent(mapping, token: token)
-                let fraction = Double(step) / Double(steps)
-                let p = DevicePoint(x: start.x + (end.x-start.x)*fraction, y: start.y + (end.y-start.y)*fraction)
-                try await absolute(p, pressed: true)
-            }
-            try await release(end, token: token)
+            try await sendRelativeStroke(stroke, token: token)
+            try await requireCurrent(mapping, token: token)
         } catch {
             await releaseHeldInput()
             // A partial drag may have changed the screen. Never repeat it.
@@ -398,7 +407,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         try operations.beginExclusive(); defer { operations.endAction() }
         let token = epoch, p = DevicePoint(x: x, y: y)
         try await checkCalibrationGeometry()
-        try await absolute(p, pressed: false)
+        try await repositionRelativePointer(p, mapping: nil, token: token)
         try await Task.sleep(for: .milliseconds(180))
         try requireEpoch(token)
         try await checkCalibrationGeometry()
@@ -414,6 +423,56 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         try await checkCalibrationGeometry()
         guard let original = calibrationFrame else { throw DeviceControlError.staleFrame }
         calibration = try Calibration(observed: observed, frame: original)
+        onChange?()
+    }
+
+    /// Repositions without a pressed button, then emits one fixed relative drag.
+    /// The returned token binds the host's UIKit trace to this calibration visit.
+    public func runRelativeCalibrationProbe(_ probe: BluetoothRelativeCalibrationProbe) async throws -> UUID {
+        guard isCalibrating, calibration != nil, !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
+        guard supportsRelativeDrag, isRelativeDragReady else { throw DeviceControlError.capabilityUnavailable(.swipe) }
+        try operations.beginExclusive(); defer { operations.endAction() }
+        try await checkCalibrationGeometry()
+        guard let calibration, let frame = calibrationFrame else { throw DeviceControlError.staleFrame }
+        let anchor = try calibration.hidPoint(DevicePoint(x: probe.anchor.x * Double(frame.screenshot.width),
+            y: probe.anchor.y * Double(frame.screenshot.height)), in: frame.screenshot)
+        let token = epoch
+        relativeCalibration = nil; relativeProbeReceipts[probe] = nil
+        do {
+            try await repositionRelativePointer(anchor, mapping: calibration, token: token)
+            try await Task.sleep(for: .milliseconds(180))
+            try requireEpoch(token)
+            try await checkCalibrationGeometry()
+            let dispatchUptime = ProcessInfo.processInfo.systemUptime
+            try await sendRelativeStroke(probe.stroke, token: token)
+            let completedUptime = ProcessInfo.processInfo.systemUptime
+            try await checkCalibrationGeometry()
+            let receipt = UUID()
+            relativeProbeReceipts[probe] = BluetoothRelativeCalibrationReceipt(token: receipt,
+                dispatchUptime: dispatchUptime, completedUptime: completedUptime)
+            return receipt
+        } catch {
+            await releaseHeldInput()
+            if (error as? DeviceControlError)?.isDeliveryUnknown != true {
+                throw DeviceControlError.deliveryUnknown(message("bluetooth.interrupted"))
+            }
+            throw error
+        }
+    }
+
+    public func completeRelativeCalibration(observed: [BluetoothRelativeCalibrationObservation]) async throws {
+        guard isCalibrating, calibration != nil, !operations.isBusy, releaseToken == nil else { throw DeviceControlError.busy }
+        guard supportsRelativeDrag, isRelativeDragReady else { throw DeviceControlError.capabilityUnavailable(.swipe) }
+        try operations.beginExclusive(); defer { operations.endAction() }
+        relativeCalibration = nil
+        try await checkCalibrationGeometry()
+        guard let viewport = calibrationViewport,
+              observed.count == BluetoothRelativeCalibrationProbe.allCases.count,
+              observed.allSatisfy({ relativeProbeReceipts[$0.probe]?.token == $0.receiptToken }) else { throw DeviceControlError.staleFrame }
+        guard observed.allSatisfy({ relativeProbeReceipts[$0.probe]?.matches($0) == true }) else { throw DeviceControlError.invalidCoordinates }
+        relativeCalibration = try BluetoothRelativeDragCalibration(observed: observed,
+            viewport: DevicePoint(x: Double(viewport.size.width), y: Double(viewport.size.height)))
+        relativeProbeReceipts.removeAll()
         onChange?()
     }
 
@@ -467,6 +526,10 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         let previous = screenState
         cachedScreenState = UIApplication.shared.isProtectedDataAvailable ? state : nil
         cachedScreenUptime = ProcessInfo.processInfo.systemUptime
+        // Once an observed session/geometry change or end invalidates the mapping,
+        // returning to its old geometry must still require a fresh check.
+        // Temporary read/activity gaps block readiness without proving a change.
+        if let state = cachedScreenState, let calibration, calibration.isInvalidated(by: state) { clearCalibration() }
         if previous != screenState { onChange?() }
     }
     private func observeOffMain() async throws -> ObservedFrame {
@@ -552,6 +615,30 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         defer { lastDispatchedUptime = ProcessInfo.processInfo.systemUptime }
         _ = try await board.command(opcode: 5, payload: [UInt8(truncatingIfNeeded: x), UInt8(x >> 8), UInt8(truncatingIfNeeded: y), UInt8(y >> 8), pressed ? 1 : 0])
     }
+    private func sendRelativeStroke(_ stroke: BluetoothRelativeStroke, token: UUID) async throws {
+        try requireEpoch(token)
+        lastDispatchedUptime = ProcessInfo.processInfo.systemUptime
+        defer { lastDispatchedUptime = ProcessInfo.processInfo.systemUptime }
+        let receipt = try await board.command(opcode: 10, payload: stroke.payload)
+        guard receipt.emittedReports == stroke.steps + 2 else { throw DeviceControlError.deliveryUnknown(message("bluetooth.interrupted")) }
+        do { try requireEpoch(token) }
+        catch { throw DeviceControlError.deliveryUnknown(message("bluetooth.interrupted")) }
+    }
+    /// iOS may ignore a repeated identical absolute report after relative input.
+    /// Both reports are unpressed and stay inside the already granted geometry.
+    private func repositionRelativePointer(_ point: DevicePoint, mapping: Calibration?, token: UUID) async throws {
+        let nudge = DevicePoint(x: point.x <= 0.985 ? point.x + 0.015 : point.x - 0.015, y: point.y)
+        try await absolute(nudge, pressed: false)
+        try await Task.sleep(for: .milliseconds(32))
+        if let mapping { try await requireCurrent(mapping, token: token) }
+        else { try requireEpoch(token); try await checkCalibrationGeometry() }
+        try await absolute(point, pressed: false)
+    }
+    private func updateRelativeReadiness(_ flags: UInt8) {
+        supportsRelativeDrag = flags & BluetoothBoardProtocol.relativeStrokeSupportFlag != 0
+        isRelativeDragReady = supportsRelativeDrag && flags & BluetoothBoardProtocol.relativeStrokeReadyFlag != 0
+        if !isRelativeDragReady { relativeCalibration = nil; relativeProbeReceipts.removeAll() }
+    }
     private func release(_ point: DevicePoint, token: UUID) async throws {
         do {
             try await Task.sleep(for: .milliseconds(40))
@@ -570,11 +657,12 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
     private func clearCalibration() {
         geometryRevision = UUID(); observedGeometry = nil
         calibration = nil; calibrationObservation = nil; calibrationFrame = nil; isCalibrating = false; keyboardVerified = false
+        relativeCalibration = nil; relativeProbeReceipts.removeAll()
         calibrationWindow = nil; calibrationView = nil; calibrationViewport = nil
     }
     private func message(_ key: String) -> String { NSLocalizedString(key, tableName: "BluetoothControl", bundle: .module, comment: "") }
 
-    private struct ObservedFrame: Sendable {
+    struct ObservedFrame: Sendable {
         let screenshot: DeviceScreenshot
         let sessionID: UUID
         let orientation: ScreenBroadcastOrientation
@@ -627,7 +715,7 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         }
     }
 
-    private struct Calibration {
+    struct Calibration {
         let sessionID: UUID
         let orientation: ScreenBroadcastOrientation
         let width: Int, height: Int
@@ -646,6 +734,16 @@ public final class BluetoothDeviceController: DeviceActuator, HIDRouteSetup {
         }
         func matches(_ frame: ObservedFrame) -> Bool {
             frame.sessionID == sessionID && frame.orientation == orientation && frame.screenshot.width == width && frame.screenshot.height == height
+        }
+        func matches(_ state: ScreenBroadcastState?) -> Bool {
+            guard let state else { return false }
+            return state.isActive && state.sessionID == sessionID && state.orientation == orientation
+                && state.width == width && state.height == height
+        }
+        func isInvalidated(by state: ScreenBroadcastState) -> Bool {
+            state.phase == .ended || state.sessionID.map { $0 != sessionID } == true
+                || state.orientation.map { $0 != orientation } == true
+                || state.width.map { $0 != width } == true || state.height.map { $0 != height } == true
         }
         func hidPoint(_ point: DevicePoint, in frame: DeviceScreenshot) throws -> DevicePoint {
             guard point.x.isFinite, point.y.isFinite, point.x >= 0, point.x < Double(frame.width), point.y >= 0, point.y < Double(frame.height) else { throw DeviceControlError.invalidCoordinates }

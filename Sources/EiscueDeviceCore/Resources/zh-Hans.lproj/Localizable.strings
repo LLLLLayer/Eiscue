@@ -16,6 +16,7 @@
 "device.error.invalid-bundle-id" = "App Bundle ID 无效。";
 "device.error.invalid-coordinates" = "坐标必须位于当前截图内。";
 "device.error.invalid-duration" = "滑动时间必须介于 0.1 和 2 秒之间。";
+"device.error.relative-drag-unrepresentable" = "此滑动超出已校验的移动或时间范围。请缩短滑动距离或调整时长。";
 "device.error.invalid-identity" = "配对身份无效或尚未完成；需要版本 1 的已完成 RemotePairing 身份。";
 "device.error.invalid-text" = "输入文字不能为空，UTF-8 大小不能超过 8 KB，且编码后的请求不能超过 16 KB。";
 "device.error.keychain" = "无法访问安全存储（%@）。";

@@ -282,9 +282,26 @@ in the authenticated v2 envelope above):
 | `04` KEY | Byte 4: `1` Enter / `2` **keyboard Home** / `3` Backspace / `4` Tab / `5` Escape / `6` Space. Press/release after 25 ms. |
 | `05` ABS_POINT | Bytes 4–5: X UInt16 LE; 6–7: Y UInt16 LE, both `0...32767`. Byte 8: `0` released or `1` left button held. Each held point refreshes the 250 ms automatic release deadline. |
 | `06` KEY_COMBO | Byte 4: modifier `0x08` (left GUI/Command). Byte 5: only `0x0B` (H), `0x19` (V) or `0x2C` (Space). Automatic release after 25 ms. All other combinations are rejected. |
-| `07` INFO | All zeros. No input report. Response byte 5: bit 0 (`1`) absolute input ready for the selected output; bit 1 (`2`) keyboard input ready; bit 7 (`128`) SELECT_OUTPUT / QUERY_OUTPUT supported. A suspended or unauthorized output clears bits 0–1. |
+| `07` INFO | All zeros. No input report. Response byte 5: bit 0 (`1`) absolute input ready for the selected output; bit 1 (`2`) keyboard input ready; bit 5 (`32`) relative mouse input ready; bit 6 (`64`) bounded RELATIVE_STROKE supported; bit 7 (`128`) SELECT_OUTPUT / QUERY_OUTPUT supported. A suspended or unauthorized output clears readiness bits 0, 1 and 5. Support bits remain static. |
 | `08` SELECT_OUTPUT | Byte 4 `0` BLE / `1` USB, remaining bytes zero. Rejects switching while a command or held input is active, releases the old output first. USB on C3 is rejected; USB without a mounted host is selectable but not ready. |
 | `09` QUERY_OUTPUT | All zeros. Response byte 5: bit 0 USB selected; bit 1 USB supported; bit 2 actual USB host mounted and awake; bit 3 S3; bit 4 restricted navigation shortcuts supported. Mounted does not imply calibrated input. |
+| `0A` RELATIVE_STROKE | Bytes 4–5: total dx Int16 LE; 6–7: total dy Int16 LE; byte 8: movement step count `1...250`; 9–10: movement duration UInt16 LE `100...2000` ms; bytes 11–15 zero. Duration must be between `steps × 8` and `steps × 50` ms. Every planned movement delta must have squared length at most `64` (8 relative counts radially). Rejects an already held absolute or mouse button before dispatch. |
+
+RELATIVE_STROKE uses the existing relative mouse report, without changing the
+report map, GATT identity, bond records or flash partitions. It sends a zero-motion
+left-button DOWN, the bounded held movement reports, then a zero-motion UP after
+an additional **8 ms** release tail. The wire duration describes movement only;
+the nominal held duration is movement duration plus 8 ms. Success is acknowledged
+only after UP is queued, with exactly `steps + 2` reports (at most 252).
+Cumulative signed division truncates toward zero: step `i` moves by
+`trunc(total × i / steps) − trunc(total × (i−1) / steps)` on each axis, preserving
+the exact total including negative directions. Each rounded delta is checked,
+so a small average displacement cannot hide an oversized individual step.
+Movement intervals use cumulative integer duration division and are 8–50 ms;
+queued timer turns never cause a burst of catch-up reports. An observed step gap
+over 50 ms, or completion later than nominal movement plus release plus 50 ms,
+aborts and attempts all-channel release. These scheduling bounds are software
+checks; actual BLE/USB and phone contact timing still require hardware validation.
 
 Keyboard Home is usage `0x4A`; **it is not an iPhone return-to-Home-screen
 command**. Command-H is not a verified system Home action, so the app does not
@@ -349,6 +366,11 @@ button release at the last coordinates. A failed watchdog release terminates the
 HID connection. This matters because iOS may keep system HID connected after the
 App closes its custom GATT access. A long gesture therefore needs fresh held
 points comfortably within 250 ms, and must stop if the App cannot continue.
+Relative held reports have an independent watchdog with the same **250 ms**
+deadline. Every successfully queued relative held report refreshes it; mouse UP
+stops it. STOP, malformed commands, authentication/subscription loss, suspended
+output and the C3 physical stop cancel a trajectory and attempt release; an output
+send failure also aborts it. No descriptor or bond reset is part of this change.
 
 Suspend/protocol changes interrupt pending commands with a failure response and
 release the old report channel before changing mode. Failed release, loss of

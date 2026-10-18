@@ -31,6 +31,8 @@ public struct BluetoothBoardOutputInfo: Sendable, Equatable {
 /// Firmware protocol v1. Validate before reserving an ID or writing any bytes.
 enum BluetoothBoardProtocol {
     static let outputSelectionFlag: UInt8 = 0x80
+    static let relativeStrokeSupportFlag: UInt8 = 0x40
+    static let relativeStrokeReadyFlag: UInt8 = 0x20
 
     static func payloadIsValid(opcode: UInt8, payload: [UInt8]) -> Bool {
         guard payload.count <= 12 else { return false }
@@ -52,6 +54,12 @@ enum BluetoothBoardProtocol {
         case 6: return bytes[0] == 0x08 && [0x0B, 0x19, 0x2C].contains(bytes[1]) && zeroTail(2)
         case 7, 9: return zeroTail(0)
         case 8: return bytes[0] <= 1 && zeroTail(1)
+        case 10:
+            let dx = Int16(bitPattern: UInt16(bytes[0]) | UInt16(bytes[1]) << 8)
+            let dy = Int16(bitPattern: UInt16(bytes[2]) | UInt16(bytes[3]) << 8)
+            let duration = Int(UInt16(bytes[5]) | UInt16(bytes[6]) << 8)
+            return zeroTail(7) && BluetoothRelativeStroke(totalDX: Int(dx), totalDY: Int(dy),
+                steps: Int(bytes[4]), durationMS: duration).isValid
         default: return false
         }
     }

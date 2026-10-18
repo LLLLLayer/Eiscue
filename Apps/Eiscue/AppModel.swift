@@ -158,6 +158,9 @@ final class AppModel {
     var bluetoothRevision = 0
     @ObservationIgnored var bluetoothSessionEvents = BluetoothSessionEventProjection()
     @ObservationIgnored var bluetoothMonitor: Task<Void, Never>?
+    #if DEBUG
+    @ObservationIgnored var bluetoothSetupStages: [(stage: String, timestamp: TimeInterval)] = []
+    #endif
     @ObservationIgnored var isUpdatingBoardCompanion = false
     @ObservationIgnored var companionTerminal: (status: BluetoothCompanionStatus, until: ContinuousClock.Instant)?
     @ObservationIgnored var companionLastStatus: BluetoothCompanionStatus?
@@ -267,6 +270,9 @@ final class AppModel {
         do { try deviceSession.configure(method: deviceConnectionMethod, backend: deviceControlBackend) }
         catch { deviceConnectionError = error.localizedDescription }
         bluetoothController.onChange = { [weak self] in
+            #if DEBUG
+            self?.recordBluetoothSetupStage()
+            #endif
             self?.handleBluetoothSessionChange()
         }
         deviceSession.onExternalStop = { [weak self] id, event in

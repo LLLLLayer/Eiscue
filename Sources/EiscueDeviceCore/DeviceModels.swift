@@ -81,6 +81,7 @@ public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
     case systemPairingUnavailable
     case backendUnavailable(DeviceControlBackend)
     case staleFrame, invalidCoordinates, invalidDuration, invalidText, invalidBundleID
+    case relativeDragUnrepresentable
     case keychain(Int32)
     case connection(String)
     case deliveryUnknown(String)
@@ -107,6 +108,7 @@ public enum DeviceControlError: Error, LocalizedError, Sendable, Equatable {
         case .staleFrame: String(localized: "device.error.stale-frame", defaultValue: "The screenshot expired, was used, or belongs to an old connection. Take a new screenshot before acting.", bundle: .module)
         case .invalidCoordinates: String(localized: "device.error.invalid-coordinates", defaultValue: "Coordinates must be inside the current screenshot.", bundle: .module)
         case .invalidDuration: String(localized: "device.error.invalid-duration", defaultValue: "Swipe duration must be between 0.1 and 2 seconds.", bundle: .module)
+        case .relativeDragUnrepresentable: String(localized: "device.error.relative-drag-unrepresentable", defaultValue: "This swipe exceeds the calibrated movement or timing limits. Try a shorter swipe or a different duration.", bundle: .module)
         case .invalidText: String(localized: "device.error.invalid-text", defaultValue: "Input text must not be empty or exceed 8 KB in UTF-8. The encoded request must not exceed 16 KB.", bundle: .module)
         case .invalidBundleID: String(localized: "device.error.invalid-bundle-id", defaultValue: "The app bundle ID is invalid.", bundle: .module)
         case .keychain(let status): String(localized: "device.error.keychain", defaultValue: "Could not access secure storage (\(String(describing: status))).", bundle: .module)

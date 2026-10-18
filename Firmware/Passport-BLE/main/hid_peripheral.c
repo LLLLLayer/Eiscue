@@ -68,13 +68,15 @@ static uint8_t mouse_state[4],keyboard_state[8],absolute_state[5];
 static uint8_t last_response[BOARD_AUTH_REPLY_SIZE]={1,0,0,0,EISCUE_INSECURE,0,0,0};
 static unsigned last_response_length=EISCUE_RESPONSE_SIZE;
 static uint32_t command_sequence;
-static struct ble_npl_callout release_timer,held_timer;
+static struct ble_npl_callout release_timer,held_timer,relative_held_timer;
 #define ABSOLUTE_HOLD_MS 250
+static ble_npl_time_t relative_hold_until;
 static bool active,seen_request;
 static uint16_t last_request;
 static struct {
-    uint8_t command[EISCUE_COMMAND_SIZE],emitted;
+    uint8_t command[EISCUE_COMMAND_SIZE],emitted,stroke_step;
     uint32_t sequence;
+    ble_npl_time_t due,planned_due,last_report_at,stroke_deadline;
     eiscue_action action;
 } pending;
 
@@ -150,6 +152,7 @@ static eiscue_report absolute_release(void) {
 }
 static uint8_t release_all(uint8_t *emitted) {
     ble_npl_callout_stop(&held_timer);
+    ble_npl_callout_stop(&relative_held_timer);
     const eiscue_report mouse={.kind=EISCUE_MOUSE_REPORT,.length=4};
     const eiscue_report keyboard={.kind=EISCUE_KEYBOARD_REPORT,.length=8};
     const eiscue_report absolute=absolute_release();
@@ -237,21 +240,87 @@ static void expire_hold(struct ble_npl_event *event) {
             revoke_connection();
     }
 }
+static bool update_relative_hold(void) {
+    ble_npl_callout_stop(&relative_held_timer);
+    if(!mouse_state[0])return true;
+    ble_npl_time_t delay=ble_npl_time_ms_to_ticks32(ABSOLUTE_HOLD_MS);
+    relative_hold_until=ble_npl_time_get()+delay;
+    return ble_npl_callout_reset(&relative_held_timer,delay)==0;
+}
+static void expire_relative_hold(struct ble_npl_event *event) {
+    (void)event;
+    if(!mouse_state[0])return;
+    int32_t remaining=(int32_t)(relative_hold_until-ble_npl_time_get());
+    if(remaining>0) {
+        if(ble_npl_callout_reset(&relative_held_timer,(ble_npl_time_t)remaining)==0)return;
+    }
+    ESP_LOGW(TAG,"relative button hold expired after %u ms",ABSOLUTE_HOLD_MS);
+    interrupt_and_release();
+}
+static int schedule_pending(uint16_t milliseconds) {
+    ble_npl_time_t delay=ble_npl_time_ms_to_ticks32(milliseconds);
+    pending.due=ble_npl_time_get()+delay;
+    pending.planned_due=pending.due;
+    return ble_npl_callout_reset(&release_timer,delay);
+}
+static int advance_stroke(uint16_t milliseconds) {
+    pending.planned_due+=ble_npl_time_ms_to_ticks32(milliseconds);
+    int32_t remaining=(int32_t)(pending.planned_due-ble_npl_time_get());
+    ble_npl_time_t minimum=ble_npl_time_ms_to_ticks32(8);
+    // Keep cumulative deadlines without a burst of catch-up input after a
+    // delayed host-queue turn. A stalled trajectory is aborted, never replayed.
+    if(remaining<(int32_t)minimum)remaining=(int32_t)minimum;
+    pending.due=ble_npl_time_get()+(ble_npl_time_t)remaining;
+    return ble_npl_callout_reset(&release_timer,(ble_npl_time_t)remaining);
+}
+static void finish_pending(uint8_t status) {
+    active=false;
+    respond_at_sequence(pending.command,status,pending.emitted,pending.sequence);
+    if(status!=EISCUE_SENT && release_all(NULL)!=EISCUE_SENT && connection!=BLE_HS_CONN_HANDLE_NONE)
+        revoke_connection();
+}
 static void finish_later(struct ble_npl_event *event) {
     (void)event;
     if (!active) return;
+    // A stopped callout may already be queued. It cannot advance a newer
+    // command before that command's own next report is due.
+    int32_t remaining=(int32_t)(pending.due-ble_npl_time_get());
+    if(remaining>0) {
+        if(ble_npl_callout_reset(&release_timer,(ble_npl_time_t)remaining))finish_pending(EISCUE_SEND_FAILED);
+        return;
+    }
+    if(pending.action.stroke.steps &&
+       ((int32_t)(ble_npl_time_get()-pending.stroke_deadline)>0 ||
+        ble_npl_time_get()-pending.last_report_at>ble_npl_time_ms_to_ticks32(50))) {
+        finish_pending(EISCUE_SEND_FAILED);return;
+    }
+    if(pending.action.stroke.steps && pending.stroke_step<pending.action.stroke.steps) {
+        eiscue_report report;
+        if(!eiscue_stroke_report(&pending.action.stroke,pending.stroke_step+1,&report)) {
+            finish_pending(EISCUE_SEND_FAILED);return;
+        }
+        uint8_t status=emit(&report);
+        if(status==EISCUE_SENT){pending.emitted++;pending.stroke_step++;pending.last_report_at=ble_npl_time_get();}
+        if(status!=EISCUE_SENT || !update_relative_hold()) {
+            finish_pending(status==EISCUE_SENT?EISCUE_SEND_FAILED:status);return;
+        }
+        // Give the USB interrupt endpoint a poll turn before the final UP.
+        uint16_t interval=eiscue_stroke_interval(&pending.action.stroke,pending.stroke_step+1);
+        if(advance_stroke(interval))finish_pending(EISCUE_SEND_FAILED);
+        return;
+    }
     uint8_t status=emit(&pending.action.reports[1]);
     if (status==EISCUE_SENT) pending.emitted++;
-    active=false;
-    respond_at_sequence(pending.command,status,pending.emitted,pending.sequence);
-    if (status!=EISCUE_SENT && release_all(NULL)!=EISCUE_SENT && connection!=BLE_HS_CONN_HANDLE_NONE)
-        revoke_connection();
+    if(pending.action.reports[1].kind==EISCUE_MOUSE_REPORT && !update_relative_hold())status=EISCUE_SEND_FAILED;
+    finish_pending(status);
 }
 static int control_write(uint16_t conn,const struct os_mbuf *om) {
     uint8_t command[EISCUE_COMMAND_SIZE];
 #if BOARD_AUTH_REQUIRED
     uint8_t envelope[BOARD_AUTH_COMMAND_SIZE];
-    if(conn!=connection || !secure_connection())return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    if(conn!=connection || !secure_connection()) {
+        interrupt_and_release();revoke_connection();return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    }
     if(OS_MBUF_PKTLEN(om)!=sizeof envelope || os_mbuf_copydata(om,0,sizeof envelope,envelope) ||
         !board_auth_unwrap_command(envelope,sizeof envelope,command,&command_sequence)) {
         interrupt_and_release();board_auth_end_connection();
@@ -259,22 +328,25 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
         return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
     }
 #else
-    if (OS_MBUF_PKTLEN(om)!=sizeof command || os_mbuf_copydata(om,0,sizeof command,command))
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    if (conn!=connection || !secure_connection()) return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    if (OS_MBUF_PKTLEN(om)!=sizeof command || os_mbuf_copydata(om,0,sizeof command,command)) {
+        interrupt_and_release();return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    }
+    if (conn!=connection || !secure_connection()) {
+        interrupt_and_release();revoke_connection();return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    }
 #endif
     uint16_t request=(uint16_t)command[2]|((uint16_t)command[3]<<8);
     uint16_t delta=(uint16_t)(request-last_request);
     if (seen_request && (delta==0 || delta>32767)) {
         // At most once per connection. A lost acknowledgement never replays
         // input. The App must observe UI effects rather than retry clicks.
-        respond(command,EISCUE_ARGUMENT,0);return 0;
+        interrupt_and_release();respond(command,EISCUE_ARGUMENT,0);return 0;
     }
     seen_request=true;last_request=request;
     eiscue_action action;
-    if (!eiscue_parse_action(command,&action)) {respond(command,EISCUE_ARGUMENT,0);return 0;}
+    if (!eiscue_parse_action(command,&action)) {interrupt_and_release();respond(command,EISCUE_ARGUMENT,0);return 0;}
 #if CONFIG_IDF_TARGET_ESP32C3
-    if(!companion_accepts_command(command[1])){respond(command,EISCUE_SEND_FAILED,0);return 0;}
+    if(!companion_accepts_command(command[1])){interrupt_and_release();respond(command,EISCUE_SEND_FAILED,0);return 0;}
 #endif
     if (command[1]==EISCUE_STOP) {
         ble_npl_callout_stop(&release_timer);
@@ -288,12 +360,14 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
         return 0;
     }
     if(command[1]==EISCUE_INFO) {
-        uint8_t capabilities=EISCUE_CAP_OUTPUT_SELECTION;
+        uint8_t capabilities=EISCUE_CAP_OUTPUT_SELECTION|EISCUE_CAP_RELATIVE_STROKE;
 #if CONFIG_IDF_TARGET_ESP32C3
         if(companion_input_stopped()){respond(command,EISCUE_SENT,capabilities);return 0;}
 #endif
         if((output==EISCUE_OUTPUT_USB || !suspended) && report_subscribed(EISCUE_ABSOLUTE_REPORT))capabilities|=1;
         if((output==EISCUE_OUTPUT_USB || !suspended) && report_subscribed(EISCUE_KEYBOARD_REPORT))capabilities|=2;
+        if(output==EISCUE_OUTPUT_USB?eiscue_usb_hid_relative_ready():!suspended && report_subscribed(EISCUE_MOUSE_REPORT))
+            capabilities|=EISCUE_CAP_RELATIVE_READY;
         respond(command,EISCUE_SENT,capabilities);return 0;
     }
     if(command[1]==EISCUE_QUERY_OUTPUT) {
@@ -320,12 +394,15 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
         respond(command,EISCUE_SENT,0);return 0;
     }
     if (active) {respond(command,EISCUE_BUSY,0);return 0;}
+    if(command[1]==EISCUE_RELATIVE_STROKE && (mouse_state[0] || absolute_state[0])) {
+        respond(command,EISCUE_BUSY,0);return 0;
+    }
     if (!response_subscribed) {respond(command,EISCUE_NOT_SUBSCRIBED,0);return 0;}
     uint8_t status=emit(&action.reports[0]);
     if (status!=EISCUE_SENT) {
         // A failed absolute update must not extend an earlier drag. Try a
         // release immediately; the watchdog remains a second line of defense.
-        if(command[1]==EISCUE_ABS_POINT && absolute_state[0])interrupt_and_release();
+        if((command[1]==EISCUE_ABS_POINT && absolute_state[0]) || command[1]==EISCUE_RELATIVE_STROKE)interrupt_and_release();
         respond(command,status,0);return 0;
     }
     if(command[1]==EISCUE_ABS_POINT) {
@@ -334,9 +411,14 @@ static int control_write(uint16_t conn,const struct os_mbuf *om) {
             interrupt_and_release();respond(command,EISCUE_SEND_FAILED,1);return 0;
         }
     }
+    if(action.reports[0].kind==EISCUE_MOUSE_REPORT && !update_relative_hold()) {
+        interrupt_and_release();respond(command,EISCUE_SEND_FAILED,1);return 0;
+    }
     if (action.count==1) {respond(command,EISCUE_SENT,1);return 0;}
-    memcpy(pending.command,command,sizeof command);pending.action=action;pending.emitted=1;pending.sequence=command_sequence;active=true;
-    int rc=ble_npl_callout_reset(&release_timer,ble_npl_time_ms_to_ticks32(25));
+    memcpy(pending.command,command,sizeof command);pending.action=action;pending.emitted=1;pending.stroke_step=0;
+    pending.sequence=command_sequence;pending.last_report_at=ble_npl_time_get();active=true;
+    pending.stroke_deadline=pending.last_report_at+ble_npl_time_ms_to_ticks32(action.stroke.duration_ms+8+50);
+    int rc=schedule_pending(action.stroke.steps?eiscue_stroke_interval(&action.stroke,1):25);
     if (rc) {
         active=false;uint8_t released=release_all(NULL);respond(command,EISCUE_SEND_FAILED,1);
         if (released!=EISCUE_SENT) revoke_connection();
@@ -474,6 +556,7 @@ static const struct ble_gatt_svc_def services[]={
 int eiscue_ble_services_init(void) {
     ble_npl_callout_init(&release_timer,nimble_port_get_dflt_eventq(),finish_later,NULL);
     ble_npl_callout_init(&held_timer,nimble_port_get_dflt_eventq(),expire_hold,NULL);
+    ble_npl_callout_init(&relative_held_timer,nimble_port_get_dflt_eventq(),expire_relative_hold,NULL);
 #if CONFIG_IDF_TARGET_ESP32C3
     ble_npl_event_init(&companion_stop_event,companion_key_event,NULL);
     ble_npl_event_init(&companion_unlock_event,companion_key_event,NULL);
@@ -510,7 +593,7 @@ void eiscue_ble_on_connect(uint16_t conn) {
 #endif
 }
 void eiscue_ble_on_disconnect(void) {
-    ble_npl_callout_stop(&release_timer);ble_npl_callout_stop(&held_timer);active=false;
+    ble_npl_callout_stop(&release_timer);ble_npl_callout_stop(&held_timer);ble_npl_callout_stop(&relative_held_timer);active=false;
     if(output==EISCUE_OUTPUT_USB){(void)release_all(NULL);eiscue_usb_hid_revoke();}
     memset(mouse_state,0,sizeof mouse_state);memset(keyboard_state,0,sizeof keyboard_state);
     memset(absolute_state,0,sizeof absolute_state);
@@ -533,6 +616,9 @@ void eiscue_ble_on_subscribe(uint16_t conn,uint16_t attribute,int enabled) {
     if((connection!=BLE_HS_CONN_HANDLE_NONE && connection!=conn) || ble_gap_conn_find(conn,&desc)!=0)return;
     if(subscription_connection!=conn)reset_subscriptions(conn);
     bool response_lost=attribute==response_handle && response_subscribed && !enabled;
+#if BOARD_AUTH_REQUIRED
+    bool auth_lost=attribute==auth_handle && auth_subscribed && !enabled;
+#endif
     bool affected=output==EISCUE_OUTPUT_BLE && active && attribute==report_handle(pending.action.reports[0].kind);
     if(output==EISCUE_OUTPUT_BLE && attribute==report_handle(EISCUE_MOUSE_REPORT) && mouse_state[0]) affected=true;
     if(output==EISCUE_OUTPUT_BLE && attribute==absolute_handle && absolute_state[0]) affected=true;
@@ -556,7 +642,11 @@ void eiscue_ble_on_subscribe(uint16_t conn,uint16_t attribute,int enabled) {
         // Disconnect this HID transport instead of leaving an input held.
         interrupt_and_release();
         revoke_connection();
-    } else if(response_lost) {
+    } else if(response_lost
+#if BOARD_AUTH_REQUIRED
+              || auth_lost
+#endif
+    ) {
         interrupt_and_release();
 #if BOARD_AUTH_REQUIRED
         // iOS may retain the system HID link after the App closes GATT. End
@@ -575,7 +665,7 @@ void eiscue_ble_on_security_change(void) {
     if(!secure_connection()){
         bool held=active || mouse_state[0]!=0 || absolute_state[0]!=0;
         for(unsigned i=0;i<sizeof keyboard_state;i++) if(keyboard_state[i])held=true;
-        ble_npl_callout_stop(&release_timer);ble_npl_callout_stop(&held_timer);active=false;
+        ble_npl_callout_stop(&release_timer);ble_npl_callout_stop(&held_timer);ble_npl_callout_stop(&relative_held_timer);active=false;
         if(output==EISCUE_OUTPUT_USB){(void)release_all(NULL);eiscue_usb_hid_revoke();}
 #if BOARD_AUTH_REQUIRED
         board_auth_end_connection();
