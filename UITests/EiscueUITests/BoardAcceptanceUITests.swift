@@ -41,6 +41,59 @@ final class BoardAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
+    func testAttachAndConnectBoardInput() throws {
+        let routeName = ProcessInfo.processInfo.environment["EISCUE_BOARD_INPUT_ROUTE"] ?? "bluetooth"
+        let route = try XCTUnwrap(BoardInputRoute(rawValue: routeName),
+                                 "EISCUE_BOARD_INPUT_ROUTE must be bluetooth or usb.")
+        let app = XCUIApplication()
+        guard app.state != .notRunning else { XCTFail("Open the real board setup first."); return }
+        app.activate()
+        let pairing = addUIInterruptionMonitor(withDescription: "Eiscue board input pairing") { alert in
+            let knownBoard = NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@", "Eiscue BLE", "Eiscue S3")
+            guard alert.staticTexts.matching(knownBoard).firstMatch.exists else { return false }
+            let pair = alert.buttons.matching(NSPredicate(format: "label IN %@", ["Pair", "配对"])).firstMatch
+            guard pair.exists else { return false }
+            pair.tap(); return true
+        }
+        defer { removeUIInterruptionMonitor(pairing) }
+        let picker = app.segmentedControls["bluetoothInputRoutePicker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 15))
+        let option = picker.buttons.matching(NSPredicate(format: "label IN %@", route.labels)).firstMatch
+        XCTAssertTrue(option.exists && option.isEnabled)
+        option.tap()
+        let selected = NSPredicate(format: "selected == YES AND enabled == YES")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: selected, object: option)], timeout: 15), .completed)
+        let connect = app.buttons["bluetoothConnectButton"]
+        XCTAssertTrue(connect.waitForExistence(timeout: 10), "Disconnect the board before requesting a new connection.")
+        XCTAssertTrue(connect.isEnabled)
+        connect.tap()
+        let connected = app.buttons["bluetoothDisconnectButton"]
+        let deadline = Date().addingTimeInterval(90)
+        // Only the inert navigation title drives system Pair interruption
+        // handling; no calibration or input target receives runner gestures.
+        while Date() < deadline {
+            if connected.waitForExistence(timeout: 1) { break }
+            app.navigationBars.firstMatch.tap()
+        }
+        XCTAssertTrue(connected.exists && connected.isEnabled,
+                      "The selected \(route.rawValue) input route did not connect; a companion display is not required.")
+        XCTAssertTrue(option.isSelected, "The connected input route must match the explicit selection.")
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Board \(route.rawValue) input connected (calibration not verified)"
+        image.lifetime = .keepAlways; add(image)
+    }
+
+    private enum BoardInputRoute: String {
+        case bluetooth, usb
+        var labels: [String] {
+            switch self {
+            case .bluetooth: ["Bluetooth input", "蓝牙输入"]
+            case .usb: ["USB input", "USB 输入"]
+            }
+        }
+    }
+
+    @MainActor
     private func connectBluetoothCompanion(in app: XCUIApplication) {
         let pairing = addUIInterruptionMonitor(withDescription: "Eiscue board pairing") { alert in
             guard alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Eiscue BLE")).firstMatch.exists else { return false }
@@ -81,27 +134,52 @@ final class BoardAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
-    func testVerifyObservedInput() {
+    func testVerifyObservedInput() throws {
+        let routeName = ProcessInfo.processInfo.environment["EISCUE_BOARD_INPUT_ROUTE"] ?? "bluetooth"
+        let route = try XCTUnwrap(BoardInputRoute(rawValue: routeName),
+                                 "EISCUE_BOARD_INPUT_ROUTE must be bluetooth or usb.")
         let app = XCUIApplication()
         // Preserve the user's already-confirmed screen broadcast and connection.
         guard app.state != .notRunning else { XCTFail("Open Eiscue's device page and confirm screen sharing first."); return }
         app.activate()
         XCTAssertEqual(app.state, .runningForeground)
-        let button = app.buttons["bluetoothVerifyButton"]
+        let button = app.buttons["bluetoothVerifyButton"].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 10))
         for _ in 0..<4 where !button.isHittable { app.swipeUp() }
         XCTAssertTrue(button.isHittable && button.isEnabled, "Connect the board and confirm screen sharing first.")
+        let selectedRoute = app.segmentedControls["bluetoothInputRoutePicker"].buttons
+            .matching(NSPredicate(format: "label IN %@", route.labels)).firstMatch
+        XCTAssertTrue(selectedRoute.isSelected, "Select the explicitly requested input route before checking.")
         button.tap()
+        if route == .usb {
+            let confirmation = app.alerts.matching(NSPredicate(format: "label IN %@", [
+                "Is USB connected to this device?", "USB 接的是这台设备吗？"
+            ])).firstMatch
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 5), "USB input must be connected to this iPhone or iPad before checking.")
+            let start = confirmation.buttons.matching(NSPredicate(format: "label IN %@", [
+                "Connected; start check", "已连接，开始检查"
+            ])).firstMatch
+            XCTAssertTrue(start.exists && start.isEnabled)
+            start.tap()
+        }
         let status = app.staticTexts["bluetoothValidationStatus"]
         XCTAssertTrue(status.waitForExistence(timeout: 10))
         let passed = ["Device control is ready", "设备操作已就绪"]
+        let tapsAndTypingOnly = ["Taps and typing are ready. Check again to enable swipes.", "点击和输入已就绪；滑动需重新检查。"]
         let finished = NSPredicate(format: "label IN %@ OR label BEGINSWITH %@ OR label BEGINSWITH %@",
-                                   passed, "Check incomplete.", "检查未完成")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: status)], timeout: 40), .completed)
-        XCTAssertTrue(passed.contains(status.label), "The board input check did not pass.")
+                                   passed + tapsAndTypingOnly, "Check incomplete", "检查未完成")
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: status)], timeout: 90)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Board observed input result"; image.lifetime = .keepAlways; add(image)
+        XCTAssertEqual(result, .completed)
+        XCTAssertFalse(tapsAndTypingOnly.contains(status.label), "Taps and typing passed, but swipe calibration did not pass. This test requires swipe-ready input.")
+        XCTAssertTrue(passed.contains(status.label), "The board input check did not reach full readiness: \(status.label)")
         app.buttons["bluetoothValidationCloseButton"].tap()
+        let firmwareWarning = app.staticTexts.matching(NSPredicate(format: "label IN %@", [
+            "Swipe needs a firmware update. Taps and typing remain available.",
+            "滑动需更新固件，点击和输入仍可用。"
+        ])).firstMatch
+        XCTAssertFalse(firmwareWarning.exists, "This check requires swipe-capable firmware; the ready message alone also covers legacy tap/text input.")
     }
 }
 
