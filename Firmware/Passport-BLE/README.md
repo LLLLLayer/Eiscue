@@ -196,9 +196,13 @@ read the 136-byte/`5bf24bdb` map. The first probe passed, so the stationary
 diagnostic did not run. Connection/sharing/calibration/ready were retained
 through completion, with engine closed and owner released; HID cleanup retained
 raw confirmation=false and was locally accepted. Normal diagnostic teardown
-then disconnected and ended sharing. C3 was not changed; USB's older-firmware
-pass was not rerun. Cross-app, background, rotation, stop and real-model coverage
-remain open.
+then disconnected and ended sharing. C3 was not changed. A later USB check on
+this same firmware also passed taps/text, six single-direct probes and a
+zero-model foreground swipe. Each output then passed one in-flight stop
+gate/local-cleanup check with unknown work outcome; USB passed a 60.773-second
+screenshot-only background check. BLE background setup timed out before
+submission, so no BLE background run was tested. Real-model, cross-app,
+background-input, rotation and repeated-cycle coverage remain open.
 
 ### S3 authentication v2
 
@@ -586,6 +590,14 @@ this does not overturn the USB pass. Earlier failures remain recorded;
 Core/firmware and C3 were unchanged.
 
 The later metadata-only stationary comparison above is a new firmware/App diagnostic stage: taps/text passed again, while both moving and stationary relative commands completed without UIKit contacts. It preserves the fourth comparison’s unchanged-source history and the bounded USB pass; it adds no Agent/host or model acceptance.
+
+The later single-button firmware checks on 2026-10-18/19 added one USB
+foreground pass, one in-flight stop gate/local-cleanup check for each USB and
+BLE output (unknown work outcome), and one 60.773-second USB screenshot-only
+background pass. Raw HID cleanup confirmation remained false and was locally
+accepted. BLE background setup timed out before submission; this is neither a
+BLE background runtime pass nor failure. These checks used no model and do not
+cover background input, rotation, cross-app tasks or repeated-cycle stability.
 
 ## Version 0.2 build evidence (2026-10-12)
 

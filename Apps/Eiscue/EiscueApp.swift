@@ -9,9 +9,9 @@ struct EiscueApp: App {
     #endif
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
-    private var networkRunUsesInputTarget: Bool {
+    private var networkRunUsesAcceptanceTarget: Bool {
         #if !EISCUE_HID_ONLY
-        DebugNetworkRunAcceptance.usesInputTarget
+        DebugNetworkRunAcceptance.usesAcceptanceTarget
         #else
         false
         #endif
@@ -31,7 +31,7 @@ struct EiscueApp: App {
                     BLEDeviceCheckView()
                 } else if ProcessInfo.processInfo.arguments.contains("--owned-device-check") {
                     OwnedDeviceCheckView()
-                } else if networkRunUsesInputTarget {
+                } else if networkRunUsesAcceptanceTarget {
                     #if !EISCUE_HID_ONLY
                     DebugNetworkRunAcceptanceTargetView()
                     #else

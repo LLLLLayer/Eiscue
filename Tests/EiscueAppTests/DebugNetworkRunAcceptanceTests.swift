@@ -1,6 +1,7 @@
 #if DEBUG
 import EiscueAgentKit
 import EiscueDeviceCore
+import UIKit
 import XCTest
 @testable import Eiscue
 
@@ -11,7 +12,12 @@ final class DebugNetworkRunAcceptanceTests: XCTestCase {
         XCTAssertEqual(plan.route, .localVPN)
         XCTAssertEqual(plan.backend, .xcTest)
         XCTAssertEqual(plan.kind, .background)
+        XCTAssertTrue(plan.requiresLocalTunnel)
         XCTAssertFalse(plan.usesInputTarget)
+        XCTAssertFalse(plan.usesAcceptanceTarget)
+        let resume = try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest", "--resume-existing-local-tunnel"])
+        XCTAssertTrue(resume.requiresLocalTunnel)
+        XCTAssertTrue(resume.resumeTunnel)
         XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: []))
     }
 
@@ -21,17 +27,130 @@ final class DebugNetworkRunAcceptanceTests: XCTestCase {
         XCTAssertNil(plan.backend)
         XCTAssertEqual(plan.kind, .foregroundSwipe)
         XCTAssertTrue(plan.usesInputTarget)
+        XCTAssertTrue(plan.usesAcceptanceTarget)
         XCTAssertFalse(plan.resumeTunnel)
+        XCTAssertFalse(plan.requiresLocalTunnel)
         XCTAssertFalse(plan.contactComparison)
         XCTAssertEqual(plan.maxToolCalls, 3)
     }
 
-    func testBluetoothAllowsOnlyOwnedInputCases() throws {
+    func testBluetoothAllowsOwnedInputAndExplicitHIDBackgroundCases() throws {
         let plan = try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments(kind: "inflightStop"))
         XCTAssertTrue(plan.usesInputTarget)
         for kind in ["background", "appReturn", "unknown"] {
             XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments(kind: kind)))
         }
+    }
+
+    func testHIDBackgroundUsesOnlyObservationAndWaitsForAnExternalTransition() throws {
+        let plan = try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments(kind: "hidBackground"))
+        XCTAssertEqual(plan.route, .bluetoothBoard)
+        XCTAssertNil(plan.backend)
+        XCTAssertEqual(plan.inputRoute, .bluetooth)
+        XCTAssertEqual(plan.requiredTools, [.screenshot])
+        XCTAssertFalse(plan.usesInputTarget)
+        XCTAssertTrue(plan.usesAcceptanceTarget, "HID background shows real setup then the owned page without requiring an input trace.")
+        XCTAssertTrue(plan.samplesBackground)
+        XCTAssertEqual(plan.backgroundWaitSeconds, 60)
+        XCTAssertEqual(plan.seconds, 60)
+        XCTAssertEqual(plan.interval, 15)
+        XCTAssertEqual(plan.sampleGapLimit, 20)
+        let session = DeviceToolSession(capabilities: [.screenshot],
+            client: DeviceClient(actuator: RestrictedBLEAcceptanceActuator()), scope: .control,
+            timeoutSeconds: 10, log: { _, _ in }, onUnknown: {})
+        XCTAssertNil(plan.firstMissingTool(in: session.tools), "A HID background check must not need Home, launch or swipe.")
+    }
+
+    func testNCMOwnedInputCasesUseExplicitBackendAndNoTunnelOrHIDSetup() throws {
+        for backend in ["coreDevice", "xcTest"] {
+            for kind in ["foregroundSwipe", "inflightStop"] {
+                let plan = try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-route", "usbBoard",
+                    "--network-run-backend", backend, "--network-run-case", kind])
+                XCTAssertEqual(plan.route, .usbBoard)
+                XCTAssertEqual(plan.backend?.rawValue, backend)
+                XCTAssertNil(plan.inputRoute)
+                XCTAssertFalse(plan.requiresLocalTunnel)
+                XCTAssertFalse(plan.resumeTunnel)
+                XCTAssertFalse(plan.contactComparison)
+                XCTAssertTrue(plan.usesInputTarget)
+                XCTAssertTrue(plan.usesAcceptanceTarget)
+                XCTAssertEqual(plan.requiredTools, [.screenshot, .swipe])
+                XCTAssertEqual(plan.maxToolCalls, kind == "foregroundSwipe" ? 3 : 70)
+                XCTAssertNoThrow(try plan.validateBluetoothSetup(.ready(capabilities: [.screenshot, .swipe])))
+                XCTAssertFalse(DeviceRunCleanup.acceptsRelease(confirmed: false, method: plan.route))
+                XCTAssertTrue(DeviceRunCleanup.acceptsRelease(confirmed: true, method: plan.route))
+            }
+        }
+    }
+
+    func testNCMRejectsImplicitBackendTunnelResumeAndHIDArguments() {
+        let base = ["--network-run-route", "usbBoard", "--network-run-case", "foregroundSwipe"]
+        for backend in [[], ["--network-run-backend"], ["--network-run-backend", "automatic"], ["--network-run-backend", "unknown"]] {
+            XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: base + backend))
+        }
+        let explicit = base + ["--network-run-backend", "xcTest"]
+        for extra in [["--resume-existing-local-tunnel"], ["--network-run-input-route", "usb"],
+                      ["--network-run-input-route", "bluetooth"], ["--network-run-contact-comparison"]] {
+            XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: explicit + extra))
+        }
+        XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-route", "usbBoard",
+            "--network-run-backend", "coreDevice", "--network-run-case", "hidBackground"]))
+    }
+
+    func testHIDInputRouteIsExplicitForAllHIDCasesAndRejectedForNetworkCases() throws {
+        for kind in ["hidBackground", "foregroundSwipe", "inflightStop"] {
+            for route in ["bluetooth", "usb"] {
+                let plan = try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments(kind: kind) + ["--network-run-input-route", route])
+                XCTAssertEqual(plan.inputRoute?.rawValue, route)
+            }
+        }
+        for extra in [["--network-run-input-route"], ["--network-run-input-route", "unknown"],
+                      ["--network-run-input-route", "usb", "--network-run-contact-comparison"],
+                      ["--network-run-cancel-after-seconds", "1"]] {
+            XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments(kind: "hidBackground") + extra))
+        }
+        XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest", "--network-run-case", "hidBackground"]))
+        XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest", "--network-run-input-route", "usb"]))
+    }
+
+    func testHIDBackgroundRequiresTapTextCalibrationButDoesNotRequireSwipe() throws {
+        let plan = try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments(kind: "hidBackground"))
+        XCTAssertNoThrow(try plan.validateBluetoothSetup(.ready(capabilities: [.screenshot, .tap, .textInput])))
+        for status in [DeviceStatus.unavailable(reason: "fixture"), .ready(capabilities: [.screenshot]), .ready(capabilities: [.screenshot, .tap])] {
+            XCTAssertThrowsError(try plan.validateBluetoothSetup(status)) {
+                XCTAssertEqual($0 as? DebugNetworkRunAcceptance.Failure, .bluetoothCalibrationRequired)
+            }
+        }
+    }
+
+    func testBackgroundWaitDoesNotAcceptInactiveAndReturnsOnlyAfterBackground() async throws {
+        var state = UIApplication.State.active
+        var observations: [UIApplication.State] = []
+        let transition = Task { @MainActor in
+            state = .inactive
+            try await Task.sleep(for: .milliseconds(100))
+            state = .background
+        }
+        defer { transition.cancel() }
+        try await DebugNetworkRunAcceptance.waitForBackground(timeoutSeconds: 1, applicationState: {
+            observations.append(state)
+            return state
+        })
+        XCTAssertTrue(observations.contains(.inactive))
+        XCTAssertEqual(observations.last, .background)
+    }
+
+    func testBackgroundWaitTimesOutAndHonorsCancellationWithoutFakingBackground() async throws {
+        do {
+            try await DebugNetworkRunAcceptance.waitForBackground(timeoutSeconds: 0.01, applicationState: { .active })
+            XCTFail("A foreground process must not pass the background gate.")
+        } catch { XCTAssertEqual(error as? DebugNetworkRunAcceptance.Failure, .didNotBackground) }
+        let waiting = Task { @MainActor in
+            try await DebugNetworkRunAcceptance.waitForBackground(timeoutSeconds: 1, applicationState: { .inactive })
+        }
+        waiting.cancel()
+        do { try await waiting.value; XCTFail("Cancellation must settle the wait.") }
+        catch { XCTAssertTrue(error is CancellationError) }
     }
 
     func testBluetoothSwipePreflightRejectsTapAndTextOnlyBeforeSubmission() throws {
@@ -97,7 +216,7 @@ final class DebugNetworkRunAcceptanceTests: XCTestCase {
                       ["--network-run-cancel-after-seconds", "1"], ["--ui-testing"], ["--owned-device-check"], ["--ble-device-check"]] {
             XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: bluetoothArguments() + extra), "\(extra)")
         }
-        for route in ["usbBoard", "unknown"] {
+        for route in ["unknown"] {
             XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-route", route, "--network-run-backend", "xcTest"]))
         }
         XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest", "--network-run-route"]))

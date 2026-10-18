@@ -13,7 +13,8 @@ An ESP32-S3 build is not evidence of physical USB compatibility.
 
 The separate [HID firmware](../Passport-BLE/README.md) supports C3 BLE and S3
 BLE / USB HID, with ReplayKit observation. Its recorded phone input results do
-not validate USB NCM on an S3. USB NCM hardware behavior and company VPN
+not validate USB NCM on an S3. Separate bounded USB/CoreDevice and XCTest
+phone checks passed on 2026-10-19; broader hardware behavior and company VPN
 coexistence remain unverified.
 
 ## Source and license
@@ -61,6 +62,11 @@ The build script only builds/packages; it never opens serial or flashes. Output:
 flash images and a versioned SHA-256 manifest. `board-firmware.py verify-package`
 checks sizes, hashes, chip, version and non-overlapping flash regions.
 
+This default package uses a **4 MB layout**. The 2026-10-19 phone check instead
+used a verified **app-only image preserving an existing 16 MB HID layout**.
+These are different flash layouts; do not write the default package over that
+HID layout without a separately verified migration.
+
 The CLI supports only `ncm` and `s3-hid` packages. The removed `passport` Wi-Fi
 relay profile and its old packages are rejected before opening a serial port;
 the tool no longer generates Wi-Fi credentials. Existing private backups and
@@ -98,15 +104,16 @@ Unplug/suspend epochs revoke active relays. Authentication remains end to end in
 the App/backend; an `NR1 OK` is a transport acknowledgement, not proof that a tap
 or screenshot succeeded.
 
-## Validation status (2026-10-12)
+## Validation status (updated 2026-10-19)
 
 | Check | Evidence |
 | --- | --- |
 | ESP32-S3 cross build | PASS: ESP-IDF 5.5.3, app `0x5f600` bytes within 1 MB partition |
 | Protocol/localhost tests | PASS: DNS truncation/TTL, greeting/schema/EOF, auth boundaries, browser gates, source binding, deadlines, two-way 1 MiB relay/backpressure/cancel |
 | Python flash-tool guards | Historical PASS for the USB S3 profile: C3/encryption refusal, verified private backup, mismatch and package tamper rejection, filtered USB inventory. |
-| Flash/readback on physical S3 | NOT RUN: the current sample is C3, not an S3 board |
-| USB NCM enumeration and ND1 on Mac/phone | NOT RUN |
+| Flash/readback on physical S3 | PASS: verified full backup and app-only readback on a 16 MB S3; existing layout and bytes outside written sectors preserved, no key/bond reset |
+| iPhone USB NCM | One foreground swipe per CoreDevice/XCTest backend; CoreDevice stop gate/confirmed cleanup and short background observation passed; scope below |
+| Standalone Mac enumeration/ND1 checks | NOT RUN |
 | Company VPN coexistence | NOT RUN |
 
 The local Xcode 26.3 ASan runtime deadlocked during initialization on the current
@@ -123,3 +130,18 @@ were run for this removal; the historical results above remain separate.
 On **2026-10-17** the same Python suite passed again (**14 tests, 0 failures**).
 `Scripts/test-board-firmware.sh` was not run because `IDF_PATH` was unset, so
 the C protocol/localhost tests have no new result. No hardware was used.
+
+On **2026-10-19**, iPhone 12 mini / iOS 27.0 (24A437) passed one zero-model
+USB NCM/CoreDevice owned-page swipe (153 pt visible scrolling and a fresh
+post-action image), retaining readiness through completion with confirmed
+cleanup and engine/owner release. A separate in-flight stop gate settled an
+unknown work outcome with confirmed cleanup; the submitted two-second drag
+still finished about 1.471 seconds after stop. One 61.429-second actual
+background-observation window passed four background samples with no model
+requests. USB interface binding excludes Wi-Fi/VPN fallback; this does not
+verify company VPN coexistence. XCTest also passed one foreground swipe
+(151 pt scrolling, fresh image, retained readiness and confirmed cleanup) on
+this same iOS 27 phone. XCTest background/stop, iOS 26 hardware, background
+input, real-model tasks, rotation and repeated-cycle stability remain open.
+The HID image/readback was restored and saved authorization reconnected;
+sharing/calibration were not rechecked.

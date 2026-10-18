@@ -28,7 +28,7 @@ enum DebugNetworkRunAcceptance {
         await installation.run(model: model)
     }
 
-    static var usesInputTarget: Bool { installation?.plan?.usesInputTarget == true }
+    static var usesAcceptanceTarget: Bool { installation?.plan?.usesAcceptanceTarget == true }
     static var waitsForBluetoothSetup: Bool { installation?.plan?.route == .bluetoothBoard && !targetPresentation.ready }
     static func armInput(width: Int, height: Int, gesture: GestureLabel = .moving) throws -> InputCoordinates {
         guard let installation else { throw Failure.invalidArguments }
@@ -58,23 +58,29 @@ enum DebugNetworkRunAcceptance {
     }
 
     struct Plan: Sendable {
-        enum Kind: String, Sendable { case background, inflightStop, appReturn, foregroundSwipe }
+        enum Kind: String, Sendable { case background, hidBackground, inflightStop, appReturn, foregroundSwipe }
         let kind: Kind
         let route: DeviceConnectionMethod
         let backend: DeviceControlBackend?
+        let inputRoute: BluetoothBoardInputRoute?
         let seconds: Double
         let interval: Double
         let cancelAfter: Double?
         let resumeTunnel: Bool
         let contactComparison: Bool
         var sampleGapLimit: Double { interval + 5 }
+        var requiresLocalTunnel: Bool { route == .localVPN }
+        var samplesBackground: Bool { kind == .background || kind == .hidBackground }
+        var backgroundWaitSeconds: Double { kind == .hidBackground ? 60 : 5 }
         var usesInputTarget: Bool { kind == .inflightStop || kind == .foregroundSwipe }
+        var usesAcceptanceTarget: Bool { usesInputTarget || kind == .hidBackground }
         var expectedSwipeCount: Int { contactComparison ? 2 : 1 }
         var maxToolCalls: Int { kind == .foregroundSwipe ? (contactComparison ? 5 : 3) : (kind == .appReturn ? 7 : 70) }
         var requiredTools: [DeviceToolSpec] {
             switch kind {
             case .foregroundSwipe, .inflightStop: [.screenshot, .swipe]
             case .background: [.screenshot, .home]
+            case .hidBackground: [.screenshot]
             case .appReturn: [.screenshot, .launchApplication, .home]
             }
         }
@@ -84,8 +90,16 @@ enum DebugNetworkRunAcceptance {
         }
         func validateBluetoothSetup(_ status: DeviceStatus) throws {
             guard route == .bluetoothBoard else { return }
-            // Both HID acceptance cases need an observed drag. Tap/text-ready
-            // must not start a run that can only fail with a missing swipe tool.
+            if kind == .hidBackground {
+                // Observation only, after the real shared-screen tap/text
+                // calibration. It neither requires nor exercises swipe.
+                guard case .ready(let capabilities) = status,
+                      capabilities.isSuperset(of: [.screenshot, .tap, .textInput]) else {
+                    throw Failure.bluetoothCalibrationRequired
+                }
+                return
+            }
+            // Input acceptance needs an observed drag before submission.
             guard case .ready(let capabilities) = status, capabilities.contains(.swipe) else {
                 throw Failure.bluetoothSwipeCheckRequired
             }
@@ -100,11 +114,17 @@ enum DebugNetworkRunAcceptance {
                   !arguments.contains("--ble-device-check") else { throw Failure.invalidArguments }
             let routeName = argument("--network-run-route") ?? DeviceConnectionMethod.localVPN.rawValue
             guard !arguments.contains("--network-run-route") || argument("--network-run-route") != nil,
-                  let route = DeviceConnectionMethod(rawValue: routeName), route == .localVPN || route == .bluetoothBoard else {
+                  let route = DeviceConnectionMethod(rawValue: routeName),
+                  route == .localVPN || route == .bluetoothBoard || route == .usbBoard else {
                 throw Failure.invalidArguments
             }
             let backend = argument("--network-run-backend").flatMap(DeviceControlBackend.init(rawValue:))
             guard route == .bluetoothBoard ? !arguments.contains("--network-run-backend") : (backend == .coreDevice || backend == .xcTest) else {
+                throw Failure.invalidArguments
+            }
+            let inputRouteName = argument("--network-run-input-route")
+            let inputRoute = inputRouteName.flatMap(BluetoothBoardInputRoute.init(rawValue:))
+            guard !arguments.contains("--network-run-input-route") || (route == .bluetoothBoard && inputRoute != nil) else {
                 throw Failure.invalidArguments
             }
             let kindName = argument("--network-run-case") ?? "background"
@@ -113,8 +133,9 @@ enum DebugNetworkRunAcceptance {
             let contactComparison = arguments.contains("--network-run-contact-comparison")
             guard !contactComparison || (route == .bluetoothBoard && kind == .foregroundSwipe) else { throw Failure.invalidArguments }
             // Home and bundle-ID launch are never available on the HID route.
-            guard route != .bluetoothBoard || kind == .foregroundSwipe || kind == .inflightStop,
-                  route != .bluetoothBoard || !arguments.contains("--resume-existing-local-tunnel") else { throw Failure.invalidArguments }
+            guard route != .bluetoothBoard || kind == .foregroundSwipe || kind == .inflightStop || kind == .hidBackground,
+                  kind != .hidBackground || route == .bluetoothBoard,
+                  route == .localVPN || !arguments.contains("--resume-existing-local-tunnel") else { throw Failure.invalidArguments }
             let parsedMinutes = argument("--network-run-minutes").flatMap(Double.init)
             let parsedInterval = argument("--network-run-interval-seconds").flatMap(Double.init)
             if arguments.contains("--network-run-minutes"), parsedMinutes == nil { throw Failure.invalidArguments }
@@ -130,6 +151,7 @@ enum DebugNetworkRunAcceptance {
             guard kind == .background || cancel == nil else { throw Failure.invalidArguments }
             self.kind = kind
             self.route = route
+            self.inputRoute = route == .bluetoothBoard ? (inputRoute ?? .bluetooth) : nil
             self.backend = backend; seconds = minutes * 60; self.interval = interval; cancelAfter = cancel
             resumeTunnel = arguments.contains("--resume-existing-local-tunnel")
             self.contactComparison = contactComparison
@@ -142,7 +164,20 @@ enum DebugNetworkRunAcceptance {
         case unexpectedRequest, budget, persistence, cleanupUnconfirmed
         case backgroundGapExceeded, backgroundLeaseInactive
         case inputTargetUnavailable, inflightStopMissed, didNotReturnToApp
-        case bluetoothSetupTimedOut, bluetoothSwipeCheckRequired, postActionObservationMissing, swipeDidNotMove, retentionFailed
+        case bluetoothSetupTimedOut, bluetoothCalibrationRequired, bluetoothSwipeCheckRequired, postActionObservationMissing, swipeDidNotMove, retentionFailed
+    }
+
+    /// The external actor only changes application state. This wait cannot
+    /// manufacture a device Home capability or grant background execution.
+    static func waitForBackground(timeoutSeconds: Double,
+        applicationState: () -> UIApplication.State = { UIApplication.shared.applicationState }) async throws {
+        let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: .seconds(timeoutSeconds))
+        while applicationState() != .background {
+            try Task.checkCancellation()
+            guard clock.now < deadline else { throw Failure.didNotBackground }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try Task.checkCancellation()
     }
 
     struct SwipeEvidence: Sendable {
@@ -222,7 +257,7 @@ enum DebugNetworkRunAcceptance {
             let preferences = UserDefaults(suiteName: suite)!
             preferences.set(1, forKey: "onboardingVersion")
             preferences.set((plan?.route ?? .localVPN).rawValue, forKey: "deviceConnectionMethod")
-            if plan?.route == .bluetoothBoard { preferences.set(BluetoothBoardInputRoute.bluetooth.rawValue, forKey: "bluetoothInputRoute") }
+            if let inputRoute = plan?.inputRoute { preferences.set(inputRoute.rawValue, forKey: "bluetoothInputRoute") }
             preferences.set((plan?.backend ?? .coreDevice).rawValue, forKey: "deviceControlBackend")
             preferences.set(UserDefaults.standard.object(forKey: "allowsDeviceControl") as? Bool ?? true, forKey: "allowsDeviceControl")
             preferences.set(false, forKey: "disconnectAfterTask")
@@ -439,12 +474,13 @@ enum DebugNetworkRunAcceptance {
                 guard let plan else { throw Failure.invalidArguments }
                 report.value.backend = plan.backend?.rawValue
                 report.value.route = plan.route.rawValue
+                report.value.inputRoute = plan.inputRoute?.rawValue
                 report.value.acceptanceCase = plan.kind.rawValue
                 report.value.contactComparison = plan.contactComparison
-                report.value.plannedSeconds = plan.kind == .background ? plan.seconds : nil
-                report.value.sampleIntervalSeconds = plan.kind == .background ? plan.interval : nil
+                report.value.plannedSeconds = plan.samplesBackground ? plan.seconds : nil
+                report.value.sampleIntervalSeconds = plan.samplesBackground ? plan.interval : nil
                 report.value.cancelAfterSeconds = plan.cancelAfter
-                report.value.sampleGapLimitSeconds = plan.kind == .background ? plan.sampleGapLimit : nil
+                report.value.sampleGapLimitSeconds = plan.samplesBackground ? plan.sampleGapLimit : nil
                 #if targetEnvironment(simulator)
                 throw Failure.physicalDeviceRequired
                 #else
@@ -459,11 +495,13 @@ enum DebugNetworkRunAcceptance {
                     targetPresentation.ready = true
                 } else {
                     guard try await model.deviceClient.hasPairingIdentity() else { throw Failure.identityRequired }
-                    if !model.localTunnel.isConnected, plan.resumeTunnel { try await model.localTunnel.resumeExistingForDiagnostics() }
-                    guard model.localTunnel.isConnected else { throw Failure.tunnelRequired }
+                    if plan.requiresLocalTunnel {
+                        if !model.localTunnel.isConnected, plan.resumeTunnel { try await model.localTunnel.resumeExistingForDiagnostics() }
+                        guard model.localTunnel.isConnected else { throw Failure.tunnelRequired }
+                    }
                     report.event("connecting")
                     await model.connectDevice()
-                    guard model.isDeviceReady, model.activeDeviceConnectionMethod == .localVPN,
+                    guard model.isDeviceReady, model.activeDeviceConnectionMethod == plan.route,
                           model.activeDeviceControlBackend == plan.backend else { throw Failure.connectionFailed }
                 }
                 report.value.connected = true
@@ -582,6 +620,8 @@ enum DebugNetworkRunAcceptance {
         private func bluetoothReady(_ model: AppModel) -> Bool {
             model.deviceConnectionMethod == .bluetoothBoard && model.activeDeviceConnectionMethod == .bluetoothBoard
                 && model.isDeviceReady && model.isBluetoothConnected && model.isBluetoothScreenShared && model.isBluetoothPointerVerified
+                && model.bluetoothInputRoute == plan?.inputRoute
+                && (model.bluetoothController.outputInfo?.selectedRoute ?? .bluetooth) == plan?.inputRoute
         }
         func captureReadiness(model: AppModel, phase: String, force: Bool = false) {
             guard plan?.route == .bluetoothBoard else { return }
@@ -707,6 +747,7 @@ enum DebugNetworkRunAcceptance {
         var state = "running"
         var backend: String?
         var route: String?
+        var inputRoute: String?
         var acceptanceCase: String?
         var contactComparison = false
         var plannedSeconds: Double?
@@ -1150,13 +1191,15 @@ private actor ScriptEngine: AgentEngine {
                     try report.value.verifyMovingSwipe(initialFrameID: actionFrameID, result: returned, startRowY: startRowY, endRowY: rows.1)
                     report.event(report.value.motionVerified == true ? "foreground_swipe_postaction_verified" : "foreground_swipe_motion_failed")
                 }
-            } else {
-                _ = try await call(.home, arguments: ["frameId": .string(id.uuidString)], request: request, consumed: &consumed, continuation: continuation)
-                let homeDeadline = clock.now.advanced(by: .seconds(5))
-                while await MainActor.run(body: { UIApplication.shared.applicationState != .background }) {
-                    guard clock.now < homeDeadline else { throw DebugNetworkRunAcceptance.Failure.didNotBackground }
-                    try await Task.sleep(for: .milliseconds(50))
+            } else if plan.samplesBackground {
+                if plan.kind == .background {
+                    _ = try await call(.home, arguments: ["frameId": .string(id.uuidString)], request: request, consumed: &consumed, continuation: continuation)
+                } else {
+                    // No HID Home or launch tool: the user / external XCTest
+                    // must background this live run after this report phase.
+                    await report.event("awaiting_external_background")
                 }
+                try await DebugNetworkRunAcceptance.waitForBackground(timeoutSeconds: plan.backgroundWaitSeconds)
                 let backgroundStart = clock.now
                 backgroundStarted = backgroundStart; lastSampleAt = backgroundStart
                 let deadline = backgroundStart.advanced(by: .seconds(plan.seconds))
