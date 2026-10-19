@@ -281,6 +281,183 @@ final class DeviceConnectionMethodTests: XCTestCase {
         }
     }
 
+    func testInactiveDictationFinishRetainsItsLeaseUntilOneForegroundRestore() async throws {
+        let fixture = try dictationFixture()
+        let model = fixture.model, dictation = model.dictationSession
+        await model.connectDevice()
+        model.isLoading = false; model.draft = "Completed dictation"
+        dictation.isVoiceMode = true
+        try await dictation.prepare(model: model)
+        let id = try XCTUnwrap(dictation.recordingID)
+        let restoration = try XCTUnwrap(model.dictationDeviceRestoration)
+        defer { model.invalidateDictationDeviceRestoration() }
+        model.sceneChanged(.inactive)
+        var notices: [String] = []
+        dictation.finish(model: model, reconnect: true) { notices.append($0) }
+        try await waitUntil { restoration.foregroundWaiter != nil }
+        XCTAssertNil(dictation.recordingID)
+        XCTAssertEqual(dictation.restorationID, id)
+        XCTAssertEqual(model.deviceSession.owner, .dictation(id))
+        XCTAssertTrue(model.dictationDeviceRestoration === restoration)
+        XCTAssertFalse(model.isDeviceReady || model.canSend)
+        let beforeForeground = await fixture.controller.calls()
+        XCTAssertEqual(beforeForeground.methods, [.usbBoard])
+
+        // A second transient interruption before the continuation runs must
+        // keep waiting, without dispatching a connection or replacing its lease.
+        model.sceneChanged(.active)
+        model.sceneChanged(.inactive)
+        try await waitUntil { restoration.foregroundWaiter != nil }
+        let interruptedForeground = await fixture.controller.calls()
+        XCTAssertEqual(interruptedForeground.methods, [.usbBoard])
+        model.sceneChanged(.active)
+        try await waitUntil { dictation.restorationID == nil }
+        XCTAssertTrue(model.isDeviceReady && model.canSend)
+        XCTAssertNil(model.deviceSession.owner)
+        XCTAssertNil(model.dictationDeviceRestoration)
+        XCTAssertTrue(notices.isEmpty)
+        model.sceneChanged(.active)
+        _ = await model.finishDeviceDictation(id: id)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
+        XCTAssertEqual(calls.disconnects, 1)
+    }
+
+    func testInactiveDictationWaitIsRevokedWithoutConnectingOrReleasingANewerOwner() async throws {
+        for action in ["background", "cancel", "transport", "route", "backend", "taskCancel"] {
+            let fixture = try dictationFixture()
+            let model = fixture.model
+            await model.connectDevice()
+            let id = UUID()
+            try await model.prepareDeviceForDictation(id: id)
+            let restoration = try XCTUnwrap(model.dictationDeviceRestoration)
+            defer { model.invalidateDictationDeviceRestoration() }
+            model.sceneChanged(.inactive)
+            var finished = false
+            let finish = Task {
+                let error = await model.finishDeviceDictation(id: id)
+                finished = true
+                return error
+            }
+            try await waitUntil { restoration.foregroundWaiter != nil }
+            let invalidation = Task {
+                switch action {
+                case "background": model.sceneChanged(.background)
+                case "cancel": _ = await model.finishDeviceDictation(id: id, reconnect: false)
+                case "transport": model.deviceSession.handle(.transportLost)
+                case "route": await model.selectDeviceConnectionMethod(.localVPN)
+                case "backend": await model.selectDeviceControlBackend(.xcTest)
+                default: restoration.finishTask?.cancel()
+                }
+            }
+            try await waitUntil { finished }
+            await invalidation.value
+            let error = await finish.value
+            XCTAssertNil(error)
+            XCTAssertNil(restoration.foregroundWaiter)
+            XCTAssertNil(model.dictationDeviceRestoration)
+            XCTAssertNil(model.deviceSession.owner)
+            XCTAssertFalse(model.isDeviceReady || model.deviceSession.isTransitioning)
+            let afterInvalidation = await fixture.controller.calls()
+            XCTAssertEqual(afterInvalidation.methods, [.usbBoard], action)
+
+            let newerOwner = try model.deviceSession.acquire(.setup)
+            model.sceneChanged(.active)
+            _ = await model.finishDeviceDictation(id: id, reconnect: false)
+            XCTAssertEqual(model.deviceSession.owner, .setup, "A late \(action) finish must not release a newer borrower.")
+            newerOwner.release()
+            let afterStaleFinish = await fixture.controller.calls()
+            XCTAssertEqual(afterStaleFinish.methods, [.usbBoard])
+        }
+    }
+
+    func testDictationConnectionCompletingInactiveWaitsToPublishReadyWithoutReconnecting() async throws {
+        let fixture = try dictationFixture()
+        let model = fixture.model
+        await model.connectDevice()
+        let id = UUID()
+        try await model.prepareDeviceForDictation(id: id)
+        let restoration = try XCTUnwrap(model.dictationDeviceRestoration)
+        defer { model.invalidateDictationDeviceRestoration() }
+        await fixture.controller.setSuspendsConnection(true)
+        var finished = false
+        let finish = Task {
+            let error = await model.finishDeviceDictation(id: id)
+            finished = true
+            return error
+        }
+        try await waitUntil { await fixture.controller.calls().methods.count == 2 }
+        model.sceneChanged(.inactive)
+        await fixture.controller.completePendingConnection()
+        try await waitUntil { restoration.foregroundWaiter != nil }
+        XCTAssertFalse(finished || model.isDeviceReady)
+        XCTAssertTrue(model.deviceSession.isTransitioning)
+        XCTAssertEqual(model.deviceSession.owner, .dictation(id))
+        let beforeForeground = await fixture.controller.calls()
+        XCTAssertEqual(beforeForeground.disconnects, 1)
+        model.sceneChanged(.active)
+        try await waitUntil { finished }
+        let error = await finish.value
+        XCTAssertNil(error)
+        XCTAssertTrue(model.isDeviceReady)
+        XCTAssertNil(model.deviceSession.owner)
+        XCTAssertNil(model.deviceConnectionTask)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
+        XCTAssertEqual(calls.disconnects, 1)
+    }
+
+    func testInactiveCompletedDictationConnectionCleansUpWhenWaitIsRevoked() async throws {
+        for action in ["background", "cancel", "transport"] {
+            let fixture = try dictationFixture()
+            let model = fixture.model
+            await model.connectDevice()
+            let id = UUID()
+            try await model.prepareDeviceForDictation(id: id)
+            let restoration = try XCTUnwrap(model.dictationDeviceRestoration)
+            defer { model.invalidateDictationDeviceRestoration() }
+            await fixture.controller.setSuspendsConnection(true)
+            var finished = false
+            let finish = Task {
+                let error = await model.finishDeviceDictation(id: id)
+                finished = true
+                return error
+            }
+            try await waitUntil { await fixture.controller.calls().methods.count == 2 }
+            model.sceneChanged(.inactive)
+            await fixture.controller.completePendingConnection()
+            try await waitUntil { restoration.foregroundWaiter != nil }
+            await fixture.controller.setSuspendsDisconnect(true)
+            if action == "cancel" { await fixture.controller.setReleaseConfirmed(false) }
+            let invalidation = Task {
+                switch action {
+                case "background": model.sceneChanged(.background)
+                case "cancel": _ = await model.finishDeviceDictation(id: id, reconnect: false)
+                default: model.deviceSession.handle(.transportLost)
+                }
+            }
+            defer { Task { await fixture.controller.completePendingDisconnect() } }
+            try await waitUntil { await fixture.controller.calls().disconnects == 2 }
+            XCTAssertFalse(finished || model.isDeviceReady)
+            XCTAssertEqual(model.deviceSession.owner, .dictation(id))
+            XCTAssertTrue(model.deviceSession.isTransitioning)
+            await fixture.controller.completePendingDisconnect()
+            try await waitUntil { finished }
+            await invalidation.value
+            let error = await finish.value
+            XCTAssertNil(error)
+            XCTAssertNil(model.deviceSession.owner)
+            XCTAssertNil(model.deviceConnectionTask)
+            XCTAssertNil(model.dictationDeviceRestoration)
+            XCTAssertEqual(model.deviceSession.hasUnconfirmedRelease, action == "cancel")
+            model.sceneChanged(.active)
+            let calls = await fixture.controller.calls()
+            XCTAssertFalse(model.isDeviceReady)
+            XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
+            XCTAssertEqual(calls.disconnects, 2)
+        }
+    }
+
     func testBackgroundDuringReleasePreventsBothMicrophoneStartAndReconnect() async throws {
         let fixture = try dictationFixture(suspendsDisconnect: true)
         let model = fixture.model

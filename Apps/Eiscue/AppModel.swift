@@ -703,6 +703,7 @@ final class AppModel {
         currentScenePhase = phase
         if phase == .background { deviceSession.handle(.backgrounded); invalidateDictationDeviceRestoration() }
         if phase == .active {
+            dictationSession.resumeRestorationAfterForegrounding()
             refreshPairingTransfer()
             Task { await taskNotifications.refreshAuthorization() }
         }

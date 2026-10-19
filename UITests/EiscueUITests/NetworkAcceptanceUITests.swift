@@ -19,6 +19,55 @@ final class NetworkAcceptanceUITests: XCTestCase {
         #endif
     }
 
+    /// Preserve the current composer: navigation itself can finish dictation.
+    /// Never export draft/notice text or an accessibility tree/screenshot.
+    @MainActor
+    func testInspectCurrentVoiceConnectionState() {
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        var metadata = "helper=inspectCurrentVoiceConnectionState\nstartedAt=\(Date().timeIntervalSince1970)\ninteractionAttempted=false\nimageAttached=false\ndraftTextRead=false"
+        defer {
+            let attachment = XCTAttachment(string: metadata)
+            attachment.name = "Current voice connection state — metadata only"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        let foreground = app.state == .runningForeground
+        metadata += "\nappForeground=\(foreground)"
+        guard foreground else { return }
+        func button(_ id: String) {
+            let element = app.buttons[id]
+            let present = element.exists
+            metadata += "\n\(id)Present=\(present)\n\(id)Enabled=\(present && element.isEnabled)"
+        }
+        let badge = app.buttons["deviceNavigationLink"]
+        let badgeStates = ["Ready": "ready", "已就绪": "ready", "Paired · disconnected": "pairedDisconnected",
+            "已配对 · 未连接": "pairedDisconnected", "Not paired": "unpaired", "未配对": "unpaired",
+            "Connecting": "connecting", "正在连接": "connecting", "Connection issue": "failed", "连接异常": "failed"]
+        metadata += "\nassistantDeviceBadgePresent=\(badge.exists)\nassistantDeviceBadge=\(badge.exists ? badgeStates[badge.value as? String ?? ""] ?? "unknown" : "missing")"
+        metadata += "\nrestorationStatusPresent=\(app.staticTexts["speechDeviceRestorationStatus"].exists)"
+        for id in ["cancelSpeechDeviceRestorationButton", "holdToTalkButton", "speechInputButton", "cancelDictationButton", "sendMessageButton"] { button(id) }
+        let page = app.descendants(matching: .any).matching(identifier: "devicePage").firstMatch
+        let devicePage = page.exists && page.isHittable
+        metadata += "\ndevicePageVisible=\(devicePage)"
+        if devicePage {
+            let status = app.staticTexts["devicePairingComplete"]
+            let states = ["Ready to control": "ready", "设备操作已就绪": "ready", "Not connected": "disconnected", "未连接": "disconnected",
+                "Connecting…": "connecting", "正在连接…": "connecting", "Pairing": "pairing", "正在配对": "pairing",
+                "Connection failed": "failed", "连接失败": "failed"]
+            metadata += "\ndeviceStatus=\(status.exists ? states[status.label] ?? "unknown" : "missing")"
+            for id in ["connectDeviceButton", "disconnectDeviceButton"] { button(id) }
+            let backend = app.buttons["deviceControlBackendPicker"]
+            let backends = ["DisplayService": "coreDevice", "XCTest": "xcTest"]
+            metadata += "\nbackend=\(backend.exists ? backends[backend.value as? String ?? ""] ?? "unknown" : "missing")"
+            let route = app.buttons["deviceConnectionMethodPicker"]
+            let routes = ["In app": "localVPN", "App 内连接": "localVPN", "ESP32 input": "bluetoothBoard",
+                "ESP32 键鼠": "bluetoothBoard", "S3 USB network": "usbBoard", "S3 USB 网卡": "usbBoard"]
+            metadata += "\nroute=\(route.exists ? routes[route.value as? String ?? ""] ?? "unknown" : "missing")"
+        }
+        metadata += "\nappForegroundAtEnd=\(app.state == .runningForeground)"
+        metadata += "\nfinishedAt=\(Date().timeIntervalSince1970)"
+    }
+
     /// One native XCUI gesture on the same visible Owned scroll target used by
     /// the App diagnostic. A failed gesture is never repeated by this helper.
     @MainActor

@@ -22,6 +22,13 @@ final class DictationDeviceRestoration {
     var isFinishing = false
     var isRestoring = false
     var isValid = true
+    var foregroundWaiter: CheckedContinuation<Void, Never>?
+
+    func resumeForegroundWait() {
+        let waiter = foregroundWaiter
+        foregroundWaiter = nil
+        waiter?.resume()
+    }
 
     init(id: UUID, operationID: UUID, method: DeviceConnectionMethod, preference: DeviceControlBackend,
          backend: DeviceControlBackend, client: DeviceClient) {
@@ -133,6 +140,7 @@ final class DictationSession {
         if !reconnect {
             restoration.isValid = false
             restoration.connectionTask?.cancel()
+            restoration.resumeForegroundWait()
         }
         if let task = restoration.finishTask { return await task.value }
         let task = Task { [model] in await model.dictationSession.restoreDeviceAfterDictation(restoration) }
@@ -147,6 +155,7 @@ final class DictationSession {
         // External events advance DeviceSession's operation identity before
         // invalidating us. Cancel only the task owned by this restoration.
         restoration.connectionTask?.cancel()
+        restoration.resumeForegroundWait()
         if restoration.releaseFinished, restoration.finishTask == nil { restoration.lease?.release(); deviceRestoration = nil }
     }
 
@@ -157,11 +166,37 @@ final class DictationSession {
         _ = await restoration?.finishTask?.value
     }
 
-    private func canRestoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) -> Bool {
+    func resumeRestorationAfterForegrounding() {
+        guard model.currentScenePhase == .active else { return }
+        deviceRestoration?.resumeForegroundWait()
+    }
+
+    private func isCurrentRestoration(_ restoration: DictationDeviceRestoration) -> Bool {
         restoration.isValid && deviceRestoration === restoration &&
-        model.deviceOperationID == restoration.operationID && model.currentScenePhase == .active &&
+        model.deviceOperationID == restoration.operationID &&
         model.deviceConnectionMethod == restoration.method && model.deviceControlBackend == restoration.preference &&
         !model.isRunning && !model.isRepairingDeviceConnection && !model.needsRecovery && model.pausedRun == nil
+    }
+
+    private func canRestoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) -> Bool {
+        isCurrentRestoration(restoration) && model.currentScenePhase == .active
+    }
+
+    private func waitForActiveRestoration(_ restoration: DictationDeviceRestoration) async -> Bool {
+        // Inactive is transient: retain this borrow until foregrounding or an
+        // explicit invalidation. Backgrounding and cancellation wake the same
+        // continuation, and every wake rechecks the captured connection identity.
+        while !Task.isCancelled, isCurrentRestoration(restoration), model.currentScenePhase == .inactive {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    if Task.isCancelled { continuation.resume() }
+                    else { restoration.foregroundWaiter = continuation }
+                }
+            } onCancel: {
+                Task { @MainActor in restoration.resumeForegroundWait() }
+            }
+        }
+        return !Task.isCancelled && canRestoreDeviceAfterDictation(restoration)
     }
 
     private func restoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) async -> String? {
@@ -174,7 +209,7 @@ final class DictationSession {
                 deviceRestoration = nil
             }
         }
-        guard canRestoreDeviceAfterDictation(restoration) else { return nil }
+        guard await waitForActiveRestoration(restoration) else { return nil }
         let failure = String(localized: "speech.deviceReconnectFailed", table: "Speech")
         guard restoration.method != .localVPN || model.localTunnel.isConnected else {
             model.deviceConnectionError = failure; model.connectionMessage = failure
@@ -199,7 +234,7 @@ final class DictationSession {
         do {
             try await task.value
             let status = await restoration.client.status()
-            if canRestoreDeviceAfterDictation(restoration), case .ready = status,
+            if case .ready = status, await waitForActiveRestoration(restoration),
                model.deviceSession.completeConnection(operation, status: status) {
                 model.deviceConnectionError = nil
                 model.connectionMessage = String(localized: "connection.ready")
