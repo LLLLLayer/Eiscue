@@ -6,6 +6,77 @@ import os
 
 @Suite("Custom provider protocols")
 struct ProviderIntegrationTests {
+    @Test(arguments: AgentAPI.allCases)
+    func providerUsageCountsEachResponseOnceAndPreservesMissingFields(_ api: AgentAPI) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-usage-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: api, baseURL: URL(string: "https://usage.fixture.invalid/v1")!,
+            model: "fixture-model", apiKey: "usage-fixture-reported-\(UUID())")
+        let network = URLSessionConfiguration.ephemeral; network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        let conversationID = UUID()
+        var ids = Set<UUID>()
+        for prompt in ["First round", "Second round"] {
+            var reports: [AgentModelUsage] = []
+            for try await event in try await client.run(request: .init(conversationID: conversationID, prompt: prompt)) {
+                if case .modelUsage(let usage) = event { reports.append(usage) }
+            }
+            #expect(reports.count == 1, "Cumulative chunks and final reconciliation must not double count.")
+            let usage = try #require(reports.first)
+            #expect(ids.insert(usage.id).inserted, "Repeated provider response IDs in different rounds are distinct locally.")
+            #expect(usage.inputTokens == 31)
+            #expect(usage.outputTokens == 11)
+            #expect(usage.cacheReadTokens == 7)
+            #expect(usage.cacheWriteTokens == (api == .openAIResponses ? nil : 0))
+        }
+        let recovered = try await AgentClient(storageDirectory: directory).recover(conversationID: conversationID)
+        #expect(recovered.messages.filter { $0.role == .assistant }.count == 2)
+        let requests = ProviderFixtureProtocol.requests.withLock {
+            $0.filter { $0.authorization == "Bearer \(configuration.apiKey)" || $0.apiKey == configuration.apiKey }
+        }
+        #expect(requests.count == 2)
+        for request in requests {
+            let body = String(decoding: try JSONEncoder().encode(request.body), as: UTF8.self)
+            #expect(!body.contains("eiscueReportedUsage"), "Bookkeeping is not extra model context.")
+        }
+    }
+
+    @Test(arguments: AgentAPI.allCases)
+    func absentProviderUsageStaysUnknown(_ api: AgentAPI) async throws {
+        let usage = try await usageFixture(api: api, mode: "missing")
+        #expect(usage.inputTokens == nil)
+        #expect(usage.outputTokens == nil)
+        #expect(usage.cacheReadTokens == nil)
+        #expect(usage.cacheWriteTokens == nil)
+    }
+
+    @Test func explicitZeroAndInvalidCountsStayDistinct() async throws {
+        let zero = try await usageFixture(api: .openAICompletions, mode: "zero")
+        #expect(zero.inputTokens == 0 && zero.outputTokens == 0 && zero.cacheReadTokens == 0 && zero.cacheWriteTokens == 0)
+        let invalid = try await usageFixture(api: .openAICompletions, mode: "invalid")
+        #expect(invalid.inputTokens == nil && invalid.outputTokens == nil)
+        #expect(invalid.cacheReadTokens == nil && invalid.cacheWriteTokens == nil)
+    }
+
+    private func usageFixture(api: AgentAPI, mode: String) async throws -> AgentModelUsage {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-usage-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = AgentConfiguration(api: api, baseURL: URL(string: "https://usage.fixture.invalid/v1")!,
+            model: "fixture-model", apiKey: "usage-fixture-\(mode)-\(UUID())")
+        let network = URLSessionConfiguration.ephemeral; network.protocolClasses = [ProviderFixtureProtocol.self]
+        let runtime = Runtime(configuration: .init(urlSessionConfiguration: network, log: { _, _ in }))
+        let client = AgentClient(engine: DefaultEngine(configuration: configuration, storageDirectory: directory,
+            modelFactory: { try await DefaultEngine.makeModels(configuration: configuration, runtime: runtime) }))
+        var reports: [AgentModelUsage] = []
+        for try await event in try await client.run(request: .init(conversationID: UUID(), prompt: "Count usage")) {
+            if case .modelUsage(let usage) = event { reports.append(usage) }
+        }
+        #expect(reports.count == 1)
+        return try #require(reports.first)
+    }
+
     @Test func plainTextDisplayMetadataDoesNotChangeInstructionsOrBecomeModelContext() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("eiscue-plain-context-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -120,6 +191,9 @@ struct ProviderIntegrationTests {
         }
         #expect(calls.withLock { $0 } == 1)
         #expect(events.contains(.finished(.completed)))
+        let usage: [AgentModelUsage] = events.compactMap { if case .modelUsage(let report) = $0 { report } else { nil } }
+        #expect(usage.count == 2, "Include tool-only assistant responses, not only prose.")
+        #expect(usage.allSatisfy { $0.inputTokens == 31 && $0.outputTokens == 11 && $0.cacheReadTokens == 7 })
         #expect(events.contains { if case .message(let message) = $0 { message.text == "Hello world" } else { false } })
         #expect(events.contains { if case .toolFinished(let completion) = $0 {
             completion.result.content.contains(.image(data: Data([137, 80, 78, 71]), mimeType: "image/png"))
@@ -479,7 +553,7 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
                                        headerFields: ["Content-Type": "text/event-stream"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        let chunks: [String]
+        var chunks: [String]
         if recorded.authorization?.hasPrefix("Bearer google-signatures-fixture-") == true {
             let resultCount = recorded.body["messages"]?.arrayValue?.filter { $0["role"] == "tool" }.count ?? 0
             if resultCount == 0 { chunks = Self.signedToolCalls(round: 1) }
@@ -499,9 +573,16 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
         else if url.path.hasSuffix("chat/completions") { chunks = Self.completions }
         else if url.path.hasSuffix("responses") { chunks = Self.responses }
         else { chunks = Self.anthropic }
+        let credential = recorded.authorization ?? recorded.apiKey ?? ""
+        if credential.contains("usage-fixture-") || credential.contains("google-device-tools-fixture-") {
+            let mode = credential.contains("-missing-") ? "missing" : credential.contains("-zero-") ? "zero"
+                : credential.contains("-invalid-") ? "invalid" : "reported"
+            chunks = Self.withUsage(chunks, path: url.path, mode: mode)
+        }
+        let responseChunks = chunks
         work.withLock { task in
-            task = Task { @Sendable [self, chunks] in
-                for chunk in chunks {
+            task = Task { @Sendable [self, responseChunks] in
+                for chunk in responseChunks {
                     do { try await Task.sleep(for: .milliseconds(100)) }
                     catch { return }
                     client?.urlProtocol(self, didLoad: Data(chunk.utf8))
@@ -515,6 +596,42 @@ private final class ProviderFixtureProtocol: URLProtocol, @unchecked Sendable {
 
     static func sse(_ json: String, event: String? = nil) -> String {
         (event.map { "event: \($0)\n" } ?? "") + "data: \(json)\n\n"
+    }
+
+    static func withUsage(_ chunks: [String], path: String, mode: String) -> [String] {
+        var rewritten = chunks.map { chunk -> String in
+            guard let line = chunk.components(separatedBy: "\n").first(where: { $0.hasPrefix("data: {") }),
+                  var event = try? JSONSerialization.jsonObject(with: Data(line.dropFirst(6).utf8)) as? [String: Any] else { return chunk }
+            let type = event["type"] as? String
+            if path.hasSuffix("responses"), var response = event["response"] as? [String: Any] {
+                response["usage"] = mode == "missing" ? nil : ["input_tokens": 31, "output_tokens": 11,
+                    "input_tokens_details": ["cached_tokens": 7]] as [String: Any]
+                event["response"] = response
+            } else if type == "message_start", var message = event["message"] as? [String: Any] {
+                message["usage"] = mode == "missing" ? [:] : ["input_tokens": 31, "output_tokens": 0,
+                    "cache_read_input_tokens": 7, "cache_creation_input_tokens": 0]
+                event["message"] = message
+            } else if type == "message_delta" {
+                event["usage"] = mode == "missing" ? [:] : ["output_tokens": 11]
+            }
+            let data = try! JSONSerialization.data(withJSONObject: event)
+            return sse(String(decoding: data, as: UTF8.self), event: type)
+        }
+        if path.hasSuffix("chat/completions"), mode != "missing" {
+            let usage: [String: Any]
+            if mode == "invalid" {
+                usage = ["prompt_tokens": -1, "completion_tokens": 1.5,
+                         "prompt_tokens_details": ["cached_tokens": NSNull(), "cache_write_tokens": -2]]
+            } else {
+                let zero = mode == "zero"
+                usage = ["prompt_tokens": zero ? 0 : 31, "completion_tokens": zero ? 0 : 11,
+                         "prompt_tokens_details": ["cached_tokens": zero ? 0 : 7, "cache_write_tokens": 0]]
+            }
+            let data = try! JSONSerialization.data(withJSONObject: ["id": "c1", "object": "chat.completion.chunk",
+                "created": 1, "model": "fixture-model", "choices": [], "usage": usage])
+            rewritten.insert(sse(String(decoding: data, as: UTF8.self)), at: rewritten.count - 1)
+        }
+        return rewritten
     }
 
     static let completions = [

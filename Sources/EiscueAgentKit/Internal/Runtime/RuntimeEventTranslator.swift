@@ -67,6 +67,10 @@ actor RuntimeEventTranslator {
     private func receiveEntry(_ entry: Entry) {
         rememberCalls(entry)
         guard entries.insert(entry.id).inserted else { return }
+        if let assistant = entry.assistantMessage {
+            let id = RuntimeMapping.stableID(conversationID: conversationID, entry: entry.id.rawValue)
+            continuation.yield(.modelUsage(RuntimeUsageReporting.usage(assistant, id: id)))
+        }
         if let message = RuntimeMapping.message(entry, conversationID: conversationID), message.role == .assistant {
             continuation.yield(.assistantText(message.text))
             continuation.yield(.message(message))

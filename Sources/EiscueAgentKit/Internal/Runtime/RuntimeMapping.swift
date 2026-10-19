@@ -203,7 +203,7 @@ enum RuntimeMapping {
         return AgentRecovery(messages: messages, hasInterruptedRun: view.isBusy || !view.inbox.isEmpty)
     }
 
-    private static func stableID(conversationID: UUID, entry: Int) -> UUID {
+    static func stableID(conversationID: UUID, entry: Int) -> UUID {
         var bytes = Array(SHA256.hash(data: Data("\(conversationID.uuidString):entry:\(entry)".utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50
         bytes[8] = (bytes[8] & 0x3F) | 0x80

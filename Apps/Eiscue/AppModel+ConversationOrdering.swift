@@ -76,20 +76,56 @@ struct ConversationOrdering {
     }
 }
 
+/// Resolve the list once per content/order change. Row menus otherwise sort the
+/// entire history twice per row and repeatedly decode the same preferences.
+struct ConversationSidebarCache {
+    let contentRevision: Int
+    let orderRevision: Int
+    let items: [Conversation]
+    let canMoveUp: Set<UUID>
+    let canMoveDown: Set<UUID>
+
+    init(contentRevision: Int, orderRevision: Int, ordering: ConversationOrdering, conversations: [Conversation]) {
+        self.contentRevision = contentRevision; self.orderRevision = orderRevision
+        items = ordering.sorted(conversations)
+        var up = Set<UUID>(), down = Set<UUID>()
+        for index in items.indices.dropFirst() {
+            let previous = items[index - 1].id, current = items[index].id
+            if ordering.pinnedIDs.contains(previous) == ordering.pinnedIDs.contains(current) {
+                up.insert(current); down.insert(previous)
+            }
+        }
+        canMoveUp = up; canMoveDown = down
+    }
+}
+
 extension AppModel {
     private var conversationOrdering: ConversationOrdering {
         // UserDefaults is not observable; this revision invalidates views after
         // a pin or order change even when the conversation content is unchanged.
-        _ = conversationOrderRevision
-        return ConversationOrdering(preferences: preferences)
+        let revision = conversationOrderRevision
+        if let cached = conversationOrderingCache, cached.revision == revision { return cached.value }
+        let value = ConversationOrdering(preferences: preferences)
+        conversationOrderingCache = (revision, value)
+        return value
     }
 
-    var sortedConversations: [Conversation] { conversationOrdering.sorted(conversations) }
+    private var conversationSidebar: ConversationSidebarCache {
+        let content = conversationListRevision, order = conversationOrderRevision
+        if let cached = conversationSidebarCache, cached.contentRevision == content, cached.orderRevision == order { return cached }
+        let value = ConversationSidebarCache(contentRevision: content, orderRevision: order,
+            ordering: conversationOrdering, conversations: conversations)
+        conversationSidebarCache = value
+        return value
+    }
+
+    var sortedConversations: [Conversation] { conversationSidebar.items }
 
     func isConversationPinned(_ id: UUID) -> Bool { conversationOrdering.pinnedIDs.contains(id) }
 
     func canMoveConversation(_ id: UUID, direction: ConversationMoveDirection) -> Bool {
-        conversationOrdering.canMove(id, direction: direction, in: conversations)
+        let projection = conversationSidebar
+        return (direction == .up ? projection.canMoveUp : projection.canMoveDown).contains(id)
     }
 
     func moveConversation(_ id: UUID, direction: ConversationMoveDirection) {

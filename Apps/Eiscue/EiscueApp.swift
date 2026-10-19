@@ -71,7 +71,7 @@ struct EiscueApp: App {
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                        ProcessInfo.processInfo.arguments.contains("--tool-image-preview-fixture") {
-                        model.installToolImagePreviewFixture()
+                        await model.installToolImagePreviewFixture()
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                        ProcessInfo.processInfo.arguments.contains("--unknown-outcome-fixture") {

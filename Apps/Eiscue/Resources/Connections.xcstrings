@@ -1,6 +1,23 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "pairing.transfer.unsupportedFormat": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This pairing file uses a format this version of Eiscue cannot import. Update Eiscue, then generate a new file using the setup command shown in the app. Your saved pairing identity was not replaced."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前版本的 Eiscue 不支持这份配对文件的格式。请更新 Eiscue，再使用 App 内显示的设置命令重新生成文件。已保存的配对身份未被替换。"
+          }
+        }
+      }
+    },
     "tunnel.status.unconfigured": {
       "extractionState": "manual",
       "localizations": {
@@ -1767,6 +1784,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止任务后可切换。"
+          }
+        }
+      }
+    },
+    "connectionRepair.unconfirmedNextSteps": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep Eiscue open and run this check again. If control has disconnected but the microphone is still silent, restart your iPhone or iPad, then check again. Keep your pairing and VPN settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请保持 Eiscue 在前台，再次检查。若控制已断开但仍无法收音，请重启设备后再检查；不用删除配对或 VPN 配置。"
           }
         }
       }

@@ -399,7 +399,8 @@ actor DefaultEngine: AgentEngine {
             }
             let runtimeTools = try tools.map { try RuntimeMapping.tool($0, budget: budget, secret: configuration?.apiKey ?? "") }
             let outcomeGate = RuntimeOutcomeGate()
-            var extensions = [Extension("eiscue", tools: runtimeTools), try DeviceImageContext.runtimeExtension(tools: tools), outcomeGate.runtimeExtension(budget: budget)]
+            var extensions = [Extension("eiscue", tools: runtimeTools), try DeviceImageContext.runtimeExtension(tools: tools),
+                              outcomeGate.runtimeExtension(budget: budget), RuntimeUsageReporting.runtimeExtension]
             if let configuration, GoogleCompletionCompatibility.applies(to: configuration) {
                 extensions.append(GoogleCompletionCompatibility.runtimeExtension)
             }

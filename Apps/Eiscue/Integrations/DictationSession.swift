@@ -15,6 +15,7 @@ final class DictationDeviceRestoration {
     let client: DeviceClient
     var lease: DeviceLease?
     var releaseTask: Task<Void, Never>?
+    var connectionTask: Task<Void, Error>?
     var finishTask: Task<String?, Never>?
     var releaseFinished = false
     var releaseConfirmed = false
@@ -131,7 +132,7 @@ final class DictationSession {
         restoration.isFinishing = true
         if !reconnect {
             restoration.isValid = false
-            if restoration.isRestoring, model.deviceOperationID == restoration.operationID { model.deviceConnectionTask?.cancel() }
+            restoration.connectionTask?.cancel()
         }
         if let task = restoration.finishTask { return await task.value }
         let task = Task { [model] in await model.dictationSession.restoreDeviceAfterDictation(restoration) }
@@ -143,7 +144,9 @@ final class DictationSession {
         preparationID = nil
         guard let restoration = deviceRestoration else { return }
         restoration.isValid = false
-        if restoration.isRestoring, model.deviceOperationID == restoration.operationID { model.deviceConnectionTask?.cancel() }
+        // External events advance DeviceSession's operation identity before
+        // invalidating us. Cancel only the task owned by this restoration.
+        restoration.connectionTask?.cancel()
         if restoration.releaseFinished, restoration.finishTask == nil { restoration.lease?.release(); deviceRestoration = nil }
     }
 
@@ -164,10 +167,11 @@ final class DictationSession {
     private func restoreDeviceAfterDictation(_ restoration: DictationDeviceRestoration) async -> String? {
         await restoration.releaseTask?.value
         defer {
+            restoration.connectionTask = nil
             restoration.lease?.release()
-            if deviceRestoration === restoration { restoration.lease?.release(); deviceRestoration = nil }
-            if model.deviceOperationID == restoration.operationID {
+            if deviceRestoration === restoration {
                 model.deviceConnectionTask = nil
+                deviceRestoration = nil
             }
         }
         guard canRestoreDeviceAfterDictation(restoration) else { return nil }
@@ -190,6 +194,7 @@ final class DictationSession {
             try await restoration.client.connect(method: restoration.method, configuration: .defaults, backend: restoration.backend)
             try Task.checkCancellation()
         }
+        restoration.connectionTask = task
         model.deviceConnectionTask = task
         do {
             try await task.value
@@ -210,8 +215,9 @@ final class DictationSession {
         if let cleanup { _ = model.deviceSession.completeRelease(cleanup, confirmed: confirmed, status: status) }
         model.screenshot = nil
         guard canRestoreDeviceAfterDictation(restoration) else { return nil }
-        model.deviceConnectionError = failure; model.connectionMessage = failure
-        return failure
+        let message = confirmed ? failure : String(localized: "speech.deviceReconnectReleaseFailed", table: "Speech")
+        model.deviceConnectionError = message; model.connectionMessage = message
+        return message
     }
 
 }

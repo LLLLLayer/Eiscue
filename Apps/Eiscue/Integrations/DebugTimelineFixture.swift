@@ -24,7 +24,7 @@ extension AppModel {
 
     /// Exercises the real transcript with deterministic tool output, without
     /// connecting a device, requesting a model or persisting screenshot bytes.
-    func installToolImagePreviewFixture() {
+    func installToolImagePreviewFixture() async {
         guard ProcessInfo.processInfo.arguments.contains("--ui-testing"),
               ProcessInfo.processInfo.arguments.contains("--tool-image-preview-fixture") else { return }
         appearance = ProcessInfo.processInfo.arguments.contains("--tool-image-preview-dark") ? .dark : .light
@@ -47,10 +47,10 @@ extension AppModel {
         ]
         toolImagePreviews.removeAll()
         let image = Self.toolPreviewFixtureImage()
-        toolImagePreviews.record(AgentToolCompletion(call: .init(id: "image", name: DeviceToolSpec.screenshot.rawValue, arguments: [:]),
+        await toolImagePreviews.record(AgentToolCompletion(call: .init(id: "image", name: DeviceToolSpec.screenshot.rawValue, arguments: [:]),
                                                     result: .image(image, mimeType: "image/png")),
                                  activityID: "preview:image", conversationID: conversation.id)
-        toolImagePreviews.record(AgentToolCompletion(call: .init(id: "error", name: DeviceToolSpec.screenshot.rawValue, arguments: [:]),
+        await toolImagePreviews.record(AgentToolCompletion(call: .init(id: "error", name: DeviceToolSpec.screenshot.rawValue, arguments: [:]),
                                                     result: .init(content: [.image(data: image, mimeType: "image/png")], outcome: .failed)),
                                  activityID: "preview:error", conversationID: conversation.id)
         toolImagePreviews.markUnavailable(activityID: "preview:old", conversationID: conversation.id)
@@ -60,7 +60,7 @@ extension AppModel {
                                                   arguments: #"{"frameId":"11111111-1111-1111-1111-111111111111","x":284,"y":525}"#,
                                                   output: "frameId=22222222-2222-2222-2222-222222222222; width=390; height=844;",
                                                   precedingMessageID: user.id))
-            toolImagePreviews.record(AgentToolCompletion(call: .init(id: "tap", name: DeviceToolSpec.tap.rawValue, arguments: [:]),
+            await toolImagePreviews.record(AgentToolCompletion(call: .init(id: "tap", name: DeviceToolSpec.tap.rawValue, arguments: [:]),
                                                         result: .image(image, mimeType: "image/png")),
                                      activityID: "preview:tap", conversationID: conversation.id)
         }

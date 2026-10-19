@@ -80,4 +80,50 @@ final class ConversationOrderingTests: XCTestCase {
             }
         }
     }
+
+    @MainActor func testSidebarRefreshesContentAndMenuBoundariesAfterPinMoveAndDelete() throws {
+        let suite = "ConversationSidebar.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { preferences.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(storageDirectory: directory, preferences: preferences)
+        let chats = (1...3).map { conversation("\($0)", time: TimeInterval($0)) }
+        XCTAssertTrue(model.sortedConversations.isEmpty)
+        model.conversations = chats
+        XCTAssertEqual(model.sortedConversations.map(\.id), chats.reversed().map(\.id))
+        model.toggleConversationPinned(chats[0].id)
+        XCTAssertTrue(model.isConversationPinned(chats[0].id))
+        XCTAssertEqual(model.sortedConversations.first?.id, chats[0].id)
+        XCTAssertFalse(model.canMoveConversation(chats[0].id, direction: .down))
+        XCTAssertFalse(model.canMoveConversation(chats[2].id, direction: .up))
+        model.moveConversation(chats[1].id, direction: .up)
+        XCTAssertEqual(model.sortedConversations.map(\.id), [chats[0].id, chats[1].id, chats[2].id])
+        model.conversations[1].title = "Renamed"
+        model.conversations[1].messages.append(AgentMessage(role: .assistant, text: "New reply"))
+        XCTAssertEqual(model.sortedConversations[1].title, "Renamed")
+        XCTAssertEqual(model.sortedConversations[1].messages.last?.text, "New reply")
+        model.conversations.removeAll { $0.id == chats[0].id }
+        XCTAssertEqual(model.sortedConversations.map(\.id), [chats[1].id, chats[2].id])
+        XCTAssertFalse(model.canMoveConversation(chats[1].id, direction: .up))
+        XCTAssertFalse(model.canMoveConversation(chats[0].id, direction: .down))
+        XCTAssertTrue(model.canMoveConversation(chats[1].id, direction: .down))
+    }
+
+    @MainActor func testLargeSidebarResolvesAllRowMenusAndRecordsTiming() throws {
+        let suite = "ConversationSidebarScale.\(UUID().uuidString)"
+        let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { preferences.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(storageDirectory: directory, preferences: preferences)
+        model.conversations = (1...2_000).map { conversation("\($0)", time: TimeInterval($0)) }
+        let clock = ContinuousClock(), start = clock.now
+        let sorted = model.sortedConversations
+        let resolved = clock.now
+        for (index, chat) in sorted.enumerated() {
+            XCTAssertFalse(model.isConversationPinned(chat.id))
+            XCTAssertEqual(model.canMoveConversation(chat.id, direction: .up), index > 0)
+            XCTAssertEqual(model.canMoveConversation(chat.id, direction: .down), index < sorted.count - 1)
+        }
+        print("SIDEBAR_FIXTURE rows=\(sorted.count) resolve=\(start.duration(to: resolved)) menuLookups=\(resolved.duration(to: clock.now))")
+    }
 }

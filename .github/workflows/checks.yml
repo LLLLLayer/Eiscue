@@ -16,6 +16,9 @@ permissions:
 # This workflow does not run untrusted pull-request code on self-hosted machines.
 jobs:
   check:
+    # Enable only after the isolated runners and Xcode variables exist. Offline
+    # helper checks use GitHub-hosted runners in helpers.yml independently.
+    if: vars.EISCUE_APPLE_RUNNERS_ENABLED == 'true'
     name: Xcode ${{ matrix.xcode }} / iOS ${{ matrix.ios }}
     strategy:
       fail-fast: false

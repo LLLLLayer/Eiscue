@@ -63,11 +63,32 @@ public enum AgentEvent: Sendable, Equatable {
     case assistantText(String)
     /// A committed assistant message; its stable ID is also returned by recovery.
     case message(AgentMessage)
+    /// Provider-reported counts for one committed model response. Missing
+    /// fields stay nil; the stable response ID is local, not a provider ID.
+    case modelUsage(AgentModelUsage)
     case toolStarted(AgentToolCall)
     case toolFinished(AgentToolCompletion)
     /// Cleanup failed independently of the run outcome. The database cannot be reopened until ownership is released.
     case cleanupFailed(String)
     case finished(AgentRunOutcome)
+}
+
+public struct AgentModelUsage: Identifiable, Codable, Sendable, Equatable {
+    public let id: UUID
+    /// Provider semantics are preserved: input may include cached tokens.
+    public let inputTokens: Int?
+    public let outputTokens: Int?
+    public let cacheReadTokens: Int?
+    public let cacheWriteTokens: Int?
+
+    public init(id: UUID, inputTokens: Int? = nil, outputTokens: Int? = nil,
+                cacheReadTokens: Int? = nil, cacheWriteTokens: Int? = nil) {
+        self.id = id
+        self.inputTokens = inputTokens.flatMap { $0 >= 0 ? $0 : nil }
+        self.outputTokens = outputTokens.flatMap { $0 >= 0 ? $0 : nil }
+        self.cacheReadTokens = cacheReadTokens.flatMap { $0 >= 0 ? $0 : nil }
+        self.cacheWriteTokens = cacheWriteTokens.flatMap { $0 >= 0 ? $0 : nil }
+    }
 }
 
 public struct AgentRecovery: Sendable, Equatable {

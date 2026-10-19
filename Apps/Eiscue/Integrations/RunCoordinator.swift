@@ -153,6 +153,7 @@ final class RunCoordinator {
                     throw error
                 }
             }
+            session.record.modelUsageIsComplete = session.stopCause == nil
             session.record.state = session.record.stopCause?.isOutcomeUnknown == true ? .outcomeUnknown : ((session.stopCause != nil) ? .interrupted : .completed)
             if session.stopCause == nil { session.record.detail = String(localized: "run.round_finished", table: "Runtime") }
         } catch {
@@ -406,7 +407,7 @@ final class RunCoordinator {
             do {
                 let runID = session.id
                 let activityID = "\(runID.uuidString):\(completion.call.id)"
-                model.toolImagePreviews.record(completion, activityID: activityID, conversationID: conversationID)
+                await model.toolImagePreviews.record(completion, activityID: activityID, conversationID: conversationID)
                 var activities = session.record.activities ?? []
                 if let index = activities.firstIndex(where: { $0.id == activityID }) {
                     activities[index].endedAt = Date()
@@ -425,6 +426,9 @@ final class RunCoordinator {
                 let text = completion.result.content.compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: " ")
                 try await logEvent(session: session, "tool.error", model.sanitizedText(text))
             }
+        case .modelUsage(let usage):
+            session.record.recordModelUsage(usage)
+            try await persist(session)
         case .cleanupFailed(let message):
             recordCleanupFailure(message, session: session)
         case .finished(let outcome):

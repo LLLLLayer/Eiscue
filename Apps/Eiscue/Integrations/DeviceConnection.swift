@@ -452,7 +452,10 @@ extension AppModel {
         do {
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? .max
             guard size <= 1_048_576 else { throw SkillError.tooLarge }
-            try await deviceClient.importPairingIdentity(Data(contentsOf: url))
+            var data = try Data(contentsOf: url)
+            defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
+            try PairingTransfer.validateIdentitySchema(in: data)
+            try await deviceClient.importPairingIdentity(data)
             guard deviceOperationID == operationID else { return }
             deviceConnectionError = nil
             connectionMessage = String(localized: "connection.identityImported")

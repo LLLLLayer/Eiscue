@@ -517,13 +517,30 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t pause device control. Try disconnecting from the device page before using voice input."
+            "value": "Couldn’t confirm device control stopped. Voice input has not started. Check Settings → Connection repair."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂时无法暂停设备控制，请在设备页断开后再使用语音输入。"
+            "value": "无法确认设备控制已停止，语音输入尚未启动。请前往「设置 → 连接修复」检查。"
+          }
+        }
+      }
+    },
+    "speech.deviceReconnectReleaseFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t confirm screen control closed after reconnection failed. Your draft is preserved. Check Settings → Connection repair before reconnecting."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重连失败，且无法确认屏幕控制已结束。草稿已保留，请前往「设置 → 连接修复」检查后再连接。"
           }
         }
       }

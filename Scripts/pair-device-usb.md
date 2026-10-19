@@ -7,10 +7,17 @@ The app's connection page lists five steps: prepare the Mac, connect by USB, run
 ```sh
 eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" &&
 git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
-python3 "$eiscue_setup_dir/Scripts/setup-device.py"
+python3 "$eiscue_setup_dir/Scripts/setup-device.py" --app-pairing-schema 1
 ```
 
 This uses a new temporary checkout, leaving existing folders untouched. Source and build caches remain there; the helper cleans up its separate private identity file. If you already have a complete source checkout, you can instead run `python3 Scripts/setup-device.py` from its project root.
+
+Use the command copied from the installed app: it declares the pairing format
+that app accepts. Before accessing devices, the wrapper checks the exporter's
+public format capabilities and selects a compatible version. It also checks the
+generated file's version before sending it. An older command without this
+option continues to request the original raw version 1 record. Incompatible
+versions stop with an update instruction; they are never sent automatically.
 
 The Mac needs Xcode 26 or newer selected as its active developer directory,
 Python 3.9 or newer, and the Rust 1.96.0 toolchain already installed through
@@ -79,6 +86,14 @@ final files have permissions `0600`. Publishing uses an exclusive hard link,
 so an existing destination or symlink is never replaced. File and directory
 contents are synced. Import the output through Eiscue's pairing import flow;
 treat it as a credential and keep it out of source control and logs.
+
+`--identity-schema-version 1` explicitly requests this format; omitting it keeps
+the same legacy default. Unknown requested versions are rejected before Cargo
+or device access. `Scripts/pair-device-usb.sh --describe-format` prints only
+public JSON format metadata, without building or accessing a device. The app
+continues to import version 1 JSON and plist records. An unknown format is
+rejected before replacing the saved identity; the consumed temporary transfer
+is still removed.
 
 `--enable-wifi` explicitly enables and reads back `EnableWifiConnections` in
 the device's `com.apple.mobile.wireless_lockdown` domain. This option is

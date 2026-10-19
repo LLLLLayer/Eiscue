@@ -1,3 +1,4 @@
+import EiscueAgentKit
 import Foundation
 import XCTest
 @testable import Eiscue
@@ -8,6 +9,8 @@ final class RunJournalTests: XCTestCase {
         var record = fixture.record()
         record.events = [RunLogEntry(kind: "first", summary: "original event")]
         record.activities = [ToolActivity(id: "read", name: "read_file", output: "unchanged payload")]
+        let usage = AgentModelUsage(id: UUID(), inputTokens: 31, outputTokens: 11, cacheReadTokens: 7, cacheWriteTokens: 0)
+        record.recordModelUsage(usage)
         try await fixture.journal.save(record)
         let first = try Data(contentsOf: fixture.entry(record.id, 1))
         record.events.append(RunLogEntry(kind: "second", summary: "new event"))
@@ -17,13 +20,18 @@ final class RunJournalTests: XCTestCase {
         let delta = try XCTUnwrap(second["record"] as? [String: Any])
         XCTAssertEqual((delta["events"] as? [[String: Any]])?.count, 1)
         XCTAssertTrue((delta["activities"] as? [[String: Any]])?.isEmpty == true)
+        XCTAssertTrue((delta["modelUsage"] as? [[String: Any]])?.isEmpty == true, "Old usage snapshots are not rewritten in every event.")
         XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.summary(record.id).path))
         record.activities?[0].output = "finished payload"
         record.activities?[0].endedAt = Date()
+        record.recordModelUsage(AgentModelUsage(id: UUID()))
         try await fixture.journal.save(record)
         let restored = try await RunJournal(directory: fixture.directory).load()
         XCTAssertEqual(restored.records, [record])
         XCTAssertTrue(restored.failures.isEmpty)
+        XCTAssertEqual(restored.records.first?.modelUsage?.first, usage)
+        XCTAssertEqual(restored.records.first?.modelUsage?.count, 2)
+        XCTAssertNil(restored.records.first?.modelUsage?.last?.inputTokens)
     }
 
     func testSettledSummaryContainsLatestStateAndIdenticalRetryDoesNotAppend() async throws {
@@ -81,6 +89,7 @@ final class RunJournalTests: XCTestCase {
         XCTAssertEqual(record.scope, .observe)
         XCTAssertNil(record.submission); XCTAssertNil(record.activities)
         XCTAssertNil(record.pauseReason); XCTAssertNil(record.promptVersion)
+        XCTAssertNil(record.modelUsage)
     }
 
     func testSavingUnchangedLegacySummaryDoesNotReencodeItsOriginalBytes() async throws {

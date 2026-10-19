@@ -5,41 +5,82 @@ import XCTest
 
 @MainActor
 final class ToolImagePreviewStoreTests: XCTestCase {
-    func testEvictedPreviewCanReloadAndUnavailableResultsDoNotLoop() throws {
+    func testEvictedPreviewCanReloadAndUnavailableResultsDoNotLoop() async throws {
         let store = ToolImagePreviewStore(maximumImageCount: 1)
         let conversationID = UUID()
         let result = completion(.image(image(), mimeType: "image/png"))
-        store.record(result, activityID: "first", conversationID: conversationID)
-        store.record(result, activityID: "second", conversationID: conversationID)
+        await store.record(result, activityID: "first", conversationID: conversationID)
+        await store.record(result, activityID: "second", conversationID: conversationID)
         XCTAssertEqual(store.state(for: "first"), .idle)
         let token = try XCTUnwrap(store.beginLoading(activityID: "first", conversationID: conversationID))
         XCTAssertEqual(store.state(for: "first"), .loading)
         XCTAssertNil(store.beginLoading(activityID: "first", conversationID: conversationID))
-        store.finishLoading(result, activityID: "first", token: token)
+        await store.finishLoading(result, activityID: "first", token: token)
         XCTAssertEqual(store.state(for: "first"), .available)
         XCTAssertEqual(store.previews(for: "first").count, 1)
         let missing = try XCTUnwrap(store.beginLoading(activityID: "missing", conversationID: conversationID))
-        store.finishLoading(nil, activityID: "missing", token: missing)
+        await store.finishLoading(nil, activityID: "missing", token: missing)
         XCTAssertEqual(store.state(for: "missing"), .unavailable)
         XCTAssertNil(store.beginLoading(activityID: "missing", conversationID: conversationID))
     }
 
-    func testLateRecoveryCannotRestoreDeletedConversationOrOverwriteANewerResult() throws {
+    func testLateRecoveryCannotRestoreDeletedConversationOrOverwriteANewerResult() async throws {
         let store = ToolImagePreviewStore()
         let conversationID = UUID()
         let old = completion(.image(image(width: 40), mimeType: "image/png"))
         let deleted = try XCTUnwrap(store.beginLoading(activityID: "deleted", conversationID: conversationID))
         store.remove(conversationID: conversationID)
-        store.finishLoading(old, activityID: "deleted", token: deleted)
+        await store.finishLoading(old, activityID: "deleted", token: deleted)
         XCTAssertEqual(store.state(for: "deleted"), .idle)
         XCTAssertTrue(store.previews(for: "deleted").isEmpty)
         let stale = try XCTUnwrap(store.beginLoading(activityID: "updated", conversationID: conversationID))
-        store.record(completion(.image(image(width: 80), mimeType: "image/png")), activityID: "updated", conversationID: conversationID)
-        store.finishLoading(old, activityID: "updated", token: stale)
+        await store.record(completion(.image(image(width: 80), mimeType: "image/png")), activityID: "updated", conversationID: conversationID)
+        await store.finishLoading(old, activityID: "updated", token: stale)
         XCTAssertEqual(store.previews(for: "updated").first?.image.size.width, 80)
         let retry = try XCTUnwrap(store.beginLoading(activityID: "retry", conversationID: conversationID))
         store.cancelLoading(activityID: "retry", token: retry)
         XCTAssertEqual(store.state(for: "retry"), .idle)
+    }
+
+    func testBackgroundDecodeCannotReviveDeletedOrCancelledImagesOrReplaceANewerResult() async throws {
+        for mutation in ["delete", "clear", "cancel", "replace"] {
+            let decoded = expectation(description: "Real PNG decoded off main: \(mutation)")
+            let release = DispatchSemaphore(value: 0)
+            let store = ToolImagePreviewStore { content, countLimit, byteLimit in
+                XCTAssertFalse(Thread.isMainThread, "ImageIO must not decode on the UI thread.")
+                let images = ToolImagePreviewDecoder.decode(content, countLimit, byteLimit)
+                if images.first?.image.width == 1_600 {
+                    decoded.fulfill()
+                    XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+                }
+                return images
+            }
+            let conversationID = UUID()
+            let token = try XCTUnwrap(store.beginLoading(activityID: "call", conversationID: conversationID))
+            let old = completion(.image(image(width: 3_200), mimeType: "image/png"))
+            let task = Task { await store.finishLoading(old, activityID: "call", token: token) }
+            await fulfillment(of: [decoded], timeout: 3)
+            XCTAssertEqual(store.state(for: "call"), .loading)
+            switch mutation {
+            case "delete": store.remove(conversationID: conversationID)
+            case "clear": store.removeAll()
+            case "cancel": store.cancelLoading(activityID: "call", token: token)
+            default:
+                await store.record(completion(.image(image(width: 80), mimeType: "image/png")),
+                                   activityID: "call", conversationID: conversationID)
+            }
+            release.signal()
+            await task.value
+            if mutation == "replace" {
+                XCTAssertEqual(store.previews(for: "call").first?.image.size.width, 80)
+                XCTAssertEqual(store.imageCount, 1)
+            } else {
+                XCTAssertEqual(store.state(for: "call"), .idle)
+                XCTAssertTrue(store.previews(for: "call").isEmpty)
+                XCTAssertEqual(store.imageCount, 0)
+                XCTAssertEqual(store.byteCount, 0)
+            }
+        }
     }
 
     func testAppRecoveryUsesExactRunRequestAndKeepsCallIDColons() async throws {
@@ -78,11 +119,11 @@ final class ToolImagePreviewStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
-    func testEachActivityKeepsItsOwnReturnedImageAcrossCallsAndRuns() throws {
+    func testEachActivityKeepsItsOwnReturnedImageAcrossCallsAndRuns() async throws {
         let store = ToolImagePreviewStore()
         let conversationID = UUID()
-        store.record(completion(.image(image(width: 40), mimeType: "image/png")), activityID: "run-1:call", conversationID: conversationID)
-        store.record(completion(.image(image(width: 80), mimeType: "image/png"), name: "device_tap"), activityID: "run-2:call", conversationID: conversationID)
+        await store.record(completion(.image(image(width: 40), mimeType: "image/png")), activityID: "run-1:call", conversationID: conversationID)
+        await store.record(completion(.image(image(width: 80), mimeType: "image/png"), name: "device_tap"), activityID: "run-2:call", conversationID: conversationID)
         let first = try XCTUnwrap(store.previews(for: "run-1:call").first)
         let second = try XCTUnwrap(store.previews(for: "run-2:call").first)
         XCTAssertEqual(first.image.size.width, 40)
@@ -91,7 +132,7 @@ final class ToolImagePreviewStoreTests: XCTestCase {
         XCTAssertTrue(store.previews(for: "unknown:call").isEmpty)
     }
 
-    func testOnlySuccessfulKnownDeviceResultsWithDecodableImagesCanExpand() {
+    func testOnlySuccessfulKnownDeviceResultsWithDecodableImagesCanExpand() async {
         let store = ToolImagePreviewStore()
         let conversationID = UUID()
         let content: [AgentToolContent] = [.text("Actual result"), .image(data: image(), mimeType: "image/png")]
@@ -104,25 +145,25 @@ final class ToolImagePreviewStoreTests: XCTestCase {
             ("unrecognized_tool", .init(content: content))
         ]
         for (name, result) in cases {
-            store.record(completion(.init(content: content)), activityID: "call", conversationID: conversationID)
+            await store.record(completion(.init(content: content)), activityID: "call", conversationID: conversationID)
             XCTAssertEqual(store.previews(for: "call").count, 1)
-            store.record(completion(result, name: name), activityID: "call", conversationID: conversationID)
+            await store.record(completion(result, name: name), activityID: "call", conversationID: conversationID)
             XCTAssertTrue(store.previews(for: "call").isEmpty, "\(name) must not retain a stale or fabricated preview.")
         }
         XCTAssertEqual(store.imageCount, 0)
         XCTAssertEqual(store.byteCount, 0)
     }
 
-    func testCountAndDecodedByteLimitsEvictOldestImages() throws {
+    func testCountAndDecodedByteLimitsEvictOldestImages() async throws {
         let result = completion(.image(image(), mimeType: "image/png"))
         let conversationID = UUID()
         let measured = ToolImagePreviewStore()
-        measured.record(result, activityID: "measure", conversationID: conversationID)
+        await measured.record(result, activityID: "measure", conversationID: conversationID)
         let bytes = measured.byteCount
         XCTAssertGreaterThan(bytes, 0)
         for store in [ToolImagePreviewStore(maximumImageCount: 2),
                       ToolImagePreviewStore(maximumByteCount: bytes * 2)] {
-            for index in 0..<3 { store.record(result, activityID: "\(index)", conversationID: conversationID) }
+            for index in 0..<3 { await store.record(result, activityID: "\(index)", conversationID: conversationID) }
             XCTAssertTrue(store.previews(for: "0").isEmpty)
             XCTAssertEqual(store.previews(for: "1").count, 1)
             XCTAssertEqual(store.previews(for: "2").count, 1)
@@ -133,14 +174,14 @@ final class ToolImagePreviewStoreTests: XCTestCase {
             XCTAssertEqual(store.imageCount, 0); XCTAssertEqual(store.byteCount, 0)
         }
         let tooSmall = ToolImagePreviewStore(maximumByteCount: bytes - 1)
-        tooSmall.record(result, activityID: "oversized", conversationID: conversationID)
+        await tooSmall.record(result, activityID: "oversized", conversationID: conversationID)
         XCTAssertTrue(tooSmall.previews(for: "oversized").isEmpty)
     }
 
-    func testDecodedImagesHaveBoundedDimensionsAndNoMoreThanFourPerActivity() throws {
+    func testDecodedImagesHaveBoundedDimensionsAndNoMoreThanFourPerActivity() async throws {
         let store = ToolImagePreviewStore()
         let content: [AgentToolContent] = Array(repeating: .image(data: image(width: 3_200), mimeType: "image/png"), count: 5)
-        store.record(completion(.init(content: content)), activityID: "call", conversationID: UUID())
+        await store.record(completion(.init(content: content)), activityID: "call", conversationID: UUID())
         let previews = store.previews(for: "call")
         XCTAssertEqual(previews.count, 4)
         XCTAssertEqual(Set(previews.map(\.id)).count, 4)
@@ -161,9 +202,9 @@ final class ToolImagePreviewStoreTests: XCTestCase {
         model.conversations = [deleted, kept]
         model.isLoading = false
         let result = completion(.image(image(), mimeType: "image/png"))
-        model.toolImagePreviews.record(result, activityID: "delete-1", conversationID: deleted.id)
-        model.toolImagePreviews.record(result, activityID: "keep", conversationID: kept.id)
-        model.toolImagePreviews.record(result, activityID: "delete-2", conversationID: deleted.id)
+        await model.toolImagePreviews.record(result, activityID: "delete-1", conversationID: deleted.id)
+        await model.toolImagePreviews.record(result, activityID: "keep", conversationID: kept.id)
+        await model.toolImagePreviews.record(result, activityID: "delete-2", conversationID: deleted.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path), "Preview recording must not create files.")
         await model.delete(deleted)
         XCTAssertNil(model.errorMessage)

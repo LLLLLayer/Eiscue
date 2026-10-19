@@ -7,7 +7,7 @@ struct ComputerPairingHelpView: View {
     static let command = """
     eiscue_setup_dir="$(mktemp -d -t eiscue-setup)" &&
     git clone --depth 1 https://github.com/LLLLLayer/Eiscue.git "$eiscue_setup_dir" &&
-    python3 "$eiscue_setup_dir/Scripts/setup-device.py"
+    python3 "$eiscue_setup_dir/Scripts/setup-device.py" --app-pairing-schema \(PairingTransfer.supportedSchemaVersion)
     """
 
     var body: some View {

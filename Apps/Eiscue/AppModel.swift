@@ -23,8 +23,11 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
 @MainActor @Observable
 final class AppModel {
-    var conversations: [Conversation] = [] { didSet { conversationFeedRevision &+= 1 } }
+    var conversations: [Conversation] = [] { didSet { conversationFeedRevision &+= 1; conversationListRevision &+= 1 } }
     var conversationOrderRevision = 0
+    var conversationListRevision = 0
+    @ObservationIgnored var conversationOrderingCache: (revision: Int, value: ConversationOrdering)?
+    @ObservationIgnored var conversationSidebarCache: ConversationSidebarCache?
     var selectedConversationID: UUID?
     var draft = ""
     var composerSessionID = UUID()

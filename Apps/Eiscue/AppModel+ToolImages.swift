@@ -24,14 +24,14 @@ extension AppModel {
             let result = try await reader.toolResult(conversationID: run.conversationID, requestID: run.requestID, toolCallID: callID)
             try Task.checkCancellation()
             let matched = result?.call.id == callID && result?.call.name == activity.name ? result : nil
-            toolImagePreviews.finishLoading(matched, activityID: activity.id, token: token)
+            await toolImagePreviews.finishLoading(matched, activityID: activity.id, token: token)
         } catch is CancellationError {
             toolImagePreviews.cancelLoading(activityID: activity.id, token: token)
         } catch AgentError.busy {
             toolImagePreviews.cancelLoading(activityID: activity.id, token: token)
         } catch {
             // Missing or incompatible historical data must not interrupt the current task.
-            toolImagePreviews.finishLoading(nil, activityID: activity.id, token: token)
+            await toolImagePreviews.finishLoading(nil, activityID: activity.id, token: token)
         }
     }
 }

@@ -49,6 +49,17 @@ struct RunRecord: Identifiable, Codable, Sendable, Equatable {
     var promptVersion: Int? = nil
     var stopCause: StopCause? = nil
     var cleanupFailure: String? = nil
+    /// One immutable snapshot per runtime response; nil also supports old records.
+    var modelUsage: [AgentModelUsage]? = nil
+    /// Set only after the live response stream drains successfully. A crash
+    /// can leave durable responses not yet journaled by the host.
+    var modelUsageIsComplete: Bool? = nil
+
+    mutating func recordModelUsage(_ usage: AgentModelUsage) {
+        guard !(modelUsage ?? []).contains(where: { $0.id == usage.id }) else { return }
+        if modelUsage == nil { modelUsage = [] }
+        modelUsage?.append(usage)
+    }
 
     mutating func interruptOpenActivities(at date: Date = Date()) {
         guard var activities else { return }
@@ -58,6 +69,35 @@ struct RunRecord: Identifiable, Codable, Sendable, Equatable {
             activities[index].output = String(localized: "activity.interrupted", table: "Activities")
         }
         self.activities = activities
+    }
+}
+
+struct RunTokenTotal {
+    let total: Int?
+    let reportedResponses: Int
+    let responseCount: Int
+    let isComplete: Bool
+
+    init(_ responses: [AgentModelUsage], field: KeyPath<AgentModelUsage, Int?>, isComplete: Bool = true) {
+        self.isComplete = isComplete
+        responseCount = responses.count
+        let values = responses.compactMap { $0[keyPath: field] }.filter { $0 >= 0 }
+        reportedResponses = values.count
+        var sum = 0
+        for value in values {
+            let addition = sum.addingReportingOverflow(value)
+            guard !addition.overflow else { total = nil; return }
+            sum = addition.partialValue
+        }
+        total = values.isEmpty ? nil : sum
+    }
+
+    var displayValue: String {
+        guard let total else { return String(localized: "runDetails.usage.unknown", table: "RunDetails") }
+        if !isComplete || reportedResponses < responseCount {
+            return String(localized: "runDetails.usage.partial \(total.formatted())", table: "RunDetails")
+        }
+        return total.formatted()
     }
 }
 

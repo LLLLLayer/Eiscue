@@ -75,7 +75,8 @@ struct ConnectionRepairView: View {
                         .font(.caption)
                 } footer: {
                     if checkTask == nil && connectionResult != .busy && connectionResult != .cancelled {
-                        Text("connectionRepair.completion", tableName: "Connections")
+                        Text(connectionResult == .unconfirmed ? "connectionRepair.unconfirmedNextSteps" : "connectionRepair.completion",
+                             tableName: "Connections")
                     }
                 }
                 .listRowBackground(EiscueStyle.surface)

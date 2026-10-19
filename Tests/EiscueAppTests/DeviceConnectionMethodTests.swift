@@ -335,6 +335,35 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertEqual(calls.disconnects, 2, "Failed restoration must clean up any partial media session.")
     }
 
+    func testDictationReconnectWithUnconfirmedCleanupKeepsTheGateAndReportsRepair() async throws {
+        let fixture = try dictationFixture()
+        let model = fixture.model
+        await model.connectDevice()
+        model.isLoading = false; model.draft = "Keep the completed dictation"
+        let id = UUID()
+        try await model.prepareDeviceForDictation(id: id)
+        await fixture.controller.setConnectionFailure(.connection("synthetic restoration failure"))
+        await fixture.controller.setReleaseConfirmed(false)
+
+        let error = await model.finishDeviceDictation(id: id)
+
+        XCTAssertEqual(error, String(localized: "speech.deviceReconnectReleaseFailed", table: "Speech"))
+        XCTAssertEqual(model.deviceConnectionError, error)
+        XCTAssertEqual(model.connectionMessage, error)
+        XCTAssertEqual(model.draft, "Keep the completed dictation")
+        XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertThrowsError(try model.deviceSession.acquire(.run(UUID())))
+        XCTAssertNil(model.deviceSession.owner)
+        XCTAssertNil(model.deviceConnectionTask)
+        XCTAssertNil(model.dictationDeviceRestoration)
+        XCTAssertFalse(model.isConnecting || model.isDeviceReady)
+        XCTAssertTrue(model.canRepairDeviceConnection)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
+        XCTAssertEqual(calls.disconnects, 2)
+        XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
     func testUnconfirmedMediaReleaseRejectsDictationAndNeverRestores() async throws {
         for finishDuringRelease in [false, true] {
             let fixture = try dictationFixture(suspendsDisconnect: finishDuringRelease)
@@ -454,6 +483,58 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertEqual(calls.cancelledConnections, 1)
         XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard], "Cancellation must not retry or use another route.")
         XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
+    func testExternalInvalidationCancelsTheOwnedDictationReconnectAndClearsItsTask() async throws {
+        for event in [DeviceSession.ExternalEvent.backgrounded, .transportLost] {
+            let fixture = try dictationFixture()
+            let model = fixture.model
+            await model.connectDevice()
+            model.isLoading = false; model.draft = "Keep the completed dictation"
+            let id = UUID()
+            try await model.prepareDeviceForDictation(id: id)
+            await fixture.controller.setSuspendsConnection(true)
+            let finish = Task { await model.finishDeviceDictation(id: id) }
+            defer {
+                Task {
+                    await fixture.controller.completePendingConnection()
+                    await fixture.controller.completePendingDisconnect()
+                }
+            }
+            try await waitUntil { await fixture.controller.calls().methods.count == 2 }
+            let reconnectID = model.deviceOperationID
+            await fixture.controller.setSuspendsDisconnect(true)
+
+            if event == .backgrounded { model.sceneChanged(.background) }
+            else { model.deviceSession.handle(event) }
+
+            XCTAssertNotEqual(model.deviceOperationID, reconnectID)
+            try await waitUntil { await fixture.controller.calls().disconnects == 2 }
+            let cancelling = await fixture.controller.calls()
+            XCTAssertEqual(cancelling.cancelledConnections, 1)
+            XCTAssertEqual(model.deviceSession.owner, .dictation(id))
+            XCTAssertTrue(model.deviceSession.isTransitioning)
+            XCTAssertFalse(model.canSend)
+            await fixture.controller.completePendingDisconnect()
+            let error = await finish.value
+            XCTAssertNil(error, "An invalidated restore must not overwrite the newer state with a reconnect notice.")
+            XCTAssertNil(model.dictationDeviceRestoration)
+            XCTAssertNil(model.deviceConnectionTask, "The old operation ID must not leave a completed task blocking repair.")
+            XCTAssertNil(model.deviceSession.owner)
+            XCTAssertFalse(model.deviceSession.isTransitioning || model.isDeviceReady)
+            XCTAssertEqual(model.draft, "Keep the completed dictation")
+            if event == .backgrounded { model.sceneChanged(.active) }
+            XCTAssertTrue(model.canRepairDeviceConnection)
+            let calls = await fixture.controller.calls()
+            XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard])
+            XCTAssertEqual(calls.pairingMutations, 0)
+
+            await fixture.controller.setSuspendsConnection(false)
+            await model.connectDevice()
+            _ = await model.finishDeviceDictation(id: id, reconnect: false)
+            XCTAssertTrue(model.isDeviceReady, "A late finish for the old recording must leave the manual connection alone.")
+            await model.disconnectDevice()
+        }
     }
 
     func testLocalVPNLossRevokesDictationRestorationWhileMediaIsReleased() async throws {

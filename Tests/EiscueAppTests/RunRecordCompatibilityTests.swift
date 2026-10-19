@@ -16,7 +16,42 @@ final class RunRecordCompatibilityTests: XCTestCase {
             XCTAssertEqual(record.state, .interrupted)
             XCTAssertNil(record.submission); XCTAssertNil(record.activities); XCTAssertNil(record.pauseReason)
             XCTAssertNil(record.promptVersion); XCTAssertNil(record.stopCause); XCTAssertNil(record.cleanupFailure)
+            XCTAssertNil(record.modelUsage)
+            XCTAssertNil(record.modelUsageIsComplete)
         }
+    }
+
+    func testTokenTotalsKeepPartialAndMissingCountsDistinctFromZero() {
+        let first = AgentModelUsage(id: UUID(), inputTokens: 31, outputTokens: 11, cacheReadTokens: 7, cacheWriteTokens: 0)
+        let second = AgentModelUsage(id: UUID(), inputTokens: 19, outputTokens: 3)
+        let input = RunTokenTotal([first, second], field: \.inputTokens)
+        XCTAssertEqual(input.total, 50)
+        XCTAssertEqual(input.reportedResponses, input.responseCount)
+        let recovered = RunTokenTotal([first], field: \.inputTokens, isComplete: false)
+        XCTAssertEqual(recovered.total, 31)
+        XCTAssertNotEqual(recovered.displayValue, "31", "A recovered host journal can miss a durable response; never show its retained counts as complete.")
+        let cache = RunTokenTotal([first, second], field: \.cacheReadTokens)
+        XCTAssertEqual(cache.total, 7)
+        XCTAssertEqual(cache.reportedResponses, 1)
+        XCTAssertEqual(cache.responseCount, 2)
+        XCTAssertNotEqual(cache.displayValue, "7", "Partial counts must not look like a complete task total.")
+        XCTAssertEqual(RunTokenTotal([first], field: \.cacheWriteTokens).total, 0)
+        XCTAssertNil(RunTokenTotal([second], field: \.cacheWriteTokens).total)
+        XCTAssertNil(RunTokenTotal([], field: \.inputTokens).total)
+        let large = AgentModelUsage(id: UUID(), inputTokens: Int.max)
+        XCTAssertNil(RunTokenTotal([large, first], field: \.inputTokens).total, "Overflow must never become a plausible count.")
+    }
+
+    func testUsageResponseIdentityDeduplicatesWithoutMergingDifferentRounds() throws {
+        var record = RunRecord(id: UUID(), conversationID: UUID(), requestID: UUID(), startedAt: Date(), scope: .chat,
+                               model: "fixture", skill: nil, state: .completed, detail: "Done", events: [])
+        let first = AgentModelUsage(id: UUID(), inputTokens: 31, outputTokens: 11)
+        let second = AgentModelUsage(id: UUID(), inputTokens: 31, outputTokens: 11)
+        record.recordModelUsage(first); record.recordModelUsage(first); record.recordModelUsage(second)
+        record.modelUsageIsComplete = true
+        XCTAssertEqual(record.modelUsage, [first, second])
+        XCTAssertEqual(try JSONDecoder().decode(RunRecord.self, from: JSONEncoder().encode(record)), record)
+        XCTAssertNil(record.modelUsage?.first?.cacheReadTokens)
     }
 
     func testNewUnknownOutcomeAndCleanupFailureRoundTripIndependently() throws {

@@ -1,4 +1,7 @@
-"""Offline setup-helper tests. No process, device, Keychain or network is used."""
+"""Offline tests with fake pairing commands and the shell's metadata-only mode.
+
+No device, Keychain, Cargo build or network is used.
+"""
 
 import importlib.util
 import io
@@ -31,12 +34,15 @@ def device(number=1, *, transport="wired", reality="physical", kind="iPhone"):
 
 
 class FakeCommands:
-    def __init__(self, records=None, *, pending=False, fail_pair=False, fail_copy=False, interrupt_pair=False):
+    def __init__(self, records=None, *, pending=False, fail_pair=False, fail_copy=False, interrupt_pair=False,
+                 tool_schemas=(1,), output_version=1):
         self.records = records if records is not None else [device()]
         self.pending = pending
         self.fail_pair = fail_pair
         self.fail_copy = fail_copy
         self.interrupt_pair = interrupt_pair
+        self.tool_schemas = tool_schemas
+        self.output_version = output_version
         self.calls = []
         self.temporary = None
         self.identity = None
@@ -46,8 +52,10 @@ class FakeCommands:
     def __call__(self, arguments, **_options):
         self.calls.append(arguments)
         if arguments[0] == "/bin/bash":
+            if arguments[-1] == "--describe-format":
+                return json.dumps({"protocolVersion": 1, "identitySchemaVersions": self.tool_schemas})
             self.identity = Path(arguments[arguments.index("--output") + 1])
-            self.identity.write_text('{"synthetic": "not a credential"}', encoding="utf-8")
+            self.identity.write_text(json.dumps({"version": self.output_version, "synthetic": "not a credential"}), encoding="utf-8")
             self.identity.chmod(0o600)
             if self.interrupt_pair:
                 raise KeyboardInterrupt()
@@ -81,10 +89,10 @@ class FakeCommands:
 
 
 class SetupDeviceTests(unittest.TestCase):
-    def run_setup(self, runner, responses=("1", "yes")):
+    def run_setup(self, runner, responses=("1", "yes"), **options):
         answers = iter(responses)
         with patch.object(helper, "preflight"):
-            helper.setup(run=runner, ask=lambda _: next(answers), write=lambda _: None)
+            helper.setup(run=runner, ask=lambda _: next(answers), write=lambda _: None, **options)
 
     def test_candidates_are_real_wired_phones_or_ipads(self):
         candidates = [device(), device(2, kind="iPad"), device(3, transport="localNetwork"),
@@ -109,17 +117,65 @@ class SetupDeviceTests(unittest.TestCase):
     def test_selected_device_is_same_for_pair_and_transfer_and_secrets_are_cleaned(self):
         runner = FakeCommands([device(), device(2)])
         self.run_setup(runner, ("2", "yes"))
-        pair = next(call for call in runner.calls if call[0] == "/bin/bash")
+        pair = next(call for call in runner.calls if "--udid" in call)
         copy = runner.copies[0]
         selected_udid = device(2)["hardwareProperties"]["udid"]
         self.assertEqual(pair[pair.index("--udid") + 1], selected_udid)
         self.assertIn("--enable-wifi", pair)
+        self.assertEqual(pair[pair.index("--identity-schema-version") + 1], "1")
         self.assertEqual(copy[copy.index("--device") + 1], selected_udid)
         self.assertEqual(copy[copy.index("--domain-identifier") + 1], "org.eiscue.app")
         self.assertEqual(copy[copy.index("--destination") + 1], "tmp/EiscuePairingTransfer.json")
         self.assertEqual(runner.directory_mode, 0o700)
         self.assertEqual(runner.file_mode, 0o600)
         self.assertFalse(runner.temporary.exists())
+
+    def test_legacy_command_keeps_v1_even_when_tool_supports_newer_format(self):
+        runner = FakeCommands(tool_schemas=(1, 2))
+        self.run_setup(runner)
+        pair = next(call for call in runner.calls if "--udid" in call)
+        self.assertEqual(pair[pair.index("--identity-schema-version") + 1], "1")
+        self.assertEqual(len(runner.copies), 1)
+
+    def test_incompatible_or_invalid_capabilities_stop_before_device_access(self):
+        for schemas in ((2,), (), (True,), ("1",)):
+            with self.subTest(schemas=schemas):
+                runner = FakeCommands(tool_schemas=schemas)
+                with self.assertRaises(helper.SetupError):
+                    self.run_setup(runner, app_schemas=(1,))
+                self.assertEqual(len(runner.calls), 1)
+                self.assertEqual(runner.calls[0][-1], "--describe-format")
+                self.assertIsNone(runner.identity)
+
+    def test_unexpected_export_schema_is_never_transferred_and_is_cleaned(self):
+        for version in (2, True, None, "1"):
+            with self.subTest(version=version):
+                runner = FakeCommands(output_version=version)
+                with self.assertRaisesRegex(helper.SetupError, "format accepted"):
+                    self.run_setup(runner, app_schemas=(1,))
+                self.assertFalse(runner.copies)
+                self.assertFalse(runner.identity.exists())
+                self.assertFalse(runner.temporary.exists())
+
+    def test_app_schema_argument_is_forwarded_and_unknown_cli_options_do_not_pair(self):
+        with patch.object(helper, "setup") as setup:
+            self.assertEqual(helper.main(["--app-pairing-schema", "1"]), 0)
+            setup.assert_called_once_with(app_schemas=[1])
+        with patch.object(helper, "setup") as setup, patch("sys.stderr", new_callable=io.StringIO):
+            with self.assertRaises(SystemExit) as result:
+                helper.main(["--app-pairing-schema", "0"])
+            self.assertEqual(result.exception.code, 2)
+            setup.assert_not_called()
+
+    def test_shell_format_metadata_and_unknown_version_need_no_external_tools(self):
+        script = SCRIPT.with_name("pair-device-usb.sh")
+        capability = subprocess.run(["/bin/bash", str(script), "--describe-format"],
+                                    env={"PATH": ""}, capture_output=True, text=True, check=True)
+        self.assertEqual(json.loads(capability.stdout), {"protocolVersion": 1, "identitySchemaVersions": [1]})
+        rejected = subprocess.run(["/bin/bash", str(script), "--identity-schema-version", "2"],
+                                  env={"PATH": ""}, capture_output=True, text=True)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("Unsupported pairing identity format", rejected.stderr)
 
     def test_existing_transfer_and_unprepared_device_never_generate_identity(self):
         for runner in (FakeCommands(pending=True), FakeCommands()):

@@ -21,6 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 APP_ID = "org.eiscue.app"
 TRANSFER_NAME = "EiscuePairingTransfer.json"
 RUST_TOOLCHAIN = "1.96.0"
+# Commands copied by older apps did not declare a format. Their raw v1 record
+# remains the default, even if a later tool learns to export additional formats.
+LEGACY_APP_SCHEMAS = (1,)
 
 
 class SetupError(Exception):
@@ -225,8 +228,39 @@ def validate_private_file(path):
         raise SetupError("The pairing output failed its private-file check. Nothing was sent.")
 
 
-def setup(run=run_command, ask=input, write=print):
+def negotiate_identity_schema(app_schemas, run):
+    failure = "The pairing tool's format could not be verified. Use the setup command shown in your installed Eiscue app. Nothing was paired or sent."
+    output = run(["/bin/bash", str(ROOT / "Scripts/pair-device-usb.sh"), "--describe-format"],
+                 failure=failure)
+    try:
+        capability = json.loads(output)
+        versions = capability["identitySchemaVersions"]
+        if (type(capability["protocolVersion"]) is not int or capability["protocolVersion"] != 1
+                or not isinstance(versions, list) or not versions
+                or any(type(version) is not int or version < 1 for version in versions)
+                or not app_schemas or any(type(version) is not int or version < 1 for version in app_schemas)):
+            raise ValueError()
+    except (ValueError, KeyError, TypeError):
+        raise SetupError(failure) from None
+    common = set(app_schemas).intersection(versions)
+    if not common:
+        raise SetupError("This pairing tool and the installed Eiscue app have no compatible identity format. Update Eiscue, then use the setup command shown in the app. Nothing was paired or sent.")
+    return max(common)
+
+
+def validate_identity_schema(path, expected_schema):
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(record, dict) or type(record.get("version")) is not int or record["version"] != expected_schema:
+            raise ValueError()
+    except (OSError, UnicodeError, ValueError):
+        # Never include private record contents or parser diagnostics in output.
+        raise SetupError("The pairing output is not in the format accepted by this Eiscue app. Use the app's current setup command. Nothing was sent.") from None
+
+
+def setup(run=run_command, ask=input, write=print, app_schemas=LEGACY_APP_SCHEMAS):
     preflight(run)
+    identity_schema = negotiate_identity_schema(app_schemas, run)
     write("Keep your iPhone/iPad unlocked and connected by USB. Developer Mode, computer trust and Xcode device preparation (DDI) are required.")
     write("This command creates an Eiscue pairing identity and enables Wi-Fi developer connections. It does not prepare DDI, launch Eiscue, import the identity, or connect a VPN.")
     with tempfile.TemporaryDirectory(prefix="eiscue-pairing-") as temporary:
@@ -240,9 +274,10 @@ def setup(run=run_command, ask=input, write=print):
         identity = directory / TRANSFER_NAME
         write("Building the pairing tool and preparing the identity. The first build may take several minutes and download locked project dependencies.")
         run(["/bin/bash", str(ROOT / "Scripts/pair-device-usb.sh"), "--udid", device.udid,
-             "--output", str(identity), "--enable-wifi"], timeout=900,
+             "--output", str(identity), "--enable-wifi", "--identity-schema-version", str(identity_schema)], timeout=900,
             failure="USB pairing failed. Check the selected device's trust and Developer Mode, and the Mac's network access for the first build, then retry. Nothing was sent.")
         validate_private_file(identity)
+        validate_identity_schema(identity, identity_schema)
         # The user may have disconnected the cable while Cargo was building.
         if device.udid not in {candidate.udid for candidate in list_usb_devices(directory, run)}:
             raise SetupError("The selected device is no longer connected over USB. Nothing was sent; reconnect it and retry.")
@@ -264,13 +299,17 @@ def main(arguments=None):
         description="Select a USB iPhone/iPad, generate a private Eiscue pairing identity, and send it to the installed app for manual import.",
         epilog="Run from the Eiscue source checkout: python3 Scripts/setup-device.py. Requires macOS, Xcode 26+, Python 3.9+, Rust 1.96.0, Developer Mode, USB trust and prepared DDI. No global tools are installed; the first Cargo build can download locked project dependencies. --help does not inspect or modify devices.",
     )
-    parser.parse_args(arguments)
+    parser.add_argument("--app-pairing-schema", type=int, action="append", metavar="VERSION",
+                        help="identity schema accepted by the installed app; repeat for multiple versions (default: legacy version 1)")
+    options = parser.parse_args(arguments)
+    if options.app_pairing_schema is not None and any(version < 1 for version in options.app_pairing_schema):
+        parser.error("--app-pairing-schema must be a positive version number")
     previous_term = signal.getsignal(signal.SIGTERM)
     def interrupt(_signal, _frame):
         raise KeyboardInterrupt()
     signal.signal(signal.SIGTERM, interrupt)
     try:
-        setup()
+        setup(app_schemas=options.app_pairing_schema or LEGACY_APP_SCHEMAS)
         return 0
     except (KeyboardInterrupt, EOFError, SetupCancelled):
         print("Cancelled. Mac temporary pairing files were removed. If sending had started, check Eiscue for a pending import before retrying.", file=sys.stderr)

@@ -4,7 +4,25 @@ import Foundation
 /// A trusted desktop can send this one temporary file through the app's USB
 /// container service. No other app's pairing records or directories are scanned.
 enum PairingTransfer {
+    static let supportedSchemaVersion = 1
     static var url: URL { URL.temporaryDirectory.appendingPathComponent("EiscuePairingTransfer.json") }
+
+    /// Check only the format boundary here. The Kit still validates the complete
+    /// committed identity before it disconnects or replaces any saved identity.
+    static func validateIdentitySchema(in data: Data) throws {
+        guard !data.isEmpty, data.count <= 32 * 1024 else { throw DeviceControlError.invalidIdentity }
+        struct Header: Decodable { let version: Int }
+        let header = (try? PropertyListDecoder().decode(Header.self, from: data))
+            ?? (try? JSONDecoder().decode(Header.self, from: data))
+        guard header?.version == supportedSchemaVersion else { throw FormatError.unsupported }
+    }
+
+    enum FormatError: LocalizedError {
+        case unsupported
+        var errorDescription: String? {
+            String(localized: "pairing.transfer.unsupportedFormat", table: "Connections")
+        }
+    }
 
     static func readAndRemove(at url: URL) throws -> Data {
         defer { try? FileManager.default.removeItem(at: url) }
@@ -34,6 +52,7 @@ extension AppModel {
         do {
             var data = try PairingTransfer.readAndRemove(at: PairingTransfer.url)
             defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
+            try PairingTransfer.validateIdentitySchema(in: data)
             try await deviceClient.importPairingIdentity(data)
             guard deviceOperationID == operationID else { return }
             deviceConnectionError = nil

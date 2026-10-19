@@ -1,3 +1,4 @@
+import EiscueAgentKit
 import SwiftUI
 
 struct RunHistoryView: View {
@@ -93,6 +94,22 @@ private struct RunDetailView: View {
             }
 
             Section {
+                if let usage = record.modelUsage, !usage.isEmpty {
+                    usageRow("runDetails.usage.input", responses: usage, field: \.inputTokens)
+                    usageRow("runDetails.usage.output", responses: usage, field: \.outputTokens)
+                    usageRow("runDetails.usage.cacheRead", responses: usage, field: \.cacheReadTokens)
+                    usageRow("runDetails.usage.cacheWrite", responses: usage, field: \.cacheWriteTokens)
+                } else {
+                    Text(String(localized: "runDetails.usage.unavailable", table: "RunDetails"))
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(String(localized: "runDetails.usage.title", table: "RunDetails"))
+            } footer: {
+                Text(String(localized: "runDetails.usage.detail", table: "RunDetails"))
+            }
+
+            Section {
                 if timeline.isEmpty {
                     Text("runs.noEvents").foregroundStyle(.secondary)
                 } else {
@@ -152,6 +169,12 @@ private struct RunDetailView: View {
         .background(EiscueStyle.background)
         .navigationTitle("runs.detailTitle")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func usageRow(_ key: String.LocalizationValue, responses: [AgentModelUsage],
+                          field: KeyPath<AgentModelUsage, Int?>) -> some View {
+        LabeledContent(String(localized: key, table: "RunDetails"),
+            value: RunTokenTotal(responses, field: field, isComplete: record.modelUsageIsComplete == true).displayValue)
     }
 
     private func skillName(_ reference: String) -> String {

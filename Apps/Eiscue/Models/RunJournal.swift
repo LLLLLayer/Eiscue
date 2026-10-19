@@ -13,11 +13,13 @@ actor RunJournal {
         if let previous {
             guard Self.sameIdentity(previous.record, record),
                   record.events.starts(with: previous.record.events),
+                  (record.modelUsage ?? []).starts(with: previous.record.modelUsage ?? []),
                   (record.activities ?? []).map(\.id).starts(with: (previous.record.activities ?? []).map(\.id)) else {
                 throw CocoaError(.fileWriteInvalidFileName)
             }
         }
         guard Set(record.events.map(\.id)).count == record.events.count,
+              Set((record.modelUsage ?? []).map(\.id)).count == (record.modelUsage ?? []).count,
               Set((record.activities ?? []).map(\.id)).count == (record.activities ?? []).count else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -38,6 +40,7 @@ actor RunJournal {
         var delta = record
         let priorJournalRecord = (previous?.sequence ?? 0) > 0 ? previous?.record : nil
         delta.events = Array(record.events.dropFirst(priorJournalRecord?.events.count ?? 0))
+        delta.modelUsage = record.modelUsage.map { Array($0.dropFirst(priorJournalRecord?.modelUsage?.count ?? 0)) }
         let previousActivities = Dictionary(uniqueKeysWithValues: (priorJournalRecord?.activities ?? []).map { ($0.id, $0) })
         delta.activities = record.activities.map { $0.filter { previousActivities[$0.id] != $0 } }
         let entry = try Entry(sequence: (previous?.sequence ?? 0) + 1, previousDigest: previous?.digest, record: delta)
@@ -127,6 +130,12 @@ actor RunJournal {
             var record = entry.record
             record.events = (state?.record.events ?? []) + entry.record.events
             guard Set(record.events.map(\.id)).count == record.events.count else { throw CocoaError(.fileReadCorruptFile) }
+            if let updates = entry.record.modelUsage {
+                record.modelUsage = (state?.record.modelUsage ?? []) + updates
+                guard Set(record.modelUsage!.map(\.id)).count == record.modelUsage!.count else { throw CocoaError(.fileReadCorruptFile) }
+            } else {
+                guard state?.record.modelUsage?.isEmpty != false else { throw CocoaError(.fileReadCorruptFile) }
+            }
             if let updates = entry.record.activities {
                 guard Set(updates.map(\.id)).count == updates.count else { throw CocoaError(.fileReadCorruptFile) }
                 var activities = state?.record.activities ?? []

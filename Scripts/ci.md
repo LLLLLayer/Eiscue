@@ -1,6 +1,8 @@
 # Simulator validation
 
-The [workflow](../.github/workflows/checks.yml) runs on pushes to `main` and manual dispatch. It requires two registered **self-hosted Apple Silicon macOS runners**; adding the workflow does not provision them or enable branch protection.
+The [offline workflow](../.github/workflows/helpers.yml) runs pairing compatibility and test-helper checks on GitHub-hosted Ubuntu for pushes to `main`, pull requests and manual dispatch. It needs no model keys, device or dedicated runner.
+
+The [Apple workflow](../.github/workflows/checks.yml) runs on pushes to `main` and manual dispatch only when the repository variable `EISCUE_APPLE_RUNNERS_ENABLED` is `true`. It requires two registered **self-hosted Apple Silicon macOS runners**. Leave the variable unset until they are ready, so jobs do not queue indefinitely. Adding a workflow does not provision runners or enable branch protection.
 
 | Runner label | Repository variable | Installed simulator runtime |
 | --- | --- | --- |
@@ -8,6 +10,8 @@ The [workflow](../.github/workflows/checks.yml) runs on pushes to `main` and man
 | `eiscue-xcode27` | `EISCUE_XCODE27_DEVELOPER_DIR` | iOS 27.0.x |
 
 Each variable names that runner's Xcode `Contents/Developer` directory. Install XcodeGen 2.45+, Python 3, and the listed runtime first. Use separate runner machines or isolated macOS accounts; the jobs create and delete only their own simulators. No physical devices or model credentials are used. Untrusted pull requests do not run on these self-hosted machines.
+
+Once both runners report online, set `EISCUE_APPLE_RUNNERS_ENABLED=true`, dispatch the Apple workflow and inspect both jobs' actual results before requiring them in branch protection. The offline helper job alone does not check Swift, UIKit or device control.
 
 Run the same gate locally with an explicit toolchain and a new output directory:
 
