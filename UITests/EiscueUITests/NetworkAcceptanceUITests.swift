@@ -191,6 +191,89 @@ final class NetworkAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
+    func testPreviewSelectedLocalVPNConnection() throws {
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        let backend = ProcessInfo.processInfo.environment["EISCUE_NETWORK_BACKEND"] ?? ""
+        let backendTitle = backend == "coreDevice" ? "DisplayService" : "XCTest"
+        var metadata = "startedAt=\(Date().timeIntervalSince1970)\npreviewRequested=false\nimageAttached=false\nconnectionChangeRequested=false"
+        func attach(_ phase: String) {
+            let attachment = XCTAttachment(string: metadata)
+            attachment.name = "Selected network preview UI — \(phase)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        defer { attach("finished") }
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { metadata += "\ncheckFailed=true"; attach("blocked or failed") }
+            try require(condition, message)
+        }
+        try check(app.state == .runningForeground && app.alerts.count == 0
+                  && XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.count == 0,
+                  "Open the normal App in the foreground first; this helper never launches or handles authorization.")
+        try check(!app.buttons["stopRunButton"].exists && !app.buttons["cancelDictationButton"].exists
+                  && !app.staticTexts["speechDeviceRestorationStatus"].exists,
+                  "Finish the current task, recording and restoration before previewing.")
+        openDevice(in: app)
+        try requireIdleControls(in: app)
+        let method = app.buttons["deviceConnectionMethodPicker"]
+        let backendPicker = app.buttons["deviceControlBackendPicker"]
+        let status = app.staticTexts["devicePairingComplete"]
+        let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
+        try check(["In app", "App 内连接"].contains(method.value as? String ?? "")
+                  && backendPicker.value as? String == backendTitle && backendPicker.isEnabled,
+                  "The already selected local-VPN route must use the requested backend.")
+        try check(ready.evaluate(with: status) && app.buttons["disconnectDeviceButton"].exists
+                  && app.buttons["disconnectDeviceButton"].isEnabled,
+                  "The existing control connection must already be ready; this helper never connects it.")
+        metadata += "\nlocalVPNVerified=true\nbackendMatched=true\ninitiallyReady=true"
+        let preview = app.buttons["deviceScreenPreviewButton"]
+        for _ in 0..<5 {
+            if preview.exists && preview.isHittable { break }
+            app.swipeUp()
+        }
+        if !preview.exists {
+            // Read the normal preference only to distinguish an intentionally
+            // hidden Debug entry. Never enable it on behalf of this helper.
+            openSettings(in: app)
+            let debugTools = app.switches["debugToolsToggle"]
+            for _ in 0..<5 {
+                if debugTools.exists && debugTools.isHittable { break }
+                app.swipeUp()
+            }
+            if debugTools.exists && debugTools.value as? String == "0" {
+                metadata += "\ndebugToolsDisabled=true\nskipped=true"
+                throw XCTSkip("The App's Debug tools are disabled; enable them separately before requesting a screen preview.")
+            }
+            try check(false, "The Debug preview entry is unavailable; no preference was changed.")
+        }
+        try check(app.state == .runningForeground && ready.evaluate(with: status)
+                  && preview.exists && preview.isEnabled && preview.isHittable && app.alerts.count == 0,
+                  "The ready connection and its normal preview control must still be available.")
+        metadata += "\npreviewRequested=true\npreviewRequestedAt=\(Date().timeIntervalSince1970)"
+        attach("before single preview request")
+        preview.tap()
+        let image = app.descendants(matching: .any).matching(identifier: "deviceScreenPreviewImage").firstMatch
+        let close = app.buttons["closeDeviceScreenPreviewButton"]
+        let imageAppeared = image.waitForExistence(timeout: 15)
+        let canClose = close.waitForExistence(timeout: 5) && close.isEnabled && close.isHittable
+        metadata += "\nimageAppeared=\(imageAppeared)\ncloseAvailable=\(canClose)\npreviewObservedAt=\(Date().timeIntervalSince1970)"
+        if canClose {
+            close.tap()
+            let dismissed = close.waitForNonExistence(timeout: 5)
+            metadata += "\npreviewDismissed=\(dismissed)\npreviewClosedAt=\(Date().timeIntervalSince1970)"
+            try check(dismissed, "The normal preview dismissal did not finish.")
+        }
+        try check(imageAppeared && canClose, "A decoded preview image and normal close action did not both appear.")
+        try waitFor(ready, on: status, message: "The existing control connection did not remain ready after closing its preview.")
+        try requireIdleControls(in: app)
+        try check(method.value as? String == "In app" || method.value as? String == "App 内连接",
+                  "The selected route changed during the preview.")
+        try check(backendPicker.value as? String == backendTitle && backendPicker.isEnabled,
+                  "The selected backend changed or remained busy after preview dismissal.")
+        metadata += "\nreadyRetained=true\nrouteAndBackendUnchanged=true\nuiChecksPassed=true\nfinishedAt=\(Date().timeIntervalSince1970)"
+    }
+
+    @MainActor
     func testPrepareLocalVPNBackend() throws {
         let backend = try XCTUnwrap(ProcessInfo.processInfo.environment["EISCUE_NETWORK_BACKEND"])
         let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")

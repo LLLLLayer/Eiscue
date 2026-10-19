@@ -15,6 +15,7 @@ extern "C" {
 #define NCM_ACTION_XCTEST_STOP 15u
 #define NCM_ACTION_LEGACY_SCREENSHOT 16u
 #define NCM_ACTION_VIDEO_GEOMETRY_CHECK 17u
+#define NCM_ACTION_MEDIA_STATUS_DIAGNOSTIC 18u
 /* All pointers are borrowed only for start(); caller owns/clears its secrets.
  * No disk/keychain lookup, identity generation, pairing or logging occurs. */
 typedef struct { const uint8_t *data; size_t size; } ncm_bytes;
@@ -105,7 +106,35 @@ int32_t ncm_backend_drag(uint64_t handle,uint64_t request_id,uint16_t x,uint16_t
  * Action 17: read-only authenticated DisplayInfo geometry check, SCREEN |
  * EXISTING_VERIFY required. Event 2 contains exactly one byte: 1 confirms the
  * same synchronized epoch, 0 refuses it. It never publishes replacement metadata
- * or sends input. Uses the ordinary request-id/receipt and cleanup sequence. */
+ * or sends input. Uses the ordinary request-id/receipt and cleanup sequence.
+ * Action 18: read-only live Media identity diagnostic; SCREEN | MEDIA |
+ * EXISTING_VERIFY required. Idle/unhealthy Media is rejected before any query.
+ * One temporary DisplayService client on this authenticated Session, 2s total,
+ * no retries/start/stop. Event 2 is fixed version-1 JSON with booleans, bounded
+ * counts and null only: querySucceeded,queryTimedOut,failureStage,failureCause,
+ * mediaHealthy,rootIsDictionary,serverInfoPresent,serverInfoIsDictionary,
+ * sessionsPresent,sessionsIsArray,sessionCount,scanComplete,truncated,
+ * visitedNodeCount,visitedByteCount,opaqueDataPresent,sessionUUIDMatchCount,
+ * callUUIDMatchCount,streamConfigCount,localSSRCFieldCount,remoteSSRCFieldCount,
+ * streamPairMatchCount,correlatedSessionMatchCount,clientSessionPairMatchCount.
+ * correlatedSessionMatchCount requires
+ * both UUID strings and the matching direct streamConfig in one known session.
+ * clientSessionPairMatchCount independently checks the candidate path
+ * connection.options.avcMediaStreamOptionClientSessionID.uuid against the live
+ * session UUID and both direct streamConfig SSRCs within that same entry.
+ * This candidate's presence in phone status still requires physical evidence;
+ * it does not change the existing correlation count or release authority.
+ * failureStage/cause use the ordinary 1-based ABI codes.
+ * Query errors are event 2 with querySucceeded=false and source/match facts null.
+ * On truncated scans all counts except visited counts are null, as is
+ * opaqueDataPresent. Scan limits (depth 8, nodes 4096, key/string/data bytes 1 MiB) apply to
+ * the decoded plist only. Opaque Data is never parsed for UUID matches. Only
+ * canonical UUID string values match; unknown keys/paths/values never escape.
+ * sessionsPresent/IsArray, sessionCount and stream counts classify only the
+ * status reply's root sessions[*].connection.streamConfig. serverInfo flags
+ * report presence/shape only; a StopResponse wrapper is not a known query shape.
+ * No UUID/SSRC/keys/addresses are returned or persisted. These facts never
+ * establish cross-process ownership or grant authority to release any stream. */
 int32_t ncm_backend_submit(uint64_t handle,uint64_t request_id,uint32_t action,uint16_t x,uint16_t y);
 /* 7 Home, 8 installed applications (event 11 JSON name/bundle_id/version).
  * 9 launch {bundle_id,arguments:[strings]}, 10 type {text}: all text via pasteboard + Cmd-V

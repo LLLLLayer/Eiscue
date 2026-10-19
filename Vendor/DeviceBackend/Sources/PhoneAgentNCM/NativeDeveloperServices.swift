@@ -252,7 +252,50 @@ public enum NativeControlBackend: Sendable, Equatable {
                 if !consumed { do { try await Task.sleep(for: .milliseconds(5)) } catch { return } }
             }
         }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--media-session-diagnostics") {
+            try await collectMediaSessionDiagnostic()
+        }
+        #endif
     }
+    #if DEBUG
+    private func collectMediaSessionDiagnostic() async throws {
+        let startedAt = Date().timeIntervalSince1970, began = ContinuousClock.now
+        let url = URL.cachesDirectory.appendingPathComponent("EiscueMediaSessionDiagnostic.json")
+        // A cancelled/failed attempt must not leave an earlier success for export.
+        do { try FileManager.default.removeItem(at: url) }
+        catch CocoaError.fileNoSuchFile {}
+        catch {
+            automationDiagnostic("media.sessionDiagnostic invalidation=false")
+            return
+        }
+        // The ordinary receipt path keeps cancellation and accepted-request
+        // draining intact. The query never starts or stops another media stream.
+        func elapsed() -> Double {
+            let parts = began.duration(to: .now).components
+            return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+        }
+        let encoded: Data
+        do {
+            let data = try await operation(UInt32(NCM_ACTION_MEDIA_STATUS_DIAGNOSTIC))
+            try Task.checkCancellation()
+            if let report = try? NCMMediaSessionDiagnostic(data: data) {
+                encoded = try report.record(startedAt: startedAt, elapsedSeconds: elapsed())
+            } else {
+                encoded = try NCMMediaSessionDiagnostic.issueRecord(startedAt: startedAt, elapsedSeconds: elapsed())
+            }
+        } catch NativeBackendError.protocolFailure(let stage, let cause) where NCMMediaSessionDiagnostic.isRefusal(stage: stage, cause: cause) {
+            try Task.checkCancellation()
+            encoded = try NCMMediaSessionDiagnostic.issueRecord(startedAt: startedAt, elapsedSeconds: elapsed(), refusal: (stage, cause))
+        }
+        // Persist only the re-encoded allowlist, never the received payload.
+        do {
+            try encoded.write(to: url, options: Data.WritingOptions([.atomic, .completeFileProtectionUntilFirstUserAuthentication]))
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            automationDiagnostic("media.sessionDiagnostic saved=true")
+        } catch { automationDiagnostic("media.sessionDiagnostic saved=false") }
+    }
+    #endif
     /// Stop local observation, then release this controller's owned automation
     /// or DisplayService/HID resources without revoking the authentication tunnel.
     public func stopTouchMedia() async throws {
@@ -476,6 +519,15 @@ public enum NativeControlBackend: Sendable, Equatable {
                 cleanupRequired = true
                 throw error
             }
+            #if DEBUG
+            if action == UInt32(NCM_ACTION_MEDIA_STATUS_DIAGNOSTIC), submitted, submittedRequest.pending == nil,
+               case NativeBackendError.protocolFailure(let stage, let cause) = error,
+               NCMMediaSessionDiagnostic.isRefusal(stage: stage, cause: cause) {
+                // This read-only refusal receipt has settled. Keep actual loss,
+                // malformed events and pending/cancelled requests on their usual path.
+                throw error
+            }
+            #endif
             // A screenshot owns a fresh, read-only service stream. Dropping that
             // stream does not revoke the authenticated tunnel or replay any input.
             // Worker closure and malformed ABI events remain fatal.

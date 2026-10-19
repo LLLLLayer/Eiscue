@@ -461,6 +461,7 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
                     13 => Stage::LegacyInstrumentsConnection,
                     14 => Stage::XCTestControlInit,
                     16 => Stage::LegacyInstrumentsConnection,
+                    18 => Stage::Media,
                     _ => Stage::Input,
                 },
                 cause: Cause::Unprepared,
@@ -468,6 +469,7 @@ async fn execute(session: &mut Session, r: Request, permissions: u32) -> Event {
         );
     }
     let result = match r.action {
+        18 => session.media_status_diagnostic().await.map(|report| Event::ok(r.id, 2, report)),
         17 => session.verify_video_geometry().await.map(|confirmed| Event::ok(r.id, 2, vec![u8::from(confirmed)])),
         16 => session.screenshot_legacy().await.map(|s| Event::ok(r.id, 4, s.png)),
         14 => session.start_xctest_session(&r.payload).await
@@ -555,6 +557,7 @@ fn required_permissions(action: u32) -> u32 {
         14 => INPUT | VERIFY,
         16 => SCREEN | VERIFY,
         17 => SCREEN | VERIFY,
+        18 => SCREEN | MEDIA | VERIFY,
         _ => u32::MAX,
     }
 }
@@ -786,7 +789,7 @@ pub unsafe extern "C" fn ncm_local_vpn_start_configured(
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ncm_backend_submit(handle: u64, id: u64, action: u32, x: u16, y: u16) -> i32 {
-    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 && action != 13 && action != 15 && action != 16 && action != 17 {
+    if !(1..=5).contains(&action) && action != 7 && action != 8 && action != 11 && action != 13 && action != 15 && action != 16 && action != 17 && action != 18 {
         return INVALID;
     }
     submit_request(
@@ -1270,6 +1273,25 @@ mod tests {
         assert_eq!(ncm_backend_xctest_stop(u64::MAX, 1), CLOSED);
     }
 
+    #[tokio::test]
+    async fn media_status_diagnostic_requires_screen_media_and_verification_only() {
+        let required = super::required_permissions(18);
+        assert_eq!(required, super::SCREEN | super::MEDIA | super::VERIFY);
+        let mut session = crate::tests::broken_media_session();
+        for permissions in 0..16 {
+            let allowed = permissions & required == required;
+            assert_eq!(allowed,
+                permissions & super::SCREEN != 0 && permissions & super::MEDIA != 0 && permissions & super::VERIFY != 0);
+            let request = super::Request { id: 1, action: 18, x: 0, y: 0, end_x: 0, end_y: 0,
+                duration: 0, payload: zeroize::Zeroizing::new(Vec::new()) };
+            let event = super::execute(&mut session, request, permissions).await;
+            assert_eq!(event.header.kind, 3);
+            assert_eq!(event.header.stage, super::Stage::Media as u32 + 1);
+            assert_eq!(event.header.cause, if allowed { super::Cause::MediaInactive } else { super::Cause::Unprepared } as u32 + 1);
+            assert!(session.services().is_ok(), "Read-only refusal must retain the authenticated generation");
+        }
+        assert_eq!(super::ncm_backend_submit(u64::MAX, 1, 18, 0, 0), super::CLOSED);
+    }
     #[test]
     fn legacy_probe_requires_screen_and_existing_verification_but_no_input() {
         let required = super::required_permissions(13);

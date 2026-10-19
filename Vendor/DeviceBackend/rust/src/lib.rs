@@ -4,6 +4,7 @@
 //! read/write a pairing file. Nothing runs just by linking this static library.
 mod ffi;
 mod media;
+mod media_diagnostic;
 mod relay;
 mod local_vpn;
 mod legacy_probe;
@@ -351,6 +352,16 @@ impl Session {
         let Some(media) = self.media.as_ref() else { return Ok(false); };
         media.verify_geometry(&mut self.adapter, &mut self.handshake, &self.video).await
     }
+    /// Read-only evidence about this live media start, never release authority.
+    pub async fn media_status_diagnostic(&mut self) -> Result<Vec<u8>, Error> {
+        self.check()?;
+        let media = self.media.as_ref().ok_or(error(Stage::Media, Cause::MediaInactive))?;
+        self.require("com.apple.coredevice.displayservice", Stage::Media)?;
+        let report = media.status_diagnostic(&mut self.adapter, &mut self.handshake).await?;
+        // A cancelled owner must still pass through the ordinary failure gate.
+        self.check()?;
+        Ok(report)
+    }
     /// No replay on timeout/uncertain release. A negotiated screen session must belong to
     /// this same authenticated generation; result never claims a visible tap.
     pub async fn tap(&mut self, x: u16, y: u16) -> Result<TouchDelivery, Error> {
@@ -687,7 +698,7 @@ mod tests {
         ));
         assert_eq!(connector.calls.load(Ordering::SeqCst), 0);
     }
-    fn broken_media_session() -> Session {
+    pub(super) fn broken_media_session() -> Session {
         let (stream, peer) = tokio::io::duplex(1024);
         drop(peer); // synthetic broken video transport, no device connection
         let adapter = Adapter::new(
@@ -734,6 +745,17 @@ mod tests {
             video: std::sync::Arc::new(video::VideoMailbox::default()),
             valid: true,
         }
+    }
+    #[tokio::test]
+    async fn idle_media_status_diagnostic_rejects_without_query_or_release_changes() {
+        let mut session = broken_media_session();
+        for release in [media::ReleaseState::Idle, media::ReleaseState::Unknown, media::ReleaseState::Owned(11)] {
+            session.media_release = release;
+            assert_eq!(session.media_status_diagnostic().await, Err(error(Stage::Media, Cause::MediaInactive)));
+            assert!(session.valid && !session.owner.0.is_closed());
+            assert!(session.media.is_none());
+        }
+        assert_eq!(session.media_release, media::ReleaseState::Owned(11));
     }
     #[tokio::test]
     async fn failed_video_preparation_does_not_revoke_screenshot_generation() {

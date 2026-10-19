@@ -137,6 +137,7 @@ pub(crate) struct Media {
     hid: UniversalHidServiceClient<Stream>,
     _drains: Drains,
     healthy: Arc<AtomicBool>,
+    diagnostic_identity: crate::media_diagnostic::Identity,
 }
 #[derive(Default, Debug, Eq, PartialEq)]
 pub(crate) enum ReleaseState {
@@ -201,6 +202,17 @@ fn owned_start_identifier(answer: &plist::Value) -> Option<u32> {
 }
 
 impl Media {
+    pub async fn status_diagnostic(
+        &self, adapter: &mut AdapterHandle, handshake: &mut RsdHandshake,
+    ) -> Result<Vec<u8>, Error> {
+        crate::media_diagnostic::query(&self.diagnostic_identity, &self.healthy, async {
+            // A timeout drops only this temporary client, preserving _video.
+            let mut client = DisplayServiceClient::connect_rsd(adapter, handshake).await
+                .map_err(|_| error(Stage::VideoService, Cause::Protocol))?;
+            client.get_media_stream_server_status().await
+                .map_err(|_| error(Stage::Media, Cause::Protocol))
+        }).await
+    }
     /// Correlated read-only roundtrip before reusing input geometry. This uses
     /// a separate short-lived client, never the notification stream's channel.
     pub async fn verify_geometry(
@@ -242,7 +254,8 @@ impl Media {
         let session = uuid::Uuid::new_v4();
         let ssrc =
             u32::from_be_bytes(uuid::Uuid::new_v4().as_bytes()[..4].try_into().unwrap()).max(1);
-        let call_id = uuid::Uuid::new_v4().to_string().to_uppercase();
+        let call = uuid::Uuid::new_v4();
+        let call_id = call.to_string().to_uppercase();
         let offer = build_screen_video_offer_with_bitrate(&call_id, &info, ssrc, u32::from(RECEIVER_BANDWIDTH_KBPS) * 1000).map_err(|_| fail())?;
         // Retain the video session until close; audio is not needed for touch.
         let mut video = bounded(
@@ -278,6 +291,9 @@ impl Media {
         };
         let (feedback_port, _, receiver_ssrc) = config;
         release.claim(receiver_ssrc)?;
+        let diagnostic_identity = crate::media_diagnostic::Identity::new(
+            session, call, negotiated.ssrc, receiver_ssrc,
+        );
         // Refresh outside the receiver: service latency must not block RTP/ACKs.
         // Each frame carries a snapshot, validated against that frame's SPS.
         mailbox.begin_stream();
@@ -375,6 +391,7 @@ impl Media {
             hid,
             _drains: drains,
             healthy,
+            diagnostic_identity,
         })
     }
     pub async fn drag(

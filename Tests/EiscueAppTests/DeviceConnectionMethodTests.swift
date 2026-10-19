@@ -537,6 +537,76 @@ final class DeviceConnectionMethodTests: XCTestCase {
         }
     }
 
+    func testComposerDictationCanRepeatAfterCancellingRestorationWithoutReleasingANewerLease() async throws {
+        let fixture = try dictationFixture()
+        let model = fixture.model
+        let dictation = model.dictationSession
+        model.isLoading = false; model.draft = "Keep completed dictation"
+        var notices: [String] = []
+        defer {
+            Task {
+                await fixture.controller.completePendingConnection()
+                await fixture.controller.completePendingDisconnect()
+            }
+        }
+        await model.connectDevice()
+        dictation.isVoiceMode = true
+        try await dictation.prepare(model: model)
+        let firstID = try XCTUnwrap(dictation.recordingID)
+        XCTAssertEqual(model.deviceSession.owner, .dictation(firstID))
+        dictation.finish(model: model, reconnect: true) { notices.append($0) }
+        try await waitUntil { dictation.restorationID == nil && model.isDeviceReady }
+        XCTAssertNil(model.deviceSession.owner)
+        XCTAssertNil(model.deviceConnectionTask)
+
+        dictation.isVoiceMode = true
+        try await dictation.prepare(model: model)
+        let secondID = try XCTUnwrap(dictation.recordingID)
+        XCTAssertNotEqual(firstID, secondID)
+        await fixture.controller.setSuspendsConnection(true)
+        dictation.finish(model: model, reconnect: true) { notices.append($0) }
+        try await waitUntil { await fixture.controller.calls().methods.count == 3 }
+        await fixture.controller.setSuspendsDisconnect(true)
+        dictation.cancelRestoration(model: model)
+        try await waitUntil { await fixture.controller.calls().disconnects == 3 }
+        XCTAssertEqual(dictation.restorationID, secondID)
+        XCTAssertEqual(dictation.cancellingRestorationID, secondID)
+        XCTAssertEqual(model.deviceSession.owner, .dictation(secondID))
+        XCTAssertTrue(dictation.isChangingConnection)
+        XCTAssertFalse(model.canSend)
+        dictation.isVoiceMode = true
+        do { try await dictation.prepare(model: model); XCTFail("New capture must wait for cancelled restoration cleanup.") }
+        catch is CancellationError { }
+        XCTAssertNil(dictation.recordingID)
+
+        await fixture.controller.completePendingDisconnect()
+        try await waitUntil { dictation.restorationID == nil && dictation.cancellingRestorationID == nil }
+        XCTAssertNil(model.deviceSession.owner)
+        XCTAssertNil(model.deviceConnectionTask)
+        XCTAssertFalse(model.isDeviceReady || dictation.isChangingConnection)
+        XCTAssertTrue(model.canSend)
+
+        // The next disconnected recording owns its own capture lease. Neither
+        // an old finish nor a repeated cancel may release that new borrower.
+        try await dictation.prepare(model: model)
+        let thirdID = try XCTUnwrap(dictation.recordingID)
+        XCTAssertNotEqual(secondID, thirdID)
+        _ = await model.finishDeviceDictation(id: secondID, reconnect: false)
+        dictation.cancelRestoration(model: model)
+        XCTAssertEqual(model.deviceSession.owner, .dictation(thirdID))
+        XCTAssertFalse(model.canSend)
+        dictation.finish(model: model, reconnect: false) { notices.append($0) }
+        try await waitUntil { dictation.restorationID == nil && model.deviceSession.owner == nil }
+        XCTAssertTrue(model.canSend)
+        XCTAssertTrue(notices.isEmpty)
+        XCTAssertEqual(model.draft, "Keep completed dictation")
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.methods, [.usbBoard, .usbBoard, .usbBoard])
+        XCTAssertEqual(calls.cancelledConnections, 1)
+        XCTAssertEqual(calls.disconnects, 3)
+        XCTAssertEqual(calls.pairingMutations, 0)
+    }
+
     func testLocalVPNLossRevokesDictationRestorationWhileMediaIsReleased() async throws {
         let fixture = try Fixture(savedMethod: "localVPN", operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
         let model = fixture.model
