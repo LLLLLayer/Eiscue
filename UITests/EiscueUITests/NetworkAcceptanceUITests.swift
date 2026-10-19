@@ -357,6 +357,253 @@ final class NetworkAcceptanceUITests: XCTestCase {
         }
     }
 
+    /// An external operator observes this capture's App metadata and backgrounds
+    /// Eiscue independently of XCTest's possibly blocking tap. This helper never
+    /// launches, activates, backgrounds, cancels or disconnects the App itself.
+    @MainActor
+    func testRequestVoiceCaptureForExternalBackground() throws {
+        guard ProcessInfo.processInfo.environment["EISCUE_REAL_SPEECH_TEST"] == "1" else {
+            throw XCTSkip("Also opt in with TEST_RUNNER_EISCUE_REAL_SPEECH_TEST=1 for real microphone capture.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        let backend = ProcessInfo.processInfo.environment["EISCUE_NETWORK_BACKEND"] ?? ""
+        let backendTitle = backend == "coreDevice" ? "DisplayService" : "XCTest"
+        var metadata = "helper=requestVoiceCaptureForExternalBackground\nbackend=\(backend)\nvoiceCase=externalBackground\nstartedAt=\(Date().timeIntervalSince1970)\naudioSignal=notVerifiedByUITest\ncaseValidation=pendingAppDiagnostic\nappDiagnostic=SpeechCaptureDiagnostic.json\nbackgroundActionAuthority=externalOperator\ncleanupAttempted=false\ndraftTextLogged=false"
+        func attach(_ phase: String) {
+            let attachment = XCTAttachment(string: metadata)
+            attachment.name = "External-background voice request — \(phase) — \(backendTitle)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        defer { attach("finished") }
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { metadata += "\ncheckFailed=true"; attach("blocked or failed") }
+            try require(condition, message)
+        }
+        try check(app.state == .runningForeground,
+                  "Open the connected App in the foreground first; this helper never launches or activates it.")
+        try check(app.alerts.count == 0
+                  && XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.count == 0,
+                  "Resolve existing dialogs separately; this helper handles no authorization.")
+        try check(!app.buttons["stopRunButton"].exists && !app.buttons["cancelDictationButton"].exists
+                  && !app.staticTexts["speechDeviceRestorationStatus"].exists,
+                  "Finish the current task, recording and restoration first.")
+        openDevice(in: app)
+        try requireIdleControls(in: app)
+        try check(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
+                  && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle,
+                  "Prepare the local-VPN route and explicit backend first.")
+        let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
+        try check(ready.evaluate(with: app.staticTexts["devicePairingComplete"])
+                  && app.buttons["disconnectDeviceButton"].isEnabled,
+                  "The selected network connection must already be ready.")
+        metadata += "\noriginalRoute=localVPN\noriginalConnectionReady=true"
+        returnToAssistant(in: app)
+        let editor = app.descendants(matching: .any).matching(identifier: "messageInput").firstMatch
+        try check(editor.waitForExistence(timeout: 5), "Start from the normal keyboard composer.")
+        let badge = app.buttons["deviceNavigationLink"].value as? String
+        try check(badge != nil, "The current connection badge is unavailable.")
+        app.buttons["speechInputButton"].tap()
+        let record = app.buttons["holdToTalkButton"]
+        try check(record.waitForExistence(timeout: 5) && record.isEnabled && record.isHittable
+                  && (record.value as? String ?? "").hasPrefix("state=idle "),
+                  "An idle DEBUG App with --speech-diagnostics is required; no relaunch is performed.")
+        try check(app.buttons["deviceNavigationLink"].value as? String == badge,
+                  "Selecting voice mode changed the original connection before recording.")
+        let recordFrame = record.frame
+        try check(recordFrame.width > 0 && recordFrame.height > 0
+                  && [recordFrame.midX, recordFrame.midY].allSatisfy(\.isFinite)
+                  && app.frame.contains(recordFrame), "The recording control's observed geometry is invalid.")
+        let recordPoint = record.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        try check(app.state == .runningForeground, "The App left the foreground before the recording request.")
+        let requestedAt = Date().timeIntervalSince1970
+        metadata += "\nstartToggleCaptureRequestedAt=\(requestedAt)\nrecordingRequests=1\nexpectedNonzeroPCM=true\nterminalActionAttemptedByHelper=false"
+        attach("before single recording request")
+        print("VOICE_EXTERNAL_BACKGROUND_REQUEST backend=\(backend) requestedAt=\(requestedAt)")
+        recordPoint.tap()
+        let returnedAt = Date().timeIntervalSince1970
+        metadata += "\nstartToggleCaptureReturnedAt=\(returnedAt)\nstartToggleCaptureCallSeconds=\(returnedAt - requestedAt)"
+        // Do not query accessibility while capture may still be active. App
+        // process state is all this half observes after its single request.
+        let backgrounded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.state == .runningBackground || app.state == .runningBackgroundSuspended
+        }, object: nil)
+        let result = XCTWaiter.wait(for: [backgrounded], timeout: 20)
+        metadata += "\nbackgroundStateObserved=\(result == .completed)\nbackgroundStateObservedAt=\(Date().timeIntervalSince1970)\nappStateAfterRequest=\(app.state.rawValue)"
+        try check(result == .completed,
+                  "External background entry was not observed; no terminal action or cleanup was attempted by this helper.")
+        metadata += "\nrequestUICompleted=true\nactiveCaptureBackgroundHit=requiresAppDiagnosticCorrelation"
+    }
+
+    /// Run only after the external operator has foregrounded the same App.
+    /// This inspects UI cleanup without reconnecting or claiming remote release.
+    @MainActor
+    func testVerifyVoiceExternalBackgroundCleanup() throws {
+        guard ProcessInfo.processInfo.environment["EISCUE_REAL_SPEECH_TEST"] == "1" else {
+            throw XCTSkip("Also opt in with TEST_RUNNER_EISCUE_REAL_SPEECH_TEST=1.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        let backend = ProcessInfo.processInfo.environment["EISCUE_NETWORK_BACKEND"] ?? ""
+        let backendTitle = backend == "coreDevice" ? "DisplayService" : "XCTest"
+        var metadata = "helper=verifyVoiceExternalBackgroundCleanup\nbackend=\(backend)\nstartedAt=\(Date().timeIntervalSince1970)\ncaseValidation=pendingAppDiagnostic\nremoteMediaRelease=notVerifiedByUITest\ncleanupAttempted=false\ndraftTextLogged=false\npreCaptureDraftComparison=notAvailableAcrossIndependentHelpers"
+        defer {
+            let attachment = XCTAttachment(string: metadata)
+            attachment.name = "External-background voice cleanup UI — \(backendTitle)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        try require(app.state == .runningForeground,
+                    "Foreground Eiscue separately first; this helper never launches or activates it.")
+        try require(app.alerts.count == 0 && !app.buttons["stopRunButton"].exists,
+                    "Resolve existing dialogs or task ownership separately.")
+        returnToAssistant(in: app)
+        try require(app.buttons["cancelDictationButton"].waitForNonExistence(timeout: 15)
+                    && app.staticTexts["speechDeviceRestorationStatus"].waitForNonExistence(timeout: 30)
+                    && !app.buttons["cancelSpeechDeviceRestorationButton"].exists,
+                    "Recording or device restoration is still pending after the external return.")
+        try waitFor(NSPredicate(format: "exists == true AND enabled == true"), on: app.buttons["speechInputButton"],
+                    message: "The speech composer remains owned by recording or restoration.")
+        metadata += "\nrecordingControlAbsent=true\nrestorationControlsAbsent=true\nspeechModeControlEnabled=true"
+        openDevice(in: app)
+        try requireIdleControls(in: app)
+        try require(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
+                    && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle,
+                    "The original local-VPN route or selected backend changed.")
+        let status = app.staticTexts["devicePairingComplete"]
+        let disconnected = NSPredicate(format: "exists == true AND label IN %@", ["Not connected", "未连接"])
+        if backend == "coreDevice" {
+            try waitFor(disconnected, on: status,
+                        message: "CoreDevice unexpectedly reconnected after backgrounding the real recording.")
+            // The retained local VPN also exposes a Disconnect button while
+            // device control is disconnected. Its presence is not media-session
+            // evidence; leave it untouched and check the control state/gate.
+            try require(app.buttons["connectDeviceButton"].exists
+                        && app.buttons["connectDeviceButton"].isEnabled && app.buttons["connectDeviceButton"].isHittable
+                        && app.buttons["deviceConnectionMethodPicker"].isEnabled
+                        && app.buttons["deviceControlBackendPicker"].isEnabled
+                        && app.switches["deviceControlToggle"].isEnabled,
+                        "The released CoreDevice route is not ready for a later explicit connection.")
+            metadata += "\nlocallyDisconnected=true\nexplicitConnectAvailable=true\nconnectionSelectorsAndToggleEnabled=true\ndisconnectButtonMayRepresentRetainedVPN=true\ndisconnectButtonIsMediaConnectionEvidence=false\nvpnDisconnectRequested=false"
+        } else {
+            // XCTest has no dictation release/restore handoff. Backgrounding may
+            // independently lose its transport; do not impose CoreDevice policy.
+            let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
+            let isReady = ready.evaluate(with: status)
+            let isDisconnected = disconnected.evaluate(with: status)
+            try require(isReady || isDisconnected, "The XCTest route has not reached an idle connection state.")
+            metadata += "\nrouteReady=\(isReady)\nlocallyDisconnected=\(isDisconnected)"
+        }
+        metadata += "\nrouteAndBackendUnchanged=true\nuiChecksPassed=true\nuiChecksFinishedAt=\(Date().timeIntervalSince1970)"
+    }
+
+    /// Runs the ordinary Settings repair once, without resetting pairing or
+    /// reconnecting. Result rows report App UI only; repair has no diagnostic
+    /// export, and this helper cannot independently verify PCM or remote release.
+    @MainActor
+    func testRepairSelectedLocalVPNConnection() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EISCUE_REAL_CONNECTION_REPAIR_TEST"] == "1",
+              environment["EISCUE_REAL_SPEECH_TEST"] == "1" else {
+            throw XCTSkip("Also opt in with TEST_RUNNER_EISCUE_REAL_CONNECTION_REPAIR_TEST=1 and TEST_RUNNER_EISCUE_REAL_SPEECH_TEST=1.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        let backend = environment["EISCUE_NETWORK_BACKEND"] ?? ""
+        let backendTitle = backend == "coreDevice" ? "DisplayService" : "XCTest"
+        var metadata = "helper=repairSelectedLocalVPNConnection\nbackend=\(backend)\noriginalRoute=localVPN\nstartedAt=\(Date().timeIntervalSince1970)\nvalidation=UIOnly\naudioSignal=notIndependentlyVerified\nremoteMediaRelease=notIndependentlyVerified\nrepairDiagnosticExportAvailable=false\nresultTextLogged=false\nrepairRequests=0"
+        func attach(_ phase: String) {
+            let attachment = XCTAttachment(string: metadata)
+            attachment.name = "Connection repair UI metadata — \(phase) — \(backendTitle)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        defer { attach("finished") }
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { metadata += "\ncheckFailed=true"; attach("blocked or failed") }
+            try require(condition, message)
+        }
+        try check(app.state == .runningForeground && app.alerts.count == 0
+                  && XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.count == 0,
+                  "Open the normal App in the foreground with permissions settled; this helper never launches or authorizes it.")
+        try check(!app.buttons["stopRunButton"].exists && !app.buttons["cancelDictationButton"].exists
+                  && !app.staticTexts["speechDeviceRestorationStatus"].exists,
+                  "Finish the current task, recording and restoration before repair.")
+        openDevice(in: app)
+        try requireIdleControls(in: app)
+        try check(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
+                  && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle,
+                  "Only the already selected local-VPN route and requested backend may be repaired.")
+        let status = app.staticTexts["devicePairingComplete"]
+        let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
+        let disconnected = NSPredicate(format: "exists == true AND label IN %@", ["Not connected", "未连接"])
+        let initiallyReady = ready.evaluate(with: status)
+        let initiallyDisconnected = disconnected.evaluate(with: status)
+        try check(initiallyReady || initiallyDisconnected, "The existing route must be ready or locally disconnected and idle.")
+        let initialAction = app.buttons[initiallyReady ? "disconnectDeviceButton" : "connectDeviceButton"]
+        try check(initialAction.exists && initialAction.isEnabled
+                  && app.buttons["deviceControlBackendPicker"].isEnabled,
+                  "A connection transition or another owner still blocks the normal connection controls.")
+        metadata += "\ninitiallyReady=\(initiallyReady)\ninitiallyLocallyDisconnected=\(initiallyDisconnected)"
+
+        openSettings(in: app)
+        let repairLink = app.buttons["connectionRepairNavigationLink"]
+        for _ in 0..<5 {
+            if repairLink.exists && repairLink.isHittable { break }
+            app.swipeUp()
+        }
+        try check(repairLink.exists && repairLink.isEnabled && repairLink.isHittable,
+                  "The normal Settings connection-repair entry is unavailable.")
+        repairLink.tap()
+        let start = app.buttons["connectionRepairButton"]
+        let progress = app.descendants(matching: .any).matching(identifier: "connectionRepairProgress").firstMatch
+        let connectionResult = app.descendants(matching: .any).matching(identifier: "connectionRepairConnectionResult").firstMatch
+        let microphoneResult = app.descendants(matching: .any).matching(identifier: "connectionRepairMicrophoneResult").firstMatch
+        try check(start.waitForExistence(timeout: 5) && start.isEnabled && start.isHittable
+                  && !progress.exists && !connectionResult.exists && !microphoneResult.exists,
+                  "Repair must start from an idle page without previous results.")
+        let requestedAt = Date().timeIntervalSince1970
+        metadata += "\nrepairRequestedAt=\(requestedAt)\nrepairRequests=1\nresultWaitLimitSeconds=30"
+        attach("before single repair request")
+        start.tap()
+        metadata += "\nrepairTapReturnedAt=\(Date().timeIntervalSince1970)"
+        // Permission sheets are deliberately not answered. The normal capture
+        // lasts five seconds after authorization; an unsettled sheet, cleanup
+        // or capture cannot turn a timed-out UI check into a reported pass.
+        let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.state == .runningForeground && connectionResult.exists && microphoneResult.exists
+                && !progress.exists && start.exists && start.isEnabled
+        }, object: nil)
+        let completion = XCTWaiter.wait(for: [finished], timeout: 30)
+        metadata += "\nresultsSettled=\(completion == .completed)\nresultsObservedAt=\(Date().timeIntervalSince1970)"
+        try check(completion == .completed, "Repair did not show both results and release its UI gate within the bounded wait.")
+        try check(app.alerts.count == 0
+                  && XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.count == 0
+                  && connectionResult.isHittable && microphoneResult.isHittable,
+                  "The two repair results must be visible without an unresolved authorization dialog.")
+        // Read only the two known result rows. Never attach their labels or a
+        // page dump; these booleans classify the App's report, not raw evidence.
+        let connectionLabel = connectionResult.label
+        let microphoneLabel = microphoneResult.label
+        let classifications: [(String, Bool)] = [
+            ("uiReportsConnectionReleased", ["Control connection disconnected.", "设备控制已断开。"].contains { connectionLabel.contains($0) }),
+            ("uiReportsConnectionNotConnected", ["No current control connection. This cannot confirm whether a previous screen session remains.", "当前未连接设备。无法据此判断之前的屏幕会话是否已关闭。"].contains { connectionLabel.contains($0) }),
+            ("uiReportsConnectionUnconfirmed", ["Couldn’t confirm that the previous screen-control session closed. Pairing, VPN and conversations are preserved.", "无法确认之前的屏幕控制会话已关闭。配对、VPN 和对话已保留。"].contains { connectionLabel.contains($0) }),
+            ("uiReportsMicrophoneSignal", ["Microphone input was detected during this check.", "本次检查检测到了麦克风输入。"].contains { microphoneLabel.contains($0) }),
+            ("uiReportsMicrophoneNoSignal", ["No microphone input was detected during this check. You can try again and make a sound near the microphone.", "本次检查未检测到麦克风输入。可以再次检查，并在麦克风附近发出声音。"].contains { microphoneLabel.contains($0) }),
+            ("uiReportsMicrophonePermissionDenied", app.buttons["connectionRepairOpenSettingsButton"].exists),
+            ("uiReportsMicrophoneUnavailable", ["The microphone check could not be completed. Its result is unconfirmed.", "麦克风检查未能完成，结果尚未确认。"].contains { microphoneLabel.contains($0) }),
+            ("uiReportsMicrophoneCancelled", ["Microphone check cancelled.", "麦克风检查已取消。"].contains { microphoneLabel.contains($0) })
+        ]
+        for (key, value) in classifications { metadata += "\n\(key)=\(value)" }
+        metadata += "\nconnectionUIClassificationKnown=\(classifications.prefix(3).contains { $0.1 })\nmicrophoneUIClassificationKnown=\(classifications.dropFirst(3).contains { $0.1 })\nbothResultRowsVisible=true\nrepairButtonReenabled=true"
+        openDevice(in: app)
+        try requireIdleControls(in: app)
+        try check(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
+                  && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle
+                  && app.buttons["deviceControlBackendPicker"].isEnabled,
+                  "Repair changed the original route/backend or retained the connection UI gate.")
+        metadata += "\nrouteAndBackendUnchanged=true\nconnectionUIGateReleased=true\npostRepairLocallyDisconnected=\(disconnected.evaluate(with: status))\npostRepairReady=\(ready.evaluate(with: status))\nuiChecksPassed=true\nfinishedAt=\(Date().timeIntervalSince1970)"
+    }
+
     private enum VoiceAcceptanceCase: String {
         case modeSwitch, holdFinish, keyboardFinish, navigateDevice, background
     }
