@@ -1245,6 +1245,87 @@ final class DeviceConnectionMethodTests: XCTestCase {
         XCTAssertNil(model.deviceConnectionError, "The cancelled old connection must not overwrite the new method's state.")
     }
 
+    func testConnectionAdmissionWithUnconfirmedReleaseShowsErrorAndKeepsRepairAvailable() async throws {
+        let fixture = try dictationFixture()
+        let model = fixture.model
+        model.isLoading = false
+        await model.connectDevice()
+        await fixture.controller.setReleaseConfirmed(false)
+        await model.disconnectDevice()
+        XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+        let identity = model.deviceSession.identity
+        let released = await fixture.controller.calls()
+        let expectedError = DeviceSession.Failure.releaseUnconfirmed.localizedDescription
+
+        for _ in 0..<2 {
+            await model.connectDevice()
+            XCTAssertNil(model.deviceConnectionTask, "Rejected admission must not leave a completed task blocking Connect or Repair.")
+            XCTAssertTrue(model.deviceSession.isCurrent(identity), "Rejected admission does not register a new connection operation.")
+            XCTAssertEqual(model.deviceConnectionError, expectedError)
+            XCTAssertEqual(model.connectionMessage, expectedError)
+            XCTAssertTrue(model.canRepairDeviceConnection)
+            XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertFalse(model.isDeviceReady || model.isConnecting)
+        }
+        let rejected = await fixture.controller.calls()
+        XCTAssertEqual(rejected.methods, released.methods, "An unconfirmed release must still block native connection attempts.")
+        XCTAssertEqual(rejected.disconnects, released.disconnects, "Connect must not silently retry cleanup.")
+        XCTAssertEqual(rejected.pairingMutations, 0)
+    }
+
+    func testTransportLossDuringConnectionClearsItsHostTaskWithoutOverwritingLoss() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        model.isLoading = false
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        model.deviceSession.handle(.transportLost)
+        let identity = model.deviceSession.identity
+        let lossMessage = DeviceControlError.connectionLost.localizedDescription
+        model.deviceConnectionError = lossMessage; model.connectionMessage = lossMessage
+        await pending.value
+
+        XCTAssertNil(model.deviceConnectionTask)
+        XCTAssertTrue(model.deviceSession.isCurrent(identity))
+        XCTAssertEqual(model.deviceConnectionError, lossMessage)
+        XCTAssertEqual(model.connectionMessage, lossMessage)
+        XCTAssertFalse(model.isDeviceReady || model.isConnecting)
+        XCTAssertTrue(model.canRepairDeviceConnection)
+        let lost = await fixture.controller.calls()
+        XCTAssertEqual(lost.methods, [.usbBoard], "Transport loss must not automatically reconnect.")
+        XCTAssertEqual(lost.cancelledConnections, 1)
+
+        await fixture.controller.setSuspendsConnection(false)
+        await model.connectDevice()
+        XCTAssertTrue(model.isDeviceReady, "A later explicit Connect must not be blocked by the completed old host task.")
+        XCTAssertNil(model.deviceConnectionTask)
+        await model.disconnectDevice()
+    }
+
+    func testOldConnectionCompletionPreservesAReplacementHostTaskAndItsMessage() async throws {
+        let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
+        let model = fixture.model
+        let pending = Task { await model.connectDevice() }
+        try await waitUntil { await fixture.controller.calls().methods == [.usbBoard] }
+        let operationID = model.deviceOperationID
+        let replacement = Task<Void, Error> { try await Task.sleep(for: .seconds(60)) }
+        defer { replacement.cancel() }
+        // A replacement host task can be stored before it registers a new
+        // DeviceSession operation. The previous operation ID alone is not ownership.
+        model.deviceConnectionTask = replacement
+        model.deviceConnectionError = "Replacement connection notice"
+        model.connectionMessage = "Replacement connection notice"
+        await fixture.controller.completePendingConnection()
+        await pending.value
+
+        XCTAssertEqual(model.deviceOperationID, operationID)
+        XCTAssertTrue(model.deviceConnectionTask == replacement)
+        XCTAssertFalse(replacement.isCancelled)
+        XCTAssertEqual(model.deviceConnectionError, "Replacement connection notice")
+        XCTAssertEqual(model.connectionMessage, "Replacement connection notice")
+        await model.disconnectDevice()
+    }
+
     func testSystemAuthorizationBackgroundKeepsThePendingConnectionAlive() async throws {
         let fixture = try Fixture(savedMethod: "usbBoard", suspendsConnection: true)
         let model = fixture.model

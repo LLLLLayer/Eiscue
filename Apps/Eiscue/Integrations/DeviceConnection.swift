@@ -221,6 +221,7 @@ extension AppModel {
         let method = deviceConnectionMethod, backend = deviceControlBackend
         guard method != .localVPN || localTunnel.isConnected else { connectionMessage = String(localized: "connection.startLocalFirst"); return }
         let operationID = UUID()
+        let initialIdentity = deviceSession.identity
         deviceConnectionError = nil
         if method == .localVPN, backend.resolved(on: deviceOperatingSystemVersion) == .xcTest {
             connectionMessage = String(localized: "connection.automationAuthorization")
@@ -235,20 +236,29 @@ extension AppModel {
             _ = try await deviceSession.connect(method: method, backend: backend, id: operationID)
         }
         deviceConnectionTask = task
-        defer { if deviceOperationID == operationID { deviceConnectionTask = nil } }
+        // Admission can fail before DeviceSession registers operationID, and an
+        // external event can invalidate it before completion. The host still
+        // owns this task's cleanup unless another task has replaced it.
+        defer { if deviceConnectionTask == task { deviceConnectionTask = nil } }
         do {
             try await task.value
-            guard deviceOperationID == operationID else { return }
+            guard deviceConnectionTask == task, deviceOperationID == operationID else { return }
             deviceConnectionError = nil
             connectionMessage = isDeviceReady ? String(localized: "connection.ready") : {
                 if case .unavailable(let reason) = deviceStatus { reason } else { "" }
             }()
         } catch is CancellationError {
-            if deviceOperationID == operationID { connectionMessage = String(localized: "connection.disconnected", table: "Runtime") }
+            guard deviceConnectionTask == task,
+                  deviceOperationID == operationID || deviceSession.isCurrent(initialIdentity) else { return }
+            connectionMessage = String(localized: "connection.disconnected", table: "Runtime")
         } catch {
-            if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription }
+            let admissionRejected = deviceSession.isCurrent(initialIdentity)
+            guard deviceConnectionTask == task, deviceOperationID == operationID || admissionRejected else { return }
+            let message = admissionRejected && deviceSession.hasUnconfirmedRelease
+                ? DeviceSession.Failure.releaseUnconfirmed.localizedDescription : error.localizedDescription
+            deviceConnectionError = message; connectionMessage = message
         }
-        guard deviceOperationID == operationID else { return }
+        guard deviceConnectionTask == task, deviceOperationID == operationID else { return }
         await refreshDeviceStatus()
     }
 
