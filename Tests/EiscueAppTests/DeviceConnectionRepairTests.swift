@@ -138,6 +138,147 @@ final class DeviceConnectionRepairTests: XCTestCase {
         XCTAssertEqual(calls.confirmedReleases, 2); XCTAssertEqual(calls.connections, 0)
     }
 
+    func testUnconfirmedLocalCoreDeviceRepairResumesSavedTunnelBeforeRelease() async throws {
+        for backend in [DeviceControlBackend.coreDevice, .automatic] {
+            let fixture = try RepairFixture(method: .localVPN, backend: backend, connected: false)
+            let model = fixture.model
+            try markReleaseUnconfirmed(model)
+            let preferences = fixture.preferences.dictionaryRepresentation() as NSDictionary
+            let tunnel = RepairTunnel(suspendsResume: true)
+            let repair = Task { await model.repairDeviceConnection(tunnel: tunnel) }
+            try await waitForTunnel(tunnel)
+
+            XCTAssertEqual(model.deviceSession.owner, .repair)
+            XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertFalse(model.isDeviceReady)
+            XCTAssertFalse(model.canRepairDeviceConnection)
+            XCTAssertFalse(model.canChangeDeviceControlBackend)
+            let before = await fixture.controller.calls()
+            XCTAssertEqual(before.confirmedReleases, 0, "Transport must be available before retrying the original cleanup.")
+            XCTAssertEqual(before.connections, 0)
+
+            tunnel.completeResume()
+            let result = await repair.value
+            XCTAssertEqual(result, .notConnected)
+            XCTAssertEqual(tunnel.resumeCalls, 1)
+            XCTAssertTrue(tunnel.isConnected)
+            XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertFalse(model.isDeviceReady)
+            XCTAssertNil(model.activeDeviceConnectionMethod)
+            XCTAssertNil(model.activeDeviceControlBackend)
+            XCTAssertEqual(model.deviceSession.owner, .repair)
+            XCTAssertEqual(fixture.preferences.dictionaryRepresentation() as NSDictionary, preferences)
+            let after = await fixture.controller.calls()
+            XCTAssertEqual(after.confirmedReleases, 1)
+            XCTAssertEqual(after.connections, 0)
+            XCTAssertEqual(after.pairingMutations, 0)
+            model.finishDeviceConnectionRepair()
+        }
+    }
+
+    func testRepairDoesNotResumeTunnelForOtherRoutesBackendsOrConfirmedRelease() async throws {
+        let scenarios: [(DeviceConnectionMethod, DeviceControlBackend, Int, Bool)] = [
+            (.localVPN, .xcTest, 27, true),
+            (.localVPN, .automatic, 26, true),
+            (.usbBoard, .coreDevice, 27, true),
+            (.bluetoothBoard, .coreDevice, 27, false),
+            (.localVPN, .coreDevice, 27, false),
+        ]
+        for (method, backend, osVersion, unconfirmed) in scenarios {
+            let fixture = try RepairFixture(method: method, backend: backend, connected: false, osVersion: osVersion)
+            if unconfirmed { try markReleaseUnconfirmed(fixture.model) }
+            let tunnel = RepairTunnel(failsResume: true)
+
+            let result = await fixture.model.repairDeviceConnection(tunnel: tunnel)
+
+            XCTAssertEqual(result, .notConnected)
+            XCTAssertEqual(tunnel.resumeCalls, 0)
+            XCTAssertFalse(tunnel.isConnected)
+            let calls = await fixture.controller.calls()
+            XCTAssertEqual(calls.confirmedReleases, 1)
+            XCTAssertEqual(calls.connections, 0)
+            fixture.model.finishDeviceConnectionRepair()
+        }
+    }
+
+    func testRunningRepairTunnelIsNotRestarted() async throws {
+        let fixture = try RepairFixture(method: .localVPN, connected: false)
+        try markReleaseUnconfirmed(fixture.model)
+        let tunnel = RepairTunnel(connected: true, failsResume: true)
+
+        let result = await fixture.model.repairDeviceConnection(tunnel: tunnel)
+
+        XCTAssertEqual(result, .notConnected)
+        XCTAssertEqual(tunnel.resumeCalls, 0)
+        XCTAssertTrue(tunnel.isConnected)
+        XCTAssertFalse(fixture.model.deviceSession.hasUnconfirmedRelease)
+        fixture.model.finishDeviceConnectionRepair()
+    }
+
+    func testMissingOrFailedRepairTunnelPreservesTheBackendsReleaseEvidence() async throws {
+        for (failsResume, confirmed) in [(false, false), (true, false), (false, true), (true, true)] {
+            let fixture = try RepairFixture(method: .localVPN, connected: false, releaseConfirmed: confirmed)
+            let model = fixture.model
+            try markReleaseUnconfirmed(model)
+            let preferences = fixture.preferences.dictionaryRepresentation() as NSDictionary
+            let tunnel = RepairTunnel(existingConfigurationAvailable: false, failsResume: failsResume)
+
+            let result = await model.repairDeviceConnection(tunnel: tunnel)
+
+            XCTAssertEqual(result, confirmed ? .notConnected : .unconfirmed)
+            XCTAssertEqual(tunnel.resumeCalls, 1)
+            XCTAssertFalse(tunnel.isConnected)
+            XCTAssertFalse(model.isDeviceReady)
+            XCTAssertEqual(model.deviceSession.hasUnconfirmedRelease, !confirmed)
+            XCTAssertEqual(model.deviceSession.owner, .repair)
+            XCTAssertEqual(fixture.preferences.dictionaryRepresentation() as NSDictionary, preferences)
+            let calls = await fixture.controller.calls()
+            XCTAssertEqual(calls.confirmedReleases, 1, "Local cleanup must still settle after tunnel failure.")
+            XCTAssertEqual(calls.connections, 0)
+            XCTAssertEqual(calls.pairingMutations, 0)
+            model.finishDeviceConnectionRepair()
+            if confirmed {
+                let lease = try model.deviceSession.acquire(.run(UUID()))
+                lease.release()
+            } else {
+                XCTAssertThrowsError(try model.deviceSession.acquire(.run(UUID())))
+            }
+        }
+    }
+
+    func testCancelledRepairKeepsLeaseThroughTunnelStartAndRelease() async throws {
+        for backgrounds in [false, true] {
+            let fixture = try RepairFixture(method: .localVPN, connected: false, suspendsRelease: true)
+            let model = fixture.model
+            try markReleaseUnconfirmed(model)
+            let tunnel = RepairTunnel(suspendsResume: true)
+            let repair = Task { await model.repairDeviceConnection(tunnel: tunnel) }
+            try await waitForTunnel(tunnel)
+            if backgrounds { model.sceneChanged(.background) } else { repair.cancel() }
+            model.finishDeviceConnectionRepair()
+            XCTAssertEqual(model.deviceSession.owner, .repair)
+            XCTAssertTrue(model.isRepairingDeviceConnection)
+            XCTAssertThrowsError(try model.deviceSession.acquire(.setup))
+            tunnel.completeResume()
+            try await waitForRelease(fixture.controller)
+            XCTAssertEqual(model.deviceSession.owner, .repair)
+            XCTAssertTrue(model.isRepairingDeviceConnection)
+            await fixture.controller.completeRelease()
+
+            let result = await repair.value
+
+            XCTAssertEqual(result, .cancelled)
+            XCTAssertFalse(tunnel.resumeWasCancelled)
+            XCTAssertFalse(model.isRepairingDeviceConnection)
+            XCTAssertNil(model.deviceSession.owner)
+            XCTAssertFalse(model.isDeviceReady)
+            let calls = await fixture.controller.calls()
+            XCTAssertEqual(calls.confirmedReleases, 1)
+            XCTAssertEqual(calls.connections, 0)
+            XCTAssertFalse(calls.releaseWasCancelled)
+        }
+    }
+
     func testIdleRepairKeepsReleaseProgressHiddenWhileRetainingTheRepairClaim() async throws {
         let fixture = try RepairFixture(connected: false, suspendsRelease: true)
         let repair = Task { await fixture.model.repairDeviceConnection() }
@@ -286,6 +427,21 @@ final class DeviceConnectionRepairTests: XCTestCase {
         XCTFail("Repair never reached the controlled release.")
         throw CancellationError()
     }
+
+    private func markReleaseUnconfirmed(_ model: AppModel) throws {
+        let operation = try model.deviceSession.beginRelease()
+        XCTAssertTrue(model.deviceSession.completeRelease(operation, confirmed: false))
+        XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+    }
+
+    private func waitForTunnel(_ tunnel: RepairTunnel) async throws {
+        for _ in 0..<200 {
+            if tunnel.hasPendingResume { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("Repair never reached the controlled tunnel start.")
+        throw CancellationError()
+    }
 }
 
 @MainActor private final class RepairFixture {
@@ -294,27 +450,56 @@ final class DeviceConnectionRepairTests: XCTestCase {
     let model: AppModel
     let controller: RepairController
 
-    init(method: DeviceConnectionMethod = .usbBoard, connected: Bool = true, releaseConfirmed: Bool = true,
-         staysConnected: Bool = false, suspendsRelease: Bool = false) throws {
+    init(method: DeviceConnectionMethod = .usbBoard, backend: DeviceControlBackend = .automatic,
+         connected: Bool = true, releaseConfirmed: Bool = true,
+         staysConnected: Bool = false, suspendsRelease: Bool = false, osVersion: Int = 27) throws {
         preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
         preferences.set(method.rawValue, forKey: "deviceConnectionMethod")
-        preferences.set(DeviceControlBackend.automatic.rawValue, forKey: "deviceControlBackend")
+        preferences.set(backend.rawValue, forKey: "deviceControlBackend")
         controller = RepairController(connected: connected, releaseConfirmed: releaseConfirmed,
             staysConnected: staysConnected, suspendsRelease: suspendsRelease)
         model = AppModel(storageDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(suite),
             preferences: preferences, credentialStore: CredentialStore(service: suite),
-            operatingSystemVersion: .init(majorVersion: 27, minorVersion: 0, patchVersion: 0))
+            operatingSystemVersion: .init(majorVersion: osVersion, minorVersion: 0, patchVersion: 0))
         model.deviceClient = DeviceClient(actuator: controller, networkSetup: controller)
         model.networkDeviceClient = nil
         model.isLoading = false; model.hasPairingIdentity = true
         if connected {
             model.deviceStatus = .ready(capabilities: [.screenshot, .tap])
             model.activeDeviceConnectionMethod = method
-            model.activeDeviceControlBackend = method == .bluetoothBoard ? nil : .coreDevice
+            model.activeDeviceControlBackend = method == .bluetoothBoard ? nil :
+                backend.resolved(on: .init(majorVersion: osVersion, minorVersion: 0, patchVersion: 0))
         }
     }
 
     deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+}
+
+@MainActor private final class RepairTunnel: DeviceConnectionRepairTunnel {
+    enum Failure: Error { case startFailed }
+    var isConnected: Bool
+    private let existingConfigurationAvailable: Bool
+    private let failsResume: Bool
+    private let suspendsResume: Bool
+    private var pendingResume: CheckedContinuation<Void, Never>?
+    private(set) var resumeCalls = 0
+    private(set) var resumeWasCancelled = false
+    var hasPendingResume: Bool { pendingResume != nil }
+
+    init(connected: Bool = false, existingConfigurationAvailable: Bool = true,
+         failsResume: Bool = false, suspendsResume: Bool = false) {
+        isConnected = connected; self.existingConfigurationAvailable = existingConfigurationAvailable
+        self.failsResume = failsResume; self.suspendsResume = suspendsResume
+    }
+    func resumeExistingForRepair() async throws -> Bool {
+        resumeCalls += 1
+        if suspendsResume { await withCheckedContinuation { pendingResume = $0 } }
+        resumeWasCancelled = Task.isCancelled
+        if failsResume { throw Failure.startFailed }
+        isConnected = existingConfigurationAvailable
+        return isConnected
+    }
+    func completeResume() { pendingResume?.resume(); pendingResume = nil }
 }
 
 private actor RepairController: DeviceFixtureActuator {

@@ -162,6 +162,38 @@ int32_t ncm_backend_poll(uint64_t handle,ncm_event *,uint8_t *buffer,size_t capa
 /* Idempotent. Immediately revokes handle and requests worker cancellation. Does
  * not block UI waiting for join or assert remote media/touch release succeeded. */
 void ncm_backend_close(uint64_t handle);
+/* Same-process media cleanup only. Detach revokes the ordinary handle, cancels
+ * its worker, and retains an opaque in-memory receipt (never UUID/SSRC bytes).
+ * Call even when a start/stop is pending; the receipt follows that worker until
+ * its entire runtime has drained. A receipt slot is reserved before accepting
+ * an ordinary control session (at most two live/retained ownerships combined),
+ * so detach cannot lose accepted ownership to receipt-capacity exhaustion.
+ * The caller must retain the token after failed cleanup.
+ * Cleanup start returns BUSY while the old worker or another attempt is alive,
+ * NOT_READY for unknown/incomplete original ownership, INVALID for a different
+ * pairing credential binding, and CLOSED for a disposed token. A fresh discovery
+ * interface/port is required; relay config permissions must be EXISTING_VERIFY.
+ * No new pairing, media start, capture or input is permitted. A fresh transport
+ * authenticates the original peer, queries the bounded full known status schema,
+ * requires one exact original client-session UUID and both SSRCs, then stops only
+ * that original owned RemoteSSRC. A missing match never confirms release.
+ * Poll the returned handle: request 0, kind 2 with empty payload means confirmed
+ * scoped release (or the fully drained original worker had already confirmed it
+ * / never dispatched a media start); kind 3 means unconfirmed. There is no ready
+ * event. All ordinary submit/video APIs refuse this handle. Close cancels an
+ * attempt but retains its receipt; no retry can start until its runtime drains.
+ * Dispose explicitly forgets local ownership and cancels any active attempt;
+ * it never confirms remote release. Tokens cannot be restored across processes.
+ * All pointers are borrowed only for the call; no identity/receipt is persisted. */
+int32_t ncm_backend_detach_media_cleanup(uint64_t handle,uint64_t *receipt);
+int32_t ncm_local_vpn_cleanup_start_configured(uint64_t receipt,uint32_t interface_index,uint16_t pairing_port,uint32_t local_ipv4,uint32_t peer_ipv4,const ncm_identity *,uint64_t *handle);
+int32_t ncm_backend_cleanup_start(uint64_t receipt,const ncm_config *,const ncm_identity *,uint64_t *handle);
+void ncm_backend_dispose_media_cleanup(uint64_t receipt);
+/* Read-only local confirmation before discovery: 0 only when the original
+ * worker and every cleanup attempt have drained and retained state is settled.
+ * BUSY while either worker is live; NOT_READY for owned/unknown media; CLOSED
+ * for missing/disposed receipts. No network, state reset, disposal or adoption. */
+int32_t ncm_backend_confirm_media_cleanup(uint64_t receipt);
 #ifdef NCM_OFFLINE_FIXTURES
 /* Exists only in the separately built test archive; always 127.0.0.1. Public
  * deterministic fixture identity, no persistent keys or real-device fallback. */

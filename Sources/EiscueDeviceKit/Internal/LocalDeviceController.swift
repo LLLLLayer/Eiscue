@@ -25,6 +25,8 @@ import OSLog
     private var mediaReleaseID: UUID?
     private var releaseUnconfirmed = false
     private var mediaRequested = false
+    private var serviceVPNConfiguration: VPNLoopbackConfiguration?
+    private var pendingMediaCleanup: (service: any LocalDeviceSession, configuration: VPNLoopbackConfiguration)?
     #if DEBUG
     private(set) var connectionDiagnostic: [String: String] = [:]
     #endif
@@ -228,6 +230,9 @@ import OSLog
             try Task.checkCancellation()
             guard confirmed else { throw DeviceControlError.connection(String(localized: "device.media.previous-release-unconfirmed", defaultValue: "The previous screen connection may still be active. Check the system’s remote-control status before reconnecting.", bundle: EiscueDeviceResources.bundle)) }
         }
+        guard !releaseUnconfirmed else {
+            throw DeviceControlError.connection(String(localized: "device.media.previous-release-unconfirmed", defaultValue: "The previous screen connection may still be active. Check the system’s remote-control status before reconnecting.", bundle: EiscueDeviceResources.bundle))
+        }
         try ensureCurrent(connectionEpoch)
         guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
         let token = epoch
@@ -239,6 +244,7 @@ import OSLog
         }
         let service = dependencies.makeSession(resolvedBackend)
         services = service
+        serviceVPNConfiguration = method == .localVPN ? vpn : nil
         defer {
             if epoch == token {
                 busy = false; discovery?.cancel(); discovery = nil
@@ -364,8 +370,57 @@ import OSLog
     }
 
     func disconnect() async -> ReleaseConfirmation {
+        if let mediaReleaseTask {
+            // Revoke a connect that is awaiting this same release. Sharing the
+            // cleanup task must not let that suspended connect publish Ready.
+            epoch = UUID(); ready = false; busy = false; capturedGeometry = nil
+            return await mediaReleaseTask.value ? .confirmed : .unconfirmed
+        }
+        if services == nil, releaseUnconfirmed, let pendingMediaCleanup {
+            return await recoverMediaRelease(pendingMediaCleanup) ? .confirmed : .unconfirmed
+        }
         if let release = disconnectNow() { return await release.value ? .confirmed : .unconfirmed }
         return releaseUnconfirmed ? .unconfirmed : .confirmed
+    }
+
+    /// A later explicit release can rebuild only the transport needed to stop
+    /// our original media session. It cannot create a new screen/input session.
+    private func recoverMediaRelease(_ pending: (service: any LocalDeviceSession, configuration: VPNLoopbackConfiguration)) async -> Bool {
+        epoch = UUID(); ready = false; capturedGeometry = nil
+        let releaseID = UUID()
+        mediaReleaseID = releaseID
+        let discovery = dependencies.makeVPNDiscovery()
+        self.discovery = discovery
+        let task = Task { @MainActor [weak self, identityStore] in
+            let confirmed = await BoundedMediaRelease.run(timeout: .seconds(125), stop: {
+                if pending.service.confirmRetainedMediaRelease() { return }
+                guard var data = try identityStore.load() else { throw DeviceControlError.noIdentity }
+                defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
+                let record = try PairingIdentityCodec.decode(data)
+                var identity = try record.identity()
+                defer { identity.clearSeed() }
+                let port = try await discovery.discoverPort(configuration: pending.configuration)
+                try Task.checkCancellation()
+                try await pending.service.releaseRetainedMediaLocalVPN(identity: identity, pairingPort: port,
+                    configuration: pending.configuration)
+            }, close: {
+                discovery.cancel()
+                pending.service.close()
+            })
+            guard let self, self.mediaReleaseID == releaseID else { return confirmed }
+            self.discovery = nil
+            self.mediaReleaseTask = nil; self.mediaReleaseID = nil
+            self.releaseUnconfirmed = !confirmed
+            if confirmed { self.pendingMediaCleanup = nil }
+            self.publishReleaseResult(confirmed)
+            return confirmed
+        }
+        mediaReleaseTask = task
+        return await task.value
+    }
+
+    private func publishReleaseResult(_ confirmed: Bool) {
+        failure = confirmed ? String(localized: "device.status.released", defaultValue: "Device and screen disconnected", bundle: EiscueDeviceResources.bundle) : String(localized: "device.status.release-unconfirmed", defaultValue: "Device control stopped, but the screen connection may still be active. Check the system’s remote-control status.", bundle: EiscueDeviceResources.bundle)
     }
     @discardableResult private func disconnectNow() -> Task<Bool, Never>? {
         epoch = UUID(); ready = false; busy = false; capturedGeometry = nil
@@ -377,6 +432,7 @@ import OSLog
         discovery?.cancel(); discovery = nil
         boardDiscovery?.cancel(); boardDiscovery = nil
         let previous = services; services = nil
+        let previousVPN = serviceVPNConfiguration; serviceVPNConfiguration = nil
         let shouldReleaseMedia = mediaRequested; mediaRequested = false
         if let previous, shouldReleaseMedia {
             let releaseID = UUID()
@@ -394,7 +450,10 @@ import OSLog
                 guard let self, self.mediaReleaseID == releaseID else { return confirmed }
                 self.mediaReleaseTask = nil; self.mediaReleaseID = nil
                 self.releaseUnconfirmed = !confirmed
-                self.failure = confirmed ? String(localized: "device.status.released", defaultValue: "Device and screen disconnected", bundle: EiscueDeviceResources.bundle) : String(localized: "device.status.release-unconfirmed", defaultValue: "Device control stopped, but the screen connection may still be active. Check the system’s remote-control status.", bundle: EiscueDeviceResources.bundle)
+                if !confirmed, previous.hasRetainedMediaCleanup, let previousVPN {
+                    self.pendingMediaCleanup = (previous, previousVPN)
+                }
+                self.publishReleaseResult(confirmed)
                 return confirmed
             }
             mediaReleaseTask = task

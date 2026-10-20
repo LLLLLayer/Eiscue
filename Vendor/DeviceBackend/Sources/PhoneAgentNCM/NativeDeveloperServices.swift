@@ -90,6 +90,19 @@ public enum NativeControlBackend: Sendable, Equatable {
     #endif
     private var videoDecodeFailure: NativeBackendError?
     private var mediaStartCompleted = false
+    private var mediaStartRequested = false
+    private var mediaCleanupReceipt: UInt64 = 0
+    private var mediaCleanupOperation: UInt64 = 0
+    private var mediaCleanupEpoch = UUID()
+    public var hasRetainedMediaCleanup: Bool { mediaCleanupReceipt != 0 }
+    /// A late original stop may already have confirmed release. This checks
+    /// only that retained receipt after all workers drain; it sends no request.
+    public func confirmRetainedMediaRelease() -> Bool {
+        guard !busy, handle == 0, mediaCleanupOperation == 0, mediaCleanupReceipt != 0,
+              ncm_backend_confirm_media_cleanup(mediaCleanupReceipt) == 0 else { return false }
+        ncm_backend_dispose_media_cleanup(mediaCleanupReceipt); mediaCleanupReceipt = 0
+        return true
+    }
     private var automationLease: UInt64 = 0
     private var automationLayout: NCMXCTestLayout?
     private var automationGeometry = NCMXCTestGeometryTracker()
@@ -127,8 +140,11 @@ public enum NativeControlBackend: Sendable, Equatable {
             else { DispatchQueue.main.async { eiscue_automation_abort(lease) } }
         }
         if handle != 0 { ncm_backend_close(handle) }
+        if mediaCleanupOperation != 0 { ncm_backend_close(mediaCleanupOperation) }
+        if mediaCleanupReceipt != 0 { ncm_backend_dispose_media_cleanup(mediaCleanupReceipt) }
     }
     public func close() {
+        mediaCleanupEpoch = UUID()
         if automationLease != 0 { eiscue_automation_abort(automationLease) }
         automationLease = 0; automationLayout = nil; automationGeometry.reset()
         submittedRequest.reset(); ownedDelivery.receipt.reset(); cleanupRequired = false
@@ -136,7 +152,20 @@ public enum NativeControlBackend: Sendable, Equatable {
         videoPump?.cancel(); videoPump = nil
         videoDecoder = nil; videoDecodeFailure = nil; mediaStartCompleted = false
         let old = handle; handle = 0; ready = false; services = []
-        if old != 0 { ncm_backend_close(old) }
+        if mediaCleanupOperation != 0 {
+            ncm_backend_close(mediaCleanupOperation); mediaCleanupOperation = 0
+        }
+        if old != 0 {
+            // Detach before closing the worker: its original start/stop receipt
+            // survives cancellation, but cannot authorize another control action.
+            if !usesOwnedXCTest, mediaStartRequested, mediaCleanupReceipt == 0 {
+                var receipt: UInt64 = 0
+                if ncm_backend_detach_media_cleanup(old, &receipt) == 0 {
+                    mediaCleanupReceipt = receipt
+                } else { ncm_backend_close(old) }
+            } else { ncm_backend_close(old) }
+        }
+        mediaStartRequested = false
     }
     /// Caller must refresh discovery just before this call (candidate TTL).
     /// Compatibility entry point for USB. Prefer the scoped discovery overload.
@@ -144,7 +173,7 @@ public enum NativeControlBackend: Sendable, Equatable {
                         discovery: DiagnosticReply, endpoint: DiagnosticReply.Endpoint) async throws {
         try Task.checkCancellation()
         guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
-        guard !busy, handle == 0 else { throw NativeBackendError.busy }
+        guard !busy, handle == 0, mediaCleanupReceipt == 0 else { throw NativeBackendError.busy }
         guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
         let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: .usb)
         try await connect(identity: identity, authorization: authorization,
@@ -155,7 +184,7 @@ public enum NativeControlBackend: Sendable, Equatable {
                          binding: NCMInterfaceBinding) async throws {
         try Task.checkCancellation()
         guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
-        guard !busy, handle == 0 else { throw NativeBackendError.busy }
+        guard !busy, handle == 0, mediaCleanupReceipt == 0 else { throw NativeBackendError.busy }
         guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
         guard discovery.layer == "discovery", discovery.result == "candidates", !discovery.authenticated,
               discovery.screenCaptured != true, discovery.inputExecuted != true,
@@ -190,7 +219,7 @@ public enum NativeControlBackend: Sendable, Equatable {
                                 pairingPort: UInt16, configuration: VPNLoopbackConfiguration = .defaults) async throws {
         try Task.checkCancellation()
         guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
-        guard !busy, handle == 0 else { throw NativeBackendError.busy }
+        guard !busy, handle == 0, mediaCleanupReceipt == 0 else { throw NativeBackendError.busy }
         guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
         guard pairingPort != 0 else { throw NativeBackendError.invalidCandidate }
         let rows = try NCMInterfaceBinding.inventory()
@@ -208,6 +237,58 @@ public enum NativeControlBackend: Sendable, Equatable {
         guard code == 0, started != 0 else { throw NativeBackendError.transport(code: code) }
         handle = started
         try await finishConnect(started)
+    }
+    /// Explicit same-process recovery only. This authenticates a new transport
+    /// to close the original owned stream; it never makes this client ready.
+    /// Failure/cancellation retains the receipt for a later explicit attempt.
+    public func releaseRetainedMediaLocalVPN(identity: AuthorizedRemoteIdentity, pairingPort: UInt16,
+                                             configuration: VPNLoopbackConfiguration) async throws {
+        try Task.checkCancellation()
+        guard !busy, handle == 0, mediaCleanupOperation == 0 else { throw NativeBackendError.busy }
+        guard mediaCleanupReceipt != 0, pairingPort != 0 else { throw NativeBackendError.closed }
+        busy = true
+        defer {
+            busy = false
+            if mediaCleanupOperation != 0 { ncm_backend_close(mediaCleanupOperation); mediaCleanupOperation = 0 }
+        }
+        let receipt = mediaCleanupReceipt
+        let epoch = mediaCleanupEpoch
+        let row = try LocalVPNDiscovery.selectInterface(NCMInterfaceBinding.inventory(), configuration: configuration)
+        let values = [identity.signingSeed, Data(identity.controllerID.utf8), Data(identity.peerID.utf8), identity.peerPublicKey,
+                      identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
+        let deadline = ContinuousClock.now.advanced(by: .seconds(120))
+        var started: UInt64 = 0
+        // BUSY only means the old worker (or canceled cleanup) has not drained.
+        // No cleanup request has been dispatched in that case.
+        while started == 0 {
+            try Task.checkCancellation()
+            guard mediaCleanupReceipt == receipt, mediaCleanupEpoch == epoch else { throw NativeBackendError.closed }
+            let code = withSlices(values) { b in
+                var raw = ncm_identity(seed: b[0], controller_id: b[1], peer_id: b[2], peer_public_key: b[3],
+                                       alt_irk: b[4], peer_udid: b[5], peer_model: b[6])
+                return ncm_local_vpn_cleanup_start_configured(receipt, row.index, pairingPort,
+                    configuration.localIPv4, configuration.peerIPv4, &raw, &started)
+            }
+            if code == 2 {
+                guard ContinuousClock.now < deadline else { throw NCMError.timeout }
+                try await Task.sleep(for: .milliseconds(20))
+            } else if code != 0 || started == 0 { throw NativeBackendError.transport(code: code) }
+        }
+        mediaCleanupOperation = started
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            guard mediaCleanupOperation == started, mediaCleanupReceipt == receipt, mediaCleanupEpoch == epoch else { throw NativeBackendError.closed }
+            var event = ncm_event()
+            let code = ncm_backend_poll(started, &event, nil, 0)
+            if code == 4 { try await Task.sleep(for: .milliseconds(10)); continue }
+            guard code == 0 else { throw NativeBackendError.transport(code: code) }
+            guard event.request_id == 0, event.reserved == 0, event.size == 0 else { throw NativeBackendError.malformedEvent }
+            if event.kind == 3 { throw NativeBackendError.protocolFailure(stage: event.stage, cause: event.cause) }
+            guard event.kind == 2, event.stage == 0, event.cause == 0 else { throw NativeBackendError.malformedEvent }
+            ncm_backend_dispose_media_cleanup(receipt); mediaCleanupReceipt = 0
+            return
+        }
+        throw NCMError.timeout
     }
     private func finishConnect(_ token: UInt64) async throws {
         busy = true; defer { busy = false }
@@ -228,6 +309,7 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// Starts an authenticated screen video stream; packets are drained locally.
     public func startTouchMedia() async throws {
         if usesOwnedXCTest { try await startOwnedAutomation(); return }
+        mediaStartRequested = true
         _ = try await operation(3)
         mediaStartCompleted = true
         videoPump?.cancel()
@@ -306,6 +388,7 @@ public enum NativeControlBackend: Sendable, Equatable {
         let decoder = videoDecoder; videoDecoder = nil; videoDecodeFailure = nil
         try await drainSubmittedRequest()
         _ = try await performOperation(11)
+        mediaStartRequested = false
         mediaStartCompleted = false
         if let decoder { await decoder.reset() }
     }

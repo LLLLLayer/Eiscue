@@ -5,6 +5,7 @@
 mod ffi;
 mod media;
 mod media_diagnostic;
+mod media_cleanup;
 mod relay;
 mod local_vpn;
 mod legacy_probe;
@@ -167,6 +168,7 @@ pub struct Session {
     prepared: bool,
     media: Option<media::Media>,
     media_release: media::ReleaseState,
+    media_cleanup: media_cleanup::Shared,
     xctest: Option<xctest_session::OwnedXCTestSession>,
     indigo: Option<IndigoHidClient<Box<dyn idevice::ReadWrite>>>,
     video: std::sync::Arc<video::VideoMailbox>,
@@ -226,6 +228,7 @@ impl Session {
             prepared: false,
             media: None,
             media_release: media::ReleaseState::default(),
+            media_cleanup: Default::default(),
             xctest: None,
             indigo: None,
             video: std::sync::Arc::new(video::VideoMailbox::default()),
@@ -332,7 +335,7 @@ impl Session {
             return Err(error(Stage::Media, Cause::InvalidParameters));
         }
         self.media = Some(
-            media::Media::start(&mut self.adapter, &mut self.handshake, self.video.clone(), &mut self.media_release).await?,
+            media::Media::start(&mut self.adapter, &mut self.handshake, self.video.clone(), &mut self.media_release, &self.media_cleanup).await?,
         );
         Ok(())
     }
@@ -342,10 +345,31 @@ impl Session {
         self.check()?;
         let media = self.media.take();
         let result = self.media_release.stop(&mut self.adapter, &mut self.handshake).await;
+        let result = result.and_then(|()| media_cleanup::set(&self.media_cleanup, media_cleanup::State::Idle));
         drop(media);
         self.indigo.take();
         self.video.reset();
         result
+    }
+    /// A newly authenticated transport may only verify and release the retained
+    /// original receipt. This never prepares media, captures a screen, or inputs.
+    async fn release_retained_media(&mut self, shared: &media_cleanup::Shared) -> Result<(), Error> {
+        use idevice::core_device::DisplayServiceClient;
+        self.check()?;
+        if self.handshake.services.get("com.apple.coredevice.displayservice")
+            .is_none_or(|s| s.port == 0 || !s.uses_remote_xpc)
+        {
+            return Err(error(Stage::Media, Cause::MissingService));
+        }
+        let status = bounded_for(Stage::Media, Duration::from_secs(3), async {
+            let mut query = DisplayServiceClient::connect_rsd(&mut self.adapter, &mut self.handshake).await?;
+            query.get_media_stream_server_status().await
+        }).await?;
+        media_cleanup::release_with(shared, || async { Ok(status) }, |identifier| async move {
+            let mut stop = bounded(Stage::Media,
+                DisplayServiceClient::connect_rsd(&mut self.adapter, &mut self.handshake)).await?;
+            bounded(Stage::Media, stop.stop_media_stream_identifiers(&[identifier])).await
+        }).await
     }
     pub async fn verify_video_geometry(&mut self) -> Result<bool, Error> {
         self.check()?;
@@ -740,6 +764,7 @@ mod tests {
             prepared: true,
             media: None,
             media_release: media::ReleaseState::default(),
+            media_cleanup: Default::default(),
             xctest: None,
             indigo: None,
             video: std::sync::Arc::new(video::VideoMailbox::default()),

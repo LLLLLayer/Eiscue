@@ -13,6 +13,7 @@ final class LocalTunnelManager {
     @ObservationIgnored var onDisconnect: (@MainActor @Sendable () -> Void)?
     func refresh() async throws {}
     func start() async throws { throw DeviceControlError.unsupported }
+    func resumeExistingForRepair() async throws -> Bool { false }
     func stop() async throws {}
 }
 #else
@@ -190,6 +191,45 @@ final class LocalTunnelManager {
         #endif
     }
 
+    /// Explicit repair can restore transport for an unconfirmed media release.
+    /// Only starts a saved, enabled configuration owned by this App; it never
+    /// creates, saves, enables or changes VPN preferences or asks for permission.
+    func resumeExistingForRepair() async throws -> Bool {
+        #if targetEnvironment(simulator)
+        throw Failure.simulatorUnsupported
+        #else
+        guard operation == nil, !preferenceSavePending, !isTransitioning else { throw Failure.busy }
+        try Task.checkCancellation()
+        let token = UUID()
+        generation = token; operation = .starting
+        lastError = nil
+        var submitted: NETunnelProviderManager?
+        defer { if generation == token { finish(token) } }
+        do {
+            let providerID = try providerBundleIdentifier()
+            let configurations = try await NETunnelProviderManager.loadAllFromPreferences()
+            try checkCurrent(token)
+            let selected = try Self.ownedConfiguration(in: configurations, providerID: providerID)
+            adopt(selected)
+            guard let selected, selected.isEnabled else { return false }
+            if selected.connection.status == .connected { return true }
+            submitted = selected
+            try selected.connection.startVPNTunnel()
+            try await waitForConnection(selected, token: token)
+            return true
+        } catch {
+            let failure = Self.presentable(error)
+            if generation == token {
+                if let submitted {
+                    await Task { @MainActor in await self.cleanUpFailedStart(submitted, token: token) }.value
+                }
+                if generation == token, !(failure is CancellationError) { lastError = failure.localizedDescription }
+            }
+            throw failure
+        }
+        #endif
+    }
+
     #if DEBUG
     /// Explicit numeric-only debug query; it never starts or changes the tunnel.
     func requestPairingDiagnostics(shouldSave: @escaping @MainActor @Sendable () -> Bool = { true }) {
@@ -229,28 +269,7 @@ final class LocalTunnelManager {
     /// Only restarts an enabled, previously authorized, owned configuration.
     /// Never creates/saves/enables a configuration or requests new permission.
     func resumeExistingForDiagnostics() async throws {
-        guard operation == nil, !preferenceSavePending, !isTransitioning else { throw Failure.busy }
-        let token = UUID()
-        generation = token; operation = .starting
-        var submitted: NETunnelProviderManager?
-        defer { if generation == token { finish(token) } }
-        do {
-            let providerID = try providerBundleIdentifier()
-            let configurations = try await NETunnelProviderManager.loadAllFromPreferences()
-            try checkCurrent(token)
-            guard let selected = try Self.ownedConfiguration(in: configurations, providerID: providerID),
-                  selected.isEnabled else { throw Failure.system("debug_existing_tunnel_required") }
-            adopt(selected)
-            if selected.connection.status == .connected { return }
-            submitted = selected
-            try selected.connection.startVPNTunnel()
-            try await waitForConnection(selected, token: token)
-        } catch {
-            if let submitted, generation == token {
-                await Task { @MainActor in await self.cleanUpFailedStart(submitted, token: token) }.value
-            }
-            throw error
-        }
+        guard try await resumeExistingForRepair() else { throw Failure.system("debug_existing_tunnel_required") }
     }
     #endif
 

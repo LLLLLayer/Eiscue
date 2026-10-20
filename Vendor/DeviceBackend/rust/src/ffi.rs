@@ -17,6 +17,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use zeroize::{Zeroize, Zeroizing};
 #[path = "pairing.rs"]
 mod pairing;
+#[path = "media_cleanup_ffi.rs"]
+mod media_cleanup;
 const INVALID: i32 = 1;
 const BUSY: i32 = 2;
 const CLOSED: i32 = 3;
@@ -119,9 +121,10 @@ struct Entry {
     receive: Mutex<Receiver>,
     cancel: watch::Sender<bool>,
     ready: AtomicBool,
-    done: AtomicBool,
+    done: Arc<AtomicBool>,
     video: Arc<crate::video::VideoMailbox>,
     screen_allowed: bool,
+    cleanup: Option<Arc<media_cleanup::Ownership>>,
 }
 static ENTRIES: OnceLock<Mutex<HashMap<u64, Arc<Entry>>>> = OnceLock::new();
 static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -189,6 +192,7 @@ fn launch(
     mut identity: ExistingIdentity,
     permissions: u32,
 ) -> Result<u64, i32> {
+    let cleanup = Arc::new(media_cleanup::Ownership::new(&identity)?);
     WORKERS
         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
             (n < 2).then_some(n + 1)
@@ -207,9 +211,10 @@ fn launch(
         }),
         cancel,
         ready: AtomicBool::new(false),
-        done: AtomicBool::new(false),
+        done: Arc::new(AtomicBool::new(false)),
         video: Arc::new(crate::video::VideoMailbox::default()),
         screen_allowed: permissions & SCREEN != 0,
+        cleanup: Some(cleanup.clone()),
     });
     let id = NEXT.fetch_add(1, Ordering::SeqCst);
     if id == 0 {
@@ -255,6 +260,7 @@ fn launch(
                         }
                     };
                     session.video = worker_entry.video.clone();
+                    session.media_cleanup = cleanup.state.clone();
                     let credit = Arc::new(Semaphore::new(1));
                     let names = session
                         .services()
@@ -312,9 +318,10 @@ fn launch_lockdown(
         }),
         cancel,
         ready: AtomicBool::new(false),
-        done: AtomicBool::new(false),
+        done: Arc::new(AtomicBool::new(false)),
         video: Arc::new(crate::video::VideoMailbox::default()),
         screen_allowed: false,
+        cleanup: None,
     });
     let id = NEXT.fetch_add(1, Ordering::SeqCst);
     {
@@ -1006,7 +1013,7 @@ pub extern "C" fn ncm_backend_close(handle: u64) {
     });
 }
 #[cfg(any(test, feature = "offline-fixtures"))]
-fn fixture_identity() -> ExistingIdentity {
+pub(crate) fn fixture_identity() -> ExistingIdentity {
     let key = ed25519_dalek::SigningKey::from_bytes(&[0x42; 32]);
     ExistingIdentity {
         controller: RpPairingFile {
@@ -1127,9 +1134,10 @@ unsafe fn start_media_fixture(
             }),
             cancel,
             ready: AtomicBool::new(true),
-            done: AtomicBool::new(false),
+            done: Arc::new(AtomicBool::new(false)),
             video: Arc::new(crate::video::VideoMailbox::default()),
             screen_allowed: burst.is_some(),
+            cleanup: None,
         });
         let id = NEXT.fetch_add(1, Ordering::SeqCst);
         registry().lock().unwrap().insert(id, entry.clone());
@@ -1339,7 +1347,7 @@ mod tests {
         assert!(!super::valid_command(7, br#"{"text":"hello"}"#));
     }
 
-    static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    pub(super) static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     #[tokio::test]
     async fn pairing_persistence_ack_requires_exact_pending_state_and_rejects_replay() {
         let _test = TEST_LOCK.lock().await;
@@ -1356,9 +1364,10 @@ mod tests {
             }),
             cancel,
             ready: AtomicBool::new(true),
-            done: AtomicBool::new(false),
+            done: Arc::new(AtomicBool::new(false)),
             video: Arc::new(crate::video::VideoMailbox::default()),
             screen_allowed: false,
+            cleanup: None,
         });
         let id = NEXT.fetch_add(1, Ordering::SeqCst);
         registry().lock().unwrap().insert(id, entry.clone());
@@ -1526,9 +1535,10 @@ mod tests {
             }),
             cancel,
             ready: AtomicBool::new(true),
-            done: AtomicBool::new(false),
+            done: Arc::new(AtomicBool::new(false)),
             video: Arc::new(crate::video::VideoMailbox::default()),
             screen_allowed: true,
+            cleanup: None,
         });
         let id = NEXT.fetch_add(1, Ordering::SeqCst);
         registry().lock().unwrap().insert(id, entry);
@@ -1593,9 +1603,10 @@ mod tests {
             }),
             cancel,
             ready: AtomicBool::new(true),
-            done: AtomicBool::new(false),
+            done: Arc::new(AtomicBool::new(false)),
             video: Arc::new(crate::video::VideoMailbox::default()),
             screen_allowed: false,
+            cleanup: None,
         });
         let id = NEXT.fetch_add(1, Ordering::SeqCst);
         registry().lock().unwrap().insert(id, entry);
@@ -1634,9 +1645,10 @@ mod tests {
                 }),
                 cancel,
                 ready: AtomicBool::new(true),
-                done: AtomicBool::new(false),
+                done: Arc::new(AtomicBool::new(false)),
                 video: Arc::new(crate::video::VideoMailbox::default()),
                 screen_allowed: false,
+                cleanup: None,
             });
             let id = NEXT.fetch_add(1, Ordering::SeqCst);
             registry().lock().unwrap().insert(id, entry);

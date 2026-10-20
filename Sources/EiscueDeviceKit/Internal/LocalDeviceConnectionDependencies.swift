@@ -25,6 +25,10 @@ extension NCMProbeClient: USBBoardDiscovering {}
     #endif
     var supportedControlActions: Set<NativeControlAction> { get }
     var mediaReleaseTimeout: Duration { get }
+    var hasRetainedMediaCleanup: Bool { get }
+    func confirmRetainedMediaRelease() -> Bool
+    func releaseRetainedMediaLocalVPN(identity: AuthorizedRemoteIdentity, pairingPort: UInt16,
+                                     configuration: VPNLoopbackConfiguration) async throws
     func connectLocalVPN(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                          pairingPort: UInt16, configuration: VPNLoopbackConfiguration) async throws
     func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,

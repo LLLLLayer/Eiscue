@@ -153,9 +153,10 @@ pub unsafe extern "C" fn ncm_pairing_start(consent: u32, handle: *mut u64) -> i3
             }),
             cancel,
             ready: AtomicBool::new(false),
-            done: AtomicBool::new(false),
+            done: Arc::new(AtomicBool::new(false)),
             video: Arc::new(crate::video::VideoMailbox::default()),
             screen_allowed: false,
+            cleanup: None,
         });
         let id = NEXT.fetch_add(1, Ordering::SeqCst);
         let Ok(mut entries) = registry().lock() else {

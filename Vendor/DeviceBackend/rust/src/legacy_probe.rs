@@ -249,6 +249,7 @@ mod tests {
             prepared: false,
             media: None,
             media_release: crate::media::ReleaseState::default(),
+            media_cleanup: Default::default(),
             xctest: None,
             indigo: None,
             video: std::sync::Arc::new(VideoMailbox::default()),

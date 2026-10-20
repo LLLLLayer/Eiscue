@@ -73,5 +73,15 @@ final class LocalTunnelManagerTests: XCTestCase {
         XCTAssertFalse(manager.isConnected)
         XCTAssertFalse(manager.isTransitioning)
     }
+
+    func testSimulatorRepairCannotStartOrCreateTunnelConfiguration() async throws {
+        let manager = LocalTunnelManager()
+        do {
+            _ = try await manager.resumeExistingForRepair()
+            XCTFail("A simulator must not claim to restore cleanup transport.")
+        } catch LocalTunnelManager.Failure.simulatorUnsupported {}
+        XCTAssertFalse(manager.isConnected)
+        XCTAssertFalse(manager.isTransitioning)
+    }
     #endif
 }

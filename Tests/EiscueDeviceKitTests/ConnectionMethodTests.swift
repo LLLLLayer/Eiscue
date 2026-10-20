@@ -89,6 +89,101 @@ import Testing
         #expect(fixture.vpnFactoryCalls == 0 && fixture.boardFactoryCalls == 0)
     }
 
+    @Test func explicitReleaseRecoversOnlyRetainedVPNMediaWithoutStartingControl() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let configuration = LocalVPNConfiguration(localAddress: "10.8.1.1", peerAddress: "10.8.0.1")
+        try await client.connectLocalVPN(configuration: configuration, backend: .coreDevice)
+        let frame = try await client.captureScreenshot()
+        fixture.session.mediaFailure = NativeBackendError.closed
+        fixture.session.hasRetainedMediaCleanup = true
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        #expect(fixture.session.cleanupCalls == 0, "The first release must not silently retry on a fresh transport.")
+        #expect(await client.disconnectAndConfirmRelease())
+        #expect(fixture.session.cleanupCalls == 1 && fixture.vpn.calls == 2)
+        #expect(fixture.session.cleanupPeerIDs == ["SYNTHETIC-PEER"])
+        #expect(fixture.session.cleanupConfigurations.first?.localIPv4 == 0x0a080101)
+        #expect(fixture.session.cleanupConfigurations.first?.peerIPv4 == 0x0a080001)
+        #expect(fixture.session.vpnConnections == 1 && fixture.session.mediaStarts == 1)
+        #expect(fixture.session.mediaStops == 1 && fixture.session.taps == 0)
+        #expect(fixture.boardFactoryCalls == 0)
+        guard case .unavailable = await client.status() else { Issue.record("Cleanup cannot publish Ready"); return }
+        await #expect(throws: (any Error).self) { try await client.tap(at: .init(x: 1, y: 1), frameID: frame.frameID) }
+        #expect(await client.disconnectAndConfirmRelease())
+        #expect(fixture.session.cleanupCalls == 1, "Confirmed cleanup must not repeat its remote stop.")
+    }
+
+    @Test func failedRecoveryKeepsReceiptForLaterExplicitReleaseAndBlocksNewConnection() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        fixture.session.mediaFailure = NativeBackendError.closed
+        fixture.session.hasRetainedMediaCleanup = true
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        fixture.session.cleanupFailure = NativeBackendError.protocolFailure(stage: 10, cause: 7)
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        await #expect(throws: (any Error).self) { try await client.connectLocalVPN(backend: .coreDevice) }
+        #expect(fixture.sessionBackends == [.coreDevice])
+        #expect(fixture.session.mediaStarts == 1 && fixture.session.cleanupCalls == 1)
+        fixture.session.cleanupFailure = nil
+        #expect(await client.disconnectAndConfirmRelease())
+        #expect(fixture.session.cleanupCalls == 2)
+    }
+
+    @Test(arguments: [true, false])
+    func cleanupNeedsExistingIdentityAndFreshVPNDiscovery(identityPresent: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        fixture.session.mediaFailure = NativeBackendError.closed
+        fixture.session.hasRetainedMediaCleanup = true
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        if identityPresent { fixture.vpn.failure = LocalVPNError.inactive }
+        else { try fixture.store.remove() }
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        #expect(fixture.session.cleanupCalls == 0 && fixture.session.mediaStarts == 1)
+        #expect(fixture.session.hasRetainedMediaCleanup)
+        #expect(fixture.boardFactoryCalls == 0)
+    }
+
+    @Test func lateOriginalStopConfirmationNeedsNeitherVPNNorIdentity() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        fixture.session.mediaFailure = NativeBackendError.closed
+        fixture.session.hasRetainedMediaCleanup = true
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        fixture.session.retainedReleaseAlreadyConfirmed = true
+        fixture.vpn.failure = LocalVPNError.inactive
+        try fixture.store.remove()
+        #expect(await client.disconnectAndConfirmRelease())
+        #expect(fixture.vpn.calls == 1 && fixture.session.cleanupCalls == 0)
+        #expect(!fixture.session.hasRetainedMediaCleanup)
+    }
+
+    @Test func overlappingExplicitReleasesShareOneCleanupAttempt() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        fixture.session.mediaFailure = NativeBackendError.closed
+        fixture.session.hasRetainedMediaCleanup = true
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        fixture.session.cleanupDelay = .milliseconds(50)
+        let first = Task { await client.disconnectAndConfirmRelease() }
+        try await waitUntil { fixture.session.cleanupCalls == 1 }
+        let second = Task { await client.disconnectAndConfirmRelease() }
+        #expect(await first.value)
+        #expect(await second.value)
+        #expect(fixture.session.cleanupCalls == 1)
+    }
+
+    @Test func explicitDisconnectCancelsReconnectWaitingForTheSameRelease() async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        fixture.session.mediaStopDelay = .milliseconds(50)
+        let reconnect = Task { try await client.connectLocalVPN(backend: .coreDevice) }
+        try await waitUntil { fixture.session.mediaStops == 1 }
+        #expect(await client.disconnectAndConfirmRelease())
+        await #expect(throws: CancellationError.self) { try await reconnect.value }
+        #expect(fixture.session.mediaStarts == 1 && fixture.session.vpnConnections == 1)
+        guard case .unavailable = await client.status() else { Issue.record("Disconnect must cancel the waiting reconnect"); return }
+    }
+
     @Test(arguments: [true, false])
     func pendingReceiptUsesTheNativeReleaseBudgetAndTimeoutRemainsUnconfirmed(fitsBudget: Bool) async throws {
         let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
@@ -657,6 +752,13 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
     var supportedControlActions = Set(NativeControlAction.allCases)
     var mediaReleaseTimeout: Duration = .seconds(5)
     var mediaStopDelay: Duration = .zero
+    var hasRetainedMediaCleanup = false
+    var retainedReleaseAlreadyConfirmed = false
+    var cleanupCalls = 0
+    var cleanupFailure: (any Error)?
+    var cleanupPeerIDs: [String] = []
+    var cleanupConfigurations: [VPNLoopbackConfiguration] = []
+    var cleanupDelay: Duration = .zero
     var boardConnections = 0, vpnConnections = 0, developerChecks = 0, mediaStarts = 0, mediaStops = 0, taps = 0
     var closed = false, authorizedExistingIdentity = false, authorizedInput = false
     var peerID: String?
@@ -703,6 +805,18 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
         return mediaFailure == nil
     }
     func close() { closed = true }
+    func confirmRetainedMediaRelease() -> Bool {
+        guard hasRetainedMediaCleanup, retainedReleaseAlreadyConfirmed else { return false }
+        hasRetainedMediaCleanup = false
+        return true
+    }
+    func releaseRetainedMediaLocalVPN(identity: AuthorizedRemoteIdentity, pairingPort: UInt16,
+                                     configuration: VPNLoopbackConfiguration) async throws {
+        cleanupCalls += 1; cleanupPeerIDs.append(identity.peerID); cleanupConfigurations.append(configuration)
+        try await Task.sleep(for: cleanupDelay)
+        if let cleanupFailure { throw cleanupFailure }
+        hasRetainedMediaCleanup = false
+    }
     func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
         if let captureFailure { throw captureFailure }
         return NativeVideoSnapshot(data: image, geometry: geometry, mimeType: "image/png")

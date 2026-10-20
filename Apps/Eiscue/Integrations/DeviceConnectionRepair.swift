@@ -6,6 +6,14 @@ enum DeviceConnectionRepairResult: Equatable, Sendable {
 }
 
 @MainActor
+protocol DeviceConnectionRepairTunnel {
+    var isConnected: Bool { get }
+    func resumeExistingForRepair() async throws -> Bool
+}
+
+extension LocalTunnelManager: DeviceConnectionRepairTunnel {}
+
+@MainActor
 final class DeviceConnectionRepairSession {
     var lease: DeviceLease?
     var cleanupFinished = false
@@ -26,11 +34,15 @@ extension AppModel {
             dictationDeviceRestoration?.finishTask == nil))
     }
 
-    func repairDeviceConnection() async -> DeviceConnectionRepairResult {
+    func repairDeviceConnection(tunnel suppliedTunnel: (any DeviceConnectionRepairTunnel)? = nil) async -> DeviceConnectionRepairResult {
         guard !Task.isCancelled, canRepairDeviceConnection else { return .busy }
         guard let lease = try? deviceSession.acquire(.repair) else { return .busy }
+        let hadUnconfirmedRelease = deviceSession.hasUnconfirmedRelease
         let hadActiveConnection = activeDeviceConnectionMethod != nil || isDeviceReady
         guard let operation = try? deviceSession.beginRelease(owner: lease.owner) else { lease.release(); return .busy }
+        let requiresLocalTunnel = hadUnconfirmedRelease && operation.method == .localVPN &&
+            (operation.backend ?? deviceControlBackend.resolved(on: deviceOperatingSystemVersion)) == .coreDevice
+        let tunnel = suppliedTunnel ?? localTunnel
         isRepairingDeviceConnection = true
         let session = DeviceConnectionRepairSession(resumesBluetoothMonitor: bluetoothMonitor != nil)
         session.lease = lease
@@ -49,19 +61,27 @@ extension AppModel {
         // connection actions while cleanup is still settling.
         let cleanup = Task {
             await monitor?.value
+            if requiresLocalTunnel, !tunnel.isConnected {
+                // This restores transport only for the original cleanup receipt.
+                // It never installs a VPN or opens a new device-control session.
+                // The backend still owns release evidence if an earlier scoped
+                // stop finishes even when this transport preparation fails.
+                _ = try? await tunnel.resumeExistingForRepair()
+            }
             var hadConnection = hadActiveConnection
             if case .ready = await client.status() { hadConnection = true }
             if let retainedNetwork, case .ready = await retainedNetwork.status() { hadConnection = true }
             let selectedRelease = await client.disconnectAndConfirmRelease()
             let status = await client.status()
             let stillReady: Bool = { if case .ready = status { true } else { false } }()
-            var confirmed = (usesHID || selectedRelease) && !stillReady
+            let selectedConfirmed = selectedRelease && !stillReady
+            var confirmed = (usesHID || selectedConfirmed) && !stillReady
             if let retainedNetwork {
                 let released = await retainedNetwork.disconnectAndConfirmRelease()
                 confirmed = confirmed && released
                 if case .ready = await retainedNetwork.status() { confirmed = false }
             }
-            _ = deviceSession.completeRelease(operation, confirmed: selectedRelease && !stillReady, status: status)
+            _ = deviceSession.completeRelease(operation, confirmed: selectedConfirmed, status: status)
             syncBoardCompanion()
             if case .unavailable(let reason) = deviceStatus { connectionMessage = reason }
             if confirmed { deviceConnectionError = nil }

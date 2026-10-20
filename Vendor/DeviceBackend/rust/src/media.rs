@@ -180,16 +180,30 @@ impl ReleaseState {
     }
 }
 
+#[cfg(test)]
 async fn start_reply(
     release: &mut ReleaseState,
     start: impl std::future::Future<Output = Result<plist::Value, Error>>,
 ) -> Result<(plist::Value, idevice::core_device::display_stream::negotiation::ScreenVideoStream), Error> {
+    start_reply_retained(release, &Default::default(), uuid::Uuid::nil(), start).await
+}
+
+async fn start_reply_retained(
+    release: &mut ReleaseState,
+    cleanup: &crate::media_cleanup::Shared,
+    session: uuid::Uuid,
+    start: impl std::future::Future<Output = Result<plist::Value, Error>>,
+) -> Result<(plist::Value, idevice::core_device::display_stream::negotiation::ScreenVideoStream), Error> {
     // Cancellation or a missing reply cannot prove that the peer never started.
+    crate::media_cleanup::begin(cleanup)?;
     *release = ReleaseState::Unknown;
     let answer = start.await?;
     if let Some(identifier) = owned_start_identifier(&answer) { release.claim(identifier)?; }
     let negotiated = parse_screen_video_answer(extract_answer(&answer)?)
         .map_err(|_| error(Stage::VideoAnswer, Cause::Protocol))?;
+    if let Some(receipt) = crate::media_cleanup::Receipt::from_start(&answer, session, negotiated.ssrc) {
+        crate::media_cleanup::set(cleanup, crate::media_cleanup::State::Owned(receipt))?;
+    }
     Ok((answer, negotiated))
 }
 
@@ -233,6 +247,7 @@ impl Media {
         handshake: &mut RsdHandshake,
         mailbox: Arc<crate::video::VideoMailbox>,
         release: &mut ReleaseState,
+        cleanup: &crate::media_cleanup::Shared,
     ) -> Result<Self, Error> {
         let fail = || error(Stage::VideoAnswer, Cause::Protocol);
         let mut drains = Drains::default();
@@ -269,7 +284,7 @@ impl Media {
         ).await?;
         let initial_geometry = bounded(Stage::VideoService,
             subscribe_display_geometry(&mut display_info, DISPLAY_ID)).await?;
-        let (answer, negotiated) = start_reply(release, Box::pin(bounded(
+        let (answer, negotiated) = start_reply_retained(release, cleanup, session, Box::pin(bounded(
             Stage::VideoNegotiation,
             video.start_media_stream(build_start_video_parameters(
                 &receiver,
