@@ -2,7 +2,7 @@ import PiDurableKit
 
 /// Pi terminates a round only if every result requests it, and logs ordinary hook
 /// errors without stopping. Abort the owning generation after its results commit,
-/// so an earlier successful tool cannot authorize another model request.
+/// so an earlier successful tool cannot override a pause or unknown outcome.
 actor RuntimeOutcomeGate {
     private var harness: Harness?
     func attach(_ harness: Harness) { self.harness = harness }
@@ -16,10 +16,10 @@ actor RuntimeOutcomeGate {
     nonisolated func runtimeExtension(budget: RunBudget) -> Extension {
         Extension("eiscue-outcome-gate", hooks: [
             .afterTools { _, _, context in
-                if await budget.terminalCause != nil { try await self.stop(context.taskId) }
+                if await budget.requiresTermination { try await self.stop(context.taskId) }
             },
             .beforeRequest { _, context in
-                if await budget.terminalCause != nil { try await self.stop(context.taskId) }
+                if await budget.requiresTermination { try await self.stop(context.taskId) }
                 return nil
             },
         ])

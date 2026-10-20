@@ -8,6 +8,10 @@ actor RunBudget {
     private var stopped = false
     private(set) var failure: AgentError?
     private(set) var terminalCause: StopCause?
+    // Successful use of the last units still permits a final model answer.
+    // Only a recorded pause or unknown outcome terminates the generation.
+    var requiresTermination: Bool { terminalCause != nil || failure != nil }
+
     init(limit: Int, verificationCost: Int? = nil) {
         self.limit = limit
         self.verificationCost = verificationCost

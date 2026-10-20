@@ -5,6 +5,49 @@ import PiDurableKit
 
 @Suite("Agent runtime")
 struct AgentRuntimeTests {
+    @Test(arguments: [nil, .toolBudget, .noProgress, .verificationUnavailable, .connectionLost, .hostRequested] as [AgentPauseReason?])
+    func mixedToolRoundPauseStopsBeforeAnotherModelRequest(reason: AgentPauseReason?) async throws {
+        let evidence = RuntimeEvidence()
+        let first = AgentTool(name: "first", description: "Observe", parameters: emptySchema,
+                              mayHaveSideEffects: false, isVerification: true) { _ in
+            await evidence.record("first"); return .text("Observed")
+        }
+        let pause = AgentTool(name: "pause", description: "Host-controlled action", parameters: emptySchema,
+                              executionCost: 2, verifiesSideEffects: true) { _ in
+            await evidence.record("paused")
+            throw AgentToolError.paused(reason ?? .toolBudget)
+        }
+        let later = AgentTool(name: "later", description: "Must not run", parameters: emptySchema) { _ in
+            await evidence.record("unexpected"); return .text("Wrong")
+        }
+        let fixture = try await RuntimeFixture(tools: [first, pause, later])
+        defer { fixture.remove() }
+        try await fixture.faux.append(.toolCall("first", [:], id: "first"), .toolCall("pause", [:], id: "pause"),
+                                      .toolCall("later", [:], id: "later"))
+        try await fixture.faux.append(.toolCall("first", [:], id: "fresh"))
+        try await fixture.faux.append(.text("Continued after a new request."))
+        // Nil exercises the runtime's own reservation failure, before the host tool executes.
+        let request = AgentRequest(conversationID: UUID(), prompt: "Work", maxToolCalls: reason == nil ? 1 : 30)
+        let expected = reason.map(AgentError.toolExecutionPaused) ?? .toolLimitReached
+        await #expect(throws: expected) { try await collect(fixture.client.run(request: request)) }
+        let expectedCalls = reason == nil ? ["first"] : ["first", "paused"]
+        #expect(await evidence.values == expectedCalls)
+        let result = try await fixture.client.toolResult(conversationID: request.conversationID,
+                                                        requestID: request.requestID, toolCallID: "pause")
+        #expect(result?.result.outcome == (reason == nil ? .notExecuted : .failed))
+        let recovery = try await fixture.client.recover(conversationID: request.conversationID)
+        #expect(!recovery.hasInterruptedRun)
+        #expect(recovery.messages.map(\.text) == ["Work"])
+        try #require(try await fixture.faux.pendingResponseCount() == 2)
+        await #expect(throws: AgentError.nothingToResume) {
+            try await collect(fixture.client.run(request: .init(conversationID: request.conversationID, prompt: "", mode: .resume)))
+        }
+        let next = try await collect(fixture.client.run(request: .init(conversationID: request.conversationID, prompt: "Continue")))
+        #expect(next.contains(.finished(.completed)))
+        #expect(await evidence.values == expectedCalls + ["first"])
+        #expect(try await fixture.faux.pendingResponseCount() == 0)
+    }
+
     @Test(arguments: [false, true])
     func unknownOutcomeTerminatesAMixedToolRoundBeforeAnotherModelRequest(asResult: Bool) async throws {
         let evidence = RuntimeEvidence()

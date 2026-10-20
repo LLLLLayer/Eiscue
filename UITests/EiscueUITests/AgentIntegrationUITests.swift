@@ -1,14 +1,17 @@
+import Network
 import XCTest
 
-/// Run Scripts/test-model-server.py first. The runtime is the real Pi engine;
-/// only the model HTTP endpoint is replaced by a deterministic loopback server.
+/// Most cases need Scripts/test-model-server.py; the mixed-round regression
+/// owns its server in the UI runner so it also works on a physical iPhone.
+/// The runtime is the real Pi engine; only the model endpoint is replaced.
 final class AgentIntegrationUITests: XCTestCase {
-    @MainActor private func launch(reset: Bool = true, timeline: Bool = false) -> XCUIApplication {
+    @MainActor private func launch(reset: Bool = true, timeline: Bool = false,
+                                   fixtureURL: URL? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--skip-onboarding", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         if reset { app.launchArguments.append("--reset-state") }
         if timeline { app.launchArguments.append("--tool-timeline-fixture") }
-        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = modelFixtureURL().absoluteString
+        app.launchEnvironment["EISCUE_TEST_MODEL_URL"] = (fixtureURL ?? modelFixtureURL()).absoluteString
         app.launch()
         return app
     }
@@ -167,6 +170,65 @@ final class AgentIntegrationUITests: XCTestCase {
                        "An explicit continuation must not replay the settled tool call.")
     }
 
+    @MainActor func testMixedToolRoundPauseMakesNoImplicitRequestAcrossRelaunch() throws {
+        #if !targetEnvironment(simulator)
+        guard ProcessInfo.processInfo.environment["EISCUE_REAL_DEVICE_TEST"] == "1" else {
+            throw XCTSkip("Run explicitly with TEST_RUNNER_EISCUE_REAL_DEVICE_TEST=1.")
+        }
+        #endif
+        continueAfterFailure = false
+        let fixture = try MixedToolPauseModelFixture()
+        let url = try fixture.start()
+        defer { fixture.stop() }
+        var app = launch(timeline: true, fixtureURL: url)
+        defer { app.terminate() }
+        send(MixedToolPauseModelFixture.prompt, in: app)
+
+        XCTAssertTrue(app.buttons["continuePausedRunButton"].waitForExistence(timeout: 20))
+        waitUntilIdle(in: app)
+        XCTAssertTrue(app.buttons["endPausedRunButton"].exists)
+        XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+        XCTAssertTrue(app.staticTexts["任务暂无进展。请查看屏幕，再继续任务或补充说明。"].exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 2)
+        assertNoFurtherModelRequests(fixture, expected: 1)
+        XCTAssertFalse(app.staticTexts[MixedToolPauseModelFixture.unexpectedAnswer].exists)
+
+        app.terminate()
+        app = launch(reset: false, timeline: true, fixtureURL: url)
+        let continueButton = app.buttons["continuePausedRunButton"]
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["endPausedRunButton"].exists)
+        XCTAssertFalse(app.buttons["stopRunButton"].exists)
+        XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 2)
+        assertNoFurtherModelRequests(fixture, expected: 1)
+
+        continueButton.tap()
+        XCTAssertTrue(app.staticTexts[MixedToolPauseModelFixture.continuedAnswer].waitForExistence(timeout: 20))
+        waitUntilIdle(in: app)
+        XCTAssertFalse(app.buttons["continuePausedRunButton"].exists)
+        XCTAssertFalse(app.buttons["endPausedRunButton"].exists)
+        XCTAssertFalse(app.buttons["resumeRunButton"].exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "toolActivityRow").count, 2,
+                       "Explicit continuation must not replay either settled tool call.")
+        assertNoFurtherModelRequests(fixture, expected: 2)
+        XCTAssertEqual(fixture.snapshot.continuations, 1)
+        XCTAssertFalse(app.staticTexts[MixedToolPauseModelFixture.unexpectedAnswer].exists)
+    }
+
+    @MainActor private func assertNoFurtherModelRequests(_ fixture: MixedToolPauseModelFixture, expected: Int,
+                                                        file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(fixture.snapshot.requests, expected, file: file, line: line)
+        let extraRequest = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in fixture.snapshot.requests > expected }, object: nil)
+        extraRequest.isInverted = true
+        XCTAssertEqual(XCTWaiter.wait(for: [extraRequest], timeout: 2), .completed,
+                       "A settled run must not issue another model request.", file: file, line: line)
+        XCTAssertEqual(fixture.snapshot.requests, expected, file: file, line: line)
+        XCTAssertEqual(fixture.snapshot.unexpectedRequests, 0, file: file, line: line)
+        XCTAssertEqual(fixture.snapshot.rejectedRequests, 0, file: file, line: line)
+    }
+
     @MainActor func testToolWithoutPrefaceKeepsUserAnchorAcrossRelaunch() {
         var app = launch(timeline: true)
         send("timeline no prose fixture", in: app)
@@ -256,5 +318,206 @@ final class AgentIntegrationUITests: XCTestCase {
         for (above, below) in zip(rows, rows.dropFirst()) {
             XCTAssertLessThan(above.frame.midY, below.frame.midY, file: file, line: line)
         }
+    }
+}
+
+/// This server runs beside the App on the test destination, not on the Mac.
+/// Mutable state and Network callbacks belong to queue; reads/cleanup use sync.
+/// Only fixed-case counters survive a request; headers and bodies are never logged.
+private final class MixedToolPauseModelFixture: @unchecked Sendable {
+    static let prompt = "mixed tool pause fixture"
+    static let continuedAnswer = "Mixed tool pause fixture continued successfully."
+    static let unexpectedAnswer = "UNEXPECTED_IMPLICIT_MODEL_REQUEST"
+    private static let continuationPrompt = "从当前画面继续我刚才的任务。先重新查看屏幕，确认哪些步骤已经完成；如果之前的操作没有进展，请换一种方式。"
+    private static let maxHeaderBytes = 16_384
+    private static let maxBodyBytes = 262_144
+
+    struct Snapshot: Sendable {
+        var requests = 0
+        var continuations = 0
+        var unexpectedRequests = 0
+        var rejectedRequests = 0
+    }
+    private enum FixtureError: Error { case listenerUnavailable }
+    private enum ParsedRequest { case incomplete, invalid, body(Data) }
+
+    private let queue = DispatchQueue(label: "org.eiscue.uitests.mixed-tool-pause")
+    private let listener: NWListener
+    private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private var counts = Snapshot()
+    private var port: UInt16?
+    private var stopped = false
+    private var finishedStarting = false
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: parameters)
+    }
+
+    var snapshot: Snapshot { queue.sync { counts } }
+
+    func start() throws -> URL {
+        let ready = DispatchSemaphore(value: 0)
+        queue.sync {
+            listener.stateUpdateHandler = { [weak self] state in
+                guard let self, !self.finishedStarting else { return }
+                switch state {
+                case .ready:
+                    self.port = self.listener.port?.rawValue
+                case .failed, .cancelled:
+                    break
+                default:
+                    return
+                }
+                self.finishedStarting = true
+                ready.signal()
+            }
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self, !self.stopped, self.connections.count < 4 else {
+                    connection.cancel()
+                    return
+                }
+                self.connections[ObjectIdentifier(connection)] = connection
+                connection.start(queue: self.queue)
+                self.receive(connection, bytes: Data())
+                self.queue.asyncAfter(deadline: .now() + 10) { [weak self, weak connection] in
+                    guard let self, let connection else { return }
+                    self.finish(connection)
+                }
+            }
+            listener.start(queue: queue)
+        }
+        guard ready.wait(timeout: .now() + 5) == .success,
+              let port = queue.sync(execute: { port }),
+              let url = URL(string: "http://127.0.0.1:\(port)/v1") else {
+            stop()
+            throw FixtureError.listenerUnavailable
+        }
+        return url
+    }
+
+    func stop() {
+        queue.sync {
+            stopped = true
+            listener.stateUpdateHandler = nil
+            listener.newConnectionHandler = nil
+            listener.cancel()
+            for connection in connections.values { connection.cancel() }
+            connections.removeAll()
+        }
+    }
+
+    private func finish(_ connection: NWConnection) {
+        connections.removeValue(forKey: ObjectIdentifier(connection))
+        connection.cancel()
+    }
+
+    private func receive(_ connection: NWConnection, bytes: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) {
+            [weak self] content, _, complete, error in
+            guard let self, !self.stopped, self.connections[ObjectIdentifier(connection)] != nil else { return }
+            var received = bytes
+            if let content { received.append(content) }
+            switch Self.parse(received) {
+            case .body(let body):
+                self.respond(to: connection, body: body)
+            case .invalid:
+                self.counts.rejectedRequests += 1
+                self.finish(connection)
+            case .incomplete:
+                if error != nil || complete {
+                    self.counts.rejectedRequests += 1
+                    self.finish(connection)
+                } else {
+                    self.receive(connection, bytes: received)
+                }
+            }
+        }
+    }
+
+    private static func parse(_ bytes: Data) -> ParsedRequest {
+        guard let separator = bytes.range(of: Data("\r\n\r\n".utf8)) else {
+            return bytes.count <= maxHeaderBytes ? .incomplete : .invalid
+        }
+        guard separator.lowerBound <= maxHeaderBytes,
+              let header = String(data: bytes[..<separator.lowerBound], encoding: .utf8) else { return .invalid }
+        let lines = header.components(separatedBy: "\r\n")
+        guard lines.first == "POST /v1/chat/completions HTTP/1.1" else { return .invalid }
+        var length: Int?
+        for line in lines.dropFirst() {
+            guard let colon = line.firstIndex(of: ":") else { return .invalid }
+            let name = line[..<colon].lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            if name == "transfer-encoding" { return .invalid }
+            if name == "content-length" {
+                guard length == nil, let parsed = Int(value), (1...maxBodyBytes).contains(parsed) else { return .invalid }
+                length = parsed
+            }
+        }
+        guard let length else { return .invalid }
+        let body = bytes[separator.upperBound...]
+        if body.count < length { return .incomplete }
+        guard body.count == length else { return .invalid }
+        return .body(Data(body))
+    }
+
+    private func respond(to connection: NWConnection, body: Data) {
+        counts.requests += 1
+        guard let request = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              request["stream"] as? Bool == true,
+              let messages = request["messages"] as? [[String: Any]] else {
+            counts.rejectedRequests += 1
+            finish(connection)
+            return
+        }
+        let userTexts = messages.filter { $0["role"] as? String == "user" }.map(Self.messageText)
+        let tools = request["tools"] as? [[String: Any]] ?? []
+        let hasFixtureTool = tools.contains { ($0["function"] as? [String: Any])?["name"] as? String == "fixture_read_file" }
+        var events = Self.event(["role": "assistant", "content": ""])
+        if counts.requests == 1, userTexts == [Self.prompt], hasFixtureTool {
+            for (index, path) in ["fixture.txt", "pause.txt"].enumerated() {
+                events.append(Self.event(["tool_calls": [
+                    ["index": index, "id": "mixed-fixture-\(index)", "type": "function",
+                     "function": ["name": "fixture_read_file", "arguments": "{\"path\":\"\(path)\"}"]]
+                ]]))
+            }
+            events.append(Self.event([:], finish: "tool_calls"))
+        } else if counts.requests == 2, userTexts == [Self.prompt, Self.continuationPrompt] {
+            counts.continuations += 1
+            events.append(Self.event(["content": Self.continuedAnswer]))
+            events.append(Self.event([:], finish: "stop"))
+        } else {
+            counts.unexpectedRequests += 1
+            events.append(Self.event(["content": Self.unexpectedAnswer]))
+            events.append(Self.event([:], finish: "stop"))
+        }
+        events.append(Data("data: [DONE]\n\n".utf8))
+        var response = Data(("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                             + "Cache-Control: no-cache\r\nConnection: close\r\n"
+                             + "Content-Length: \(events.count)\r\n\r\n").utf8)
+        response.append(events)
+        connection.send(content: response, completion: .contentProcessed { [weak self] _ in
+            self?.finish(connection)
+        })
+    }
+
+    private static func messageText(_ message: [String: Any]) -> String {
+        if let text = message["content"] as? String { return text }
+        let parts = message["content"] as? [[String: Any]] ?? []
+        return parts.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined(separator: " ")
+    }
+
+    private static func event(_ delta: [String: Any], finish: String? = nil) -> Data {
+        // All values are fixed fixture data, never request headers or content.
+        let packet: [String: Any] = [
+            "id": "mixed-pause-completion", "object": "chat.completion.chunk",
+            "created": 1, "model": "fixture-model",
+            "choices": [["index": 0, "delta": delta, "finish_reason": finish as Any? ?? NSNull()]]
+        ]
+        var data = Data("data: ".utf8)
+        data.append(try! JSONSerialization.data(withJSONObject: packet))
+        data.append(Data("\n\n".utf8))
+        return data
     }
 }
