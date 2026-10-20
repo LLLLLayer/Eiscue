@@ -838,7 +838,9 @@ final class RealModelCalculatorAcceptanceUITests: XCTestCase {
                 if step == 6 { break }
                 let list = try settingsRootList(in: settings)
                 evidence.report.appearanceNavigationRootScrolls += 1
-                list.swipeDown()
+                // Revisit earlier rows, then search later rows, as in the
+                // bounded root inspector. Repeated down-swipes stick at top.
+                if step < 2 { list.swipeDown() } else { list.swipeUp() }
             }
             recordAppearanceTarget(in: settings, phase: "observedAppearanceRootButtonUnavailable", evidence: evidence)
             throw AppearanceReadError.exactTargetUnavailable
@@ -929,8 +931,15 @@ final class RealModelCalculatorAcceptanceUITests: XCTestCase {
         var selection: AppearanceSelection?
         let found = waitForAppearanceCondition(seconds: wait ? 5 : 0) {
             guard settings.state == .runningForeground, appearancePageIdentified(in: settings) else { return false }
-            let light = knownAppearanceElements(in: settings, type: .button, titles: ["Light", "浅色"])
-            let dark = knownAppearanceElements(in: settings, type: .button, titles: ["Dark", "深色"])
+            // iOS 27 includes its preview clock in the button label. Identify
+            // the observed preview image inside that button, then read the
+            // button's selection trait; the child text/image is not selected.
+            let light = usesSeparateAppearancePage
+                ? settings.buttons.containing(.image, identifier: "AppearanceLight")
+                : knownAppearanceElements(in: settings, type: .button, titles: ["Light", "浅色"])
+            let dark = usesSeparateAppearancePage
+                ? settings.buttons.containing(.image, identifier: "AppearanceDark")
+                : knownAppearanceElements(in: settings, type: .button, titles: ["Dark", "深色"])
             guard light.count == 1, dark.count == 1, light.firstMatch.isHittable, dark.firstMatch.isHittable else { return false }
             @MainActor func selected(_ element: XCUIElement) -> Bool {
                 element.isSelected || ["1", "Selected", "已选择", "已选中"].contains(element.value as? String ?? "")

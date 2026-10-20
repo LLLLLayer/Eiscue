@@ -769,18 +769,19 @@ final class NetworkAcceptanceUITests: XCTestCase {
                   && !progress.exists && !connectionResult.exists && !microphoneResult.exists,
                   "Repair must start from an idle page without previous results.")
         let requestedAt = Date().timeIntervalSince1970
-        metadata += "\nrepairRequestedAt=\(requestedAt)\nrepairRequests=1\nresultWaitLimitSeconds=30"
+        metadata += "\nrepairRequestedAt=\(requestedAt)\nrepairRequests=1\nresultWaitLimitSeconds=180"
         attach("before single repair request")
         start.tap()
         metadata += "\nrepairTapReturnedAt=\(Date().timeIntervalSince1970)"
-        // Permission sheets are deliberately not answered. The normal capture
-        // lasts five seconds after authorization; an unsettled sheet, cleanup
-        // or capture cannot turn a timed-out UI check into a reported pass.
+        // Allow bounded native cleanup (125 s), saved-tunnel start/stop
+        // (20 s + 10 s) and the five-second microphone check. Permission sheets
+        // are deliberately not answered; an unsettled sheet, cleanup or capture
+        // cannot turn a timed-out UI check into a reported pass.
         let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             app.state == .runningForeground && connectionResult.exists && microphoneResult.exists
                 && !progress.exists && start.exists && start.isEnabled
         }, object: nil)
-        let completion = XCTWaiter.wait(for: [finished], timeout: 30)
+        let completion = XCTWaiter.wait(for: [finished], timeout: 180)
         metadata += "\nresultsSettled=\(completion == .completed)\nresultsObservedAt=\(Date().timeIntervalSince1970)"
         try check(completion == .completed, "Repair did not show both results and release its UI gate within the bounded wait.")
         try check(app.alerts.count == 0

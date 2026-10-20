@@ -99,6 +99,30 @@ final class DeviceConnectionRepairTests: XCTestCase {
         fixture.model.finishDeviceConnectionRepair()
     }
 
+    func testConfirmedPendingReleaseReportsReleasedWhileInitiallyDisconnected() async throws {
+        let fixture = try RepairFixture(method: .localVPN, backend: .coreDevice,
+            connected: false, releaseConfirmed: false)
+        let model = fixture.model
+        let initialRelease = try await model.deviceSession.releaseConnection()
+        XCTAssertFalse(initialRelease)
+        XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertNil(model.activeDeviceConnectionMethod)
+        XCTAssertFalse(model.isDeviceReady)
+        await fixture.controller.setReleaseConfirmed(true)
+
+        let result = await model.repairDeviceConnection(tunnel: RepairTunnel(connected: true))
+
+        XCTAssertEqual(result, .released, "Backend confirmation settles the retained pending release even when local control was already disconnected.")
+        XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertFalse(model.isDeviceReady)
+        XCTAssertNil(model.activeDeviceConnectionMethod)
+        XCTAssertEqual(model.deviceSession.owner, .repair)
+        let calls = await fixture.controller.calls()
+        XCTAssertEqual(calls.confirmedReleases, 2)
+        XCTAssertEqual(calls.connections, 0)
+        model.finishDeviceConnectionRepair()
+    }
+
     func testUnconfirmedOrStillReadyConnectionNeverReportsReleased() async throws {
         for (confirmed, staysConnected) in [(false, false), (true, true)] {
             let fixture = try RepairFixture(releaseConfirmed: confirmed, staysConnected: staysConnected)
@@ -126,7 +150,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
 
         await fixture.controller.setReleaseConfirmed(true)
         let result = await model.repairDeviceConnection()
-        XCTAssertEqual(result, .notConnected, "The current disconnected client cannot prove release of an orphan session.")
+        XCTAssertEqual(result, .released, "The backend confirmed the retained pending release.")
         XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
         XCTAssertEqual(model.deviceSession.owner, .repair)
         XCTAssertThrowsError(try model.deviceSession.acquire(.run(UUID())))
@@ -159,7 +183,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
 
             tunnel.completeResume()
             let result = await repair.value
-            XCTAssertEqual(result, .notConnected)
+            XCTAssertEqual(result, .released)
             XCTAssertEqual(tunnel.resumeCalls, 1)
             XCTAssertTrue(tunnel.isConnected)
             XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
@@ -191,7 +215,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
 
             let result = await fixture.model.repairDeviceConnection(tunnel: tunnel)
 
-            XCTAssertEqual(result, .notConnected)
+            XCTAssertEqual(result, unconfirmed ? .released : .notConnected)
             XCTAssertEqual(tunnel.resumeCalls, 0)
             XCTAssertFalse(tunnel.isConnected)
             let calls = await fixture.controller.calls()
@@ -208,7 +232,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
 
         let result = await fixture.model.repairDeviceConnection(tunnel: tunnel)
 
-        XCTAssertEqual(result, .notConnected)
+        XCTAssertEqual(result, .released)
         XCTAssertEqual(tunnel.resumeCalls, 0)
         XCTAssertTrue(tunnel.isConnected)
         XCTAssertFalse(fixture.model.deviceSession.hasUnconfirmedRelease)
@@ -225,7 +249,7 @@ final class DeviceConnectionRepairTests: XCTestCase {
 
             let result = await model.repairDeviceConnection(tunnel: tunnel)
 
-            XCTAssertEqual(result, confirmed ? .notConnected : .unconfirmed)
+            XCTAssertEqual(result, confirmed ? .released : .unconfirmed)
             XCTAssertEqual(tunnel.resumeCalls, 1)
             XCTAssertFalse(tunnel.isConnected)
             XCTAssertFalse(model.isDeviceReady)

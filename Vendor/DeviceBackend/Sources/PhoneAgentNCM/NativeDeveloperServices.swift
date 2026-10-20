@@ -48,6 +48,106 @@ public enum NativeBackendError: Error, Equatable {
 }
 public enum InputDelivery: Sendable { case reportsWrittenVisualEffectUnverified }
 
+#if DEBUG
+/// Opt-in version-1 cache: at most 16 records, each with fixed phase/outcome,
+/// Unix startedAt/finishedAt and optional numeric stage/cause/transportCode.
+/// Reset immediately before each fresh CoreDevice native connection attempt;
+/// export recovery evidence before reconnecting. Internal tickets never encode.
+/// confirmedLocal proves the no-network local check. confirmedFreshCleanupResult
+/// reports the cleanup API result, not proof that a remote stop RPC ran: a late
+/// original acknowledgement may already have settled the retained receipt.
+@MainActor private enum NCMMediaCleanupDiagnostic {
+    enum Phase: String, Encodable {
+        case nativeSessionStart, ownMediaStart, ownedMediaStop, detach, localConfirmation
+        case freshCleanupAttempt, freshCleanupAdmission
+    }
+    enum Outcome: String, Encodable {
+        case inProgress, accepted, notAccepted, completed, retained, notAttempted
+        case confirmedLocal, confirmedFreshCleanupResult, unconfirmed, failed, cancelled, timedOut, busy, closed
+    }
+    struct Ticket { let generation: UInt64; let index: UInt64 }
+    private struct Row: Encodable {
+        let index: UInt64
+        let phase: Phase
+        let startedAt: TimeInterval
+        var finishedAt: TimeInterval?
+        var outcome: Outcome = .inProgress
+        var stage: UInt32?
+        var cause: UInt32?
+        var transportCode: Int32?
+        enum CodingKeys: String, CodingKey {
+            case phase, startedAt, finishedAt, outcome, stage, cause, transportCode
+        }
+    }
+    private struct Record: Encodable {
+        let version = 1
+        let droppedRecordCount: UInt32
+        let records: [Row]
+    }
+    private static var rows: [Row] = []
+    private static var dropped: UInt32 = 0
+    private static var generation: UInt64 = 0
+    private static var nextIndex: UInt64 = 0
+    private static var active = false
+    private static var owner: ObjectIdentifier?
+    private static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("--media-session-diagnostics") }
+    private static var url: URL { URL.cachesDirectory.appendingPathComponent("EiscueMediaCleanupDiagnostic.json") }
+
+    static func resetForFreshSession(owner: ObjectIdentifier) {
+        guard enabled else { return }
+        active = false; self.owner = owner; generation &+= 1; nextIndex = 0; rows = []; dropped = 0
+        do { try FileManager.default.removeItem(at: url) }
+        catch CocoaError.fileNoSuchFile {}
+        catch { return }
+        active = true
+        save()
+    }
+    static func begin(_ phase: Phase, owner: ObjectIdentifier) -> Ticket? {
+        guard enabled, active, self.owner == owner else { return nil }
+        nextIndex &+= 1
+        rows.append(Row(index: nextIndex, phase: phase, startedAt: Date().timeIntervalSince1970))
+        if rows.count > 16 {
+            rows.removeFirst()
+            if dropped < UInt32.max { dropped += 1 }
+        }
+        save()
+        return Ticket(generation: generation, index: nextIndex)
+    }
+    static func finish(_ ticket: Ticket?, outcome: Outcome, stage: UInt32? = nil,
+                       cause: UInt32? = nil, transportCode: Int32? = nil) {
+        guard enabled, active, let ticket, ticket.generation == generation,
+              let index = rows.firstIndex(where: { $0.index == ticket.index }),
+              rows[index].finishedAt == nil else { return }
+        rows[index].finishedAt = Date().timeIntervalSince1970
+        rows[index].outcome = outcome
+        rows[index].stage = stage; rows[index].cause = cause; rows[index].transportCode = transportCode
+        save()
+    }
+    static func finish(_ ticket: Ticket?, error: Error) {
+        switch error {
+        case is CancellationError: finish(ticket, outcome: .cancelled)
+        case NCMError.timeout: finish(ticket, outcome: .timedOut)
+        case NativeBackendError.busy: finish(ticket, outcome: .busy)
+        case NativeBackendError.closed: finish(ticket, outcome: .closed)
+        case let NativeBackendError.transport(code): finish(ticket, outcome: .failed, transportCode: code)
+        case let NativeBackendError.protocolFailure(stage, cause),
+             let NativeBackendError.touchPreparationFailure(stage, cause):
+            finish(ticket, outcome: .failed, stage: stage, cause: cause)
+        default: finish(ticket, outcome: .failed)
+        }
+    }
+    private static func save() {
+        do {
+            let data = try JSONEncoder().encode(Record(droppedRecordCount: dropped, records: rows))
+            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        } catch {
+            // Diagnostics never alter control, cancellation, or cleanup results.
+        }
+    }
+}
+#endif
+
 /// An opaque coordinate-space identity. A return to the same dimensions after
 /// rotation/reset receives a different ID; dimensions alone cannot authorize input.
 public struct NativeVideoGeometry: Sendable, Equatable {
@@ -98,8 +198,20 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// A late original stop may already have confirmed release. This checks
     /// only that retained receipt after all workers drain; it sends no request.
     public func confirmRetainedMediaRelease() -> Bool {
-        guard !busy, handle == 0, mediaCleanupOperation == 0, mediaCleanupReceipt != 0,
-              ncm_backend_confirm_media_cleanup(mediaCleanupReceipt) == 0 else { return false }
+        #if DEBUG
+        let diagnostic = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.localConfirmation, owner: ObjectIdentifier(self))
+        #endif
+        guard !busy, handle == 0, mediaCleanupOperation == 0, mediaCleanupReceipt != 0 else {
+            #if DEBUG
+            NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: .notAttempted)
+            #endif
+            return false
+        }
+        let code = ncm_backend_confirm_media_cleanup(mediaCleanupReceipt)
+        #if DEBUG
+        NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: code == 0 ? .confirmedLocal : .unconfirmed, transportCode: code)
+        #endif
+        guard code == 0 else { return false }
         ncm_backend_dispose_media_cleanup(mediaCleanupReceipt); mediaCleanupReceipt = 0
         return true
     }
@@ -160,7 +272,14 @@ public enum NativeControlBackend: Sendable, Equatable {
             // survives cancellation, but cannot authorize another control action.
             if !usesOwnedXCTest, mediaStartRequested, mediaCleanupReceipt == 0 {
                 var receipt: UInt64 = 0
-                if ncm_backend_detach_media_cleanup(old, &receipt) == 0 {
+                #if DEBUG
+                let diagnostic = NCMMediaCleanupDiagnostic.begin(.detach, owner: ObjectIdentifier(self))
+                #endif
+                let code = ncm_backend_detach_media_cleanup(old, &receipt)
+                #if DEBUG
+                NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: code == 0 ? .retained : .failed, transportCode: code)
+                #endif
+                if code == 0 {
                     mediaCleanupReceipt = receipt
                 } else { ncm_backend_close(old) }
             } else { ncm_backend_close(old) }
@@ -195,11 +314,18 @@ public enum NativeControlBackend: Sendable, Equatable {
         var config = ncm_config(abi: 1, interface_index: row.index, generation: generation, endpoint_index: UInt32(endpoint.index), permissions: authorization.mask)
         let values = [identity.signingSeed, Data(identity.controllerID.utf8), Data(identity.peerID.utf8), identity.peerPublicKey,
                       identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
+        #if DEBUG
+        if !usesOwnedXCTest { NCMMediaCleanupDiagnostic.resetForFreshSession(owner: ObjectIdentifier(self)) }
+        let diagnostic = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.nativeSessionStart, owner: ObjectIdentifier(self))
+        #endif
         var started: UInt64 = 0
         let code = withSlices(values) { b in
             var raw = ncm_identity(seed: b[0], controller_id: b[1], peer_id: b[2], peer_public_key: b[3], alt_irk: b[4], peer_udid: b[5], peer_model: b[6])
             return ncm_backend_start(&config, &raw, &started)
         }
+        #if DEBUG
+        NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: code == 0 && started != 0 ? .accepted : .failed, transportCode: code)
+        #endif
         guard code == 0, started != 0 else { throw NativeBackendError.transport(code: code) }
         handle = started
         try await finishConnect(started)
@@ -229,11 +355,18 @@ public enum NativeControlBackend: Sendable, Equatable {
         let row = try LocalVPNDiscovery.selectInterface(rows, configuration: configuration)
         let values = [identity.signingSeed, Data(identity.controllerID.utf8), Data(identity.peerID.utf8), identity.peerPublicKey,
                       identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
+        #if DEBUG
+        if !usesOwnedXCTest { NCMMediaCleanupDiagnostic.resetForFreshSession(owner: ObjectIdentifier(self)) }
+        let diagnostic = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.nativeSessionStart, owner: ObjectIdentifier(self))
+        #endif
         var started: UInt64 = 0
         let code = withSlices(values) { b in
             var raw = ncm_identity(seed: b[0], controller_id: b[1], peer_id: b[2], peer_public_key: b[3], alt_irk: b[4], peer_udid: b[5], peer_model: b[6])
             return ncm_local_vpn_start_configured(row.index, pairingPort, authorization.mask, configuration.localIPv4, configuration.peerIPv4, &raw, &started)
         }
+        #if DEBUG
+        NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: code == 0 && started != 0 ? .accepted : .failed, transportCode: code)
+        #endif
         guard code == 0, started != 0 else { throw NativeBackendError.transport(code: code) }
         handle = started
         try await finishConnect(started)
@@ -243,6 +376,22 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// Failure/cancellation retains the receipt for a later explicit attempt.
     public func releaseRetainedMediaLocalVPN(identity: AuthorizedRemoteIdentity, pairingPort: UInt16,
                                              configuration: VPNLoopbackConfiguration) async throws {
+        #if DEBUG
+        let diagnostic = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.freshCleanupAttempt, owner: ObjectIdentifier(self))
+        do {
+            try await releaseRetainedMediaLocalVPNImpl(identity: identity, pairingPort: pairingPort, configuration: configuration)
+            NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: .confirmedFreshCleanupResult,
+                                            stage: 0, cause: 0, transportCode: 0)
+        } catch {
+            NCMMediaCleanupDiagnostic.finish(diagnostic, error: error)
+            throw error
+        }
+        #else
+        try await releaseRetainedMediaLocalVPNImpl(identity: identity, pairingPort: pairingPort, configuration: configuration)
+        #endif
+    }
+    private func releaseRetainedMediaLocalVPNImpl(identity: AuthorizedRemoteIdentity, pairingPort: UInt16,
+                                                 configuration: VPNLoopbackConfiguration) async throws {
         try Task.checkCancellation()
         guard !busy, handle == 0, mediaCleanupOperation == 0 else { throw NativeBackendError.busy }
         guard mediaCleanupReceipt != 0, pairingPort != 0 else { throw NativeBackendError.closed }
@@ -258,6 +407,14 @@ public enum NativeControlBackend: Sendable, Equatable {
                       identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
         let deadline = ContinuousClock.now.advanced(by: .seconds(120))
         var started: UInt64 = 0
+        #if DEBUG
+        let admissionDiagnostic = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.freshCleanupAdmission, owner: ObjectIdentifier(self))
+        var admissionCode: Int32?
+        defer {
+            NCMMediaCleanupDiagnostic.finish(admissionDiagnostic, outcome: started != 0 && admissionCode == 0 ? .accepted : .notAccepted,
+                                            transportCode: admissionCode)
+        }
+        #endif
         // BUSY only means the old worker (or canceled cleanup) has not drained.
         // No cleanup request has been dispatched in that case.
         while started == 0 {
@@ -269,12 +426,18 @@ public enum NativeControlBackend: Sendable, Equatable {
                 return ncm_local_vpn_cleanup_start_configured(receipt, row.index, pairingPort,
                     configuration.localIPv4, configuration.peerIPv4, &raw, &started)
             }
+            #if DEBUG
+            admissionCode = code
+            #endif
             if code == 2 {
                 guard ContinuousClock.now < deadline else { throw NCMError.timeout }
                 try await Task.sleep(for: .milliseconds(20))
             } else if code != 0 || started == 0 { throw NativeBackendError.transport(code: code) }
         }
         mediaCleanupOperation = started
+        #if DEBUG
+        NCMMediaCleanupDiagnostic.finish(admissionDiagnostic, outcome: .accepted, transportCode: admissionCode)
+        #endif
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
             guard mediaCleanupOperation == started, mediaCleanupReceipt == receipt, mediaCleanupEpoch == epoch else { throw NativeBackendError.closed }
@@ -310,7 +473,19 @@ public enum NativeControlBackend: Sendable, Equatable {
     public func startTouchMedia() async throws {
         if usesOwnedXCTest { try await startOwnedAutomation(); return }
         mediaStartRequested = true
-        _ = try await operation(3)
+        #if DEBUG
+        let diagnostic = NCMMediaCleanupDiagnostic.begin(.ownMediaStart, owner: ObjectIdentifier(self))
+        #endif
+        do { _ = try await operation(3) }
+        catch {
+            #if DEBUG
+            NCMMediaCleanupDiagnostic.finish(diagnostic, error: error)
+            #endif
+            throw error
+        }
+        #if DEBUG
+        NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: .completed)
+        #endif
         mediaStartCompleted = true
         videoPump?.cancel()
         let decoder = NCMVideoDecoder()
@@ -383,11 +558,24 @@ public enum NativeControlBackend: Sendable, Equatable {
     public func stopTouchMedia() async throws {
         if usesOwnedXCTest { try await stopOwnedAutomation(); return }
         guard !busy else { throw NativeBackendError.busy }
+        #if DEBUG
+        let diagnostic = NCMMediaCleanupDiagnostic.begin(.ownedMediaStop, owner: ObjectIdentifier(self))
+        #endif
         busy = true; defer { busy = false }
         videoPump?.cancel(); videoPump = nil
         let decoder = videoDecoder; videoDecoder = nil; videoDecodeFailure = nil
-        try await drainSubmittedRequest()
-        _ = try await performOperation(11)
+        do {
+            try await drainSubmittedRequest()
+            _ = try await performOperation(11)
+        } catch {
+            #if DEBUG
+            NCMMediaCleanupDiagnostic.finish(diagnostic, error: error)
+            #endif
+            throw error
+        }
+        #if DEBUG
+        NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: .completed)
+        #endif
         mediaStartRequested = false
         mediaStartCompleted = false
         if let decoder { await decoder.reset() }

@@ -87,7 +87,9 @@ extension AppModel {
             if confirmed { deviceConnectionError = nil }
             session.cleanupFinished = true
             if session.finishRequested { finishDeviceConnectionRepair() }
-            return confirmed ? (hadConnection ? DeviceConnectionRepairResult.released : .notConnected) : .unconfirmed
+            // Confirming a retained pending release still settles prior control
+            // after transport loss has already revoked local readiness.
+            return confirmed ? (hadConnection || hadUnconfirmedRelease ? DeviceConnectionRepairResult.released : .notConnected) : .unconfirmed
         }
         let result = await cleanup.value
         return Task.isCancelled || currentScenePhase != .active ? .cancelled : result
