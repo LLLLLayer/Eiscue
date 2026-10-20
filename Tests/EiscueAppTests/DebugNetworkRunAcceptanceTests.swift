@@ -7,6 +7,140 @@ import XCTest
 
 @MainActor
 final class DebugNetworkRunAcceptanceTests: XCTestCase {
+    func testExplicitContinuationIsOptInAndLimitedToLocalVPNInflightStop() throws {
+        let base = ["--network-run-backend", "xcTest", "--network-run-case", "inflightStop"]
+        XCTAssertFalse(try DebugNetworkRunAcceptance.Plan(arguments: base).allowsExplicitContinuation)
+        let flag = "--network-run-allow-explicit-continuation"
+        let plan = try DebugNetworkRunAcceptance.Plan(arguments: base + [flag])
+        XCTAssertTrue(plan.allowsExplicitContinuation)
+        XCTAssertEqual(plan.continuationWaitSeconds, 300)
+        for arguments in [
+            ["--network-run-backend", "xcTest", flag],
+            ["--network-run-backend", "coreDevice", "--network-run-case", "foregroundSwipe", flag],
+            ["--network-run-backend", "xcTest", "--network-run-route", "usbBoard", "--network-run-case", "inflightStop", flag],
+            bluetoothArguments(kind: "inflightStop") + [flag]
+        ] {
+            XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: arguments))
+        }
+    }
+
+    func testContinuationAdmissionRequiresSettledOriginalAndExactScopeThenCloses() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NetworkAcceptanceScriptStore(directory: directory)
+        let conversationID = UUID()
+        let original = AgentMessage(role: .user, text: DebugNetworkRunAcceptance.prompt)
+        let first = AgentRequest(conversationID: conversationID, requestID: original.id, prompt: original.text)
+        _ = try await store.admitScript(first, allowsContinuation: true)
+        do {
+            try await store.armContinuation(conversationID: conversationID, originalRequestID: original.id, history: [original], prompt: "continue")
+            XCTFail("An owned or pending original cannot grant continuation.")
+        } catch { XCTAssertEqual(error as? DebugNetworkRunAcceptance.Failure, .unexpectedRequest) }
+        try await store.settle(conversationID)
+        try await store.armContinuation(conversationID: conversationID, originalRequestID: original.id, history: [original], prompt: "continue")
+        let invalid = [
+            first,
+            AgentRequest(conversationID: UUID(), prompt: "continue", history: [original]),
+            AgentRequest(conversationID: conversationID, prompt: "arbitrary task", history: [original]),
+            AgentRequest(conversationID: conversationID, prompt: "continue"),
+            AgentRequest(conversationID: conversationID, prompt: "continue", mode: .resume, history: [original])
+        ]
+        for request in invalid {
+            do {
+                _ = try await store.admitScript(request, allowsContinuation: true)
+                XCTFail("Only the explicit original-conversation continuation is eligible.")
+            } catch { XCTAssertEqual(error as? DebugNetworkRunAcceptance.Failure, .unexpectedRequest) }
+        }
+        let valid = AgentRequest(conversationID: conversationID, prompt: "continue", history: [original])
+        do {
+            _ = try await store.admitScript(valid, allowsContinuation: false)
+            XCTFail("The default diagnostic never enables continuation.")
+        } catch { XCTAssertEqual(error as? DebugNetworkRunAcceptance.Failure, .unexpectedRequest) }
+        let before = try await store.recovery(conversationID)
+        XCTAssertEqual(before.acceptedRequestIDs, [original.id])
+        XCTAssertFalse(before.hasInterruptedRun)
+        await store.closeContinuation()
+        do {
+            _ = try await store.admitScript(valid, allowsContinuation: true)
+            XCTFail("An expired/abandoned window cannot be reopened.")
+        } catch { XCTAssertEqual(error as? DebugNetworkRunAcceptance.Failure, .unexpectedRequest) }
+        let after = try await store.recovery(conversationID)
+        XCTAssertEqual(after.acceptedRequestIDs, [original.id])
+    }
+
+    func testExplicitContinuationObservesOnceWithoutReplayingUnknownInput() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NetworkAcceptanceScriptStore(directory: directory.appendingPathComponent("Admission"))
+        let report = DebugNetworkRunAcceptance.Report(directory: directory, reportDestination: directory.appendingPathComponent("report.json"))
+        let plan = try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest",
+            "--network-run-case", "inflightStop", "--network-run-allow-explicit-continuation"])
+        let conversationID = UUID(), oldRunID = UUID(), oldFrame = UUID(), newFrame = UUID()
+        let original = AgentMessage(role: .user, text: DebugNetworkRunAcceptance.prompt)
+        _ = try await store.admitScript(.init(conversationID: conversationID, requestID: original.id, prompt: original.text), allowsContinuation: true)
+        let uncertain = AgentToolCompletion(call: .init(id: "original-swipe", name: DeviceToolSpec.swipe.rawValue, arguments: [:]),
+                                            result: .init(content: [], outcome: .unknown))
+        await store.record(uncertain, requestID: original.id)
+        try await store.settle(conversationID)
+        let prompt = String(localized: "run.resume_prompt", table: "Runtime", bundle: Bundle(for: AppModel.self))
+        try await store.armContinuation(conversationID: conversationID, originalRequestID: original.id, history: [original], prompt: prompt)
+        report.value.initialFrameID = oldFrame
+        report.value.continuation = .init(originalRunID: oldRunID, originalRequestID: original.id, conversationID: conversationID,
+            originalState: RunState.outcomeUnknown.rawValue, originalStopCause: .outcomeUnknown(toolName: DeviceToolSpec.swipe.rawValue),
+            originalEngineClosed: true, originalOwnerReleased: true, readyBeforeReconnect: false)
+        let counter = NetworkAcceptanceToolCounter()
+        let screenshot = result(frameID: newFrame, image: Data([1, 2, 3]))
+        let tools = [
+            AgentTool(name: DeviceToolSpec.screenshot.rawValue, description: "", parameters: [:], mayHaveSideEffects: false,
+                isVerification: true) { _ in await counter.called(.screenshot); return screenshot },
+            AgentTool(name: DeviceToolSpec.swipe.rawValue, description: "", parameters: [:]) { _ in
+                await counter.called(.swipe)
+                throw AgentToolError.outcomeUnknown
+            }
+        ]
+        let engine = NetworkAcceptanceScriptEngine(plan: plan, tools: tools, store: store, report: report)
+        let request = AgentRequest(conversationID: conversationID, prompt: prompt, history: [original])
+        var started: [String] = []
+        for try await event in try await engine.run(request: request) {
+            if case .toolStarted(let call) = event { started.append(call.name) }
+        }
+        try await engine.cancel()
+        XCTAssertEqual(started, [DeviceToolSpec.screenshot.rawValue])
+        XCTAssertEqual(report.value.continuation?.frameID, newFrame)
+        XCTAssertEqual(report.value.continuation?.toolCalls, 1)
+        XCTAssertEqual(report.value.continuation?.imageBytes, 3)
+        // A retry acknowledges the same durable request without a second tool.
+        for try await _ in try await engine.run(request: request) {}
+        let calls = await counter.calls
+        XCTAssertEqual(calls, [.screenshot])
+        let savedUnknown = await store.result(requestID: original.id, toolCallID: uncertain.call.id)
+        XCTAssertEqual(savedUnknown?.result.outcome, .unknown)
+        let recovery = try await engine.recover(conversationID: conversationID)
+        XCTAssertEqual(recovery.acceptedRequestIDs, [original.id, request.requestID])
+        XCTAssertFalse(recovery.hasInterruptedRun)
+        let unowned = await store.isUnowned
+        XCTAssertTrue(unowned)
+        do {
+            _ = try await engine.run(request: .init(conversationID: conversationID, prompt: prompt, history: [original]))
+            XCTFail("Only one new request can consume the continuation permit.")
+        } catch { XCTAssertEqual(error as? DebugNetworkRunAcceptance.Failure, .unexpectedRequest) }
+    }
+
+    func testNotificationEvidenceFiltersExactOwnIdentifierAndProtectionStaysOptional() throws {
+        let runID = UUID(), other = UUID()
+        let expected = DebugNetworkRunAcceptance.NotificationEvidence.identifier(for: runID)
+        let identifiers = [expected, expected, expected + ".other",
+                           DebugNetworkRunAcceptance.NotificationEvidence.identifier(for: other), "private-unrelated"]
+        XCTAssertEqual(DebugNetworkRunAcceptance.NotificationEvidence.matching(identifiers, runID: runID), [expected])
+        var sample = DebugNetworkRunAcceptance.Sample(time: Date(), duration: 1, background: true, uptime: 1, gapSeconds: 1, isExecuting: true)
+        let unknown = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(sample)) as? [String: Any])
+        XCTAssertNil(unknown["protectedDataAvailable"])
+        sample.protectedDataAvailable = false
+        let locked = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(sample)) as? [String: Any])
+        XCTAssertEqual(locked["protectedDataAvailable"] as? Bool, false)
+    }
+
     func testAutomationHandoffExposesOnlyFixedSessionMetadata() throws {
         var metadata = DebugNetworkRunAcceptance.Metadata(sessionID: UUID())
         metadata.phase = "awaiting_external_background"
@@ -422,5 +556,9 @@ private actor RestrictedBLEAcceptanceActuator: DeviceFixtureActuator {
     var fixtureObservedFrameID: UUID?
     var fixtureGeometry: DeviceFrameGeometry?
     func status() async -> DeviceStatus { .ready(capabilities: [.screenshot, .swipe]) }
+}
+private actor NetworkAcceptanceToolCounter {
+    private(set) var calls: [DeviceToolSpec] = []
+    func called(_ spec: DeviceToolSpec) { calls.append(spec) }
 }
 #endif

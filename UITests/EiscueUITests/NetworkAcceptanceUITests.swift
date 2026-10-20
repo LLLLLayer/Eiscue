@@ -1,3 +1,4 @@
+import ObjectiveC
 import XCTest
 
 /// Uses the installed App without relaunching or resetting its real state.
@@ -214,6 +215,76 @@ final class NetworkAcceptanceUITests: XCTestCase {
         metadata += "\nallowPasteTapped=true"
         try check(alert.waitForNonExistence(timeout: 5), "The known paste authorization dialog did not close.")
         metadata += "\ndialogDismissed=true\nfinishedAt=\(Date().timeIntervalSince1970)"
+    }
+
+    @MainActor
+    func testExplicitlyReconnectAndVerifyStoppedDiagnostic() throws {
+        guard ProcessInfo.processInfo.environment["EISCUE_NETWORK_EXPLICIT_CONTINUATION"] == "1" else {
+            throw XCTSkip("Opt in for an already running isolated network continuation diagnostic.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        try require(app.state == .runningForeground && app.alerts.count == 0,
+                    "Keep the isolated unknown diagnostic foreground; this helper does not launch it.")
+        let status = app.staticTexts["networkRunAcceptanceState"]
+        func readStatus() throws -> [String: Any] {
+            let value = try XCTUnwrap(status.value as? String)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any])
+        }
+        let initial = try readStatus()
+        let sessionID = try XCTUnwrap(initial["sessionID"] as? String)
+        try require(initial["route"] as? String == "localVPN"
+                    && initial["acceptanceCase"] as? String == "inflightStop"
+                    && initial["phase"] as? String == "awaiting_explicit_continuation",
+                    "Only the settled isolated in-flight-stop diagnostic can be continued.")
+        var metadata = "helper=explicitNetworkContinuation\nsessionID=\(sessionID)\nstartedAt=\(Date().timeIntervalSince1970)\nmodelRequests=0"
+        defer {
+            let attachment = XCTAttachment(string: metadata)
+            attachment.name = "Explicit unknown continuation — UI metadata"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        let confirm = app.buttons["confirmUnknownRunButton"]
+        try require(confirm.exists && confirm.isHittable && !app.buttons["stopRunButton"].exists,
+                    "The settled unknown card is unavailable.")
+        try require(!["Ready", "已就绪"].contains(app.buttons["deviceNavigationLink"].value as? String ?? ""),
+                    "Unknown work must not retain ready authority.")
+        confirm.tap()
+        let alert = app.alerts.firstMatch
+        try require(alert.waitForExistence(timeout: 5)
+                    && alert.staticTexts.matching(NSPredicate(format: "label IN %@",
+                        ["Reconnect the device, then continue the task.", "请重新连接设备，再继续任务。"])).count == 1
+                    && alert.buttons.count == 1,
+                    "Continuation before reconnection did not show the expected reconnect notice.")
+        alert.buttons.firstMatch.tap()
+        metadata += "\nblockedBeforeReconnect=true"
+        openDevice(in: app)
+        let expectedBackend = ProcessInfo.processInfo.environment["EISCUE_NETWORK_BACKEND"] == "coreDevice" ? "DisplayService" : "XCTest"
+        try require(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
+                    && app.buttons["deviceControlBackendPicker"].value as? String == expectedBackend,
+                    "The diagnostic selected route/backend changed.")
+        let connect = app.buttons["connectDeviceButton"]
+        try require(connect.exists && connect.isEnabled && connect.isHittable,
+                    "The ordinary explicit connection action is unavailable.")
+        connect.tap()
+        let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
+        try waitFor(ready, on: app.staticTexts["devicePairingComplete"], message: "Explicit reconnection did not become ready.")
+        metadata += "\nexplicitReconnectReady=true\nreconnectedAt=\(Date().timeIntervalSince1970)"
+        returnToAssistant(in: app)
+        let beforeContinue = try readStatus()
+        try require(beforeContinue["sessionID"] as? String == sessionID
+                    && beforeContinue["phase"] as? String == "awaiting_explicit_continuation"
+                    && confirm.exists && confirm.isHittable && !app.buttons["stopRunButton"].exists,
+                    "Reconnect must not automatically continue the old task.")
+        confirm.tap()
+        metadata += "\nexplicitConfirmationTappedAt=\(Date().timeIntervalSince1970)"
+        let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let value = try? readStatus() else { return false }
+            return value["sessionID"] as? String == sessionID
+                && value["phase"] as? String == "finished" && value["state"] as? String == "passed"
+        }, object: nil)
+        try require(XCTWaiter.wait(for: [finished], timeout: 45) == .completed,
+                    "The explicitly confirmed diagnostic did not complete its new observation and cleanup.")
+        metadata += "\nuiChecksPassed=true\nfinishedAt=\(Date().timeIntervalSince1970)\nnewObservationAndNoReplay=requireIndependentDiagnosticReport"
     }
 
     @MainActor
@@ -669,12 +740,14 @@ final class NetworkAcceptanceUITests: XCTestCase {
         let disconnected = NSPredicate(format: "exists == true AND label IN %@", ["Not connected", "未连接"])
         let initiallyReady = ready.evaluate(with: status)
         let initiallyDisconnected = disconnected.evaluate(with: status)
-        try check(initiallyReady || initiallyDisconnected, "The existing route must be ready or locally disconnected and idle.")
+        let initiallyFailed = NSPredicate(format: "exists == true AND label IN %@", ["Connection failed", "连接失败"]).evaluate(with: status)
+        try check(initiallyReady || initiallyDisconnected || initiallyFailed,
+                  "The existing route must be ready, disconnected or failed and idle.")
         let initialAction = app.buttons[initiallyReady ? "disconnectDeviceButton" : "connectDeviceButton"]
         try check(initialAction.exists && initialAction.isEnabled
                   && app.buttons["deviceControlBackendPicker"].isEnabled,
                   "A connection transition or another owner still blocks the normal connection controls.")
-        metadata += "\ninitiallyReady=\(initiallyReady)\ninitiallyLocallyDisconnected=\(initiallyDisconnected)"
+        metadata += "\ninitiallyReady=\(initiallyReady)\ninitiallyLocallyDisconnected=\(initiallyDisconnected)\ninitiallyFailed=\(initiallyFailed)"
 
         openSettings(in: app)
         let repairLink = app.buttons["connectionRepairNavigationLink"]
@@ -689,6 +762,9 @@ final class NetworkAcceptanceUITests: XCTestCase {
         let progress = app.descendants(matching: .any).matching(identifier: "connectionRepairProgress").firstMatch
         let connectionResult = app.descendants(matching: .any).matching(identifier: "connectionRepairConnectionResult").firstMatch
         let microphoneResult = app.descendants(matching: .any).matching(identifier: "connectionRepairMicrophoneResult").firstMatch
+        metadata += "\nrepairButtonExists=\(start.waitForExistence(timeout: 5))"
+        metadata += "\nrepairButtonEnabled=\(start.exists && start.isEnabled)\nrepairProgressExists=\(progress.exists)"
+        metadata += "\npreviousConnectionResultExists=\(connectionResult.exists)\npreviousMicrophoneResultExists=\(microphoneResult.exists)"
         try check(start.waitForExistence(timeout: 5) && start.isEnabled && start.isHittable
                   && !progress.exists && !connectionResult.exists && !microphoneResult.exists,
                   "Repair must start from an idle page without previous results.")
@@ -736,8 +812,122 @@ final class NetworkAcceptanceUITests: XCTestCase {
         metadata += "\nrouteAndBackendUnchanged=true\nconnectionUIGateReleased=true\npostRepairLocallyDisconnected=\(disconnected.evaluate(with: status))\npostRepairReady=\(ready.evaluate(with: status))\nuiChecksPassed=true\nfinishedAt=\(Date().timeIntervalSince1970)"
     }
 
+    /// Root first changes only Eiscue's named permission in system Settings and
+    /// returns to the already connected App. This helper never changes TCC,
+    /// answers a permission dialog, disconnects or replaces the original route.
+    @MainActor
+    func testVoicePermissionDenialPreservesSelectedNetworkRoute() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EISCUE_REAL_SPEECH_TEST"] == "1",
+              environment["EISCUE_VOICE_BOUNDED_INTERACTION"] == "1",
+              let permission = environment["EISCUE_VOICE_DENIED_PERMISSION"],
+              ["speech", "microphone"].contains(permission) else {
+            throw XCTSkip("Set REAL_SPEECH_TEST=1, VOICE_BOUNDED_INTERACTION=1 and VOICE_DENIED_PERMISSION=speech|microphone with TEST_RUNNER_ prefixes.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        let backend = environment["EISCUE_NETWORK_BACKEND"] ?? ""
+        let backendTitle = backend == "coreDevice" ? "DisplayService" : "XCTest"
+        let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
+        let expectedNotices = permission == "speech"
+            ? ["Allow speech recognition for Eiscue in Settings.", "请在系统设置中允许 Eiscue 使用语音识别。"]
+            : ["Allow Eiscue to use the microphone in Settings.", "请在系统设置中允许 Eiscue 使用麦克风。"]
+        let cleanup = VoiceCleanup(testCase: self, app: app, backendTitle: backendTitle,
+            metadata: "helper=voicePermissionDenial\nbackend=\(backend)\ndeniedPermission=\(permission)\npermissionChangeAuthority=externalOperator\npermissionChangedByHelper=false\nrecordingRequests=0\ncaseValidation=pendingAppDiagnostic\nappDiagnostic=SpeechCaptureDiagnostic.json\naudioOrTranscriptExported=false")
+        cleanup.preservesConnection = true
+        cleanup.attachmentName = "Real speech permission denial — \(permission) — \(backendTitle)"
+        addTeardownBlock { await cleanup.restoreInteractionOptions() }
+        addTeardownBlock { await cleanup.finish() }
+        func check(_ condition: Bool, _ message: String) throws {
+            if !condition { throw VoiceCheckFailure.unmet(message) }
+        }
+        do {
+            try check(app.state == .runningForeground,
+                      "Return to the normal connected App first; this helper never launches or activates it.")
+            try check(app.alerts.count == 0 && XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.count == 0,
+                      "Resolve existing dialogs separately; no authorization is handled here.")
+            try check(!app.buttons["stopRunButton"].exists && !app.buttons["cancelDictationButton"].exists
+                      && !app.staticTexts["speechDeviceRestorationStatus"].exists,
+                      "Finish the current task, recording and restoration first.")
+            openDevice(in: app)
+            try requireIdleControls(in: app)
+            try check(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
+                      && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle
+                      && ready.evaluate(with: app.staticTexts["devicePairingComplete"]),
+                      "The original local-VPN route and explicit backend must already be ready.")
+            cleanup.ownsCleanup = true
+            returnToAssistant(in: app)
+            let editor = app.descendants(matching: .any).matching(identifier: "messageInput").firstMatch
+            try check(editor.waitForExistence(timeout: 5), "Start with the normal keyboard composer.")
+            let originalDraft = try XCTUnwrap(editor.value as? String, "The original draft is unavailable for an in-memory comparison.")
+            let deviceLink = app.buttons["deviceNavigationLink"]
+            let originalBadge = try XCTUnwrap(deviceLink.value as? String, "The connection badge is unavailable.")
+            let voiceMode = app.buttons["speechInputButton"]
+            voiceMode.tap()
+            let record = app.buttons["holdToTalkButton"]
+            try check(record.waitForExistence(timeout: 5) && record.isEnabled && record.isHittable
+                      && (record.value as? String ?? "").hasPrefix("state=idle "),
+                      "The idle DEBUG speech-diagnostics control is required.")
+            cleanup.interactionScope = try VoiceInteractionScope(app: app)
+            cleanup.metadata += "\nquiescenceOptionsABIValidated=true\nquiescenceOptionsRestored=false"
+            func checkNoPreparationOrCapture() throws {
+                if record.exists {
+                    let fields = (record.value as? String ?? "").split(separator: " ")
+                    try check((fields.contains("state=idle") || fields.contains("state=requestingPermission"))
+                              && fields.contains("buffers=0") && fields.contains("frames=0") && fields.contains("signal=false"),
+                              "Denied permission unexpectedly progressed to preparation or audio capture.")
+                }
+                try check(voiceMode.activityIndicators.count == 0
+                          && !app.staticTexts["speechDeviceRestorationStatus"].exists
+                          && !app.buttons["cancelSpeechDeviceRestorationButton"].exists
+                          && deviceLink.value as? String == originalBadge,
+                          "Permission denial changed the ready connection or entered device handoff.")
+            }
+            try checkNoPreparationOrCapture()
+            cleanup.mayOwnRecording = true
+            cleanup.metadata += "\nrecordingRequests=1\nrecordingRequestedAt=\(Date().timeIntervalSince1970)\nexpectedDevicePreparation=false\nexpectedCapture=false"
+            record.tap()
+            cleanup.metadata += "\nrecordingRequestReturnedAt=\(Date().timeIntervalSince1970)"
+            let notice = app.staticTexts["speechNotice"]
+            let deadline = ContinuousClock.now.advanced(by: .seconds(8))
+            var denied = false
+            repeat {
+                try checkNoPreparationOrCapture()
+                try check(app.alerts.count == 0 && XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.count == 0,
+                          "A system permission dialog appeared; the configured denial was not established externally.")
+                denied = notice.exists && expectedNotices.contains(notice.label)
+                if denied { break }
+                Thread.sleep(forTimeInterval: 0.1)
+            } while ContinuousClock.now < deadline
+            try check(denied, "The expected localized permission-denial notice did not appear.")
+            cleanup.metadata += "\nexpectedDenialNoticeObserved=true\ndenialObservedAt=\(Date().timeIntervalSince1970)"
+            let lateDeadline = ContinuousClock.now.advanced(by: .seconds(3))
+            repeat {
+                try checkNoPreparationOrCapture()
+                Thread.sleep(forTimeInterval: 0.1)
+            } while ContinuousClock.now < lateDeadline
+            try check(!app.buttons["cancelDictationButton"].exists && voiceMode.isEnabled,
+                      "The denied request retained recording ownership.")
+            if record.exists { voiceMode.tap() }
+            try check(editor.waitForExistence(timeout: 5) && editor.value as? String == originalDraft,
+                      "Permission denial changed the original draft.")
+            openDevice(in: app)
+            try requireIdleControls(in: app)
+            try check(ready.evaluate(with: app.staticTexts["devicePairingComplete"])
+                      && ["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
+                      && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle,
+                      "The denied request did not preserve the original ready route/backend.")
+            cleanup.metadata += "\npreparationOrCaptureObservedByUI=false\nlateObservationSeconds=3\ndraftUnchanged=true\noriginalReadyConnectionPreserved=true\nuiChecksPassed=true\nabsenceOfEngineStart=requiresAppDiagnosticCorrelation"
+            cleanup.ownsCleanup = false
+            cleanup.restoreInteractionOptions()
+        } catch {
+            cleanup.metadata += "\ncheckFailed=true"
+            XCTFail("Real speech permission-denial check failed: \(error)")
+        }
+    }
+
     private enum VoiceAcceptanceCase: String {
-        case modeSwitch, holdFinish, keyboardFinish, navigateDevice, background
+        case modeSwitch, holdFinish, keyboardFinish, navigateDevice, navigateNewConversation
+        case cancelCapture, cancelDevicePreparation, cancelRestoration, background
     }
 
     /// UI checks and action timestamps are only one half of acceptance. Root
@@ -753,6 +943,9 @@ final class NetworkAcceptanceUITests: XCTestCase {
         let cleanup = VoiceCleanup(testCase: self, app: app, backendTitle: backendTitle,
             metadata: "backend=\(backend)\nvoiceCase=\(voiceCase.rawValue)\ntranscriptionRequired=false\naudioSignal=notVerifiedByUITest\nappDiagnostic=SpeechCaptureDiagnostic.json\ncaseValidation=pendingAppDiagnostic")
         cleanup.attachmentName = "Real voice case metadata — \(voiceCase.rawValue) — \(backendTitle)"
+        // Teardowns run in reverse order. Restore driver options even if an
+        // XCTest failure interrupts the scoped recording/connection cleanup.
+        addTeardownBlock { await cleanup.restoreInteractionOptions() }
         addTeardownBlock { await cleanup.finish() }
         func check(_ condition: Bool, _ message: String) throws {
             if !condition { throw VoiceCheckFailure.unmet(message) }
@@ -770,6 +963,15 @@ final class NetworkAcceptanceUITests: XCTestCase {
             return ended - began
         }
         do {
+            let boundedInteraction = ProcessInfo.processInfo.environment["EISCUE_VOICE_BOUNDED_INTERACTION"] == "1"
+            if [.cancelCapture, .cancelDevicePreparation, .cancelRestoration, .navigateNewConversation].contains(voiceCase) {
+                try check(boundedInteraction,
+                          "This case requires TEST_RUNNER_EISCUE_VOICE_BOUNDED_INTERACTION=1.")
+            }
+            if voiceCase == .cancelRestoration || voiceCase == .cancelDevicePreparation {
+                try check(backend == "coreDevice",
+                          "Device preparation/restoration cancellation requires the actual CoreDevice handoff.")
+            }
             let holdArgument = ProcessInfo.processInfo.environment["EISCUE_VOICE_HOLD_SECONDS"]
             let parsedHold = holdArgument.flatMap(Double.init)
             let holdSeconds = parsedHold ?? 5
@@ -802,6 +1004,11 @@ final class NetworkAcceptanceUITests: XCTestCase {
             // Keep actual draft text only in memory, never in the attachment.
             let placeholderIsValue = originalDraft == editor.placeholderValue
             let originalPrefix = placeholderIsValue ? "" : originalDraft
+            if voiceCase == .navigateNewConversation {
+                try check(originalPrefix.isEmpty && !app.descendants(matching: .any)
+                    .matching(identifier: "draftAttachments").firstMatch.exists,
+                          "The new-conversation case requires an empty acceptance draft with no attachments.")
+            }
             let deviceLink = app.buttons["deviceNavigationLink"]
             let connectedBadge = try XCTUnwrap(deviceLink.value as? String, "The connection badge is unavailable.")
             if voiceCase == .holdFinish {
@@ -838,9 +1045,14 @@ final class NetworkAcceptanceUITests: XCTestCase {
                           && deviceLink.value as? String == connectedBadge,
                           "Switching input modes changed the ready connection or failed to return to the keyboard.")
             } else {
-                cleanup.metadata += "\nexpectedCapture=true\nexpectedNonzeroPCM=true"
-                // Resolve coordinates before recording. Do not poll or inspect
-                // accessibility during capture: XCTest may await the 55 s end.
+                cleanup.metadata += "\nexpectedCapture=\(voiceCase != .cancelDevicePreparation)\nexpectedNonzeroPCM=\(voiceCase != .cancelDevicePreparation)"
+                // The opt-in driver scope permits bounded state inspection
+                // during actual capture without waiting for its 55 s timeout.
+                if boundedInteraction {
+                    cleanup.interactionScope = try VoiceInteractionScope(app: app)
+                    cleanup.metadata += "\nquiescenceScope=appProcessPreAndPostEvent\nquiescenceOptionsABIValidated=true\nquiescenceOptionsRestored=false"
+                }
+                // Resolve geometry before capture; never use an unobserved point.
                 let recordPoint = record.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 let keyboardPoint = app.buttons["speechInputButton"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 let devicePoint = deviceLink.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
@@ -859,6 +1071,39 @@ final class NetworkAcceptanceUITests: XCTestCase {
                     // stationary press may reach the accessibility activation
                     // path instead of exercising the held recognizer.
                     action("holdAndRelease") { recordPoint.press(forDuration: holdSeconds, thenDragTo: end) }
+                } else if voiceCase == .cancelDevicePreparation {
+                    cleanup.metadata += "\npreparationWindowHit=false\nexpectedTerminalStage=cancel_during_device_preparation\nexpectedForegroundRestore=true\nterminalActionAttempted=false"
+                    let startSeconds = action("startToggleForPreparationCancel") { recordPoint.tap() }
+                    guard startSeconds < 15 else {
+                        cleanup.metadata += "\ncaseHit=false\ncaseBlocked=startCommandReturnDelayed\nterminalActionAttempted=false"
+                        throw VoiceCheckFailure.unmet("The preparation request returned too late to inspect its actual window.")
+                    }
+                    let preparationDeadline = ContinuousClock.now.advanced(by: .seconds(8))
+                    let voiceMode = app.buttons["speechInputButton"]
+                    let cancel = app.buttons["cancelDictationButton"]
+                    var windowHit = false
+                    repeat {
+                        // Speech's generic .preparing also covers an already
+                        // running microphone waiting for nonzero PCM. The
+                        // keyboard-button spinner exists only while the real
+                        // DictationSession.prepare operation is still pending.
+                        if (record.value as? String ?? "").hasPrefix("state=preparing buffers=0 frames=0 signal=false "),
+                           voiceMode.activityIndicators.count > 0 && !voiceMode.isEnabled,
+                           ["Connecting", "正在连接"].contains(deviceLink.value as? String ?? ""),
+                           !app.staticTexts["speechDeviceRestorationStatus"].exists,
+                           cancel.exists && cancel.isEnabled && cancel.isHittable {
+                            windowHit = true
+                            break
+                        }
+                        Thread.sleep(forTimeInterval: 0.025)
+                    } while ContinuousClock.now < preparationDeadline
+                    guard windowHit else {
+                        cleanup.metadata += "\ncaseHit=false\ncaseBlocked=devicePreparationWindowMissed\nterminalActionAttempted=false"
+                        throw VoiceCheckFailure.unmet("The real DictationSession preparation window was not observed; no late case cancellation was sent.")
+                    }
+                    cleanup.metadata += "\npreparationWindowHit=true\npreparationSpinnerObserved=true\npreparationConnectingObserved=true\npreparationWindowObservedAt=\(Date().timeIntervalSince1970)\nterminalActionAttempted=true\ncaseHit=requiresAppDiagnostic"
+                    action("cancelActualDevicePreparation") { cancel.tap() }
+                    cleanup.metadata += "\nengineNeverStarted=requiresAppDiagnosticCorrelation"
                 } else {
                     let startSeconds = action("startToggleCapture") { recordPoint.tap() }
                     // This is a stale-action guard, not a changed driver or App
@@ -868,10 +1113,37 @@ final class NetworkAcceptanceUITests: XCTestCase {
                         cleanup.metadata += "\ncaseHit=false\ncaseBlocked=startCommandReturnDelayed\nterminalActionAttempted=false"
                         throw VoiceCheckFailure.unmet("The capture start command returned too late for the bounded interactive case; inspect App metadata.")
                     }
+                    if boundedInteraction {
+                        let captureDeadline = ContinuousClock.now.advanced(by: .seconds(15))
+                        var observedCapture: VoiceCaptureSample?
+                        repeat {
+                            observedCapture = VoiceCaptureSample(record.value as? String)
+                            if observedCapture != nil { break }
+                            Thread.sleep(forTimeInterval: 0.1)
+                        } while ContinuousClock.now < captureDeadline
+                        guard let observedCapture else {
+                            cleanup.metadata += "\ncaseHit=false\ncaseBlocked=nonzeroRecordingNotObserved\nterminalActionAttempted=false"
+                            throw VoiceCheckFailure.unmet("Actual recording with nonzero PCM was not observed within 15 seconds.")
+                        }
+                        cleanup.metadata += "\nactiveCaptureObservedAt=\(Date().timeIntervalSince1970)\nactiveCaptureBuffers=\(observedCapture.buffers)\nactiveCaptureFrames=\(observedCapture.frames)\nactiveCaptureSignal=true"
+                    }
                     cleanup.metadata += "\ninteractiveWaitSeconds=5\nwaitDurationIsAudioDuration=false"
                     Thread.sleep(forTimeInterval: 5)
+                    if boundedInteraction {
+                        guard let sample = VoiceCaptureSample(record.value as? String) else {
+                            cleanup.metadata += "\ncaseHit=false\ncaseBlocked=recordingEndedBeforeAction\nterminalActionAttempted=false"
+                            throw VoiceCheckFailure.unmet("Recording ended before the intended keyboard/navigation/stop action.")
+                        }
+                        cleanup.metadata += "\npreActionRecordingObservedAt=\(Date().timeIntervalSince1970)\npreActionBuffers=\(sample.buffers)\npreActionFrames=\(sample.frames)\npreActionSignal=true"
+                    }
                     cleanup.metadata += "\nterminalActionAttempted=true\ncaseHit=requiresAppDiagnostic"
                     switch voiceCase {
+                    case .cancelCapture:
+                        cleanup.metadata += "\nexpectedTerminalStage=cancel\nexpectedForegroundRestore=true"
+                        let cancel = app.buttons["cancelDictationButton"]
+                        try check(cancel.exists && cancel.isEnabled && cancel.isHittable,
+                                  "The explicit cancel control is unavailable during the observed recording.")
+                        action("cancelActualCapture") { cancel.tap() }
                     case .keyboardFinish:
                         cleanup.metadata += "\nexpectedTerminalStage=stop\nexpectedForegroundRestore=true"
                         action("selectKeyboardDuringCapture") { keyboardPoint.tap() }
@@ -883,6 +1155,45 @@ final class NetworkAcceptanceUITests: XCTestCase {
                         try check(wait(NSPredicate(format: "exists == true AND enabled == true"), app.switches["deviceControlToggle"], timeout: 30),
                                   "The device page still has an owned dictation transition.")
                         returnToAssistant(in: app)
+                    case .navigateNewConversation:
+                        cleanup.metadata += "\nexpectedTerminalStage=cancel\nexpectedForegroundRestore=true\nnewConversationEntry=sidebar\nexistingConversationOpened=false"
+                        action("openSidebarDuringCapture") { openSidebar(in: app) }
+                        let newConversation = app.buttons["newConversationButton"]
+                        try check(wait(NSPredicate(format: "exists == true AND enabled == true"), newConversation, timeout: 30),
+                                  "The cancelled recording still prevents a new acceptance conversation.")
+                        action("openNewAcceptanceConversation") { newConversation.tap() }
+                        closeSidebar(in: app)
+                        try check(editor.waitForExistence(timeout: 5),
+                                  "The new acceptance conversation has no keyboard composer.")
+                    case .cancelRestoration:
+                        cleanup.metadata += "\nexpectedTerminalStage=stop\nexpectedForegroundRestore=cancelled\nrestorationWindowHit=false"
+                        action("stopCaptureBeforeRestorationCancel") { recordPoint.tap() }
+                        let cancelRestoration = app.buttons["cancelSpeechDeviceRestorationButton"]
+                        let restorationStatus = app.staticTexts["speechDeviceRestorationStatus"]
+                        let restorationDeadline = ContinuousClock.now.advanced(by: .seconds(10))
+                        var windowHit = false
+                        repeat {
+                            // The overlay alone appears before connect starts.
+                            // Require the real DeviceSession connecting badge,
+                            // stopped capture and a currently enabled cancel.
+                            if !app.buttons["cancelDictationButton"].exists,
+                               restorationStatus.exists,
+                               ["Connecting", "正在连接"].contains(deviceLink.value as? String ?? ""),
+                               cancelRestoration.exists && cancelRestoration.isEnabled && cancelRestoration.isHittable {
+                                windowHit = true
+                                break
+                            }
+                            Thread.sleep(forTimeInterval: 0.05)
+                        } while ContinuousClock.now < restorationDeadline
+                        guard windowHit else {
+                            cleanup.metadata += "\ncaseHit=false\ncaseBlocked=restorationWindowMissed\nrestorationCancelAttempted=false"
+                            throw VoiceCheckFailure.unmet("The actual restoration window was not observed; no late cancellation was sent.")
+                        }
+                        cleanup.metadata += "\nrestorationWindowHit=true\nrestorationConnectingObservedAt=\(Date().timeIntervalSince1970)\nrecordingControlAbsentBeforeRestorationCancel=true\nrestorationCancelAttempted=true"
+                        action("cancelActualRestoration") { cancelRestoration.tap() }
+                        try check(cancelRestoration.waitForNonExistence(timeout: 30)
+                                  && restorationStatus.waitForNonExistence(timeout: 30),
+                                  "Cancelled restoration did not finish its owned cleanup.")
                     case .background:
                         cleanup.metadata += "\nexpectedTerminalStage=cancel_or_interrupted\nbackgroundRestorationPolicy=\(backend == "coreDevice" ? "remainDisconnected" : "observeActualTransport")"
                         action("homeDuringCapture") { XCUIDevice.shared.press(.home) }
@@ -892,7 +1203,7 @@ final class NetworkAcceptanceUITests: XCTestCase {
                         try check([XCUIApplication.State.runningBackground, .runningBackgroundSuspended].contains(backgroundState),
                                   "The App did not remain running in the background; this helper will not relaunch it.")
                         action("returnToForeground") { app.activate() }
-                    case .modeSwitch, .holdFinish:
+                    case .modeSwitch, .holdFinish, .cancelDevicePreparation:
                         throw VoiceCheckFailure.unmet("Unexpected interactive voice case.")
                     }
                 }
@@ -909,8 +1220,29 @@ final class NetworkAcceptanceUITests: XCTestCase {
             try check(editor.waitForExistence(timeout: 5), "The keyboard composer is unavailable after the case.")
             let finalDraft = try XCTUnwrap(editor.value as? String, "The draft cannot be compared after the case.")
             try check(finalDraft.hasPrefix(originalPrefix), "Dictation lost the original draft prefix.")
-            if voiceCase == .modeSwitch {
-                try check(finalDraft == originalDraft, "Switching input modes changed the draft.")
+            if [.modeSwitch, .cancelCapture, .cancelDevicePreparation].contains(voiceCase) {
+                try check(finalDraft == originalDraft, "Input-mode switching or cancellation changed the original draft.")
+            }
+            if voiceCase == .cancelCapture || voiceCase == .cancelDevicePreparation {
+                let lateChange = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    editor.value as? String != originalDraft || app.buttons["cancelDictationButton"].exists
+                }, object: nil)
+                lateChange.isInverted = true
+                try check(XCTWaiter.wait(for: [lateChange], timeout: 3) == .completed,
+                          "Cancelled speech later changed the draft or restarted recording.")
+                cleanup.metadata += "\nlateDraftChangeObserved=false\nlateRecordingControlObserved=false\nlateObservationSeconds=3\nnewRecordingStarted=false"
+            }
+            if voiceCase == .navigateNewConversation {
+                let empty = finalDraft.isEmpty || finalDraft == editor.placeholderValue
+                try check(empty, "The old recording appended content to the new acceptance conversation.")
+                let lateAppend = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    guard let value = editor.value as? String else { return true }
+                    return !value.isEmpty && value != editor.placeholderValue
+                }, object: nil)
+                lateAppend.isInverted = true
+                try check(XCTWaiter.wait(for: [lateAppend], timeout: 3) == .completed,
+                          "A late old recording result changed the new acceptance conversation.")
+                cleanup.metadata += "\nnewConversationEmpty=true\nlateAppendObserved=false\nlateAppendObservationSeconds=3\nnewRecordingStarted=false"
             }
             cleanup.metadata += "\ndraftPrefixPreserved=true\ndraftUnchanged=\(finalDraft == originalDraft)"
             openDevice(in: app)
@@ -918,10 +1250,20 @@ final class NetworkAcceptanceUITests: XCTestCase {
                       && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle
                       && app.buttons["deviceConnectionMethodPicker"].isEnabled && app.switches["deviceControlToggle"].isEnabled,
                       "The original route/backend changed or dictation still owns the device.")
-            if voiceCase == .background {
+            if voiceCase == .cancelRestoration {
+                try check(wait(disconnected, app.staticTexts["devicePairingComplete"])
+                          && app.buttons["connectDeviceButton"].exists && app.buttons["connectDeviceButton"].isEnabled
+                          && app.buttons["deviceControlBackendPicker"].isEnabled,
+                          "Cancelled restoration retained device ownership or published ready.")
+                let unexpectedReady = XCTNSPredicateExpectation(predicate: ready, object: app.staticTexts["devicePairingComplete"])
+                unexpectedReady.isInverted = true
+                try check(XCTWaiter.wait(for: [unexpectedReady], timeout: 3) == .completed,
+                          "The cancelled restoration later published ready without an explicit connection.")
+                cleanup.metadata += "\nrestorationCancelled=true\nexplicitConnectAvailable=true\nlateReadyObserved=false\nlateReadyObservationSeconds=3\npartialMediaRelease=notVerifiedByUITest"
+            } else if voiceCase == .background {
                 if backend == "coreDevice" {
                     try check(wait(disconnected, app.staticTexts["devicePairingComplete"])
-                              && !app.buttons["disconnectDeviceButton"].exists,
+                              && app.buttons["connectDeviceButton"].isEnabled,
                               "Background dictation unexpectedly restored CoreDevice control.")
                 }
                 cleanup.metadata += "\nreturnedReady=\(ready.evaluate(with: app.staticTexts["devicePairingComplete"]))\nreturnedLocallyDisconnected=\(disconnected.evaluate(with: app.staticTexts["devicePairingComplete"]))"
@@ -933,6 +1275,7 @@ final class NetworkAcceptanceUITests: XCTestCase {
                 cleanup.metadata += "\nD2uiChecksPassed=true\nD2uiChecksFinishedAt=\(Date().timeIntervalSince1970)"
             }
             cleanup.metadata += "\nuiChecksPassed=true\nuiChecksFinishedAt=\(Date().timeIntervalSince1970)"
+            cleanup.restoreInteractionOptions()
             // VoiceCleanup performs the same scoped local disconnection as the
             // original helper, including after a driver/assertion failure.
         } catch {
@@ -943,7 +1286,7 @@ final class NetworkAcceptanceUITests: XCTestCase {
 
     @MainActor
     private static func cancelVoiceAndDisconnectIfPossible(
-        in app: XCUIApplication, backendTitle: String, mayOwnRecording: Bool
+        in app: XCUIApplication, backendTitle: String, mayOwnRecording: Bool, preserveConnection: Bool = false
     ) -> String {
         guard app.state == .runningForeground else { return "blockedAppNotForeground" }
         guard app.alerts.count == 0 else { return "blockedByExistingDialog" }
@@ -974,6 +1317,10 @@ final class NetworkAcceptanceUITests: XCTestCase {
         guard method.isEnabled, app.switches["deviceControlToggle"].isEnabled else {
             return "blockedByOwnedOperation"
         }
+        if preserveConnection {
+            let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
+            return ready.evaluate(with: app.staticTexts["devicePairingComplete"]) ? "readyConnectionPreserved" : "readyConnectionNotPreserved"
+        }
         let disconnect = app.buttons["disconnectDeviceButton"]
         if disconnect.exists {
             guard disconnect.isHittable && disconnect.isEnabled else { return "disconnectUnavailable" }
@@ -987,6 +1334,72 @@ final class NetworkAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
+    private final class VoiceInteractionScope {
+        private let app: XCUIApplication
+        private let originalOptions: NSNumber
+        private(set) var restored = false
+
+        init(app: XCUIApplication) throws {
+            guard ProcessInfo.processInfo.environment["EISCUE_VOICE_BOUNDED_INTERACTION"] == "1",
+                  let appClass = object_getClass(app) else {
+                throw VoiceCheckFailure.unmet("Bounded voice interaction was not explicitly enabled.")
+            }
+            // Xcode 26.3 and 27 XCUIAutomation: UInt32 getter/setter. The
+            // setter updates this application's current process. Bits 0/1
+            // skip pre/post-event quiescence; other options are preserved.
+            // Validate the private test-runner ABI before invoking through KVC.
+            for (name, encoding) in [("currentInteractionOptions", "I16@0:8"),
+                                     ("setCurrentInteractionOptions:", "v20@0:8I16")] {
+                let selector = NSSelectorFromString(name)
+                guard app.responds(to: selector),
+                      let method = class_getInstanceMethod(appClass, selector),
+                      let actual = method_getTypeEncoding(method),
+                      String(cString: actual) == encoding else {
+                    throw VoiceCheckFailure.unmet("This XCTest runtime does not expose the validated interaction-options ABI.")
+                }
+            }
+            guard let original = app.value(forKey: "currentInteractionOptions") as? NSNumber else {
+                throw VoiceCheckFailure.unmet("The original XCTest interaction options are unavailable.")
+            }
+            self.app = app
+            originalOptions = original
+            let scoped = original.uint32Value | 0b11
+            app.setValue(NSNumber(value: scoped), forKey: "currentInteractionOptions")
+            guard (app.value(forKey: "currentInteractionOptions") as? NSNumber)?.uint32Value == scoped else {
+                app.setValue(original, forKey: "currentInteractionOptions")
+                throw VoiceCheckFailure.unmet("XCTest did not apply the scoped interaction options.")
+            }
+        }
+
+        @discardableResult
+        func restore() -> Bool {
+            if restored { return true }
+            app.setValue(originalOptions, forKey: "currentInteractionOptions")
+            restored = (app.value(forKey: "currentInteractionOptions") as? NSNumber)?.uint32Value == originalOptions.uint32Value
+            return restored
+        }
+    }
+
+    /// Only the fixed DEBUG diagnostic value is parsed; no labels, transcript,
+    /// audio or accessibility trees enter the acceptance attachment.
+    private struct VoiceCaptureSample {
+        let buffers: Int
+        let frames: Int
+
+        init?(_ value: String?) {
+            guard let value else { return nil }
+            let fields = value.split(separator: " ")
+            guard fields.contains("state=recording"), fields.contains("signal=true"),
+                  let bufferField = fields.first(where: { $0.hasPrefix("buffers=") }),
+                  let frameField = fields.first(where: { $0.hasPrefix("frames=") }),
+                  let buffers = Int(bufferField.dropFirst("buffers=".count)), buffers > 0,
+                  let frames = Int(frameField.dropFirst("frames=".count)), frames > 0 else { return nil }
+            self.buffers = buffers
+            self.frames = frames
+        }
+    }
+
+    @MainActor
     private final class VoiceCleanup {
         weak var testCase: NetworkAcceptanceUITests?
         let app: XCUIApplication
@@ -995,6 +1408,8 @@ final class NetworkAcceptanceUITests: XCTestCase {
         var attachmentName: String?
         var ownsCleanup = false
         var mayOwnRecording = false
+        var interactionScope: VoiceInteractionScope?
+        var preservesConnection = false
 
         init(testCase: NetworkAcceptanceUITests, app: XCUIApplication, backendTitle: String, metadata: String) {
             self.testCase = testCase
@@ -1004,20 +1419,30 @@ final class NetworkAcceptanceUITests: XCTestCase {
         }
 
         func finish() {
+            defer { restoreInteractionOptions() }
             if ownsCleanup {
                 // Preserve an incomplete marker if the cleanup driver itself aborts.
                 metadata += "\ncleanupAttempted=true"
                 attach(name: "Voice cleanup started — result pending",
                        details: "\ncleanupOutcome=inProgress\ncleanupIncomplete=true")
                 let outcome = NetworkAcceptanceUITests.cancelVoiceAndDisconnectIfPossible(
-                    in: app, backendTitle: backendTitle, mayOwnRecording: mayOwnRecording)
-                ownsCleanup = outcome != "locallyDisconnected"
+                    in: app, backendTitle: backendTitle, mayOwnRecording: mayOwnRecording, preserveConnection: preservesConnection)
+                ownsCleanup = outcome != (preservesConnection ? "readyConnectionPreserved" : "locallyDisconnected")
                 metadata += "\ncleanupOutcome=\(outcome)\ncleanupIncomplete=\(ownsCleanup)"
             } else {
                 metadata += "\ncleanupAttempted=false"
             }
+            restoreInteractionOptions()
             attach(name: attachmentName ?? "Real voice hold-cancel gesture metadata — \(backendTitle)")
             if ownsCleanup { XCTFail("Voice cleanup remains incomplete; see cleanupOutcome in the attachment.") }
+        }
+
+        func restoreInteractionOptions() {
+            guard let scope = interactionScope else { return }
+            let restored = scope.restore()
+            metadata += "\nquiescenceOptionsRestored=\(restored)"
+            if restored { interactionScope = nil }
+            else { XCTFail("The original XCTest interaction options could not be restored.") }
         }
 
         private func attach(name: String, details: String = "") {

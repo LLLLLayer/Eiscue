@@ -5,13 +5,17 @@ import Foundation
 import Observation
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// Explicit, zero-model host/device acceptance. This is a scripted diagnostic,
 /// not Pi, visual reasoning, or a replacement production engine.
 @MainActor
 enum DebugNetworkRunAcceptance {
     private static var installation: Installation?
-    @Observable fileprivate final class TargetPresentation { var ready = false }
+    @Observable fileprivate final class TargetPresentation {
+        var ready = false
+        var showsContinuation = false
+    }
     private static let targetPresentation = TargetPresentation()
     nonisolated static let prompt = "DEBUG network acceptance: scripted device checks; zero model calls."
 
@@ -30,6 +34,7 @@ enum DebugNetworkRunAcceptance {
 
     static var usesAcceptanceTarget: Bool { installation?.plan?.usesAcceptanceTarget == true }
     static var waitsForBluetoothSetup: Bool { installation?.plan?.route == .bluetoothBoard && !targetPresentation.ready }
+    static var showsContinuation: Bool { targetPresentation.showsContinuation }
     static var automationStatus: AutomationStatus? {
         guard let installation else { return nil }
         return AutomationStatus(installation.report.value,
@@ -75,6 +80,8 @@ enum DebugNetworkRunAcceptance {
         let cancelAfter: Double?
         let resumeTunnel: Bool
         let contactComparison: Bool
+        let allowsExplicitContinuation: Bool
+        var continuationWaitSeconds: Double { 300 }
         var sampleGapLimit: Double { interval + 5 }
         var requiresLocalTunnel: Bool { route == .localVPN }
         var samplesBackground: Bool { kind == .background || kind == .hidBackground }
@@ -139,6 +146,8 @@ enum DebugNetworkRunAcceptance {
             guard let kind = Kind(rawValue: kindName) else { throw Failure.invalidArguments }
             let contactComparison = arguments.contains("--network-run-contact-comparison")
             guard !contactComparison || (route == .bluetoothBoard && kind == .foregroundSwipe) else { throw Failure.invalidArguments }
+            let allowsExplicitContinuation = arguments.contains("--network-run-allow-explicit-continuation")
+            guard !allowsExplicitContinuation || (route == .localVPN && kind == .inflightStop) else { throw Failure.invalidArguments }
             // Home and bundle-ID launch are never available on the HID route.
             guard route != .bluetoothBoard || kind == .foregroundSwipe || kind == .inflightStop || kind == .hidBackground,
                   kind != .hidBackground || route == .bluetoothBoard,
@@ -162,6 +171,7 @@ enum DebugNetworkRunAcceptance {
             self.backend = backend; seconds = minutes * 60; self.interval = interval; cancelAfter = cancel
             resumeTunnel = arguments.contains("--resume-existing-local-tunnel")
             self.contactComparison = contactComparison
+            self.allowsExplicitContinuation = allowsExplicitContinuation
         }
     }
 
@@ -172,6 +182,7 @@ enum DebugNetworkRunAcceptance {
         case backgroundGapExceeded, backgroundLeaseInactive
         case inputTargetUnavailable, inflightStopMissed, didNotReturnToApp
         case bluetoothSetupTimedOut, bluetoothCalibrationRequired, bluetoothSwipeCheckRequired, postActionObservationMissing, swipeDidNotMove, retentionFailed
+        case continuationTimedOut, continuationAbandoned, continuationFailed
     }
 
     /// The external actor only changes application state. This wait cannot
@@ -233,7 +244,7 @@ enum DebugNetworkRunAcceptance {
 
     @MainActor private final class Installation {
         let report = Report()
-        let store: ScriptStore
+        let store: NetworkAcceptanceScriptStore
         let arguments: [String]
         var plan: Plan?
         var configurationFailure: String?
@@ -254,7 +265,7 @@ enum DebugNetworkRunAcceptance {
 
         init(arguments: [String]) {
             self.arguments = arguments
-            store = ScriptStore(directory: report.directory.appendingPathComponent("Admission", isDirectory: true))
+            store = NetworkAcceptanceScriptStore(directory: report.directory.appendingPathComponent("Admission", isDirectory: true))
             do { plan = try Plan(arguments: arguments) }
             catch { configurationFailure = Failure.invalidArguments.rawValue }
         }
@@ -298,7 +309,7 @@ enum DebugNetworkRunAcceptance {
                         report.value.registeredToolNames = tools.map(\.name).sorted()
                         report.event("run_tools_registered")
                     }
-                    return AgentClient(engine: ScriptEngine(plan: plan, tools: tools, store: store, report: report))
+                    return AgentClient(engine: NetworkAcceptanceScriptEngine(plan: plan, tools: tools, store: store, report: report))
                 })
             self.model = model
             return model
@@ -595,10 +606,19 @@ enum DebugNetworkRunAcceptance {
                     if report.value.motionVerified != true { report.value.failure = report.value.motionFailure ?? Failure.swipeDidNotMove.rawValue }
                     report.event("retention_before_diagnostic_teardown")
                 }
+                if plan.allowsExplicitContinuation {
+                    try await waitForExplicitContinuation(model: model, original: record, plan: plan)
+                }
                 #endif
             } catch {
                 report.value.state = "failed"
                 if report.value.failure == nil { report.value.failure = (error as? Failure)?.rawValue ?? String(describing: type(of: error)) }
+            }
+            await store.closeContinuation()
+            // A bounded diagnostic wait must still await a run it admitted.
+            // Never release the device from underneath its host-owned work.
+            if plan?.allowsExplicitContinuation == true, let run = model.activeRun {
+                _ = await model.runCoordinator.stopAndWait(runID: run.id)
             }
             captureReadiness(model: model, phase: "before_diagnostic_teardown", force: true)
             report.event("cleanup")
@@ -607,7 +627,13 @@ enum DebugNetworkRunAcceptance {
             // cached not-ready status is never promoted to release confirmation.
             var releaseReturned = false
             do {
-                report.value.cleanupConfirmed = try await model.deviceSession.releaseConnection(owner: model.deviceSession.owner)
+                if plan?.allowsExplicitContinuation == true {
+                    // Also cancels/awaits a user-initiated reconnect if the
+                    // bounded confirmation window ended during setup.
+                    report.value.cleanupConfirmed = await model.releaseDeviceConnection()
+                } else {
+                    report.value.cleanupConfirmed = try await model.deviceSession.releaseConnection(owner: model.deviceSession.owner)
+                }
                 releaseReturned = true
             } catch { report.value.cleanupConfirmed = false }
             report.value.engineClosed = await store.isUnowned
@@ -623,6 +649,68 @@ enum DebugNetworkRunAcceptance {
                 report.value.failure = Failure.cleanupUnconfirmed.rawValue
                 report.event("cleanupIncomplete")
             }
+        }
+
+        private func waitForExplicitContinuation(model: AppModel, original: RunRecord, plan: Plan) async throws {
+            guard report.value.state == "passed", original.state == .outcomeUnknown,
+                  original.cleanupFailure == nil, report.value.hostOwnerReleased,
+                  report.value.hostEngineClosedBeforeTeardown == true, !model.isDeviceReady,
+                  let conversation = model.selectedConversation, conversation.id == original.conversationID else {
+                throw Failure.continuationFailed
+            }
+            report.value.continuation = ContinuationEvidence(originalRunID: original.id,
+                originalRequestID: original.requestID, conversationID: original.conversationID,
+                originalState: original.state.rawValue, originalStopCause: original.stopCause,
+                originalEngineClosed: true, originalOwnerReleased: true, readyBeforeReconnect: model.isDeviceReady)
+            try await store.armContinuation(conversationID: original.conversationID,
+                originalRequestID: original.requestID, history: conversation.messages,
+                prompt: String(localized: "run.resume_prompt", table: "Runtime"))
+            // Only this wrapper changes presentation. RootView supplies the
+            // ordinary unknown card, reconnect UI and explicit confirmation.
+            targetPresentation.showsContinuation = true
+            report.value.state = "awaitingContinuation"
+            report.event("awaiting_explicit_continuation")
+            let clock = ContinuousClock(), deadline = ContinuousClock.now.advanced(by: .seconds(plan.continuationWaitSeconds))
+            while clock.now < deadline {
+                try Task.checkCancellation()
+                guard model.selectedConversationID == original.conversationID,
+                      model.runs.first(where: { $0.id == original.id })?.state == .outcomeUnknown else {
+                    throw Failure.continuationAbandoned
+                }
+                if let next = model.runs.first(where: { $0.conversationID == original.conversationID && $0.id != original.id }),
+                   next.endedAt != nil, !model.isRunning, !model.isBusy {
+                    let closed = await store.isUnowned
+                    let claimed = await store.continuationRequestID
+                    report.value.continuation?.runID = next.id
+                    report.value.continuation?.requestID = next.requestID
+                    report.value.continuation?.state = next.state.rawValue
+                    report.value.continuation?.stopCause = next.stopCause
+                    report.value.continuation?.engineClosed = closed
+                    report.value.continuation?.ownerReleased = model.deviceSession.owner == nil
+                    report.value.continuation?.cleanupFailed = next.cleanupFailure != nil
+                    report.value.continuation?.finishedAt = next.endedAt
+                    report.value.runID = next.id
+                    report.value.runState = next.state.rawValue
+                    report.value.stopCause = next.stopCause
+                    report.value.hostFinishedAt = next.endedAt
+                    report.value.hostCleanupFailed = next.cleanupFailure != nil
+                    report.value.hostOwnerReleased = model.deviceSession.owner == nil
+                    report.value.hostEngineClosedBeforeTeardown = closed
+                    guard next.requestID == claimed, next.requestID != original.requestID,
+                          next.scope == original.scope, next.state == .completed, next.cleanupFailure == nil,
+                          closed, model.deviceSession.owner == nil,
+                          report.value.continuation?.firstToolName == DeviceToolSpec.screenshot.rawValue,
+                          report.value.continuation?.toolCalls == 1,
+                          report.value.continuation?.frameID != nil,
+                          report.value.swipeAttemptCount == 1 else { throw Failure.continuationFailed }
+                    report.value.continuation?.verified = true
+                    report.value.state = "passed"
+                    report.event("explicit_continuation_finished")
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            throw Failure.continuationTimedOut
         }
         private func bluetoothReady(_ model: AppModel) -> Bool {
             model.deviceConnectionMethod == .bluetoothBoard && model.activeDeviceConnectionMethod == .bluetoothBoard
@@ -706,6 +794,47 @@ enum DebugNetworkRunAcceptance {
         let uptime: TimeInterval
         let gapSeconds: Double
         let isExecuting: Bool
+        var protectedDataAvailable: Bool?
+    }
+    struct ContinuationEvidence: Encodable, Sendable {
+        let originalRunID: UUID
+        let originalRequestID: UUID
+        let conversationID: UUID
+        let originalState: String
+        let originalStopCause: StopCause?
+        let originalEngineClosed: Bool
+        let originalOwnerReleased: Bool
+        let readyBeforeReconnect: Bool
+        var runID: UUID?
+        var requestID: UUID?
+        var state: String?
+        var stopCause: StopCause?
+        var firstToolName: String?
+        var toolCalls = 0
+        var frameID: UUID?
+        var imageBytes = 0
+        var engineClosed: Bool?
+        var ownerReleased: Bool?
+        var cleanupFailed: Bool?
+        var finishedAt: Date?
+        var verified = false
+    }
+    struct NotificationEvidence: Encodable, Sendable {
+        let runID: UUID
+        let identifier: String
+        var applicationState: Int?
+        var authorization: String?
+        var addAttempts = 0
+        var addAccepted = 0
+        var addFailed = 0
+        var pendingIdentifiers: [String] = []
+        var deliveredIdentifiers: [String] = []
+        var observedAt: Date?
+        static func identifier(for runID: UUID) -> String { "eiscue.task-status." + runID.uuidString.lowercased() }
+        static func matching(_ identifiers: [String], runID: UUID) -> [String] {
+            let expected = identifier(for: runID)
+            return Array(Set(identifiers.filter { $0 == expected })).sorted()
+        }
     }
     struct BackgroundProgress: Encodable, Equatable, Sendable {
         let uptime: TimeInterval
@@ -801,6 +930,8 @@ enum DebugNetworkRunAcceptance {
         var systemActivityUpdated: Bool?
         var notificationRequested = false
         var notificationsEnabled: Bool?
+        var notifications: [NotificationEvidence] = []
+        var continuation: ContinuationEvidence?
         var observedToolCalls = 0
         var observationFailures: [String] = []
         var returnedToApp: Bool?
@@ -908,10 +1039,12 @@ enum DebugNetworkRunAcceptance {
         let id: UUID
         let directory: URL
         var value: Metadata
-        init() {
+        private let reportDestination: URL
+        init(directory: URL? = nil, reportDestination: URL? = nil) {
             let id = UUID()
             self.id = id
-            directory = URL.cachesDirectory.appendingPathComponent("EiscueNetworkRunAcceptance/\(id.uuidString)", isDirectory: true)
+            self.directory = directory ?? URL.cachesDirectory.appendingPathComponent("EiscueNetworkRunAcceptance/\(id.uuidString)", isDirectory: true)
+            self.reportDestination = reportDestination ?? URL.documentsDirectory.appendingPathComponent("EiscueNetworkRunAcceptance.json")
             value = Metadata(sessionID: id)
         }
         func event(_ phase: String) {
@@ -924,7 +1057,7 @@ enum DebugNetworkRunAcceptance {
                 let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .prettyPrinted]; encoder.dateEncodingStrategy = .iso8601
                 let data = try encoder.encode(value)
                 // The only Documents output contains this allowlisted metadata.
-                let destination = URL.documentsDirectory.appendingPathComponent("EiscueNetworkRunAcceptance.json")
+                let destination = reportDestination
                 try data.write(to: destination, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
                 try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
             } catch { /* A missing finished report must never be treated as successful cleanup. */ }
@@ -975,8 +1108,13 @@ enum DebugNetworkRunAcceptance {
 
     @MainActor private final class Notifications: RunNotifying {
         let report: Report
-        let base = TaskNotificationManager(preferences: .standard)
-        init(report: Report) { self.report = report }
+        let base: TaskNotificationManager
+        let client: ObservedNotificationClient
+        init(report: Report) {
+            self.report = report
+            client = ObservedNotificationClient(report: report)
+            base = TaskNotificationManager(preferences: .standard, client: client)
+        }
         var isEnabled: Bool { base.isEnabled }
         var isRequestingAuthorization: Bool { base.isRequestingAuthorization }
         var authorizationDescription: String { base.authorizationDescription }
@@ -985,8 +1123,62 @@ enum DebugNetworkRunAcceptance {
         func setEnabled(_ enabled: Bool) async { await base.setEnabled(enabled) }
         func notify(runID: UUID, state: RunState, systemActivityUpdated: Bool) async {
             report.value.notificationRequested = true; report.value.notificationsEnabled = base.isEnabled
+            client.beginObservation(runID: runID)
             report.event("notification_checked")
             await base.notify(runID: runID, state: state, systemActivityUpdated: systemActivityUpdated)
+            // This snapshot establishes API delivery, not visible system UI.
+            // No polling or delay is added to the host's completion path.
+            await client.snapshot(runID: runID)
+        }
+    }
+
+    @MainActor private final class ObservedNotificationClient: TaskNotificationClient {
+        let report: Report
+        let base = SystemTaskNotificationClient()
+        private var currentRunID: UUID?
+        init(report: Report) { self.report = report }
+        func beginObservation(runID: UUID) {
+            currentRunID = runID
+            guard !report.value.notifications.contains(where: { $0.runID == runID }) else { return }
+            if report.value.notifications.count == 8 { report.value.notifications.removeFirst() }
+            report.value.notifications.append(.init(runID: runID, identifier: NotificationEvidence.identifier(for: runID),
+                applicationState: UIApplication.shared.applicationState.rawValue))
+        }
+        private func update(_ runID: UUID?, _ change: (inout NotificationEvidence) -> Void) {
+            guard let runID, let index = report.value.notifications.firstIndex(where: { $0.runID == runID }) else { return }
+            change(&report.value.notifications[index])
+            report.save()
+        }
+        func authorizationStatus() async -> TaskNotificationAuthorization {
+            let status = await base.authorizationStatus()
+            update(currentRunID) { $0.authorization = String(describing: status) }
+            return status
+        }
+        func requestAuthorization() async throws -> Bool { try await base.requestAuthorization() }
+        func add(_ request: TaskStatusNotification) async throws {
+            let runID = report.value.notifications.first { $0.identifier == request.identifier }?.runID
+            update(runID) { $0.addAttempts += 1 }
+            do {
+                try await base.add(request)
+                update(runID) { $0.addAccepted += 1 }
+            } catch {
+                update(runID) { $0.addFailed += 1 }
+                throw error
+            }
+        }
+        func removePendingRequests(withIdentifiers identifiers: [String]) { base.removePendingRequests(withIdentifiers: identifiers) }
+        func removeDeliveredNotifications(withIdentifiers identifiers: [String]) { base.removeDeliveredNotifications(withIdentifiers: identifiers) }
+        func snapshot(runID: UUID) async {
+            defer { if currentRunID == runID { currentRunID = nil } }
+            let center = UNUserNotificationCenter.current()
+            // Read only identifiers, discarding every other run before storing.
+            let pending = await center.pendingNotificationRequests().map(\.identifier)
+            let delivered = await center.deliveredNotifications().map(\.request.identifier)
+            update(runID) {
+                $0.pendingIdentifiers = NotificationEvidence.matching(pending, runID: runID)
+                $0.deliveredIdentifiers = NotificationEvidence.matching(delivered, runID: runID)
+                $0.observedAt = Date()
+            }
         }
     }
 }
@@ -996,7 +1188,8 @@ enum DebugNetworkRunAcceptance {
 struct DebugNetworkRunAcceptanceTargetView: View {
     var body: some View {
         Group {
-            if DebugNetworkRunAcceptance.waitsForBluetoothSetup { RootView(initialDestination: .device) }
+            if DebugNetworkRunAcceptance.showsContinuation { RootView() }
+            else if DebugNetworkRunAcceptance.waitsForBluetoothSetup { RootView(initialDestination: .device) }
             else { OwnedDeviceCheckView().background(NetworkRunTouchProbe()).onAppear { DebugNetworkRunAcceptance.inputTargetAppeared() } }
         }
         .overlay(alignment: .top) { DebugNetworkRunAcceptanceStatusView() }
@@ -1057,15 +1250,61 @@ private struct NetworkRunTouchProbe: UIViewRepresentable {
 
 /// Durable admission metadata, with tool images retained only in process memory.
 /// Resume is intentionally unsupported: a crashed diagnostic is never replayed.
-private actor ScriptStore {
+actor NetworkAcceptanceScriptStore {
+    enum Execution: Sendable, Equatable { case initial, continuation }
+    private struct Continuation {
+        let conversationID: UUID
+        let originalRequestID: UUID
+        let history: [AgentMessage]
+        let prompt: String
+        var requestID: UUID?
+    }
     private struct Admission: Codable { var accepted: Set<UUID> = []; var pending: UUID? }
     private let directory: URL
     private var admissions: [UUID: Admission] = [:]
     private var owners: Set<UUID> = []
     private var results: [UUID: [String: AgentToolCompletion]] = [:]
+    private var continuation: Continuation?
+    private var continuationClosed = false
+    private var initialRequestID: UUID?
+    private var initialConversationID: UUID?
     init(directory: URL) { self.directory = directory }
     var isUnowned: Bool { owners.isEmpty }
-    func admit(_ request: AgentRequest) throws -> Bool {
+    var continuationRequestID: UUID? { continuation?.requestID }
+    func armContinuation(conversationID: UUID, originalRequestID: UUID, history: [AgentMessage], prompt: String) throws {
+        let admission = try load(conversationID)
+        guard !continuationClosed, continuation == nil, owners.isEmpty, admission.pending == nil,
+              admission.accepted.contains(originalRequestID), initialRequestID == originalRequestID,
+              initialConversationID == conversationID,
+              history.contains(where: { $0.id == originalRequestID && $0.role == .user }) else {
+            throw DebugNetworkRunAcceptance.Failure.unexpectedRequest
+        }
+        continuation = Continuation(conversationID: conversationID, originalRequestID: originalRequestID,
+            history: history, prompt: prompt)
+    }
+    func closeContinuation() { continuationClosed = true }
+    func admitScript(_ request: AgentRequest, allowsContinuation: Bool) throws -> (Execution, Bool) {
+        guard !continuationClosed else { throw DebugNetworkRunAcceptance.Failure.unexpectedRequest }
+        if var permitted = continuation {
+            guard allowsContinuation, permitted.requestID == nil || permitted.requestID == request.requestID,
+                  request.mode == .message,
+                  request.conversationID == permitted.conversationID, request.requestID != permitted.originalRequestID,
+                  request.prompt == permitted.prompt, request.history == permitted.history,
+                  request.attachments.isEmpty else { throw DebugNetworkRunAcceptance.Failure.unexpectedRequest }
+            let admitted = try admit(request)
+            permitted.requestID = request.requestID; continuation = permitted
+            return (.continuation, admitted)
+        }
+        guard request.prompt == DebugNetworkRunAcceptance.prompt, request.history.isEmpty, request.attachments.isEmpty,
+              !allowsContinuation || initialRequestID == nil
+                || (initialRequestID == request.requestID && initialConversationID == request.conversationID) else {
+            throw DebugNetworkRunAcceptance.Failure.unexpectedRequest
+        }
+        let admitted = try admit(request)
+        if allowsContinuation { initialRequestID = request.requestID; initialConversationID = request.conversationID }
+        return (.initial, admitted)
+    }
+    private func admit(_ request: AgentRequest) throws -> Bool {
         guard request.mode == .message else { throw AgentError.nothingToResume }
         guard !owners.contains(request.conversationID) else { throw AgentError.busy }
         var admission = try load(request.conversationID)
@@ -1105,31 +1344,30 @@ private actor ScriptStore {
     }
 }
 
-private actor ScriptEngine: AgentEngine {
+actor NetworkAcceptanceScriptEngine: AgentEngine {
     let plan: DebugNetworkRunAcceptance.Plan?
     let tools: [AgentTool]
-    let store: ScriptStore
+    let store: NetworkAcceptanceScriptStore
     let report: DebugNetworkRunAcceptance.Report
     var task: Task<Void, Never>?
     var conversationID: UUID?
     var cleanupFailed = false
     var availability: AgentAvailability { .ready }
-    init(plan: DebugNetworkRunAcceptance.Plan?, tools: [AgentTool], store: ScriptStore, report: DebugNetworkRunAcceptance.Report) {
+    init(plan: DebugNetworkRunAcceptance.Plan?, tools: [AgentTool], store: NetworkAcceptanceScriptStore, report: DebugNetworkRunAcceptance.Report) {
         self.plan = plan; self.tools = tools; self.store = store; self.report = report
     }
     func run(request: AgentRequest) async throws -> AsyncThrowingStream<AgentEvent, Error> {
         guard task == nil else { throw AgentError.busy }
-        guard request.prompt == DebugNetworkRunAcceptance.prompt, request.history.isEmpty, request.attachments.isEmpty,
-              let plan else { throw DebugNetworkRunAcceptance.Failure.unexpectedRequest }
-        let admitted = try await store.admit(request)
+        guard let plan else { throw DebugNetworkRunAcceptance.Failure.unexpectedRequest }
+        let (execution, admitted) = try await store.admitScript(request, allowsContinuation: plan.allowsExplicitContinuation)
         let (stream, continuation) = AsyncThrowingStream<AgentEvent, Error>.makeStream()
         continuation.yield(.requestAccepted(request.requestID))
         guard admitted else { continuation.yield(.finished(.completed)); continuation.finish(); return stream }
         conversationID = request.conversationID
-        task = Task { await self.execute(request: request, plan: plan, continuation: continuation) }
+        task = Task { await self.execute(request: request, plan: plan, execution: execution, continuation: continuation) }
         return stream
     }
-    private func execute(request: AgentRequest, plan: DebugNetworkRunAcceptance.Plan,
+    private func execute(request: AgentRequest, plan: DebugNetworkRunAcceptance.Plan, execution: NetworkAcceptanceScriptStore.Execution,
                          continuation: AsyncThrowingStream<AgentEvent, Error>.Continuation) async {
         let clock = ContinuousClock(), start = ContinuousClock.now
         var consumed = 0
@@ -1142,7 +1380,9 @@ private actor ScriptEngine: AgentEngine {
             return Double(value.seconds) + Double(value.attoseconds) / 1e18
         }
         do {
-            let missing = plan.firstMissingTool(in: tools)
+            let missing = execution == .continuation
+                ? (tools.contains(where: { $0.name == DeviceToolSpec.screenshot.rawValue }) ? nil : DeviceToolSpec.screenshot)
+                : plan.firstMissingTool(in: tools)
             await MainActor.run {
                 report.value.registeredToolNames = tools.map(\.name).sorted()
                 report.value.missingToolName = missing?.rawValue
@@ -1150,7 +1390,21 @@ private actor ScriptEngine: AgentEngine {
             guard missing == nil else { throw DebugNetworkRunAcceptance.Failure.missingTool }
             let observation = try await call(.screenshot, arguments: [:], request: request, consumed: &consumed, continuation: continuation)
             let id = try frameID(in: observation)
-            if plan.kind == .appReturn {
+            if execution == .continuation {
+                let initial = await MainActor.run { report.value.initialFrameID }
+                guard let initial else { throw DebugNetworkRunAcceptance.Failure.invalidFrame }
+                _ = try DebugNetworkRunAcceptance.postActionFrameID(initialFrameID: initial, result: observation)
+                await MainActor.run {
+                    report.value.continuation?.requestID = request.requestID
+                    report.value.continuation?.firstToolName = DeviceToolSpec.screenshot.rawValue
+                    report.value.continuation?.toolCalls = 1
+                    report.value.continuation?.frameID = id
+                    report.value.continuation?.imageBytes = observation.content.reduce(0) { count, item in
+                        if case .image(let data, _) = item { count + data.count } else { count }
+                    }
+                    report.event("explicit_continuation_observed")
+                }
+            } else if plan.kind == .appReturn {
                 guard let ownBundleID = await MainActor.run(body: { Bundle.main.bundleIdentifier }) else {
                     throw DebugNetworkRunAcceptance.Failure.invalidArguments
                 }
@@ -1176,6 +1430,9 @@ private actor ScriptEngine: AgentEngine {
                 }
                 await MainActor.run { report.value.returnedToApp = true; report.event("app_return_foreground_confirmed") }
             } else if plan.usesInputTarget {
+                if plan.allowsExplicitContinuation {
+                    await MainActor.run { report.value.initialFrameID = id }
+                }
                 func dimension(_ name: String, in result: AgentToolResult) -> Int? {
                     guard let range = result.text.range(of: name + "=") else { return nil }
                     return Int(result.text[range.upperBound...].prefix(while: \.isNumber))
@@ -1314,7 +1571,8 @@ private actor ScriptEngine: AgentEngine {
                     let elapsed = seconds(backgroundStart.duration(to: sampleFinished)), maxGap = maximumGap
                     await MainActor.run {
                         report.value.samples.append(.init(time: Date(), duration: duration, background: snapshot.0,
-                            uptime: snapshot.3, gapSeconds: gap, isExecuting: snapshot.1))
+                            uptime: snapshot.3, gapSeconds: gap, isExecuting: snapshot.1,
+                            protectedDataAvailable: UIApplication.shared.isProtectedDataAvailable))
                         report.value.backgroundElapsedSeconds = elapsed
                         report.value.maxSampleGapSeconds = maxGap
                         report.save()

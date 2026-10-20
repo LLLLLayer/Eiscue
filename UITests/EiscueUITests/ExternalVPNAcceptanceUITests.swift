@@ -45,8 +45,13 @@ final class ExternalVPNAcceptanceUITests: XCTestCase {
         try require(name.count == 1 && row.isSelected,
                     "Settings must identify the Eiscue configuration as selected; an unexposed or ambiguous selection is not guessed.")
         evidence.matchedTitle = name.element(boundBy: 0).label
-        let switches = settings.switches.matching(NSPredicate(format: "label IN %@", ["Status", "状态"]))
-        try require(switches.count == 1, "The VPN page must expose exactly one Status switch.")
+        let namedStatus = settings.switches.matching(NSPredicate(format: "label IN %@", ["Status", "状态"]))
+        // Some OS builds label this control with its connection state. Only
+        // use the page's unique switch after the exact Eiscue row and VPN
+        // navigation bar have been verified; never choose among several.
+        let switches = namedStatus.count == 1 ? namedStatus : settings.switches
+        try require(settings.navigationBars["VPN"].exists && switches.count == 1,
+                    "The selected Eiscue VPN page must expose one unambiguous status switch.")
         let status = switches.element(boundBy: 0)
         let before = try connectedValue(status)
         evidence.beforeConnected = before
@@ -151,6 +156,262 @@ final class ExternalVPNAcceptanceUITests: XCTestCase {
             attachment.name = "External Eiscue VPN action metadata"
             attachment.lifetime = .keepAlways
             testCase?.add(attachment)
+        }
+    }
+}
+
+/// A separately gated Settings action on Eiscue's named permission only.
+/// Denial and restoration are separate invocations around the normal D7 check.
+/// A permission change can end the App process; this helper does not attribute
+/// an observed exit to the OS, a crash, or a product defect.
+final class EiscueSystemPermissionAcceptanceUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        #if targetEnvironment(simulator)
+        throw XCTSkip("System permission acceptance requires a prepared physical iPhone.")
+        #else
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EISCUE_SYSTEM_PERMISSION_TEST"] == "1",
+              Permission(rawValue: environment["EISCUE_SYSTEM_PERMISSION"] ?? "") != nil,
+              Action(rawValue: environment["EISCUE_SYSTEM_PERMISSION_ACTION"] ?? "") != nil else {
+            throw XCTSkip("Set TEST_RUNNER_EISCUE_SYSTEM_PERMISSION_TEST=1, EISCUE_SYSTEM_PERMISSION=microphone|speech and EISCUE_SYSTEM_PERMISSION_ACTION=deny|restore (all with TEST_RUNNER_ prefixes).")
+        }
+        #endif
+    }
+
+    @MainActor
+    func testDenyOnlyTheNamedEiscuePermission() throws {
+        try changePermission(action: .deny)
+    }
+
+    @MainActor
+    func testRestoreOnlyTheNamedEiscuePermission() throws {
+        try changePermission(action: .restore)
+    }
+
+    private enum Permission: String {
+        case microphone, speech
+        var titles: [String] {
+            switch self {
+            case .microphone: ["Microphone", "麦克风"]
+            case .speech: ["Speech Recognition", "语音识别"]
+            }
+        }
+    }
+    private enum Action: String {
+        case deny, restore
+        var expectedBefore: Bool { self == .deny }
+        var expectedAfter: Bool { !expectedBefore }
+    }
+    private enum Failure: Error { case blocked }
+
+    @MainActor
+    private func changePermission(action: Action) throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EISCUE_SYSTEM_PERMISSION_TEST"] == "1",
+              environment["EISCUE_SYSTEM_PERMISSION_ACTION"] == action.rawValue,
+              let permission = Permission(rawValue: environment["EISCUE_SYSTEM_PERMISSION"] ?? "") else {
+            throw XCTSkip("This separate helper requires its matching explicit permission action.")
+        }
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let evidence = PermissionEvidence(testCase: self, app: app, permission: permission.rawValue, action: action.rawValue)
+        addTeardownBlock { await evidence.attach() }
+        defer { evidence.attach() }
+        try require(app.state == .runningForeground && app.alerts.count == 0 && springboard.alerts.count == 0,
+                    "Keep normal Eiscue foreground and resolve dialogs separately; this helper never launches it.")
+        try require(!app.staticTexts["networkRunAcceptanceState"].exists
+                    && !app.staticTexts["Input check"].exists && !app.buttons["Tap to count"].exists,
+                    "Only the normal App is eligible; isolated device diagnostics cannot change permissions.")
+        try require(!app.buttons["stopRunButton"].exists && !app.buttons["cancelDictationButton"].exists
+                    && !app.buttons["holdToTalkButton"].exists
+                    && !app.staticTexts["speechDeviceRestorationStatus"].exists,
+                    "Finish tasks, speech and restoration before navigating to system permissions.")
+        evidence.phase = "checkingIdleDeviceControls"
+        openDevice(in: app)
+        let control = app.switches["deviceControlToggle"]
+        let route = app.buttons["deviceConnectionMethodPicker"]
+        try require(control.exists && control.isEnabled && route.exists && route.isEnabled
+                    && app.alerts.count == 0 && springboard.alerts.count == 0,
+                    "Device ownership, recovery and connection work must be idle; no connection is changed here.")
+        evidence.phase = "openingOwnSystemSettings"
+        openSettings(in: app)
+        let openOwnSettings = app.buttons["appLanguageSettingsButton"]
+        try require(openOwnSettings.exists && openOwnSettings.isEnabled && openOwnSettings.isHittable
+                    && app.alerts.count == 0 && springboard.alerts.count == 0,
+                    "The normal App's system-settings link is unavailable; its language preference is never changed.")
+        evidence.settingsOpenRequestedAt = Date().timeIntervalSince1970
+        openOwnSettings.tap()
+        try require(wait(seconds: 8) { self.ownSettingsPage(settings) },
+                    "The App's own Settings link did not reach an exact Eiscue navigation page.")
+        evidence.ownSettingsPageVerified = true
+        evidence.phase = "findingNamedPermission"
+        var target: XCUIElement?
+        for step in 0..<6 {
+            try require(ownSettingsPage(settings) && settings.alerts.count == 0 && springboard.alerts.count == 0,
+                        "Only the exact Eiscue Settings page may be inspected or scrolled.")
+            target = try permissionSwitch(permission, in: settings, evidence: evidence)
+            if let target, target.isEnabled && target.isHittable { break }
+            if step == 5 { break }
+            if step < 2 { settings.swipeDown() } else { settings.swipeUp() }
+        }
+        guard let target else {
+            try require(false, "The named Eiscue permission has no unique exposed switch; no action was sent.")
+            return
+        }
+        let before = try booleanValue(target)
+        evidence.beforeAllowed = before
+        evidence.appStateBeforeToggle = Int(app.state.rawValue)
+        try require(before == action.expectedBefore,
+                    "Deny requires an enabled permission and restore requires a disabled permission; no action was sent.")
+        try require(app.state != .notRunning && ownSettingsPage(settings)
+                    && settings.alerts.count == 0 && springboard.alerts.count == 0
+                    && target.isEnabled && target.isHittable
+                    && (try booleanValue(target)) == action.expectedBefore,
+                    "The exact own-App permission page, process or Boolean state changed before the single action.")
+        // Re-resolve the same named control immediately before dispatch. No
+        // default switch, coordinate, other permission or language is used.
+        guard let current = try permissionSwitch(permission, in: settings, evidence: evidence) else {
+            try require(false, "The named permission disappeared before dispatch; no action was sent.")
+            return
+        }
+        try require(current.isEnabled && current.isHittable && (try booleanValue(current)) == action.expectedBefore,
+                    "The named permission must remain unique and unchanged before dispatch.")
+        evidence.phase = "singlePermissionActionRequested"
+        evidence.toggleAttempts = 1
+        evidence.requestedAt = Date().timeIntervalSince1970
+        current.tap()
+        let confirmed = wait(seconds: 8) {
+            if app.state == .notRunning { evidence.appNotRunningObservedAfterAction = true }
+            guard self.ownSettingsPage(settings), settings.alerts.count == 0, springboard.alerts.count == 0,
+                  let control = try? self.permissionSwitch(permission, in: settings, evidence: evidence),
+                  control.isHittable,
+                  let allowed = try? self.booleanValue(control) else { return false }
+            evidence.afterAllowed = allowed
+            return allowed == action.expectedAfter
+        }
+        try require(confirmed, "The named permission did not reach its requested Boolean state; no retry or automatic reverse action is sent.")
+        evidence.confirmedAt = Date().timeIntervalSince1970
+        // Observe process state briefly without activating/relaunching Eiscue.
+        _ = wait(seconds: 2) {
+            if app.state == .notRunning { evidence.appNotRunningObservedAfterAction = true }
+            return false
+        }
+        try require(ownSettingsPage(settings) && settings.alerts.count == 0 && springboard.alerts.count == 0,
+                    "The exact Eiscue page must remain available for the final independent Boolean check.")
+        guard let final = try permissionSwitch(permission, in: settings, evidence: evidence) else {
+            try require(false, "The named permission disappeared after confirmation; no further action is sent.")
+            return
+        }
+        try require((try booleanValue(final)) == action.expectedAfter,
+                    "The permission changed again after confirmation; no further action is sent.")
+        evidence.afterAllowed = action.expectedAfter
+        evidence.phase = "namedPermissionActionConfirmed"
+        // Intentionally leave Settings foreground. Root separately restarts or
+        // reconnects Eiscue, runs D7, then invokes the explicit restore helper.
+    }
+
+    @MainActor
+    private func ownSettingsPage(_ settings: XCUIApplication) -> Bool {
+        let bars = settings.navigationBars.matching(NSPredicate(format: "label == %@ OR identifier == %@", "Eiscue", "Eiscue"))
+        return settings.state == .runningForeground && bars.count == 1 && bars.firstMatch.isHittable
+    }
+
+    @MainActor
+    private func permissionSwitch(_ permission: Permission, in settings: XCUIApplication,
+                                  evidence: PermissionEvidence) throws -> XCUIElement? {
+        let predicate = NSPredicate(format: "label IN %@ OR identifier IN %@", permission.titles, permission.titles)
+        let named = settings.switches.matching(predicate)
+        evidence.namedSwitchMatches = min(20, named.count)
+        try require(named.count <= 1, "The exact named permission switch is ambiguous; no action is sent.")
+        if named.count == 1 { evidence.selector = "exactNamedSwitch"; return named.firstMatch }
+        let rows = permission.titles.map { settings.cells.containing(.staticText, identifier: $0) }
+        let count = rows.reduce(0) { $0 + $1.count }
+        evidence.namedCellMatches = min(20, count)
+        try require(count <= 1, "The exact named permission row is ambiguous; no action is sent.")
+        guard let row = rows.first(where: { $0.count == 1 })?.firstMatch else { return nil }
+        let labels = row.staticTexts.matching(predicate)
+        try require(labels.count == 1 && row.switches.count <= 1,
+                    "The exact named row must expose one matching label and at most one switch.")
+        guard row.switches.count == 1 else { return nil }
+        evidence.selector = "uniqueSwitchInExactNamedCell"
+        return row.switches.firstMatch
+    }
+
+    @MainActor
+    private func booleanValue(_ control: XCUIElement) throws -> Bool {
+        switch control.value as? String {
+        case "1": return true
+        case "0": return false
+        default: throw Failure.blocked
+        }
+    }
+
+    @MainActor
+    private func wait(seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if condition() { return true }
+            if Date() >= deadline { return false }
+            Thread.sleep(forTimeInterval: 0.15)
+        } while true
+    }
+
+    private func require(_ condition: Bool, _ message: String) throws {
+        guard condition else { XCTFail(message); throw Failure.blocked }
+    }
+
+    @MainActor private final class PermissionEvidence {
+        weak var testCase: XCTestCase?
+        let app: XCUIApplication
+        let permission: String
+        let action: String
+        let startedAt = Date().timeIntervalSince1970
+        let appStateAtStart: Int
+        var phase = "preflight"
+        var ownSettingsPageVerified = false
+        var namedSwitchMatches = 0
+        var namedCellMatches = 0
+        var selector: String?
+        var beforeAllowed: Bool?
+        var afterAllowed: Bool?
+        var settingsOpenRequestedAt: TimeInterval?
+        var requestedAt: TimeInterval?
+        var confirmedAt: TimeInterval?
+        var toggleAttempts = 0
+        var appStateBeforeToggle: Int?
+        var appNotRunningObservedAfterAction = false
+        private var attached = false
+        init(testCase: XCTestCase, app: XCUIApplication, permission: String, action: String) {
+            self.testCase = testCase; self.app = app; self.permission = permission; self.action = action
+            appStateAtStart = Int(app.state.rawValue)
+        }
+        func attach() {
+            guard !attached else { return }; attached = true
+            if toggleAttempts > 0 && app.state == .notRunning { appNotRunningObservedAfterAction = true }
+            let metadata: [String: Any] = [
+                "helper": "externalNamedEiscuePermission", "permission": permission, "action": action, "phase": phase,
+                "startedAt": startedAt, "finishedAt": Date().timeIntervalSince1970,
+                "ownSettingsPageVerified": ownSettingsPageVerified,
+                "namedSwitchMatches": namedSwitchMatches, "namedCellMatches": namedCellMatches,
+                "selector": selector as Any? ?? NSNull(),
+                "beforeAllowed": beforeAllowed as Any? ?? NSNull(), "afterAllowed": afterAllowed as Any? ?? NSNull(),
+                "settingsOpenRequestedAt": settingsOpenRequestedAt as Any? ?? NSNull(),
+                "requestedAt": requestedAt as Any? ?? NSNull(), "confirmedAt": confirmedAt as Any? ?? NSNull(),
+                "toggleAttempts": toggleAttempts, "appStateAtStart": appStateAtStart,
+                "appStateBeforeToggle": appStateBeforeToggle as Any? ?? NSNull(), "appStateAtEnd": Int(app.state.rawValue),
+                "appNotRunningObservedAfterAction": appNotRunningObservedAfterAction,
+                "permissionChangeCanTerminateApp": true, "osTerminationAttributionVerified": false,
+                "appAcceptanceVerified": false, "modelRequests": 0, "connectionChangeRequested": false,
+                "explicitScreenshotsCaptured": 0, "chatOrDraftTextRead": false, "otherPermissionValuesRead": false,
+                "automaticRestoreAttempted": false, "separateRestoreRequiredAfterDeny": action == "deny"
+            ]
+            guard let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys, .prettyPrinted]),
+                  let text = String(data: data, encoding: .utf8) else { return }
+            let attachment = XCTAttachment(string: text)
+            attachment.name = "Eiscue named system permission — \(permission) — \(action) — metadata only"
+            attachment.lifetime = .keepAlways; testCase?.add(attachment)
         }
     }
 }
