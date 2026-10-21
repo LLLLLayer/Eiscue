@@ -212,8 +212,9 @@ final class EiscueSystemPermissionAcceptanceUITests: XCTestCase {
         let environment = ProcessInfo.processInfo.environment
         guard environment["EISCUE_SYSTEM_PERMISSION_TEST"] == "1",
               Permission(rawValue: environment["EISCUE_SYSTEM_PERMISSION"] ?? "") != nil,
-              Action(rawValue: environment["EISCUE_SYSTEM_PERMISSION_ACTION"] ?? "") != nil else {
-            throw XCTSkip("Set TEST_RUNNER_EISCUE_SYSTEM_PERMISSION_TEST=1, EISCUE_SYSTEM_PERMISSION=microphone|speech and EISCUE_SYSTEM_PERMISSION_ACTION=deny|restore (all with TEST_RUNNER_ prefixes).")
+              Action(rawValue: environment["EISCUE_SYSTEM_PERMISSION_ACTION"] ?? "") != nil
+                || environment["EISCUE_SYSTEM_PERMISSION_ACTION"] == "inspect" else {
+            throw XCTSkip("Set TEST_RUNNER_EISCUE_SYSTEM_PERMISSION_TEST=1, EISCUE_SYSTEM_PERMISSION=microphone|speech and EISCUE_SYSTEM_PERMISSION_ACTION=deny|restore|inspect (all with TEST_RUNNER_ prefixes).")
         }
         #endif
     }
@@ -226,6 +227,69 @@ final class EiscueSystemPermissionAcceptanceUITests: XCTestCase {
     @MainActor
     func testRestoreOnlyTheNamedEiscuePermission() throws {
         try changePermission(action: .restore)
+    }
+
+    /// Attaches only to the already visible own-App Settings page. The exact
+    /// named switch may include its row, so bound its crop before capturing.
+    @MainActor
+    func testInspectOnlyTheNamedEiscuePermission() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EISCUE_SYSTEM_PERMISSION_TEST"] == "1",
+              environment["EISCUE_SYSTEM_PERMISSION_ACTION"] == "inspect",
+              let permission = Permission(rawValue: environment["EISCUE_SYSTEM_PERMISSION"] ?? "") else {
+            throw XCTSkip("This read-only helper requires the matching explicit inspect permission action.")
+        }
+        let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let evidence = PermissionEvidence(testCase: self, app: XCUIApplication(bundleIdentifier: "org.eiscue.app"),
+                                          permission: permission.rawValue, action: "inspect")
+        addTeardownBlock { await evidence.attach() }
+        defer { evidence.attach() }
+        try require(ownSettingsPage(settings) && settings.alerts.count == 0 && springboard.alerts.count == 0,
+                    "Keep the exact Eiscue Settings page foreground without alerts; inspection never navigates.")
+        evidence.ownSettingsPageVerified = true
+        evidence.phase = "inspectingNamedPermission"
+        guard let target = try permissionSwitch(permission, in: settings, evidence: evidence) else {
+            try require(false, "The named Eiscue permission has no unique exposed switch; nothing was captured.")
+            return
+        }
+        let allowed = try booleanValue(target)
+        let frame = target.frame, bounds = settings.frame
+        let hittable = target.isHittable
+        let finite = [frame.minX, frame.minY, frame.width, frame.height,
+                      bounds.minX, bounds.minY, bounds.width, bounds.height].allSatisfy(\.isFinite)
+        let singleVisibleRow = finite && bounds.width > 0 && bounds.height > 0 && bounds.contains(frame)
+            && frame.width >= 20 && frame.width <= 600 && frame.height >= 20 && frame.height <= 80
+        let screenshotEligible = singleVisibleRow && hittable && target.elementType == .switch
+        func rectangle(_ rect: CGRect) -> [String: Any] {
+            func number(_ value: CGFloat) -> Any { value.isFinite ? Double(value) : NSNull() }
+            return ["x": number(rect.minX), "y": number(rect.minY),
+                    "width": number(rect.width), "height": number(rect.height)]
+        }
+        evidence.beforeAllowed = allowed
+        evidence.inspection = [
+            "observedAt": Date().timeIntervalSince1970, "frame": rectangle(frame), "currentBounds": rectangle(bounds),
+            "type": target.elementType.rawValue, "isHittable": hittable, "isEnabled": target.isEnabled,
+            "allowed": allowed, "singleVisibleRow": singleVisibleRow, "screenshotEligible": screenshotEligible,
+            "maximumCropWidth": 600, "maximumCropHeight": 80, "captureScope": "namedSwitchElementOnly"
+        ]
+        if screenshotEligible {
+            try require(ownSettingsPage(settings) && settings.alerts.count == 0 && springboard.alerts.count == 0,
+                        "The exact Eiscue page changed before its named switch capture.")
+            guard let current = try permissionSwitch(permission, in: settings, evidence: evidence) else {
+                try require(false, "The named permission disappeared before capture.")
+                return
+            }
+            try require(current.elementType == .switch && current.frame == frame && settings.frame == bounds
+                        && current.isHittable && (try booleanValue(current)) == allowed,
+                        "The named permission bounds or Boolean changed before capture; nothing was captured.")
+            let attachment = XCTAttachment(screenshot: current.screenshot())
+            attachment.name = "Eiscue named system permission — \(permission.rawValue) — switch only"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            evidence.explicitScreenshotsCaptured = 1
+        }
+        evidence.phase = "namedPermissionInspectionCompleted"
     }
 
     private enum Permission: String {
@@ -421,6 +485,8 @@ final class EiscueSystemPermissionAcceptanceUITests: XCTestCase {
         var toggleAttempts = 0
         var appStateBeforeToggle: Int?
         var appNotRunningObservedAfterAction = false
+        var inspection: [String: Any]?
+        var explicitScreenshotsCaptured = 0
         private var attached = false
         init(testCase: XCTestCase, app: XCUIApplication, permission: String, action: String) {
             self.testCase = testCase; self.app = app; self.permission = permission; self.action = action
@@ -443,7 +509,8 @@ final class EiscueSystemPermissionAcceptanceUITests: XCTestCase {
                 "appNotRunningObservedAfterAction": appNotRunningObservedAfterAction,
                 "permissionChangeCanTerminateApp": true, "osTerminationAttributionVerified": false,
                 "appAcceptanceVerified": false, "modelRequests": 0, "connectionChangeRequested": false,
-                "explicitScreenshotsCaptured": 0, "chatOrDraftTextRead": false, "otherPermissionValuesRead": false,
+                "inspection": inspection as Any? ?? NSNull(),
+                "explicitScreenshotsCaptured": explicitScreenshotsCaptured, "chatOrDraftTextRead": false, "otherPermissionValuesRead": false,
                 "automaticRestoreAttempted": false, "separateRestoreRequiredAfterDeny": action == "deny"
             ]
             guard let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys, .prettyPrinted]),
