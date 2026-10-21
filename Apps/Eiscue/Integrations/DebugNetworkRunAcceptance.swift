@@ -4,8 +4,45 @@ import EiscueDeviceCore
 import Foundation
 import Observation
 import SwiftUI
+import Synchronization
 import UIKit
 import UserNotifications
+
+/// Synchronous callback/executor metadata. A bounded trace and independent
+/// totals preserve post-event calls even when the trace capacity is exceeded.
+final class NetworkAcceptanceHostExecutionRecorder: Sendable {
+    struct Invocation: Encodable, Sendable {
+        let tool: String
+        let uptime: TimeInterval
+    }
+    struct Snapshot: Sendable {
+        var total = 0
+        var expirationUptime: TimeInterval?
+        var lossUptime: TimeInterval?
+        var hostExecuteCallsAfterExpiration = 0
+        var hostExecuteCallsAfterObservedVPNLoss = 0
+        var invocations: [Invocation] = []
+        var truncated = false
+    }
+    private let state = Mutex(Snapshot())
+    func record(_ spec: DeviceToolSpec, uptime: TimeInterval? = nil) {
+        state.withLock { value in
+            let now = uptime ?? ProcessInfo.processInfo.systemUptime
+            value.total += 1
+            if let expired = value.expirationUptime, now >= expired { value.hostExecuteCallsAfterExpiration += 1 }
+            if let lost = value.lossUptime, now >= lost { value.hostExecuteCallsAfterObservedVPNLoss += 1 }
+            if value.invocations.count < 128 { value.invocations.append(Invocation(tool: spec.rawValue, uptime: now)) }
+            else { value.truncated = true }
+        }
+    }
+    func recordExpiration(uptime: TimeInterval? = nil) {
+        state.withLock { if $0.expirationUptime == nil { $0.expirationUptime = uptime ?? ProcessInfo.processInfo.systemUptime } }
+    }
+    func recordObservedVPNLoss(uptime: TimeInterval? = nil) {
+        state.withLock { if $0.lossUptime == nil { $0.lossUptime = uptime ?? ProcessInfo.processInfo.systemUptime } }
+    }
+    func snapshot() -> Snapshot { state.withLock { $0 } }
+}
 
 /// Explicit, zero-model host/device acceptance. This is a scripted diagnostic,
 /// not Pi, visual reasoning, or a replacement production engine.
@@ -40,7 +77,8 @@ enum DebugNetworkRunAcceptance {
         return AutomationStatus(installation.report.value,
             selectedInputRoute: installation.model?.bluetoothInputRoute.rawValue,
             needsCalibration: installation.plan?.kind == .hidBackground
-                && installation.model?.isBluetoothPointerVerified == false)
+                && installation.model?.isBluetoothPointerVerified == false,
+            recoveryReady: installation.model?.isDeviceReady == true)
     }
     static func armInput(width: Int, height: Int, gesture: GestureLabel = .moving) throws -> InputCoordinates {
         guard let installation else { throw Failure.invalidArguments }
@@ -57,6 +95,35 @@ enum DebugNetworkRunAcceptance {
         installation.captureReadiness(model: model, phase: phase, force: true)
     }
 
+    static func requestRecoveryVerification() {
+        guard let installation, let model = installation.model,
+              installation.plan?.verifiesVPNRecovery == true,
+              installation.report.value.phase == "awaiting_explicit_reconnection",
+              model.isDeviceReady, !model.deviceSession.isBusy, !model.isRunning,
+              model.activeDeviceControlBackend == installation.plan?.backend else { return }
+        installation.report.value.recovery?.explicitVerificationRequested = true
+        targetPresentation.showsContinuation = false
+        installation.report.event("explicit_recovery_verification_requested")
+    }
+
+    static func injectStaleStop(requestID: UUID) async throws {
+        guard let installation, installation.plan?.injectsStaleStop == true,
+              let model = installation.model, let old = installation.report.value.continuation,
+              let current = model.activeRun, current.id != old.originalRunID,
+              current.requestID == requestID, requestID != old.originalRequestID,
+              model.deviceSession.owner == .run(current.id) else { throw Failure.continuationFailed }
+        installation.report.value.continuation?.staleStopTargetRunID = old.originalRunID
+        installation.report.value.continuation?.staleStopCurrentRunID = current.id
+        installation.report.value.continuation?.staleStopInjected = true
+        installation.report.event("stale_stop_injected")
+        await model.stop(expectedRunID: old.originalRunID)
+        try Task.checkCancellation()
+        guard model.activeRun?.id == current.id, model.deviceSession.owner == .run(current.id),
+              model.isRunning, model.isDeviceReady else { throw Failure.staleStopAffectedCurrentRun }
+        installation.report.value.continuation?.staleStopPreservedCurrentRun = true
+        installation.report.event("stale_stop_preserved_current_run")
+    }
+
     struct InputCoordinates: Sendable { let fromX: Double; let fromY: Double; let toX: Double; let toY: Double }
     enum GestureLabel: String, Encodable, Sendable { case stationary, moving }
     static func touchTypeName(_ type: UITouch.TouchType) -> String {
@@ -70,7 +137,7 @@ enum DebugNetworkRunAcceptance {
     }
 
     struct Plan: Sendable {
-        enum Kind: String, Sendable { case background, hidBackground, inflightStop, appReturn, foregroundSwipe }
+        enum Kind: String, Sendable { case background, hidBackground, inflightStop, appReturn, foregroundSwipe, idleVPNRecovery, externalVPNLoss }
         let kind: Kind
         let route: DeviceConnectionMethod
         let backend: DeviceControlBackend?
@@ -81,19 +148,23 @@ enum DebugNetworkRunAcceptance {
         let resumeTunnel: Bool
         let contactComparison: Bool
         let allowsExplicitContinuation: Bool
+        let injectsStaleStop: Bool
+        var verifiesVPNRecovery: Bool { kind == .idleVPNRecovery || kind == .externalVPNLoss }
+        var recoveryWaitSeconds: Double { 300 }
         var continuationWaitSeconds: Double { 300 }
         var sampleGapLimit: Double { interval + 5 }
         var requiresLocalTunnel: Bool { route == .localVPN }
         var samplesBackground: Bool { kind == .background || kind == .hidBackground }
         var backgroundWaitSeconds: Double { kind == .hidBackground ? 60 : 5 }
         var usesInputTarget: Bool { kind == .inflightStop || kind == .foregroundSwipe }
-        var usesAcceptanceTarget: Bool { usesInputTarget || kind == .hidBackground }
+        var usesAcceptanceTarget: Bool { usesInputTarget || kind == .hidBackground || verifiesVPNRecovery }
         var expectedSwipeCount: Int { contactComparison ? 2 : 1 }
         var maxToolCalls: Int { kind == .foregroundSwipe ? (contactComparison ? 5 : 3) : (kind == .appReturn ? 7 : 70) }
         var requiredTools: [DeviceToolSpec] {
             switch kind {
             case .foregroundSwipe, .inflightStop: [.screenshot, .swipe]
-            case .background: [.screenshot, .home]
+            case .background, .externalVPNLoss: [.screenshot, .home]
+            case .idleVPNRecovery: []
             case .hidBackground: [.screenshot]
             case .appReturn: [.screenshot, .launchApplication, .home]
             }
@@ -148,6 +219,9 @@ enum DebugNetworkRunAcceptance {
             guard !contactComparison || (route == .bluetoothBoard && kind == .foregroundSwipe) else { throw Failure.invalidArguments }
             let allowsExplicitContinuation = arguments.contains("--network-run-allow-explicit-continuation")
             guard !allowsExplicitContinuation || (route == .localVPN && kind == .inflightStop) else { throw Failure.invalidArguments }
+            let injectsStaleStop = arguments.contains("--network-run-inject-stale-stop")
+            guard !injectsStaleStop || allowsExplicitContinuation,
+                  (kind != .idleVPNRecovery && kind != .externalVPNLoss) || route == .localVPN else { throw Failure.invalidArguments }
             // Home and bundle-ID launch are never available on the HID route.
             guard route != .bluetoothBoard || kind == .foregroundSwipe || kind == .inflightStop || kind == .hidBackground,
                   kind != .hidBackground || route == .bluetoothBoard,
@@ -172,6 +246,7 @@ enum DebugNetworkRunAcceptance {
             resumeTunnel = arguments.contains("--resume-existing-local-tunnel")
             self.contactComparison = contactComparison
             self.allowsExplicitContinuation = allowsExplicitContinuation
+            self.injectsStaleStop = injectsStaleStop
         }
     }
 
@@ -183,6 +258,7 @@ enum DebugNetworkRunAcceptance {
         case inputTargetUnavailable, inflightStopMissed, didNotReturnToApp
         case bluetoothSetupTimedOut, bluetoothCalibrationRequired, bluetoothSwipeCheckRequired, postActionObservationMissing, swipeDidNotMove, retentionFailed
         case continuationTimedOut, continuationAbandoned, continuationFailed
+        case externalLossTimedOut, externalLossNotObserved, recoveryTimedOut, recoveryFailed, staleStopAffectedCurrentRun
     }
 
     /// The external actor only changes application state. This wait cannot
@@ -262,6 +338,8 @@ enum DebugNetworkRunAcceptance {
         var setupScreenSessionID: UUID?
         var setupScreenGeometry: [Int]?
         var setupOperationID: UUID?
+        var recoveryClient: DeviceClient?
+        var recoveryDisconnectCallback: (@MainActor @Sendable () -> Void)?
 
         init(arguments: [String]) {
             self.arguments = arguments
@@ -283,7 +361,7 @@ enum DebugNetworkRunAcceptance {
             settings.baseURL = "https://network-acceptance.invalid"
             settings.model = "debug-script-zero-model"
             settings.maxToolCalls = plan?.maxToolCalls ?? 70
-            settings.timeoutSeconds = Int((plan?.seconds ?? 60) + 120)
+            settings.timeoutSeconds = plan?.kind == .externalVPNLoss ? 420 : Int((plan?.seconds ?? 60) + 120)
             let profile = ModelProfile(id: UUID(), name: "", settings: settings)
             let credentials = CredentialStore(service: suite)
             self.credentials = credentials; account = profile.credentialAccount
@@ -486,7 +564,12 @@ enum DebugNetworkRunAcceptance {
             guard !started else { return }; started = true
             report.event("preflight")
             var cancellation: Task<Void, Never>?
-            defer { cancellation?.cancel() }
+            defer {
+                cancellation?.cancel()
+                if plan?.verifiesVPNRecovery == true, recoveryClient != nil {
+                    model.localTunnel.onDisconnect = recoveryDisconnectCallback
+                }
+            }
             do {
                 if let configurationFailure { throw Failure(rawValue: configurationFailure) ?? .invalidArguments }
                 guard let plan else { throw Failure.invalidArguments }
@@ -495,6 +578,8 @@ enum DebugNetworkRunAcceptance {
                 report.value.inputRoute = plan.inputRoute?.rawValue
                 report.value.acceptanceCase = plan.kind.rawValue
                 report.value.contactComparison = plan.contactComparison
+                report.value.staleStopRequired = plan.injectsStaleStop
+                if plan.verifiesVPNRecovery { report.value.recovery = RecoveryEvidence(processID: ProcessInfo.processInfo.processIdentifier) }
                 report.value.plannedSeconds = plan.samplesBackground ? plan.seconds : nil
                 report.value.sampleIntervalSeconds = plan.samplesBackground ? plan.interval : nil
                 report.value.cancelAfterSeconds = plan.cancelAfter
@@ -523,101 +608,135 @@ enum DebugNetworkRunAcceptance {
                           model.activeDeviceControlBackend == plan.backend else { throw Failure.connectionFailed }
                 }
                 report.value.connected = true
-                if let after = plan.cancelAfter {
-                    cancellation = Task { @MainActor [weak model, report] in
-                        guard let model else { return }
-                        while model.activeRun == nil {
-                            do { try await Task.sleep(for: .milliseconds(25)) } catch { return }
+                if plan.verifiesVPNRecovery { installRecoveryDisconnectObserver(model: model) }
+                if plan.kind == .idleVPNRecovery {
+                    try await waitForInputTarget(model: model, plan: plan)
+                    let lease = try model.deviceSession.acquire(.setup)
+                    let old: OwnedRecoveryObservation
+                    do { old = try await model.captureOwnedRecoveryObservation() }
+                    catch { lease.release(); throw error }
+                    lease.release()
+                    report.value.initialFrameID = old.frameID
+                    report.event("awaiting_external_vpn_loss")
+                    let deadline = ProcessInfo.processInfo.systemUptime + plan.recoveryWaitSeconds
+                    while report.value.recovery?.lossObserved != true {
+                        try Task.checkCancellation()
+                        guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure.externalLossTimedOut }
+                        try await Task.sleep(for: .milliseconds(100))
+                    }
+                    try await waitForVPNRecovery(model: model, plan: plan, old: old)
+                    report.value.hostOwnerReleased = model.deviceSession.owner == nil
+                    report.value.hostEngineClosedBeforeTeardown = await store.isUnowned
+                } else {
+                    if let after = plan.cancelAfter {
+                        cancellation = Task { @MainActor [weak model, report] in
+                            guard let model else { return }
+                            while model.activeRun == nil {
+                                do { try await Task.sleep(for: .milliseconds(25)) } catch { return }
+                            }
+                            guard let runID = model.activeRun?.id else { return }
+                            do { try await Task.sleep(for: .seconds(after)) } catch { return }
+                            report.event("scheduled_stop")
+                            await model.stop(expectedRunID: runID)
                         }
-                        guard let runID = model.activeRun?.id else { return }
-                        do { try await Task.sleep(for: .seconds(after)) } catch { return }
-                        report.event("scheduled_stop")
-                        await model.stop(expectedRunID: runID)
                     }
-                }
-                model.newConversation()
-                if plan.usesInputTarget { try await waitForInputTarget(model: model, plan: plan) }
-                report.value.scopeBeforeSubmission = model.newRunScope.rawValue
-                report.value.readyBeforeSubmission = model.isDeviceReady
-                guard model.newRunScope == .control, model.activeDeviceConnectionMethod == plan.route,
-                      !model.deviceSession.isBusy else { throw Failure.wrongScope }
-                try plan.validateBluetoothSetup(model.deviceStatus)
-                model.draft = DebugNetworkRunAcceptance.prompt
-                report.value.submissionAttempted = true
-                report.event("run_requested")
-                await model.sendMessage()
-                cancellation?.cancel()
-                if plan.kind == .inflightStop {
-                    await touchStop?.value
-                    let terminalDeadline = (report.value.inputCommandStartedUptime ?? ProcessInfo.processInfo.systemUptime) + 4
-                    while report.value.firstTouchDownUptime != nil, report.value.terminalTouchUptime == nil,
-                          ProcessInfo.processInfo.systemUptime < terminalDeadline {
-                        try await Task.sleep(for: .milliseconds(20))
+                    model.newConversation()
+                    if plan.usesInputTarget { try await waitForInputTarget(model: model, plan: plan) }
+                    report.value.scopeBeforeSubmission = model.newRunScope.rawValue
+                    report.value.readyBeforeSubmission = model.isDeviceReady
+                    guard model.newRunScope == .control, model.activeDeviceConnectionMethod == plan.route,
+                          !model.deviceSession.isBusy else { throw Failure.wrongScope }
+                    try plan.validateBluetoothSetup(model.deviceStatus)
+                    model.draft = DebugNetworkRunAcceptance.prompt
+                    report.value.submissionAttempted = true
+                    report.event("run_requested")
+                    await model.sendMessage()
+                    cancellation?.cancel()
+                    if plan.kind == .inflightStop {
+                        await touchStop?.value
+                        let terminalDeadline = (report.value.inputCommandStartedUptime ?? ProcessInfo.processInfo.systemUptime) + 4
+                        while report.value.firstTouchDownUptime != nil, report.value.terminalTouchUptime == nil,
+                              ProcessInfo.processInfo.systemUptime < terminalDeadline {
+                            try await Task.sleep(for: .milliseconds(20))
+                        }
+                        inputRunID = nil; inputTouch = nil
                     }
-                    inputRunID = nil; inputTouch = nil
-                }
-                guard let record = model.runs.first, record.model == "debug-script-zero-model" else {
-                    throw Failure.wrongScope
-                }
-                report.value.runID = record.id
-                report.value.runScope = record.scope.rawValue
-                report.value.runState = record.state.rawValue
-                report.value.stopCause = record.stopCause
-                report.value.hostCleanupFailed = record.cleanupFailure != nil
-                report.value.observationFailures = record.events.filter { $0.kind == "observation.failed" }.map(\.summary)
-                report.value.hostFinishedAt = record.endedAt
-                report.value.hostOwnerReleased = model.deviceSession.owner == nil && !model.isRunning
-                report.value.hostEngineClosedBeforeTeardown = await store.isUnowned
-                guard record.scope == .control else { throw Failure.wrongScope }
-                report.value.state = record.state == .completed && record.cleanupFailure == nil ? "passed" :
-                    (record.state == .interrupted && record.cleanupFailure == nil ? "cancelled" : "failed")
-                if report.value.failure == Failure.backgroundGapExceeded.rawValue
-                    || report.value.failure == Failure.backgroundLeaseInactive.rawValue { report.value.state = "failed" }
-                if plan.kind == .inflightStop {
-                    let down = report.value.firstTouchDownUptime, stop = report.value.stopRequestedUptime
-                    let terminal = report.value.terminalTouchUptime, returned = report.value.inputCommandFinishedUptime
-                    let hit: Bool
-                    if let down, let stop, let terminal, let returned, let requested = report.value.inputCommandStartedUptime {
-                        hit = requested <= down && down < stop && stop < terminal && stop < returned
-                            && report.value.swipeAttemptCount == 1 && report.value.inflightToolOutcome == "unknown"
+                    guard let record = model.runs.first, record.model == "debug-script-zero-model" else {
+                        throw Failure.wrongScope
                     }
-                    else { hit = false }
-                    report.value.inflightHit = hit
-                    report.value.state = hit && record.state == .outcomeUnknown && record.cleanupFailure == nil ? "passed" : "failed"
-                    if report.value.state == "failed", report.value.failure == nil { report.value.failure = Failure.inflightStopMissed.rawValue }
-                }
-                if plan.kind == .foregroundSwipe {
-                    report.value.retentionCheckedBeforeTeardown = true
-                    report.value.retainedReady = model.isDeviceReady && model.activeDeviceConnectionMethod == plan.route
-                    if plan.route == .bluetoothBoard {
-                        report.value.retainedBluetoothConnected = model.isBluetoothConnected
-                        report.value.retainedScreenSharing = model.isBluetoothScreenShared
-                        report.value.retainedCalibration = model.isBluetoothPointerVerified
+                    report.value.runID = record.id
+                    report.value.runScope = record.scope.rawValue
+                    report.value.runState = record.state.rawValue
+                    report.value.stopCause = record.stopCause
+                    report.value.hostCleanupFailed = record.cleanupFailure != nil
+                    report.value.observationFailures = record.events.filter { $0.kind == "observation.failed" }.map(\.summary)
+                    report.value.hostFinishedAt = record.endedAt
+                    report.value.hostOwnerReleased = model.deviceSession.owner == nil && !model.isRunning
+                    report.value.hostEngineClosedBeforeTeardown = await store.isUnowned
+                    guard record.scope == .control else { throw Failure.wrongScope }
+                    report.value.state = record.state == .completed && record.cleanupFailure == nil ? "passed" :
+                        (record.state == .interrupted && record.cleanupFailure == nil ? "cancelled" : "failed")
+                    if report.value.failure == Failure.backgroundGapExceeded.rawValue
+                        || report.value.failure == Failure.backgroundLeaseInactive.rawValue { report.value.state = "failed" }
+                    if plan.kind == .inflightStop {
+                        let down = report.value.firstTouchDownUptime, stop = report.value.stopRequestedUptime
+                        let terminal = report.value.terminalTouchUptime, returned = report.value.inputCommandFinishedUptime
+                        let hit: Bool
+                        if let down, let stop, let terminal, let returned, let requested = report.value.inputCommandStartedUptime {
+                            hit = requested <= down && down < stop && stop < terminal && stop < returned
+                                && report.value.swipeAttemptCount == 1 && report.value.inflightToolOutcome == "unknown"
+                        }
+                        else { hit = false }
+                        report.value.inflightHit = hit
+                        report.value.state = hit && record.state == .outcomeUnknown && record.cleanupFailure == nil ? "passed" : "failed"
+                        if report.value.state == "failed", report.value.failure == nil { report.value.failure = Failure.inflightStopMissed.rawValue }
                     }
-                    let retained = plan.route != .bluetoothBoard || bluetoothReady(model)
-                    guard record.state == .completed, record.cleanupFailure == nil, report.value.hostOwnerReleased,
-                          report.value.hostEngineClosedBeforeTeardown == true, report.value.retainedReady == true, retained,
-                          report.value.postActionFrameID != nil, report.value.postActionImageBytes > 0,
-                          report.value.swipeAttemptCount == plan.expectedSwipeCount,
-                          report.value.observedToolCalls == 1 + plan.expectedSwipeCount,
-                          report.value.observationFailures.isEmpty else { throw Failure.retentionFailed }
-                    report.value.retentionVerified = true
-                    report.value.state = report.value.motionVerified == true ? "passed" : "failed"
-                    if report.value.motionVerified != true { report.value.failure = report.value.motionFailure ?? Failure.swipeDidNotMove.rawValue }
-                    report.event("retention_before_diagnostic_teardown")
-                }
-                if plan.allowsExplicitContinuation {
-                    try await waitForExplicitContinuation(model: model, original: record, plan: plan)
+                    if plan.kind == .foregroundSwipe {
+                        report.value.retentionCheckedBeforeTeardown = true
+                        report.value.retainedReady = model.isDeviceReady && model.activeDeviceConnectionMethod == plan.route
+                        if plan.route == .bluetoothBoard {
+                            report.value.retainedBluetoothConnected = model.isBluetoothConnected
+                            report.value.retainedScreenSharing = model.isBluetoothScreenShared
+                            report.value.retainedCalibration = model.isBluetoothPointerVerified
+                        }
+                        let retained = plan.route != .bluetoothBoard || bluetoothReady(model)
+                        guard record.state == .completed, record.cleanupFailure == nil, report.value.hostOwnerReleased,
+                              report.value.hostEngineClosedBeforeTeardown == true, report.value.retainedReady == true, retained,
+                              report.value.postActionFrameID != nil, report.value.postActionImageBytes > 0,
+                              report.value.swipeAttemptCount == plan.expectedSwipeCount,
+                              report.value.observedToolCalls == 1 + plan.expectedSwipeCount,
+                              report.value.observationFailures.isEmpty else { throw Failure.retentionFailed }
+                        report.value.retentionVerified = true
+                        report.value.state = report.value.motionVerified == true ? "passed" : "failed"
+                        if report.value.motionVerified != true { report.value.failure = report.value.motionFailure ?? Failure.swipeDidNotMove.rawValue }
+                        report.event("retention_before_diagnostic_teardown")
+                    }
+                    if plan.allowsExplicitContinuation {
+                        try await waitForExplicitContinuation(model: model, original: record, plan: plan)
+                    }
+                    if plan.kind == .externalVPNLoss {
+                        report.recordRecoverySettlement()
+                        guard report.value.recovery?.lossObserved == true,
+                              report.value.recovery?.lossDuringOwnedRun == true,
+                              report.value.recovery?.readyRevoked == true,
+                              report.hostInvocations.snapshot().hostExecuteCallsAfterObservedVPNLoss == 0,
+                              report.value.hostOwnerReleased, report.value.hostEngineClosedBeforeTeardown == true,
+                              record.state != .completed else { throw Failure.externalLossNotObserved }
+                        try await waitForVPNRecovery(model: model, plan: plan, old: nil)
+                    }
                 }
                 #endif
             } catch {
                 report.value.state = "failed"
-                if report.value.failure == nil { report.value.failure = (error as? Failure)?.rawValue ?? String(describing: type(of: error)) }
+                if report.value.failure == nil {
+                    report.value.failure = (error as? Failure)?.rawValue ?? (error as? OwnedRecoveryFailure)?.rawValue
+                        ?? String(describing: type(of: error))
+                }
             }
             await store.closeContinuation()
             // A bounded diagnostic wait must still await a run it admitted.
             // Never release the device from underneath its host-owned work.
-            if plan?.allowsExplicitContinuation == true, let run = model.activeRun {
+            if (plan?.allowsExplicitContinuation == true || plan?.verifiesVPNRecovery == true), let run = model.activeRun {
                 _ = await model.runCoordinator.stopAndWait(runID: run.id)
             }
             captureReadiness(model: model, phase: "before_diagnostic_teardown", force: true)
@@ -627,7 +746,7 @@ enum DebugNetworkRunAcceptance {
             // cached not-ready status is never promoted to release confirmation.
             var releaseReturned = false
             do {
-                if plan?.allowsExplicitContinuation == true {
+                if plan?.allowsExplicitContinuation == true || plan?.verifiesVPNRecovery == true {
                     // Also cancels/awaits a user-initiated reconnect if the
                     // bounded confirmation window ended during setup.
                     report.value.cleanupConfirmed = await model.releaseDeviceConnection()
@@ -649,6 +768,75 @@ enum DebugNetworkRunAcceptance {
                 report.value.failure = Failure.cleanupUnconfirmed.rawValue
                 report.event("cleanupIncomplete")
             }
+        }
+
+        private func installRecoveryDisconnectObserver(model: AppModel) {
+            recoveryClient = model.deviceClient
+            let original = model.localTunnel.onDisconnect
+            recoveryDisconnectCallback = original
+            model.localTunnel.onDisconnect = { [weak self, weak model] in
+                guard let self, let model else { original?(); return }
+                let hit = self.report.value.phase == "awaiting_external_vpn_loss"
+                if hit {
+                    let duringOwnedRun = model.activeRun.map { model.deviceSession.owner == .run($0.id) } ?? false
+                    self.report.recordRecoveryLoss(duringOwnedRun: duringOwnedRun)
+                }
+                // Keep the real production loss handler, ordering and cancellation.
+                original?()
+                if hit {
+                    self.report.value.recovery?.readyRevoked = !model.isDeviceReady
+                    self.report.event("observed_external_vpn_loss")
+                }
+            }
+        }
+
+        private func waitForVPNRecovery(model: AppModel, plan: Plan, old: OwnedRecoveryObservation?) async throws {
+            guard let originalClient = recoveryClient, report.value.recovery?.lossObserved == true,
+                  report.value.recovery?.readyRevoked == true else { throw Failure.externalLossNotObserved }
+            // Allow the real loss handler to finish its owned release before any
+            // manual repair/reconnect. Never replace a failed receipt with Ready=false.
+            let deadline = ProcessInfo.processInfo.systemUptime + plan.recoveryWaitSeconds
+            var settledSince: TimeInterval?
+            while true {
+                try Task.checkCancellation()
+                let now = ProcessInfo.processInfo.systemUptime
+                guard now < deadline else { throw Failure.recoveryTimedOut }
+                if model.deviceSession.isBusy || model.isRunning || model.isBusy { settledSince = nil }
+                else if let settledSince, now - settledSince >= 0.5 { break }
+                else if settledSince == nil { settledSince = now }
+                // The real callback schedules asynchronous cleanup. Even an
+                // initially idle snapshot must yield before exposing recovery.
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            guard !model.isDeviceReady else { throw Failure.recoveryFailed }
+            report.value.recovery?.readyBeforeExplicitReconnect = model.isDeviceReady
+            targetPresentation.showsContinuation = true
+            report.value.state = "awaitingRecovery"
+            report.event("awaiting_explicit_reconnection")
+            while report.value.recovery?.explicitVerificationRequested != true {
+                try Task.checkCancellation()
+                guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure.recoveryTimedOut }
+                guard model.deviceClient.device === originalClient.device,
+                      model.deviceConnectionMethod == .localVPN,
+                      model.deviceControlBackend == plan.backend else { throw Failure.recoveryFailed }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            guard model.isDeviceReady, model.activeDeviceControlBackend == plan.backend,
+                  model.deviceClient.device === originalClient.device, !model.isRunning else { throw Failure.recoveryFailed }
+            report.value.recovery?.sameClient = true
+            // Wait for the actual owned target to replace the ordinary settings UI.
+            while !OwnedDeviceCheckState.shared.isVisible {
+                try Task.checkCancellation()
+                guard ProcessInfo.processInfo.systemUptime < deadline else { throw Failure.recoveryTimedOut }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            try await Task.sleep(for: .milliseconds(400))
+            let lease = try model.deviceSession.acquire(.setup)
+            defer { lease.release() }
+            let verification = try await model.verifyOwnedRecovery(old: old)
+            report.value.recovery?.recovered = verification
+            report.value.state = report.value.hostCleanupFailed ? "failed" : "passed"
+            report.event("recovered_owned_target_verified")
         }
 
         private func waitForExplicitContinuation(model: AppModel, original: RunRecord, plan: Plan) async throws {
@@ -702,7 +890,8 @@ enum DebugNetworkRunAcceptance {
                           report.value.continuation?.firstToolName == DeviceToolSpec.screenshot.rawValue,
                           report.value.continuation?.toolCalls == 1,
                           report.value.continuation?.frameID != nil,
-                          report.value.swipeAttemptCount == 1 else { throw Failure.continuationFailed }
+                          report.value.swipeAttemptCount == 1,
+                          !plan.injectsStaleStop || report.value.continuation?.staleStopPreservedCurrentRun == true else { throw Failure.continuationFailed }
                     report.value.continuation?.verified = true
                     report.value.state = "passed"
                     report.event("explicit_continuation_finished")
@@ -818,6 +1007,28 @@ enum DebugNetworkRunAcceptance {
         var cleanupFailed: Bool?
         var finishedAt: Date?
         var verified = false
+        var staleStopInjected = false
+        var staleStopPreservedCurrentRun = false
+        var staleStopTargetRunID: UUID?
+        var staleStopCurrentRunID: UUID?
+    }
+    struct RecoveryEvidence: Encodable, Sendable {
+        let processID: Int32
+        var lossObserved = false
+        var lossObservedUptime: TimeInterval?
+        var readyRevoked = false
+        var lossDuringOwnedRun = false
+        var toolsAtLoss = 0
+        var toolsAfterSettlement = 0
+        var explicitVerificationRequested = false
+        var sameClient = false
+        var readyBeforeExplicitReconnect = false
+        var recovered: OwnedRecoveryVerification?
+    }
+    struct NotificationDeliverySnapshot: Encodable, Sendable {
+        let uptime: TimeInterval
+        let pendingCount: Int
+        let deliveredCount: Int
     }
     struct NotificationEvidence: Encodable, Sendable {
         let runID: UUID
@@ -830,6 +1041,16 @@ enum DebugNetworkRunAcceptance {
         var pendingIdentifiers: [String] = []
         var deliveredIdentifiers: [String] = []
         var observedAt: Date?
+        var deliverySnapshots: [NotificationDeliverySnapshot] = []
+        var lateSnapshotsScheduled = false
+        mutating func recordSnapshot(pending: [String], delivered: [String], uptime: TimeInterval) {
+            guard deliverySnapshots.count < 4 else { return }
+            pendingIdentifiers = Self.matching(pending, runID: runID)
+            deliveredIdentifiers = Self.matching(delivered, runID: runID)
+            observedAt = Date()
+            deliverySnapshots.append(.init(uptime: uptime, pendingCount: pendingIdentifiers.count,
+                                           deliveredCount: deliveredIdentifiers.count))
+        }
         static func identifier(for runID: UUID) -> String { "eiscue.task-status." + runID.uuidString.lowercased() }
         static func matching(_ identifiers: [String], runID: UUID) -> [String] {
             let expected = identifier(for: runID)
@@ -932,6 +1153,15 @@ enum DebugNetworkRunAcceptance {
         var notificationsEnabled: Bool?
         var notifications: [NotificationEvidence] = []
         var continuation: ContinuationEvidence?
+        var recovery: RecoveryEvidence?
+        var staleStopRequired = false
+        var hostExecuteCalls = 0
+        var hostExecuteCallsAfterExpiration = 0
+        var hostExecuteCallsAfterObservedVPNLoss = 0
+        var backgroundExpirationUptime: TimeInterval?
+        var observedVPNLossUptime: TimeInterval?
+        var hostExecutionInvocations: [NetworkAcceptanceHostExecutionRecorder.Invocation] = []
+        var hostExecutionInvocationsTruncated = false
         var observedToolCalls = 0
         var observationFailures: [String] = []
         var returnedToApp: Bool?
@@ -1026,16 +1256,23 @@ enum DebugNetworkRunAcceptance {
         let acceptanceCase: String?
         let selectedInputRoute: String?
         let needsCalibration: Bool
+        let backend: String?
+        let recoveryLossObserved: Bool
+        let recoveryReady: Bool
+        let staleStopRequired: Bool
 
-        init(_ metadata: Metadata, selectedInputRoute: String? = nil, needsCalibration: Bool = false) {
+        init(_ metadata: Metadata, selectedInputRoute: String? = nil, needsCalibration: Bool = false, recoveryReady: Bool = false) {
             sessionID = metadata.sessionID; phase = metadata.phase; state = metadata.state
             route = metadata.route; inputRoute = metadata.inputRoute; acceptanceCase = metadata.acceptanceCase
             self.selectedInputRoute = selectedInputRoute; self.needsCalibration = needsCalibration
+            backend = metadata.backend; recoveryLossObserved = metadata.recovery?.lossObserved == true
+            self.recoveryReady = recoveryReady; staleStopRequired = metadata.staleStopRequired
         }
         var encoded: String { (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? "" }
     }
 
     @MainActor @Observable final class Report {
+        nonisolated let hostInvocations = NetworkAcceptanceHostExecutionRecorder()
         let id: UUID
         let directory: URL
         var value: Metadata
@@ -1052,7 +1289,33 @@ enum DebugNetworkRunAcceptance {
             value.events.append(Event(phase: phase, time: Date(), uptime: ProcessInfo.processInfo.systemUptime))
             save()
         }
+        func recordRecoveryLoss(duringOwnedRun: Bool, uptime: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+            // Optional-chain mutation borrows the entire observable value. Read
+            // its sibling fields before mutation to avoid Swift exclusivity traps.
+            let toolCalls = value.observedToolCalls
+            guard var recovery = value.recovery else { return }
+            hostInvocations.recordObservedVPNLoss(uptime: uptime)
+            recovery.lossObserved = true
+            recovery.lossObservedUptime = uptime
+            recovery.toolsAtLoss = toolCalls
+            recovery.lossDuringOwnedRun = duringOwnedRun
+            value.recovery = recovery
+        }
+        func recordRecoverySettlement() {
+            let toolCalls = value.observedToolCalls
+            guard var recovery = value.recovery else { return }
+            recovery.toolsAfterSettlement = toolCalls
+            value.recovery = recovery
+        }
         func save() {
+            let execution = hostInvocations.snapshot()
+            value.hostExecuteCalls = execution.total
+            value.hostExecuteCallsAfterExpiration = execution.hostExecuteCallsAfterExpiration
+            value.hostExecuteCallsAfterObservedVPNLoss = execution.hostExecuteCallsAfterObservedVPNLoss
+            value.backgroundExpirationUptime = execution.expirationUptime
+            value.observedVPNLossUptime = execution.lossUptime
+            value.hostExecutionInvocations = execution.invocations
+            value.hostExecutionInvocationsTruncated = execution.truncated
             do {
                 let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .prettyPrinted]; encoder.dateEncodingStrategy = .iso8601
                 let data = try encoder.encode(value)
@@ -1079,6 +1342,9 @@ enum DebugNetworkRunAcceptance {
             report.value.runID = taskID; report.event("background_requested")
             try await BackgroundExecution.shared.begin(taskID: taskID, title: title, subtitle: subtitle, totalUnitCount: totalUnitCount,
                 onExpiration: { [report] in
+                    // Timestamp synchronously at callback entry; the MainActor
+                    // projection may run after cancellation has already begun.
+                    report.hostInvocations.recordExpiration()
                     Task { @MainActor in report.value.backgroundExpired = true; report.event("background_expired") }
                     onExpiration()
                 })
@@ -1127,8 +1393,10 @@ enum DebugNetworkRunAcceptance {
             report.event("notification_checked")
             await base.notify(runID: runID, state: state, systemActivityUpdated: systemActivityUpdated)
             // This snapshot establishes API delivery, not visible system UI.
-            // No polling or delay is added to the host's completion path.
+            // Late reads run independently; they do not hold the host lease or
+            // delay completion. Their absence after OS suspension is not a pass.
             await client.snapshot(runID: runID)
+            client.scheduleLateSnapshots(runID: runID)
         }
     }
 
@@ -1168,16 +1436,29 @@ enum DebugNetworkRunAcceptance {
         }
         func removePendingRequests(withIdentifiers identifiers: [String]) { base.removePendingRequests(withIdentifiers: identifiers) }
         func removeDeliveredNotifications(withIdentifiers identifiers: [String]) { base.removeDeliveredNotifications(withIdentifiers: identifiers) }
+        func scheduleLateSnapshots(runID: UUID) {
+            guard let evidence = report.value.notifications.first(where: { $0.runID == runID }),
+                  !evidence.lateSnapshotsScheduled else { return }
+            update(runID) { $0.lateSnapshotsScheduled = true }
+            Task { @MainActor [self] in
+                let clock = ContinuousClock(), start = ContinuousClock.now
+                for offset in [1, 3, 5] {
+                    do { try await Task.sleep(until: start.advanced(by: .seconds(offset)), clock: clock) }
+                    catch { return }
+                    await snapshot(runID: runID)
+                }
+            }
+        }
         func snapshot(runID: UUID) async {
+            guard let evidence = report.value.notifications.first(where: { $0.runID == runID }),
+                  evidence.deliverySnapshots.count < 4 else { return }
             defer { if currentRunID == runID { currentRunID = nil } }
             let center = UNUserNotificationCenter.current()
             // Read only identifiers, discarding every other run before storing.
             let pending = await center.pendingNotificationRequests().map(\.identifier)
             let delivered = await center.deliveredNotifications().map(\.request.identifier)
             update(runID) {
-                $0.pendingIdentifiers = NotificationEvidence.matching(pending, runID: runID)
-                $0.deliveredIdentifiers = NotificationEvidence.matching(delivered, runID: runID)
-                $0.observedAt = Date()
+                $0.recordSnapshot(pending: pending, delivered: delivered, uptime: ProcessInfo.processInfo.systemUptime)
             }
         }
     }
@@ -1188,11 +1469,15 @@ enum DebugNetworkRunAcceptance {
 struct DebugNetworkRunAcceptanceTargetView: View {
     var body: some View {
         Group {
-            if DebugNetworkRunAcceptance.showsContinuation { RootView() }
+            if DebugNetworkRunAcceptance.showsContinuation || showsFailedResult { RootView() }
             else if DebugNetworkRunAcceptance.waitsForBluetoothSetup { RootView(initialDestination: .device) }
             else { OwnedDeviceCheckView().background(NetworkRunTouchProbe()).onAppear { DebugNetworkRunAcceptance.inputTargetAppeared() } }
         }
         .overlay(alignment: .top) { DebugNetworkRunAcceptanceStatusView() }
+    }
+    private var showsFailedResult: Bool {
+        guard let status = DebugNetworkRunAcceptance.automationStatus else { return false }
+        return status.phase == "cleanupIncomplete" || (status.phase == "finished" && status.state == "failed")
     }
 }
 
@@ -1201,12 +1486,19 @@ struct DebugNetworkRunAcceptanceTargetView: View {
 struct DebugNetworkRunAcceptanceStatusView: View {
     var body: some View {
         if let status = DebugNetworkRunAcceptance.automationStatus {
-            Text(verbatim: status.phase)
-                .font(.caption2.monospaced()).padding(4)
-                .background(.regularMaterial, in: Capsule())
-                .allowsHitTesting(false)
-                .accessibilityIdentifier("networkRunAcceptanceState")
-                .accessibilityValue(status.encoded)
+            VStack(spacing: 4) {
+                Text(verbatim: status.phase)
+                    .font(.caption2.monospaced()).padding(4)
+                    .background(.regularMaterial, in: Capsule())
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("networkRunAcceptanceState")
+                    .accessibilityValue(status.encoded)
+                if status.phase == "awaiting_explicit_reconnection", status.recoveryReady {
+                    Button("Verify reconnected owned target") { DebugNetworkRunAcceptance.requestRecoveryVerification() }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("networkRecoveryVerifyButton")
+                }
+            }
         }
     }
 }
@@ -1388,6 +1680,9 @@ actor NetworkAcceptanceScriptEngine: AgentEngine {
                 report.value.missingToolName = missing?.rawValue
             }
             guard missing == nil else { throw DebugNetworkRunAcceptance.Failure.missingTool }
+            if execution == .continuation, plan.injectsStaleStop {
+                try await DebugNetworkRunAcceptance.injectStaleStop(requestID: request.requestID)
+            }
             let observation = try await call(.screenshot, arguments: [:], request: request, consumed: &consumed, continuation: continuation)
             let id = try frameID(in: observation)
             if execution == .continuation {
@@ -1404,6 +1699,20 @@ actor NetworkAcceptanceScriptEngine: AgentEngine {
                     }
                     report.event("explicit_continuation_observed")
                 }
+            } else if plan.kind == .externalVPNLoss {
+                await MainActor.run { report.value.initialFrameID = id }
+                _ = try await call(.home, arguments: ["frameId": .string(id.uuidString)],
+                    request: request, consumed: &consumed, continuation: continuation)
+                try await DebugNetworkRunAcceptance.waitForBackground(timeoutSeconds: 5)
+                await report.event("awaiting_external_vpn_loss")
+                let deadline = clock.now.advanced(by: .seconds(plan.recoveryWaitSeconds))
+                // No tool execution after this boundary. Only the real tunnel
+                // callback can cancel the host-owned run; a timeout is a failure.
+                while clock.now < deadline {
+                    try Task.checkCancellation()
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                throw DebugNetworkRunAcceptance.Failure.externalLossTimedOut
             } else if plan.kind == .appReturn {
                 guard let ownBundleID = await MainActor.run(body: { Bundle.main.bundleIdentifier }) else {
                     throw DebugNetworkRunAcceptance.Failure.invalidArguments
@@ -1624,7 +1933,12 @@ actor NetworkAcceptanceScriptEngine: AgentEngine {
         let call = AgentToolCall(id: UUID().uuidString, name: spec.rawValue, arguments: arguments)
         continuation.yield(.toolStarted(call))
         let result: AgentToolResult
-        do { result = try await tool.execute(arguments) }
+        do {
+            // This counts host executor entries, including throws, not native
+            // dispatch/RPC submissions or only successfully returned tools.
+            report.hostInvocations.record(spec)
+            result = try await tool.execute(arguments)
+        }
         catch {
             let outcome: AgentToolOutcome = error is CancellationError ? .interrupted : ((error as? AgentToolError) == .outcomeUnknown ? .unknown : .failed)
             let completion = AgentToolCompletion(call: call, result: .init(content: [], outcome: outcome))

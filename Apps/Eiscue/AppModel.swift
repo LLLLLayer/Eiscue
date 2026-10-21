@@ -169,6 +169,10 @@ final class AppModel {
     @ObservationIgnored var companionLastStatus: BluetoothCompanionStatus?
     @ObservationIgnored var companionFinalizingRunID: UUID?
     let localTunnel = LocalTunnelManager()
+    @ObservationIgnored private let refreshLocalTunnel: @MainActor (LocalTunnelManager) async throws -> Void
+    @ObservationIgnored private var foregroundReconciliation: Task<Void, Never>?
+    @ObservationIgnored private var sceneRevision = UUID()
+    var isReconcilingForegroundTunnel: Bool { currentScenePhase == .active && foregroundReconciliation != nil }
     let taskNotifications: any RunNotifying
     var deviceTools: DeviceToolSession? { runCoordinator.current?.tools }
     @ObservationIgnored let background: any RunBackgroundExecuting
@@ -208,6 +212,7 @@ final class AppModel {
          credentialStore suppliedCredentials: CredentialStore? = nil,
          operatingSystemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
          background: (any RunBackgroundExecuting)? = nil, notifications: (any RunNotifying)? = nil,
+         refreshLocalTunnel: @escaping @MainActor (LocalTunnelManager) async throws -> Void = { try await $0.refresh() },
          agentFactory: @escaping AgentFactory = { configuration, directory, tools in
              if let configuration { AgentClient(configuration: configuration, storageDirectory: directory, tools: tools) }
              else { AgentClient(storageDirectory: directory) }
@@ -215,6 +220,7 @@ final class AppModel {
         deviceSession = DeviceSession(client: DeviceBuildCapabilities.makeClient(), operatingSystemVersion: operatingSystemVersion)
         self.background = background ?? BackgroundExecution.shared
         self.agentFactory = agentFactory
+        self.refreshLocalTunnel = refreshLocalTunnel
         deviceOperatingSystemVersion = operatingSystemVersion
         let files = FileManager.default
         var directory = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Eiscue", isDirectory: true)
@@ -701,9 +707,33 @@ final class AppModel {
 
     func sceneChanged(_ phase: ScenePhase) {
         currentScenePhase = phase
+        let revision = UUID()
+        sceneRevision = revision
+        foregroundReconciliation?.cancel()
+        foregroundReconciliation = nil
         if phase == .background { deviceSession.handle(.backgrounded); invalidateDictationDeviceRestoration() }
         if phase == .active {
-            dictationSession.resumeRestorationAfterForegrounding()
+            // Status notifications may not have been processed while suspended.
+            // Read the existing configuration before waking a borrowed connection.
+            foregroundReconciliation = Task { [weak self] in
+                guard let self, self.sceneRevision == revision, self.currentScenePhase == .active, !Task.isCancelled else { return }
+                defer { if self.sceneRevision == revision { self.foregroundReconciliation = nil } }
+                do { try await self.refreshLocalTunnel(self.localTunnel) }
+                catch {
+                    guard self.sceneRevision == revision, self.currentScenePhase == .active, !Task.isCancelled else { return }
+                    self.connectionMessage = error.localizedDescription
+                    // An unreadable VPN state cannot authorize its pending
+                    // restoration. Other routes do not depend on this tunnel.
+                    if self.dictationDeviceRestoration?.method == .localVPN {
+                        self.invalidateDictationDeviceRestoration()
+                        return
+                    }
+                }
+                guard self.sceneRevision == revision, self.currentScenePhase == .active, !Task.isCancelled else { return }
+                self.foregroundReconciliation = nil
+                self.dictationSession.resumeRestorationAfterForegrounding()
+            }
+            if dictationDeviceRestoration?.method != .localVPN { dictationSession.resumeRestorationAfterForegrounding() }
             refreshPairingTransfer()
             Task { await taskNotifications.refreshAuthorization() }
         }

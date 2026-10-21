@@ -10,6 +10,7 @@ import Synchronization
 @MainActor @Observable final class OwnedDeviceCheckState {
     static let shared = OwnedDeviceCheckState()
     var count = 0
+    var isVisible = false
     var button = CGRect.zero
     var scroll = CGRect.zero
     var field = CGRect.zero
@@ -100,6 +101,8 @@ struct OwnedDeviceCheckView: View {
             .probeFrame("layout")
         }
         .background(OwnedWindowProbe(proof: proof))
+        .onAppear { proof.isVisible = true }
+        .onDisappear { proof.isVisible = false }
         .onPreferenceChange(ProbeFrames.self) { frames in
             Task { @MainActor in
                 if let rect = frames["button"] { proof.button = rect }
@@ -214,7 +217,83 @@ struct OwnedDeviceCheckView: View {
     }
 }
 
+/// Metadata-only recovery evidence. The old observation is retained in memory;
+/// no original/fresh screenshot bytes, input coordinates or identity are exported.
+struct OwnedRecoveryObservation: Sendable {
+    let frameID: UUID
+    let point: DevicePoint
+    let count: Int
+    let imageBytes: Int
+    let uptime: TimeInterval
+}
+struct OwnedRecoveryVerification: Encodable, Sendable {
+    var oldFrameID: UUID?
+    var oldFrameAgeSeconds: Double?
+    var oldFrameRejectedWithoutEffect: Bool?
+    var freshFrameID: UUID
+    var freshImageBytes: Int
+    var countBefore: Int
+    var countAfter: Int
+    var postTapFrameID: UUID
+    var postTapImageBytes: Int
+    var tapVerified: Bool
+}
+enum OwnedRecoveryFailure: String, Error {
+    case oldFrameAccepted, oldFrameChangedTarget, freshTapNotObserved
+}
+
 extension AppModel {
+    #if !EISCUE_HID_ONLY
+    /// Caller holds the setup lease; this never connects, changes preferences or
+    /// exports mismatch images through the broader standalone Owned diagnostic.
+    func captureOwnedRecoveryObservation() async throws -> OwnedRecoveryObservation {
+        let proof = OwnedDeviceCheckState.shared
+        guard proof.isVisible, UIApplication.shared.applicationState == .active,
+              deviceConnectionMethod == .localVPN, activeDeviceConnectionMethod == .localVPN,
+              isDeviceReady, deviceSession.owner == .setup else { throw DeviceControlError.notConnected }
+        proof.usesFixedScreenCoordinates = deviceControlBackend.resolved(on: ProcessInfo.processInfo.operatingSystemVersion) == .coreDevice
+        let before = try await ownedGeometry(proof)
+        let frame = try await deviceClient.captureScreenshot()
+        proof.observeWindow(proof.window)
+        let after = try OwnedSceneGeometry(proof: proof)
+        guard proof.isVisible, before.matches(after) else { throw DeviceControlError.staleFrame }
+        try after.validateImage(frame)
+        let point = try after.point(CGPoint(x: after.button.midX, y: after.button.midY), frame: frame)
+        return OwnedRecoveryObservation(frameID: frame.frameID, point: point, count: proof.count,
+                                        imageBytes: frame.data.count, uptime: ProcessInfo.processInfo.systemUptime)
+    }
+
+    func verifyOwnedRecovery(old: OwnedRecoveryObservation?) async throws -> OwnedRecoveryVerification {
+        let proof = OwnedDeviceCheckState.shared
+        guard proof.isVisible, UIApplication.shared.applicationState == .active,
+              isDeviceReady, deviceSession.owner == .setup else { throw DeviceControlError.notConnected }
+        var oldRejected: Bool?
+        var oldAge: Double?
+        if let old {
+            let before = proof.count
+            oldAge = ProcessInfo.processInfo.systemUptime - old.uptime
+            do { try await deviceClient.tap(at: old.point, frameID: old.frameID) }
+            catch DeviceControlError.staleFrame { oldRejected = true }
+            // An unexpectedly accepted old action is never followed by another input.
+            guard oldRejected == true else { throw OwnedRecoveryFailure.oldFrameAccepted }
+            try await Task.sleep(for: .milliseconds(400))
+            guard proof.count == before else { throw OwnedRecoveryFailure.oldFrameChangedTarget }
+        }
+        let fresh = try await captureOwnedRecoveryObservation()
+        guard fresh.frameID != old?.frameID else { throw DeviceControlError.staleFrame }
+        try await deviceClient.tap(at: fresh.point, frameID: fresh.frameID)
+        try await Task.sleep(for: .milliseconds(400))
+        guard proof.count == fresh.count + 1 else { throw OwnedRecoveryFailure.freshTapNotObserved }
+        let after = try await captureOwnedRecoveryObservation()
+        guard after.frameID != fresh.frameID else { throw DeviceControlError.staleFrame }
+        return OwnedRecoveryVerification(oldFrameID: old?.frameID, oldFrameAgeSeconds: oldAge,
+            oldFrameRejectedWithoutEffect: oldRejected, freshFrameID: fresh.frameID, freshImageBytes: fresh.imageBytes,
+            countBefore: fresh.count, countAfter: after.count, postTapFrameID: after.frameID,
+            postTapImageBytes: after.imageBytes, tapVerified: after.count == fresh.count + 1)
+    }
+
+    #endif
+
     private func ownedGeometry(_ proof: OwnedDeviceCheckState, orientation: UIInterfaceOrientation? = nil,
                                request: OwnedGeometryRequest? = nil) async throws -> OwnedSceneGeometry {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))

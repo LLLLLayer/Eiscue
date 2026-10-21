@@ -7,6 +7,127 @@ import XCTest
 
 @MainActor
 final class DebugNetworkRunAcceptanceTests: XCTestCase {
+    func testRecoveryLossAndSettlementReadObservedCountBeforeMutatingObservableValue() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let report = DebugNetworkRunAcceptance.Report(directory: directory, reportDestination: directory.appendingPathComponent("report.json"))
+        report.value.recovery = .init(processID: 1)
+        report.value.observedToolCalls = 2
+        report.recordRecoveryLoss(duringOwnedRun: true, uptime: 10)
+        XCTAssertEqual(report.value.recovery?.toolsAtLoss, 2)
+        XCTAssertEqual(report.value.recovery?.lossObserved, true)
+        XCTAssertEqual(report.value.recovery?.lossDuringOwnedRun, true)
+        XCTAssertEqual(report.value.recovery?.lossObservedUptime, 10)
+        XCTAssertEqual(report.hostInvocations.snapshot().lossUptime, 10)
+        report.value.observedToolCalls = 3
+        report.recordRecoverySettlement()
+        XCTAssertEqual(report.value.recovery?.toolsAfterSettlement, 3)
+        XCTAssertEqual(report.value.recovery?.toolsAtLoss, 2)
+        report.save()
+        let data = try Data(contentsOf: directory.appendingPathComponent("report.json"))
+        let metadata = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let recovery = try XCTUnwrap(metadata["recovery"] as? [String: Any])
+        XCTAssertEqual(recovery["toolsAtLoss"] as? Int, 2)
+        XCTAssertEqual(recovery["toolsAfterSettlement"] as? Int, 3)
+    }
+
+    func testVPNRecoveryRejectsUnrelatedRoutesAndContinuationFlags() throws {
+        for kind in ["idleVPNRecovery", "externalVPNLoss"] {
+            for backend in ["coreDevice", "xcTest"] {
+                let base = ["--network-run-backend", backend, "--network-run-case", kind]
+                let plan = try DebugNetworkRunAcceptance.Plan(arguments: base)
+                XCTAssertTrue(plan.verifiesVPNRecovery)
+                XCTAssertTrue(plan.usesAcceptanceTarget)
+                XCTAssertFalse(plan.allowsExplicitContinuation)
+                XCTAssertFalse(plan.injectsStaleStop)
+                XCTAssertEqual(plan.requiredTools, kind == "externalVPNLoss" ? [.screenshot, .home] : [])
+                for extra in [["--network-run-route", "usbBoard"], ["--network-run-route", "bluetoothBoard"],
+                              ["--network-run-inject-stale-stop"], ["--network-run-allow-explicit-continuation"],
+                              ["--network-run-cancel-after-seconds", "1"]] {
+                    XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: base + extra))
+                }
+            }
+        }
+    }
+
+    func testStaleStopInjectionRequiresExplicitLocalVPNContinuation() throws {
+        let base = ["--network-run-backend", "xcTest", "--network-run-case", "inflightStop"]
+        XCTAssertThrowsError(try DebugNetworkRunAcceptance.Plan(arguments: base + ["--network-run-inject-stale-stop"]))
+        let plan = try DebugNetworkRunAcceptance.Plan(arguments: base + ["--network-run-allow-explicit-continuation", "--network-run-inject-stale-stop"])
+        XCTAssertTrue(plan.injectsStaleStop)
+        XCTAssertTrue(plan.allowsExplicitContinuation)
+    }
+
+    func testHostInvocationTraceRetainsPostEventTotalsAfterTruncation() {
+        let recorder = NetworkAcceptanceHostExecutionRecorder()
+        recorder.record(.screenshot, uptime: 1)
+        recorder.recordExpiration(uptime: 2)
+        recorder.record(.home, uptime: 3)
+        recorder.recordObservedVPNLoss(uptime: 4)
+        for time in 5...140 { recorder.record(.screenshot, uptime: Double(time)) }
+        recorder.recordExpiration(uptime: 150)
+        recorder.recordObservedVPNLoss(uptime: 151)
+        let snapshot = recorder.snapshot()
+        XCTAssertEqual(snapshot.total, 138)
+        XCTAssertEqual(snapshot.expirationUptime, 2)
+        XCTAssertEqual(snapshot.lossUptime, 4)
+        XCTAssertEqual(snapshot.hostExecuteCallsAfterExpiration, 137)
+        XCTAssertEqual(snapshot.hostExecuteCallsAfterObservedVPNLoss, 136)
+        XCTAssertEqual(snapshot.invocations.count, 128)
+        XCTAssertTrue(snapshot.truncated)
+        XCTAssertEqual(Set(snapshot.invocations.map(\.tool)), [DeviceToolSpec.screenshot.rawValue, DeviceToolSpec.home.rawValue])
+    }
+
+    func testThrowingExecutorStillCountsOneHostEntryAndNoSuccessfulTool() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let report = DebugNetworkRunAcceptance.Report(directory: directory, reportDestination: directory.appendingPathComponent("report.json"))
+        let store = NetworkAcceptanceScriptStore(directory: directory.appendingPathComponent("Admission"))
+        let plan = try DebugNetworkRunAcceptance.Plan(arguments: ["--network-run-backend", "xcTest"])
+        let tools = [
+            AgentTool(name: DeviceToolSpec.screenshot.rawValue, description: "", parameters: [:], mayHaveSideEffects: false) { _ in
+                throw AgentToolError.outcomeUnknown
+            },
+            AgentTool(name: DeviceToolSpec.home.rawValue, description: "", parameters: [:]) { _ in
+                XCTFail("No further executor may run after the failed observation.")
+                throw AgentToolError.outcomeUnknown
+            }
+        ]
+        let engine = NetworkAcceptanceScriptEngine(plan: plan, tools: tools, store: store, report: report)
+        let request = AgentRequest(conversationID: UUID(), prompt: DebugNetworkRunAcceptance.prompt)
+        do {
+            for try await _ in try await engine.run(request: request) {}
+            XCTFail("The failed executor must remain a failed diagnostic.")
+        } catch { XCTAssertEqual(error as? AgentToolError, .outcomeUnknown) }
+        try await engine.cancel()
+        XCTAssertEqual(report.value.observedToolCalls, 0)
+        XCTAssertEqual(report.value.hostExecuteCalls, 1)
+        XCTAssertEqual(report.value.hostExecutionInvocations.map(\.tool), [DeviceToolSpec.screenshot.rawValue])
+        XCTAssertEqual(report.value.hostExecuteCallsAfterExpiration, 0)
+        XCTAssertEqual(report.value.hostExecuteCallsAfterObservedVPNLoss, 0)
+        let unowned = await store.isUnowned
+        XCTAssertTrue(unowned)
+    }
+
+    func testLateNotificationSnapshotsAreBoundedAndDiscardOtherIdentifiers() throws {
+        let id = UUID(), other = UUID()
+        let expected = DebugNetworkRunAcceptance.NotificationEvidence.identifier(for: id)
+        var evidence = DebugNetworkRunAcceptance.NotificationEvidence(runID: id, identifier: expected)
+        evidence.recordSnapshot(pending: ["private-unrelated"], delivered: [], uptime: 0)
+        evidence.recordSnapshot(pending: [expected], delivered: [], uptime: 1)
+        evidence.recordSnapshot(pending: [], delivered: [expected, expected,
+            DebugNetworkRunAcceptance.NotificationEvidence.identifier(for: other)], uptime: 3)
+        evidence.recordSnapshot(pending: [], delivered: [expected], uptime: 5)
+        evidence.recordSnapshot(pending: ["private-late"], delivered: [], uptime: 6)
+        XCTAssertEqual(evidence.deliverySnapshots.map(\.uptime), [0, 1, 3, 5])
+        XCTAssertEqual(evidence.deliverySnapshots.map(\.pendingCount), [0, 1, 0, 0])
+        XCTAssertEqual(evidence.deliverySnapshots.map(\.deliveredCount), [0, 0, 1, 1])
+        XCTAssertEqual(evidence.deliveredIdentifiers, [expected])
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self).contains("private"))
+    }
+
     func testExplicitContinuationIsOptInAndLimitedToLocalVPNInflightStop() throws {
         let base = ["--network-run-backend", "xcTest", "--network-run-case", "inflightStop"]
         XCTAssertFalse(try DebugNetworkRunAcceptance.Plan(arguments: base).allowsExplicitContinuation)
@@ -150,7 +271,7 @@ final class DebugNetworkRunAcceptanceTests: XCTestCase {
         let snapshot = DebugNetworkRunAcceptance.AutomationStatus(metadata, selectedInputRoute: "bluetooth", needsCalibration: false)
         let data = Data(snapshot.encoded.utf8)
         let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(Set(keys.keys), ["sessionID", "phase", "state", "route", "inputRoute", "acceptanceCase", "selectedInputRoute", "needsCalibration"])
+        XCTAssertEqual(Set(keys.keys), ["sessionID", "phase", "state", "route", "inputRoute", "acceptanceCase", "selectedInputRoute", "needsCalibration", "recoveryLossObserved", "recoveryReady", "staleStopRequired"])
         XCTAssertFalse(snapshot.encoded.contains("private"))
         XCTAssertEqual(try JSONDecoder().decode(DebugNetworkRunAcceptance.AutomationStatus.self, from: data), snapshot)
     }

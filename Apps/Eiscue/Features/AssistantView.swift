@@ -135,6 +135,9 @@ struct AssistantView: View {
                     Text(String(localized: cancellingVoiceRestorationID == nil
                         ? "speech.deviceReconnecting" : "speech.deviceReconnectCancelling", table: "Speech"))
                         .accessibilityIdentifier("speechDeviceRestorationStatus")
+                        #if DEBUG
+                        .accessibilityValue(dictation.acceptanceAccessibilityStatus)
+                        #endif
                     Button(String(localized: "speech.cancelDeviceReconnection", table: "Speech"), action: cancelVoiceRestoration)
                         .disabled(cancellingVoiceRestorationID != nil)
                         .accessibilityIdentifier("cancelSpeechDeviceRestorationButton")
