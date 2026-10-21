@@ -38,18 +38,19 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
     }
 
     private enum RecoveryCase: String { case background, backendSelection }
-    private enum CheckFailure: Error { case unmet(String) }
+    private enum CheckFailure: Error { case unmet(StaticString) }
 
     @MainActor
     private func runRecoveryCase(_ recoveryCase: RecoveryCase) throws {
         let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
-        var metadata: [String: Any] = [
+        let evidence = Evidence(testCase: self, recoveryCase: recoveryCase, metadata: [
             "helper": "voiceRecoveryBoundary", "case": recoveryCase.rawValue,
             "startedAt": Date().timeIntervalSince1970,
             "caseValidation": "pendingAppDiagnosticCorrelation", "realSpeechRequired": false,
             "audioOrDraftExported": false, "appLaunchAttempted": false,
             "connectionAttemptedByHelper": false, "permissionChangedByHelper": false
-        ]
+        ])
+        addTeardownBlock { await evidence.attach() }
         var scope: InteractionScope?
         var ownsRequest = false
         var captureUIEnded = false
@@ -59,9 +60,11 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
             // A failed timing check must not leave this helper's microphone or
             // restoration running. Cleanup is a separate event, never a pass.
             if !completed, ownsRequest {
-                metadata["failureCleanupStartedAt"] = Date().timeIntervalSince1970
-                metadata["failureCleanupWaitLimitSeconds"] = 45
-                metadata["failureCleanupRemoteReleaseVerified"] = false
+                evidence.metadata["failureCleanupStartedAt"] = Date().timeIntervalSince1970
+                evidence.metadata["failureCleanupWaitLimitSeconds"] = 45
+                evidence.metadata["failureCleanupRemoteReleaseVerified"] = false
+                evidence.metadata["failureCleanupUIConfirmed"] = false
+                evidence.metadata["failureCleanupUIUnconfirmed"] = true
                 let deadline = ContinuousClock.now.advanced(by: .seconds(45))
                 let cancel = app.buttons["cancelDictationButton"]
                 let restoration = app.buttons["cancelSpeechDeviceRestorationButton"]
@@ -82,7 +85,7 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                         quietSince = nil
                         if !captureCancelRequested, cancel.isEnabled, cancel.isHittable {
                             captureCancelRequested = true
-                            metadata["failureCaptureCancelRequestedAt"] = Date().timeIntervalSince1970
+                            evidence.metadata["failureCaptureCancelRequestedAt"] = Date().timeIntervalSince1970
                             cancel.tap()
                         }
                     } else {
@@ -95,7 +98,7 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                             if !restorationCancelRequested, restoration.exists,
                                restoration.isEnabled, restoration.isHittable {
                                 restorationCancelRequested = true
-                                metadata["failureRestorationCancelRequestedAt"] = Date().timeIntervalSince1970
+                                evidence.metadata["failureRestorationCancelRequestedAt"] = Date().timeIntervalSince1970
                                 restoration.tap()
                             }
                         } else if voiceMode.exists && voiceMode.isEnabled && voiceMode.activityIndicators.count == 0 {
@@ -108,22 +111,15 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                     }
                     Thread.sleep(forTimeInterval: 0.1)
                 } while ContinuousClock.now < deadline
-                metadata["failureCleanupUIConfirmed"] = uiConfirmed
-                metadata["failureCleanupUIUnconfirmed"] = !uiConfirmed
-                metadata["failureCleanupFinishedAt"] = Date().timeIntervalSince1970
+                evidence.metadata["failureCleanupUIConfirmed"] = uiConfirmed
+                evidence.metadata["failureCleanupUIUnconfirmed"] = !uiConfirmed
+                evidence.metadata["failureCleanupFinishedAt"] = Date().timeIntervalSince1970
                 ownsRequest = false
             }
-            metadata["interactionOptionsRestored"] = scope?.restore() ?? true
-            metadata["finishedAt"] = Date().timeIntervalSince1970
-            if let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]),
-               let text = String(data: data, encoding: .utf8) {
-                let attachment = XCTAttachment(string: text)
-                attachment.name = "Voice recovery boundary — \(recoveryCase.rawValue) — metadata only"
-                attachment.lifetime = .keepAlways
-                add(attachment)
-            }
+            evidence.metadata["interactionOptionsRestored"] = scope?.restore() ?? true
+            evidence.attach()
         }
-        func require(_ condition: Bool, _ message: String) throws {
+        func require(_ condition: Bool, _ message: StaticString) throws {
             guard condition else { throw CheckFailure.unmet(message) }
         }
         func wait(seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
@@ -135,9 +131,9 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
             return false
         }
         func act(_ name: String, _ action: () -> Void) {
-            metadata[name + "RequestedAt"] = Date().timeIntervalSince1970
+            evidence.metadata[name + "RequestedAt"] = Date().timeIntervalSince1970
             action()
-            metadata[name + "ReturnedAt"] = Date().timeIntervalSince1970
+            evidence.metadata[name + "ReturnedAt"] = Date().timeIntervalSince1970
         }
         let ready = ["Ready to control", "设备操作已就绪"]
         let readyBadge = ["Ready", "已就绪"]
@@ -173,7 +169,7 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
             act("requestCapture") { record.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
             try require(wait(seconds: 15) { Self.hasNonzeroCapture(record) },
                         "Actual nonzero PCM capture was not observed; no recovery case action was sent.")
-            metadata["nonzeroPCMObservedAt"] = Date().timeIntervalSince1970
+            evidence.metadata["nonzeroPCMObservedAt"] = Date().timeIntervalSince1970
             Thread.sleep(forTimeInterval: 2)
             try require(Self.hasNonzeroCapture(record), "Recording ended before the normal stop action.")
             act("stopCapture") { record.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
@@ -183,7 +179,7 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                     && !app.buttons["cancelDictationButton"].exists
             }, "The actual connect-returned-before-publish boundary was not observed; no late case action was sent.")
             captureUIEnded = true
-            metadata["actualConnectReturnedBoundaryObservedAt"] = Date().timeIntervalSince1970
+            evidence.metadata["actualConnectReturnedBoundaryObservedAt"] = Date().timeIntervalSince1970
             try require(editor.exists, "The completed utterance has not returned to the keyboard composer.")
             let completedDraft = try XCTUnwrap(editor.value as? String)
             try require(originalPrefix.isEmpty || completedDraft.hasPrefix(originalPrefix),
@@ -194,7 +190,7 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                 let picker = app.buttons["deviceControlBackendPicker"]
                 try require(picker.exists && !picker.isEnabled && picker.value as? String == "DisplayService",
                             "The real recovery must disable backend selection without changing its preference.")
-                metadata["busyBackendSelectionDisabled"] = true
+                evidence.metadata["busyBackendSelectionDisabled"] = true
                 returnToAssistant(in: app)
                 let cancel = app.buttons["cancelSpeechDeviceRestorationButton"]
                 try require(status.exists && status.value as? String == boundary
@@ -208,7 +204,7 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                 try require(wait(seconds: 5) {
                     app.state == .runningBackground || app.state == .runningBackgroundSuspended
                 }, "The existing App did not enter background.")
-                metadata["backgroundObservedAt"] = Date().timeIntervalSince1970
+                evidence.metadata["backgroundObservedAt"] = Date().timeIntervalSince1970
                 Thread.sleep(forTimeInterval: 3)
                 try require(app.state != .notRunning, "The existing App exited; this helper never relaunches it.")
                 act("returnToForeground") { app.activate() }
@@ -222,8 +218,8 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
             ownsRequest = false
             try require(editor.exists && editor.value as? String == completedDraft,
                         "The completed draft changed during recovery cancellation.")
-            metadata["cleanupUIFinishedAt"] = Date().timeIntervalSince1970
-            metadata["completedDraftPreserved"] = true
+            evidence.metadata["cleanupUIFinishedAt"] = Date().timeIntervalSince1970
+            evidence.metadata["completedDraftPreserved"] = true
             let lateDeadline = ContinuousClock.now.advanced(by: .seconds(3))
             repeat {
                 try require(!readyBadge.contains(app.buttons["deviceNavigationLink"].value as? String ?? "")
@@ -231,7 +227,7 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                             "Old recovery published late Ready, restarted recovery or started capture.")
                 Thread.sleep(forTimeInterval: 0.1)
             } while ContinuousClock.now < lateDeadline
-            metadata["lateReadyObservationSeconds"] = 3
+            evidence.metadata["lateReadyObservationSeconds"] = 3
             openDevice(in: app)
             let picker = app.buttons["deviceControlBackendPicker"]
             try require(picker.isEnabled && app.switches["deviceControlToggle"].isEnabled
@@ -244,8 +240,8 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                 }
                 try require(wait(seconds: 15) { picker.exists && picker.isEnabled && picker.value as? String == "XCTest" },
                             "The explicit backend preference did not settle after cleanup.")
-                metadata["explicitXCTestSelectionSettled"] = true
-                metadata["leavesSelectedBackendXCTest"] = true
+                evidence.metadata["explicitXCTestSelectionSettled"] = true
+                evidence.metadata["leavesSelectedBackendXCTest"] = true
                 let noConnectDeadline = ContinuousClock.now.advanced(by: .seconds(3))
                 repeat {
                     try require(!ready.contains(app.staticTexts["devicePairingComplete"].label)
@@ -254,14 +250,48 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                     Thread.sleep(forTimeInterval: 0.1)
                 } while ContinuousClock.now < noConnectDeadline
             }
-            metadata["uiChecksPassed"] = true
+            evidence.metadata["uiChecksPassed"] = true
             completed = true
         } catch CheckFailure.unmet(let message) {
-            metadata["checkFailed"] = true
+            evidence.recordFailure(message)
+            evidence.attach(phase: .failureBeforeCleanup)
             throw CheckFailure.unmet(message)
         } catch {
+            let reason: StaticString = "A required bounded UI observation was unavailable; inspect fixed metadata only."
+            evidence.recordFailure(reason)
+            evidence.attach(phase: .failureBeforeCleanup)
+            throw CheckFailure.unmet(reason)
+        }
+    }
+
+    @MainActor private final class Evidence {
+        enum Phase: String, Hashable { case failureBeforeCleanup, finished }
+        weak var testCase: XCTestCase?
+        let recoveryCase: RecoveryCase
+        var metadata: [String: Any]
+        private var attached: Set<Phase> = []
+        init(testCase: XCTestCase, recoveryCase: RecoveryCase, metadata: [String: Any]) {
+            self.testCase = testCase; self.recoveryCase = recoveryCase; self.metadata = metadata
+        }
+        func recordFailure(_ reason: StaticString) {
             metadata["checkFailed"] = true
-            throw CheckFailure.unmet("A required bounded UI observation was unavailable; inspect fixed metadata only.")
+            metadata["checkFailureReason"] = reason.description
+            metadata["checkFailureObservedAt"] = Date().timeIntervalSince1970
+        }
+        func attach(phase: Phase = .finished) {
+            guard !attached.contains(phase) else { return }
+            // No AX reads here: a failed cleanup lookup must not prevent the
+            // original fixed failure or the latest cleanup metadata exporting.
+            var snapshot = metadata
+            snapshot["evidencePhase"] = phase.rawValue
+            snapshot[phase == .finished ? "finishedAt" : "evidenceObservedAt"] = Date().timeIntervalSince1970
+            guard let data = try? JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys]),
+                  let text = String(data: data, encoding: .utf8) else { return }
+            attached.insert(phase)
+            let attachment = XCTAttachment(string: text)
+            attachment.name = "Voice recovery boundary — \(recoveryCase.rawValue) — \(phase.rawValue) — metadata only"
+            attachment.lifetime = .keepAlways
+            testCase?.add(attachment)
         }
     }
 

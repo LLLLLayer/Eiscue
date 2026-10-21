@@ -30,6 +30,7 @@ final class DictationRecoveryDiagnosticTests: XCTestCase {
         for _ in 0..<80 { old.record(.releaseDispatched) }
         let initial = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         XCTAssertEqual(Set(initial.keys), ["schemaVersion", "releaseBeforeDispatchWaitSeconds", "connectReturnedBeforePublishWaitSeconds", "events"])
+        XCTAssertEqual(initial["connectReturnedBeforePublishWaitSeconds"] as? Int, 0)
         XCTAssertEqual((initial["events"] as? [[String: Any]])?.count, 64)
         XCTAssertEqual(old.events.count, 64)
         let current = DictationRecoveryDiagnostic(configuration: configuration, outputURL: url)
@@ -61,6 +62,9 @@ final class DictationRecoveryDiagnosticTests: XCTestCase {
         catch is CancellationError { }
         XCTAssertFalse(diagnostic.waiting)
         XCTAssertEqual(diagnostic.events.map(\.phase), [.publishWaitEntered, .publishWaitCancelled])
+        let report = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            Data(contentsOf: directory.appendingPathComponent("diagnostic.json"))) as? [String: Any])
+        XCTAssertEqual(report["connectReturnedBeforePublishWaitSeconds"] as? Int, 30)
     }
 }
 #endif

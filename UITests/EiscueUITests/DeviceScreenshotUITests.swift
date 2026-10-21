@@ -46,6 +46,7 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
     ]
     private let stopLabels = ["Stop", "Stop Task", "Stop task", "Cancel", "Cancel Task", "Cancel task",
                               "停止", "停止任务", "取消", "取消任务"]
+    @MainActor private var activityEvidence: ActivityEvidence?
 
     @MainActor
     func testInspectEiscueSystemActivity() throws {
@@ -65,23 +66,16 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
         let start = Date().timeIntervalSince1970
-        var metadata: [String: Any] = [
+        let evidence = ActivityEvidence(testCase: self, app: app, metadata: [
             "action": action.rawValue, "startedAt": start, "waitLimitSeconds": 120,
             "appStateBefore": app.state.rawValue, "phase": "waitingForIdentifiedCard",
             "boundedImageAttached": false, "interactionAttempted": false, "tapAttempts": 0,
             "appAcceptanceVerified": false, "matchingRunVerified": false,
             "systemCompletionVerified": false
-        ]
-        defer {
-            metadata["finishedAt"] = Date().timeIntervalSince1970
-            metadata["appStateAfter"] = app.state.rawValue
-            if let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]) {
-                let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
-                attachment.name = "Eiscue system activity — metadata"
-                attachment.lifetime = .keepAlways
-                add(attachment)
-            }
-        }
+        ])
+        activityEvidence = evidence
+        addTeardownBlock { await evidence.attach() }
+        defer { evidence.attach() }
         let wantsRunning = action != .inspectTerminal
         try require(wantsRunning ? isBackground(app) : app.state != .notRunning,
                     "Keep Eiscue running, and background it before inspecting/cancelling an active task; this helper never launches or activates it.")
@@ -96,23 +90,25 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.25)
         } while ProcessInfo.processInfo.systemUptime < deadline
         guard let card = found else {
+            _ = matchingActivities(in: springboard, running: wantsRunning, diagnosticBoundary: "timeout")
             try require(false, "No unique bounded Eiscue card with a known \(wantsRunning ? "running" : "terminal") phase appeared within 120 seconds.")
             return
         }
+        _ = matchingActivities(in: springboard, running: wantsRunning, diagnosticBoundary: "identified")
         try require(isBackground(app), "The identified system card must be observed while Eiscue is still in the background.")
-        metadata["phase"] = "identifiedCard"
-        metadata["observedAt"] = Date().timeIntervalSince1970
-        metadata["card"] = cardMetadata(card)
+        evidence.metadata["phase"] = "identifiedCard"
+        evidence.metadata["observedAt"] = Date().timeIntervalSince1970
+        evidence.metadata["card"] = cardMetadata(card)
         let buttons = knownStopButtons(in: card)
-        metadata["knownCardControls"] = buttons.map(controlMetadata)
-        metadata["uniqueKnownStopControl"] = buttons.count == 1
+        evidence.metadata["knownCardControls"] = buttons.map(controlMetadata)
+        evidence.metadata["uniqueKnownStopControl"] = buttons.count == 1
         let screenshot = XCTAttachment(screenshot: card.element.screenshot())
         screenshot.name = "Eiscue system activity — bounded \(wantsRunning ? "running" : "terminal") card"
         screenshot.lifetime = .keepAlways
         add(screenshot)
-        metadata["boundedImageAttached"] = true
+        evidence.metadata["boundedImageAttached"] = true
         guard action == .cancel else {
-            metadata["phase"] = wantsRunning ? "runningCardObserved" : "terminalCardObserved"
+            evidence.metadata["phase"] = wantsRunning ? "runningCardObserved" : "terminalCardObserved"
             return
         }
 
@@ -134,10 +130,10 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
         let button = currentButtons[0]
         try require(isBackground(app) && springboard.alerts.count == 0 && button.isEnabled && button.isHittable,
                     "The App must remain backgrounded and its system activity control must still be actionable.")
-        metadata["phase"] = "systemCancelRequested"
-        metadata["requestedAt"] = Date().timeIntervalSince1970
-        metadata["interactionAttempted"] = true
-        metadata["tapAttempts"] = 1
+        evidence.metadata["phase"] = "systemCancelRequested"
+        evidence.metadata["requestedAt"] = Date().timeIntervalSince1970
+        evidence.metadata["interactionAttempted"] = true
+        evidence.metadata["tapAttempts"] = 1
         button.tap()
         let cancellationDeadline = ProcessInfo.processInfo.systemUptime + 15
         var runningCardEnded = false
@@ -151,10 +147,10 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.25)
         } while ProcessInfo.processInfo.systemUptime < cancellationDeadline
-        metadata["runningCardEndedOrDisappeared"] = runningCardEnded
+        evidence.metadata["runningCardEndedOrDisappeared"] = runningCardEnded
         try require(runningCardEnded, "The inspected activity still shows a running phase; no repeat action is sent.")
-        metadata["phase"] = "systemCancelActionObserved"
-        metadata["confirmedAt"] = Date().timeIntervalSince1970
+        evidence.metadata["phase"] = "systemCancelActionObserved"
+        evidence.metadata["confirmedAt"] = Date().timeIntervalSince1970
         // Correlate with the App's runID, backgroundExpired callback and cleanup
         // evidence. A vanished system card alone does not prove those outcomes.
     }
@@ -170,11 +166,17 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
         guard let candidates = matchingActivities(in: springboard, running: running) else { return nil }
         // AX may expose nested representations of one card. Disjoint siblings
         // remain ambiguous even if a larger container happens to wrap them.
-        guard candidates.allSatisfy({ first in
+        let nested = candidates.allSatisfy({ first in
             candidates.allSatisfy { second in
                 first.frame.contains(second.frame) || second.frame.contains(first.frame)
             }
-        }) else { return nil }
+        })
+        activityEvidence?.candidateDiagnostics["latestSelection"] = [
+            "observedAt": Date().timeIntervalSince1970, "eligibleCount": candidates.count,
+            "singleNestedGroup": !candidates.isEmpty && nested,
+            "rejectionReasons": candidates.isEmpty ? ["noEligibleCard"] : (nested ? [] : ["disjointEligibleCards"])
+        ]
+        guard nested else { return nil }
         return candidates.max {
             let firstArea = $0.frame.width * $0.frame.height, secondArea = $1.frame.width * $1.frame.height
             if firstArea == secondArea {
@@ -185,17 +187,32 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
-    private func matchingActivities(in springboard: XCUIApplication, running: Bool) -> [ActivityCard]? {
+    private func matchingActivities(in springboard: XCUIApplication, running: Bool,
+                                    diagnosticBoundary: String? = nil) -> [ActivityCard]? {
         let name = NSPredicate(format: "label CONTAINS[c] %@", "Eiscue")
         let descendants = springboard.descendants(matching: .any)
         let named = descendants.matching(name)
         let containingName = descendants.containing(NSPredicate(format: "label ==[c] %@", "Eiscue"))
         // Query Eiscue only. No hierarchy dump, unrelated text enumeration,
         // passcode field lookup or global Stop/Cancel-button search.
-        guard named.count <= 20, containingName.count <= 20 else { return nil }
+        let namedCount = named.count, containingCount = containingName.count
+        let overLimit = namedCount > 20 || containingCount > 20
+        let scan: [String: Any] = [
+            "observedAt": Date().timeIntervalSince1970, "uptime": ProcessInfo.processInfo.systemUptime,
+            "runningRequested": running, "namedCount": min(namedCount, 21),
+            "containingNameCount": min(containingCount, 21), "queryLimitExceeded": overLimit
+        ]
+        if activityEvidence?.candidateDiagnostics["firstScan"] == nil { activityEvidence?.candidateDiagnostics["firstScan"] = scan }
+        activityEvidence?.candidateDiagnostics["latestScan"] = scan
+        if overLimit {
+            activityEvidence?.candidateDiagnostics["lastOverLimitScan"] = scan
+            activityEvidence?.candidateDiagnostics["latestSelection"] = ["rejectionReasons": ["queryLimitExceeded"]]
+            return nil
+        }
         let screen = springboard.frame
         let statuses = running ? runningStatuses : terminalStatuses
-        return (named.allElementsBoundByIndex + containingName.allElementsBoundByIndex).compactMap { element -> ActivityCard? in
+        let elements = named.allElementsBoundByIndex + containingName.allElementsBoundByIndex
+        let cards = elements.compactMap { element -> ActivityCard? in
             guard [.other, .button, .cell].contains(element.elementType), element.isHittable else { return nil }
             let frame = element.frame
             guard frame.width > 120, frame.height > 35, frame.height < 350, screen.contains(frame) else { return nil }
@@ -205,6 +222,68 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
             if running, terminalStatuses.contains(where: { label.localizedCaseInsensitiveContains($0) || element.staticTexts[$0].exists }) { return nil }
             return ActivityCard(element: element, frame: frame, statuses: matched)
         }
+        if let evidence = activityEvidence,
+           let reason = evidence.candidateSnapshotReason(hasCandidates: !elements.isEmpty, boundary: diagnosticBoundary) {
+            // Detailed AX reads run at most three times: first nonempty,
+            // approximately 30 seconds, and identified/timeout. A transient
+            // first candidate survives a later empty scan. These rows never
+            // participate in card selection or cancellation authority.
+            let snapshot: [String: Any] = [
+                "observedAt": Date().timeIntervalSince1970, "uptime": ProcessInfo.processInfo.systemUptime,
+                "reason": reason, "candidateCount": elements.count, "truncated": elements.count > 20,
+                "candidates": elements.suffix(20).map { candidateMetadata($0, screen: screen, running: running) }
+            ]
+            evidence.candidateSnapshots.append(snapshot)
+            evidence.candidateDiagnostics["snapshots"] = evidence.candidateSnapshots
+        }
+        return cards
+    }
+
+    @MainActor
+    private func candidateMetadata(_ element: XCUIElement, screen: CGRect, running: Bool) -> [String: Any] {
+        let type = element.elementType, frame = element.frame, hittable = element.isHittable
+        let label = element.label
+        let nameMatch = label.localizedCaseInsensitiveContains("Eiscue")
+        let containsName = element.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ==[c] %@", "Eiscue")).count > 0
+        let known = runningStatuses + terminalStatuses
+        let texts = element.staticTexts.matching(NSPredicate(format: "label IN %@ OR identifier IN %@", known, known))
+        let textCount = texts.count
+        var knownValues = Set<String>()
+        for index in 0..<min(textCount, 8) {
+            let text = texts.element(boundBy: index)
+            // Only fixed allowlisted values survive this read. No arbitrary
+            // label, identifier, subtree or notification body is exported.
+            for value in [text.label, text.identifier] where known.contains(value) { knownValues.insert(value) }
+        }
+        let matchedRunning = runningStatuses.filter { label.localizedCaseInsensitiveContains($0) || knownValues.contains($0) }
+        let matchedTerminal = terminalStatuses.filter { label.localizedCaseInsensitiveContains($0) || knownValues.contains($0) }
+        let typeAccepted = [.other, .button, .cell].contains(type)
+        let finite = [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite)
+        let phaseMatched = !(running ? matchedRunning : matchedTerminal).isEmpty
+        let terminalConflict = running && !matchedTerminal.isEmpty
+        var rejected: [String] = []
+        if !typeAccepted { rejected.append("elementType") }
+        if !hittable { rejected.append("notHittable") }
+        if !finite { rejected.append("nonfiniteRect") }
+        if !(frame.width > 120) { rejected.append("widthTooSmall") }
+        if !(frame.height > 35) { rejected.append("heightTooSmall") }
+        if !(frame.height < 350) { rejected.append("heightTooLarge") }
+        if !screen.contains(frame) { rejected.append("outsideScreen") }
+        if !phaseMatched { rejected.append("requestedKnownPhaseMissing") }
+        if terminalConflict { rejected.append("terminalDuringRunningCheck") }
+        if textCount > 8 { rejected.append("diagnosticKnownTextLimitExceeded") }
+        func number(_ value: CGFloat) -> Any { value.isFinite ? value as Any : NSNull() }
+        return [
+            "type": type.rawValue, "isStaticText": type == .staticText,
+            "x": number(frame.minX), "y": number(frame.minY), "width": number(frame.width), "height": number(frame.height),
+            "hittable": hittable, "nameMatch": nameMatch, "containsExactName": containsName,
+            "knownRunningPhases": matchedRunning, "knownTerminalPhases": matchedTerminal,
+            "knownTextCount": min(textCount, 9), "knownTextLimit": 8, "typeAccepted": typeAccepted, "finiteRect": finite,
+            "widthAccepted": frame.width > 120, "heightAccepted": frame.height > 35 && frame.height < 350,
+            "insideScreen": screen.contains(frame), "requestedKnownPhaseMatched": phaseMatched,
+            "terminalConflict": terminalConflict, "rejectionReasons": rejected
+        ]
     }
 
     @MainActor
@@ -226,7 +305,7 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
     @MainActor
     private func controlMetadata(_ control: XCUIElement) -> [String: Any] {
         let frame = control.frame
-        return ["identifier": String(control.identifier.prefix(160)), "label": control.label,
+        return ["knownLabel": stopLabels.first(where: { $0 == control.label }) as Any? ?? NSNull(),
                 "enabled": control.isEnabled, "hittable": control.isHittable,
                 "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]
     }
@@ -238,5 +317,50 @@ final class SystemTaskAcceptanceUITests: XCTestCase {
 
     private func require(_ condition: Bool, _ message: String) throws {
         guard condition else { XCTFail(message); throw Failure.blocked }
+    }
+
+    @MainActor private final class ActivityEvidence {
+        weak var testCase: XCTestCase?
+        let app: XCUIApplication
+        var metadata: [String: Any]
+        var candidateDiagnostics: [String: Any] = ["candidateLimit": 20, "queryCountCap": 21, "snapshotLimit": 3]
+        var candidateSnapshots: [[String: Any]] = []
+        private let startedUptime = ProcessInfo.processInfo.systemUptime
+        private var capturedFirstNonempty = false
+        private var capturedTimed = false
+        private var capturedBoundary = false
+        private var attached = false
+        init(testCase: XCTestCase, app: XCUIApplication, metadata: [String: Any]) {
+            self.testCase = testCase; self.app = app; self.metadata = metadata
+        }
+        func candidateSnapshotReason(hasCandidates: Bool, boundary: String?) -> String? {
+            guard candidateSnapshots.count < 3 else { return nil }
+            if let boundary {
+                guard !capturedBoundary else { return nil }
+                capturedBoundary = true
+                return boundary
+            }
+            if hasCandidates && !capturedFirstNonempty {
+                capturedFirstNonempty = true
+                return "firstNonempty"
+            }
+            if !capturedTimed, ProcessInfo.processInfo.systemUptime - startedUptime >= 30 {
+                capturedTimed = true
+                return "after30Seconds"
+            }
+            return nil
+        }
+        func attach() {
+            guard !attached else { return }
+            metadata["finishedAt"] = Date().timeIntervalSince1970
+            metadata["appStateAfter"] = app.state.rawValue
+            metadata["candidateDiagnostics"] = candidateDiagnostics
+            guard let data = try? JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]) else { return }
+            attached = true
+            let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+            attachment.name = "Eiscue system activity — metadata"
+            attachment.lifetime = .keepAlways
+            testCase?.add(attachment)
+        }
     }
 }

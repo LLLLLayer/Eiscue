@@ -424,7 +424,7 @@ final class DictationRecoveryDiagnostic {
         // replace the report belonging to a later admitted recording.
         guard Self.current === self else { return }
         let report = Report(releaseBeforeDispatchWaitSeconds: configuration.beforeRelease ? 8 : 0,
-            connectReturnedBeforePublishWaitSeconds: configuration.beforePublish ? 12 : 0, events: events)
+            connectReturnedBeforePublishWaitSeconds: configuration.beforePublish ? 30 : 0, events: events)
         guard let data = try? JSONEncoder().encode(report) else { return }
         try? data.write(to: outputURL, options: [.atomic, .completeFileProtection])
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
@@ -443,7 +443,9 @@ final class DictationRecoveryDiagnostic {
         waiting = true
         record(.publishWaitEntered)
         do {
-            try await Task.sleep(for: .seconds(12))
+            // Leave the opt-in UI check time for an AX round trip between the
+            // Device page and composer after the real connection returns.
+            try await Task.sleep(for: .seconds(30))
             waiting = false
             record(.publishWaitFinished)
         } catch {
