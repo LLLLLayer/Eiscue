@@ -216,6 +216,12 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
             // The owned lifecycle is over. Later draft/selection assertions
             // must never grant cleanup authority over a newer task or capture.
             ownsRequest = false
+            // Only the real recovery boundary needs unquiesced interactions.
+            // Restore normal synchronization before later navigation/sheets.
+            let interactionsRestored = scope?.restore() ?? true
+            evidence.metadata["interactionOptionsRestoredAfterCleanup"] = interactionsRestored
+            try require(interactionsRestored, "The original XCTest interaction options were not restored after cleanup.")
+            evidence.metadata["interactionOptionsRestoredAfterCleanupAt"] = Date().timeIntervalSince1970
             try require(editor.exists && editor.value as? String == completedDraft,
                         "The completed draft changed during recovery cancellation.")
             evidence.metadata["cleanupUIFinishedAt"] = Date().timeIntervalSince1970
@@ -234,10 +240,17 @@ final class VoiceRecoveryAcceptanceUITests: XCTestCase {
                         && !ready.contains(app.staticTexts["devicePairingComplete"].label),
                         "Recovery cleanup retained ownership or published Ready.")
             if recoveryCase == .backendSelection {
-                act("selectBackendAfterCleanup") {
-                    picker.tap()
-                    app.buttons["deviceControlBackendChoice_xcTest"].tap()
-                }
+                try require(wait(seconds: 5) { picker.exists && picker.isEnabled && picker.isHittable },
+                            "The backend picker was not ready after cleanup.")
+                act("openBackendPickerAfterCleanup") { picker.tap() }
+                let choice = app.buttons["deviceControlBackendChoice_xcTest"]
+                try require(wait(seconds: 5) { choice.exists && choice.isEnabled && choice.isHittable },
+                            "The explicit XCTest choice was not ready in the backend sheet.")
+                evidence.metadata["backendChoiceReadyObservedAt"] = Date().timeIntervalSince1970
+                act("selectBackendAfterCleanup") { choice.tap() }
+                try require(wait(seconds: 5) { !choice.exists },
+                            "The backend sheet did not dismiss after the explicit XCTest choice.")
+                evidence.metadata["backendChoiceDismissedObservedAt"] = Date().timeIntervalSince1970
                 try require(wait(seconds: 15) { picker.exists && picker.isEnabled && picker.value as? String == "XCTest" },
                             "The explicit backend preference did not settle after cleanup.")
                 evidence.metadata["explicitXCTestSelectionSettled"] = true
