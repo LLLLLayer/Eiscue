@@ -37,6 +37,35 @@ final class NetworkRecoveryAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
+    func testAcknowledgeUnconfirmedMediaRelease() throws {
+        let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
+        let before = try XCTUnwrap(snapshot(app, allowsAlert: true),
+                                   "Keep the matching diagnostic and its known App notice foreground.")
+        try require(["awaiting_explicit_reconnection", "finished", "cleanupIncomplete"].contains(before["phase"] as? String ?? "")
+                    && before["recoveryLossObserved"] as? Bool == true
+                    && before["recoveryReady"] as? Bool == false,
+                    "Only the matching stopped diagnostic's unconfirmed-release notice may be acknowledged.")
+        let titles = ["Couldn't complete", "暂时无法完成"]
+        let bodies = ["Couldn’t confirm that the previous screen-control session closed. Pairing, VPN and conversations are preserved.",
+                      "无法确认之前的屏幕控制会话已关闭。配对、VPN 和对话已保留。"]
+        let title = app.staticTexts.matching(NSPredicate(format: "label IN %@", titles))
+        let body = app.staticTexts.matching(NSPredicate(format: "label IN %@", bodies))
+        let buttons = app.buttons.matching(NSPredicate(format: "label IN %@", ["OK", "好", "知道了"]))
+        try require(title.count == 1 && body.count == 1 && buttons.count == 1,
+                    "The exact known App notice and its unique acknowledgement must be visible.")
+        let acknowledge = buttons.element(boundBy: 0)
+        try require(acknowledge.isEnabled && acknowledge.isHittable,
+                    "The known notice cannot be acknowledged normally.")
+        attach(before, name: "Unconfirmed release before acknowledgement — metadata only")
+        // This closes only the visible notice. It does not confirm release,
+        // repair/reconnect, resume the run, or clear the production gate.
+        acknowledge.tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in body.count == 0 }, object: nil)
+        try require(XCTWaiter.wait(for: [dismissed], timeout: 5) == .completed,
+                    "The single acknowledgement did not dismiss the known notice.")
+    }
+
+    @MainActor
     func testVerifyReconnectedOwnedTarget() throws {
         let app = XCUIApplication(bundleIdentifier: "org.eiscue.app")
         let before = try readStatus(app)
@@ -69,8 +98,8 @@ final class NetworkRecoveryAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
-    private func snapshot(_ app: XCUIApplication) -> [String: Any]? {
-        guard app.state == .runningForeground, app.alerts.count == 0 else { return nil }
+    private func snapshot(_ app: XCUIApplication, allowsAlert: Bool = false) -> [String: Any]? {
+        guard app.state == .runningForeground, allowsAlert || app.alerts.count == 0 else { return nil }
         let status = app.staticTexts["networkRunAcceptanceState"]
         guard status.exists, let value = status.value as? String,
               let decoded = (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any] else { return nil }

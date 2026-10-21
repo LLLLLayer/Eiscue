@@ -293,7 +293,7 @@ final class NetworkAcceptanceUITests: XCTestCase {
         try require(app.state != .notRunning, "Open Eiscue first; this test never launches it.")
         app.activate()
         openDevice(in: app)
-        try requireIdleControls(in: app)
+        try requireIdleConnectionWork(in: app)
         let backend = try XCTUnwrap(ProcessInfo.processInfo.environment["EISCUE_NETWORK_BACKEND"])
         try require(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? ""),
                     "Prepare the local-VPN route first.")
@@ -334,13 +334,13 @@ final class NetworkAcceptanceUITests: XCTestCase {
                   && !app.staticTexts["speechDeviceRestorationStatus"].exists,
                   "Finish the current task, recording and restoration before previewing.")
         openDevice(in: app)
-        try requireIdleControls(in: app)
+        try requireIdleConnectionWork(in: app)
         let method = app.buttons["deviceConnectionMethodPicker"]
         let backendPicker = app.buttons["deviceControlBackendPicker"]
         let status = app.staticTexts["devicePairingComplete"]
         let ready = NSPredicate(format: "exists == true AND label IN %@", ["Ready to control", "设备操作已就绪"])
         try check(["In app", "App 内连接"].contains(method.value as? String ?? "")
-                  && backendPicker.value as? String == backendTitle && backendPicker.isEnabled,
+                  && backendPicker.value as? String == backendTitle,
                   "The already selected local-VPN route must use the requested backend.")
         try check(ready.evaluate(with: status) && app.buttons["disconnectDeviceButton"].exists
                   && app.buttons["disconnectDeviceButton"].isEnabled,
@@ -385,11 +385,11 @@ final class NetworkAcceptanceUITests: XCTestCase {
         }
         try check(imageAppeared && canClose, "A decoded preview image and normal close action did not both appear.")
         try waitFor(ready, on: status, message: "The existing control connection did not remain ready after closing its preview.")
-        try requireIdleControls(in: app)
+        try requireIdleConnectionWork(in: app)
         try check(method.value as? String == "In app" || method.value as? String == "App 内连接",
                   "The selected route changed during the preview.")
-        try check(backendPicker.value as? String == backendTitle && backendPicker.isEnabled,
-                  "The selected backend changed or remained busy after preview dismissal.")
+        try check(backendPicker.value as? String == backendTitle,
+                  "The selected backend changed during the preview.")
         metadata += "\nreadyRetained=true\nrouteAndBackendUnchanged=true\nuiChecksPassed=true\nfinishedAt=\(Date().timeIntervalSince1970)"
     }
 
@@ -731,7 +731,7 @@ final class NetworkAcceptanceUITests: XCTestCase {
                   && !app.staticTexts["speechDeviceRestorationStatus"].exists,
                   "Finish the current task, recording and restoration before repair.")
         openDevice(in: app)
-        try requireIdleControls(in: app)
+        try requireIdleConnectionWork(in: app)
         try check(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
                   && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle,
                   "Only the already selected local-VPN route and requested backend may be repaired.")
@@ -744,8 +744,7 @@ final class NetworkAcceptanceUITests: XCTestCase {
         try check(initiallyReady || initiallyDisconnected || initiallyFailed,
                   "The existing route must be ready, disconnected or failed and idle.")
         let initialAction = app.buttons[initiallyReady ? "disconnectDeviceButton" : "connectDeviceButton"]
-        try check(initialAction.exists && initialAction.isEnabled
-                  && app.buttons["deviceControlBackendPicker"].isEnabled,
+        try check(initialAction.exists && initialAction.isEnabled,
                   "A connection transition or another owner still blocks the normal connection controls.")
         metadata += "\ninitiallyReady=\(initiallyReady)\ninitiallyLocallyDisconnected=\(initiallyDisconnected)\ninitiallyFailed=\(initiallyFailed)"
 
@@ -805,11 +804,13 @@ final class NetworkAcceptanceUITests: XCTestCase {
         for (key, value) in classifications { metadata += "\n\(key)=\(value)" }
         metadata += "\nconnectionUIClassificationKnown=\(classifications.prefix(3).contains { $0.1 })\nmicrophoneUIClassificationKnown=\(classifications.dropFirst(3).contains { $0.1 })\nbothResultRowsVisible=true\nrepairButtonReenabled=true"
         openDevice(in: app)
-        try requireIdleControls(in: app)
+        try requireIdleConnectionWork(in: app)
         try check(["In app", "App 内连接"].contains(app.buttons["deviceConnectionMethodPicker"].value as? String ?? "")
-                  && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle
-                  && app.buttons["deviceControlBackendPicker"].isEnabled,
-                  "Repair changed the original route/backend or retained the connection UI gate.")
+                  && app.buttons["deviceControlBackendPicker"].value as? String == backendTitle,
+                  "Repair changed the original route or backend.")
+        let connect = app.buttons["connectDeviceButton"]
+        try check(connect.exists && connect.isEnabled,
+                  "Repair retained the normal connection UI gate.")
         metadata += "\nrouteAndBackendUnchanged=true\nconnectionUIGateReleased=true\npostRepairLocallyDisconnected=\(disconnected.evaluate(with: status))\npostRepairReady=\(ready.evaluate(with: status))\nuiChecksPassed=true\nfinishedAt=\(Date().timeIntervalSince1970)"
     }
 
@@ -1452,6 +1453,17 @@ final class NetworkAcceptanceUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             testCase?.add(attachment)
         }
+    }
+
+    @MainActor
+    private func requireIdleConnectionWork(in app: XCUIApplication) throws {
+        // A settled connection-loss pause keeps preference controls locked,
+        // while ordinary Connect and Repair remain available for recovery.
+        // Their callers check the selected values and production action gates.
+        try require(app.alerts.count == 0 && !app.buttons["stopRunButton"].exists
+                    && !app.buttons["cancelDictationButton"].exists
+                    && !app.staticTexts["speechDeviceRestorationStatus"].exists,
+                    "Finish active work, recording and restoration before connection work.")
     }
 
     @MainActor

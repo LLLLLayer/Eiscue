@@ -16,7 +16,7 @@ final class ExternalVPNAcceptanceUITests: XCTestCase {
     }
 
     @MainActor
-    func testChangeOnlyTheSelectedEiscueVPN() throws {
+    func testChangeOnlyTheSelectedEiscueVPN() async throws {
         let action = ProcessInfo.processInfo.environment["EISCUE_VPN_ACTION"] ?? ""
         try require(["disconnect", "reconnect"].contains(action), "An explicit VPN action is required.")
         let evidence = Evidence(testCase: self, action: action)
@@ -53,12 +53,43 @@ final class ExternalVPNAcceptanceUITests: XCTestCase {
         try require(settings.navigationBars["VPN"].exists && switches.count == 1,
                     "The selected Eiscue VPN page must expose one unambiguous status switch.")
         let status = switches.element(boundBy: 0)
-        let before = try connectedValue(status)
-        evidence.beforeConnected = before
+        evidence.initialConnected = try connectedValue(status)
         let expectedBefore = action == "disconnect"
-        try require(before == expectedBefore,
-                    "The requested action requires its exact initial connection state; nothing is toggled otherwise.")
-        try require(status.isEnabled && status.isHittable && row.isSelected && matchingRowCount() == 1
+        evidence.phase = "waitingForStableBefore"
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        var matchingSince: ContinuousClock.Instant?
+        var stableBefore: Bool?
+        // Settings may expose an initial value while its page loads. Observe
+        // the same selected configuration twice, at least 300 ms apart; this
+        // wait never selects a configuration or changes its connection state.
+        while ContinuousClock.now < deadline {
+            try require(settings.state == .runningForeground && settings.navigationBars["VPN"].exists
+                        && settings.alerts.count == 0 && springboard.alerts.count == 0
+                        && matchingRowCount() == 1 && row.isSelected
+                        && name.count == 1 && name.element(boundBy: 0).label == evidence.matchedTitle
+                        && switches.count == 1 && status.exists,
+                        "The original selected Eiscue configuration and unique Status switch must remain visible while waiting.")
+            let value = try connectedValue(status)
+            let enabled = status.isEnabled
+            let now = ContinuousClock.now
+            guard now < deadline else { break }
+            if enabled && value == expectedBefore {
+                if let matchingSince, matchingSince.duration(to: now) >= .milliseconds(300) {
+                    stableBefore = value
+                    break
+                }
+                if matchingSince == nil { matchingSince = now }
+            } else { matchingSince = nil }
+            try await Task.sleep(until: min(deadline, now.advanced(by: .milliseconds(300))), clock: .continuous)
+        }
+        evidence.stableBefore = stableBefore
+        evidence.beforeConnected = stableBefore
+        try require(stableBefore != nil,
+                    "The requested initial state did not stabilize within 10 seconds; nothing was toggled.")
+        evidence.stableBeforeAt = Date().timeIntervalSince1970
+        try require(status.isEnabled && status.isHittable && switches.count == 1
+                    && row.isSelected && matchingRowCount() == 1
+                    && name.count == 1 && name.element(boundBy: 0).label == evidence.matchedTitle
                     && settings.navigationBars["VPN"].exists && settings.alerts.count == 0 && springboard.alerts.count == 0
                     && (try connectedValue(status)) == expectedBefore,
                     "The selected Eiscue configuration or Status control changed before the single action.")
@@ -70,7 +101,8 @@ final class ExternalVPNAcceptanceUITests: XCTestCase {
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             status.exists && (status.value as? String) == (expectedAfter ? "1" : "0")
         }, object: nil)
-        try require(XCTWaiter.wait(for: [changed], timeout: 15) == .completed,
+        let completion = await XCTWaiter.fulfillment(of: [changed], timeout: 15)
+        try require(completion == .completed,
                     "The Status switch did not reach the requested state; no repeat action is sent.")
         evidence.afterConnected = try connectedValue(status)
         try require(settings.navigationBars["VPN"].exists && matchingRowCount() == 1 && row.isSelected
@@ -134,6 +166,9 @@ final class ExternalVPNAcceptanceUITests: XCTestCase {
         let startedAt = Date().timeIntervalSince1970
         var phase = "preflight"
         var matchedTitle: String?
+        var initialConnected: Bool?
+        var stableBefore: Bool?
+        var stableBeforeAt: TimeInterval?
         var beforeConnected: Bool?
         var afterConnected: Bool?
         var requestedAt: TimeInterval?
@@ -145,6 +180,10 @@ final class ExternalVPNAcceptanceUITests: XCTestCase {
                 "helper": "externalSelectedEiscueVPN", "action": action, "phase": phase,
                 "startedAt": startedAt, "finishedAt": Date().timeIntervalSince1970,
                 "matchedTitle": matchedTitle as Any? ?? NSNull(),
+                "initialConnected": initialConnected as Any? ?? NSNull(),
+                "stableBefore": stableBefore as Any? ?? NSNull(),
+                "stableBeforeAt": stableBeforeAt as Any? ?? NSNull(),
+                "baselineWaitLimitSeconds": 10, "baselineMinimumStableSeconds": 0.3,
                 "beforeConnected": beforeConnected as Any? ?? NSNull(),
                 "afterConnected": afterConnected as Any? ?? NSNull(),
                 "requestedAt": requestedAt as Any? ?? NSNull(), "confirmedAt": confirmedAt as Any? ?? NSNull(),
