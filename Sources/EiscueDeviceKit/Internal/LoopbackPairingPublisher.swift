@@ -2,7 +2,7 @@ import EiscueDeviceCore
 import Darwin
 import Foundation
 import dnssd
-@preconcurrency import PhoneAgentNCM
+@preconcurrency import EiscueDeviceBackend
 
 /// Publishes the local VPN peer as a separate Bonjour host. Settings discovery
 /// through this alias still needs real-device verification.

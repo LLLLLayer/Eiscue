@@ -127,7 +127,7 @@ xcodebuild -project Eiscue.xcodeproj -scheme Eiscue \
 
 ## 状态与限制
 
-Eiscue 是开发预览。各条路线均已实现并在真机上实际运行过，但覆盖范围有限，其他设备、iOS 版本和长时间任务的表现可能不同。开发者服务路线依赖私有接口，不面向 App Store 分发。后台执行时长由 iOS 决定。ESP32 固件是开发原型，请只与可信的手机配对。
+Eiscue 是开发预览。覆盖范围有限，不同设备、iOS 版本和长时间任务的表现可能不同。后端更新后需要重新进行真机检查；软件测试不能单独证明输入和后台运行的可靠性。开发者服务路线依赖私有接口，不面向 App Store 分发。后台执行时长由 iOS 决定。ESP32 固件是开发原型，请只与可信的手机配对。
 
 ## 许可与来源
 
@@ -135,7 +135,7 @@ Eiscue 是开发预览。各条路线均已实现并在真机上实际运行过�
 
 | 组件 | 来源 / 许可 |
 | --- | --- |
-| [DeviceBackend](Vendor/DeviceBackend/README.md) | actell 固定提交，GPL-3.0-only；内含 MIT 的 idevice。完整 `Eiscue` App 链接此后端，`EiscueHID` 不链接 |
+| [DeviceBackend](Vendor/DeviceBackend/README.md) | Eiscue 自行维护的控制层，基于固定版本的 MIT idevice；保留兼容代码来源声明和 GPL-3.0-only 许可。`Eiscue` 链接，`EiscueHID` 不链接 |
 | [LocalTunnel](Vendor/LocalTunnel/README.md) | LocalDevVPN / StosVPN 衍生实现，自定义 StosVPN License |
 | [Passport-BLE](Firmware/Passport-BLE/README.md#license-and-api-references) | 原创固件代码为 Apache-2.0，不延及[表情资源](Firmware/Passport-BLE/Resources/README.md) |
 | [NCM-Relay](Firmware/NCM-Relay/README.md) | 上游组合项目声明 GPL-3.0-only，本地文件带 GPL-3.0-or-later 头；详见其 `SOURCE_MANIFEST.json` |

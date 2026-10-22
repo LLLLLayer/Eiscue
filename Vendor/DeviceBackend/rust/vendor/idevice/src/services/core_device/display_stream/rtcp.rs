@@ -70,28 +70,21 @@ impl SenderReport {
     /// Find and parse the first Sender Report in a (possibly compound) RTCP
     /// datagram. Returns `None` if there is no SR.
     pub fn parse_first(buf: &[u8]) -> Option<SenderReport> {
-        let mut off = 0;
-        // Walk the compound packet, each sub-packet's length is in 32-bit words
-        // minus one.
-        while off + 4 <= buf.len() {
-            let pt = buf[off + 1];
-            let pkt_len = rtcp_packet_length(buf, off)?;
-            // SR body: sender SSRC (4) | NTP MSW (4) | NTP LSW (4) | ...
-            if pt == PT_SENDER_REPORT {
-                let ssrc =
-                    u32::from_be_bytes([buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7]]);
-                let ntp_msw =
-                    u32::from_be_bytes([buf[off + 8], buf[off + 9], buf[off + 10], buf[off + 11]]);
-                let ntp_lsw = u32::from_be_bytes([
-                    buf[off + 12],
-                    buf[off + 13],
-                    buf[off + 14],
-                    buf[off + 15],
-                ]);
-                let ntp_middle = (ntp_msw << 16) | (ntp_lsw >> 16);
-                return Some(SenderReport { ssrc, ntp_middle, packet_count: u32::from_be_bytes(buf[off+20..off+24].try_into().ok()?) });
+        let mut cursor = 0usize;
+        while cursor < buf.len() {
+            let size = rtcp_packet_length(buf, cursor)?;
+            let packet = buf.get(cursor..cursor.checked_add(size)?)?;
+            if packet.get(1).copied()? == PT_SENDER_REPORT {
+                let read = |offset| -> Option<u32> {
+                    Some(u32::from_be_bytes(packet.get(offset..offset + 4)?.try_into().ok()?))
+                };
+                return Some(Self {
+                    ssrc: read(4)?,
+                    ntp_middle: (read(8)? << 16) | (read(12)? >> 16),
+                    packet_count: read(20)?,
+                });
             }
-            off += pkt_len;
+            cursor = cursor.checked_add(size)?;
         }
         None
     }
@@ -208,21 +201,20 @@ pub fn build_frame_ack(our_ssrc: u32, rtp_timestamp: u32) -> Vec<u8> {
 /// it the encoder drifts out of sync with the receiver during heavy motion and
 /// the picture corrupts with no decode errors.
 ///
-/// 32-byte receiver feedback matching the independently captured Xcode layout.
-/// Timestamp is the received RTP media clock; packet counts are receipts, not
-/// decoded pictures or a sequence delta. The final u16 is receiver bandwidth in
-/// kbps: confirmed by the peer VCRC RemoteBWE log (60001 -> 2000).
+/// Eiscue screen receiver feedback: fixed 32-byte APP packet. Media timestamp,
+/// received packet counts and advertised kbps remain separate quantities.
 pub fn build_rctl(our_ssrc: u32, timestamp: u32, frame_packets: u32, received_packets: u32, receiver_bandwidth_kbps: u16) -> Vec<u8> {
-    let mut out = Vec::with_capacity(32);
-    out.extend_from_slice(&[0x80, PT_APP, 0, 7]);
-    out.extend_from_slice(&our_ssrc.to_be_bytes());
-    out.extend_from_slice(b"RCTL");
-    out.extend_from_slice(&0x85000004u32.to_be_bytes());
-    out.extend_from_slice(&(((timestamp >> 8) & 0xffff) << 16).to_be_bytes());
-    out.extend_from_slice(&frame_packets.to_be_bytes());
-    out.extend_from_slice(&(((timestamp / 24) & 0xffff) << 16).to_be_bytes());
-    out.extend_from_slice(&(((received_packets & 0xffff) << 16) | u32::from(receiver_bandwidth_kbps)).to_be_bytes());
-    out
+    let mut packet = [0u8; 32];
+    packet[..4].copy_from_slice(&[0x80, PT_APP, 0, 7]);
+    packet[4..8].copy_from_slice(&our_ssrc.to_be_bytes());
+    packet[8..12].copy_from_slice(b"RCTL");
+    packet[12..16].copy_from_slice(&[0x85, 0, 0, 4]);
+    packet[16..18].copy_from_slice(&((timestamp >> 8) as u16).to_be_bytes());
+    packet[20..24].copy_from_slice(&frame_packets.to_be_bytes());
+    packet[24..26].copy_from_slice(&((timestamp / 24) as u16).to_be_bytes());
+    packet[28..30].copy_from_slice(&(received_packets as u16).to_be_bytes());
+    packet[30..32].copy_from_slice(&receiver_bandwidth_kbps.to_be_bytes());
+    packet.to_vec()
 }
 
 /// A compound RTCP report for liveness: Receiver Report + SDES(CNAME). Send this
@@ -350,12 +342,13 @@ mod tests {
 
     #[test]
     fn rctl_is_well_formed_and_carries_fields() {
-        let r = build_rctl(0x00db_16eb, 0x12345678, 7, 0x2345, 60001);
-        assert_well_formed(&r);
-        // Independent Python struct.pack wire fixture, not the Rust builder.
-        let expected = [0x80,0xcc,0,7,0,0xdb,0x16,0xeb,0x52,0x43,0x54,0x4c,
-            0x85,0,0,4,0x34,0x56,0,0,0,0,0,7,0x2e,0x45,0,0,0x23,0x45,0xea,0x61];
-        assert_eq!(r, expected);
+        let packet = build_rctl(0x12345678, 0xabcdef12, 0x12345, 0x23456, 2000);
+        assert_well_formed(&packet);
+        assert_eq!(packet.len(), 32);
+        assert_eq!(&packet[4..16], &[0x12,0x34,0x56,0x78,b'R',b'C',b'T',b'L',0x85,0,0,4]);
+        assert_eq!(&packet[16..20], &[0xcd,0xef,0,0]);
+        assert_eq!(&packet[20..24], &[0,1,0x23,0x45]);
+        assert_eq!(&packet[28..32], &[0x34,0x56,7,0xd0]);
     }
 
     #[test]

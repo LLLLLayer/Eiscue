@@ -5,6 +5,75 @@ import XCTest
 
 @MainActor
 final class DeviceConnectionRepairTests: XCTestCase {
+    func testResetPairingPreservesIdentityUntilReleaseIsConfirmed() async throws {
+        for method in [DeviceConnectionMethod.localVPN, .usbBoard] {
+            let fixture = try RepairFixture(method: method, releaseConfirmed: false)
+            let model = fixture.model
+            await model.forgetPairingIdentity()
+            let rejected = await fixture.controller.calls()
+            XCTAssertEqual(rejected.pairingMutations, 0)
+            XCTAssertTrue(model.hasPairingIdentity)
+            XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertNil(model.deviceSession.owner)
+            XCTAssertEqual(model.deviceConnectionError, DeviceSession.Failure.releaseUnconfirmed.localizedDescription)
+
+            await fixture.controller.setReleaseConfirmed(true)
+            await model.forgetPairingIdentity()
+            let accepted = await fixture.controller.calls()
+            XCTAssertEqual(accepted.pairingMutations, 1)
+            XCTAssertFalse(model.hasPairingIdentity)
+            XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
+            XCTAssertNil(model.deviceConnectionError)
+            XCTAssertNil(model.deviceSession.owner)
+        }
+    }
+
+    func testImportPairingPreservesIdentityUntilReleaseIsConfirmed() async throws {
+        let file = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data(#"{"version":1}"#.utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let fixture = try RepairFixture(method: .localVPN, releaseConfirmed: false)
+        let model = fixture.model
+        await model.importPairingIdentity(file)
+        let rejected = await fixture.controller.calls()
+        XCTAssertEqual(rejected.pairingMutations, 0)
+        XCTAssertTrue(model.hasPairingIdentity)
+        XCTAssertTrue(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertEqual(model.deviceConnectionError, DeviceSession.Failure.releaseUnconfirmed.localizedDescription)
+        XCTAssertNil(model.deviceSession.owner)
+
+        await fixture.controller.setReleaseConfirmed(true)
+        await model.importPairingIdentity(file)
+        let accepted = await fixture.controller.calls()
+        XCTAssertEqual(accepted.pairingMutations, 1)
+        XCTAssertFalse(model.deviceSession.hasUnconfirmedRelease)
+        XCTAssertNil(model.deviceConnectionError)
+        XCTAssertNil(model.deviceSession.owner)
+    }
+
+    func testCancelledPairingMutationRetainsIdentityAfterReleaseCompletes() async throws {
+        let file = URL.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data(#"{"version":1}"#.utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        for imports in [false, true] {
+            let fixture = try RepairFixture(method: .localVPN, suspendsRelease: true)
+            let model = fixture.model
+            let mutation = Task {
+                if imports { await model.importPairingIdentity(file) }
+                else { await model.forgetPairingIdentity() }
+            }
+            try await waitForRelease(fixture.controller)
+            XCTAssertEqual(model.deviceSession.owner, .setup)
+            mutation.cancel()
+            await fixture.controller.completeRelease()
+            await mutation.value
+            let calls = await fixture.controller.calls()
+            XCTAssertEqual(calls.pairingMutations, 0)
+            XCTAssertTrue(model.hasPairingIdentity)
+            XCTAssertNil(model.deviceSession.owner)
+        }
+    }
+
     func testRepairPreservesConfigurationAndBlocksActionsUntilMicrophoneCheckFinishes() async throws {
         let fixture = try RepairFixture(method: .localVPN)
         let model = fixture.model
@@ -538,6 +607,7 @@ private actor RepairController: DeviceFixtureActuator {
     private var confirmedReleases = 0
     private var connections = 0
     private var pairingMutations = 0
+    private var hasIdentity = true
     private var releaseWasCancelled = false
 
     init(connected: Bool, releaseConfirmed: Bool, staysConnected: Bool = false, suspendsRelease: Bool = false) {
@@ -547,9 +617,9 @@ private actor RepairController: DeviceFixtureActuator {
     func status() async -> DeviceStatus {
         connected ? .ready(capabilities: [.screenshot, .tap]) : .unavailable(reason: "Fixture disconnected")
     }
-    func hasPairingIdentity() async throws -> Bool { true }
-    func importPairingIdentity(_ data: Data) async throws { pairingMutations += 1 }
-    func removePairingIdentity() async throws { pairingMutations += 1 }
+    func hasPairingIdentity() async throws -> Bool { hasIdentity }
+    func importPairingIdentity(_ data: Data) async throws { pairingMutations += 1; hasIdentity = true }
+    func removePairingIdentity() async throws { pairingMutations += 1; hasIdentity = false }
     func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
         pairingMutations += 1
         return AsyncThrowingStream { $0.finish() }

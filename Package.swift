@@ -16,20 +16,20 @@ let package = Package(
     targets: [
         .target(name: "EiscueAgentKit", dependencies: [.product(name: "PiDurableKit", package: "PiDurableKit")],
                 resources: [.process("Resources")]),
-        .binaryTarget(name: "NCMNativeBackend", path: "Vendor/DeviceBackend/Frameworks/NCMNativeBackend.xcframework"),
+        .binaryTarget(name: "EiscueNativeBackend", path: "Vendor/DeviceBackend/Frameworks/EiscueNativeBackend.xcframework"),
         .target(
-            name: "CNCMBackend", dependencies: ["NCMNativeBackend"],
-            path: "Vendor/DeviceBackend/Sources/CNCMBackend", publicHeadersPath: "include",
+            name: "CEiscueDeviceBackend", dependencies: ["EiscueNativeBackend"],
+            path: "Vendor/DeviceBackend/Sources/CEiscueDeviceBackend", publicHeadersPath: "include",
             linkerSettings: [.linkedFramework("Security"), .linkedFramework("SystemConfiguration")]
         ),
         .target(
-            name: "PhoneAgentNCM", dependencies: ["CNCMBackend", "CEiscueAutomation"],
-            path: "Vendor/DeviceBackend/Sources/PhoneAgentNCM", swiftSettings: [.swiftLanguageMode(.v5)]
+            name: "EiscueDeviceBackend", dependencies: ["CEiscueDeviceBackend", "CEiscueAutomation"],
+            path: "Vendor/DeviceBackend/Sources/EiscueDeviceBackend", swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(name: "CEiscueAutomation", path: "Vendor/DeviceBackend/Sources/CEiscueAutomation", publicHeadersPath: "include",
                 linkerSettings: [.linkedFramework("Foundation"), .linkedFramework("UIKit", .when(platforms: [.iOS]))]),
         .target(name: "EiscueDeviceCore", resources: [.process("Resources")]),
-        .target(name: "EiscueDeviceKit", dependencies: ["EiscueDeviceCore", "PhoneAgentNCM"]),
+        .target(name: "EiscueDeviceKit", dependencies: ["EiscueDeviceCore", "EiscueDeviceBackend"]),
         .testTarget(name: "EiscueAgentKitTests", dependencies: ["EiscueAgentKit", .product(name: "PiDurableKit", package: "PiDurableKit")]),
         .testTarget(name: "EiscueDeviceKitTests", dependencies: ["EiscueDeviceKit", "EiscueDeviceCore"]),
         .testTarget(name: "EiscueDeviceCoreTests", dependencies: ["EiscueDeviceCore"]),

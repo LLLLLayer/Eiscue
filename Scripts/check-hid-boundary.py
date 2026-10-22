@@ -11,7 +11,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
-FORBIDDEN_MODULES = ("EiscueDeviceKit", "PhoneAgentNCM", "CNCMBackend", "NCMNativeBackend", "CEiscueAutomation")
+FORBIDDEN_MODULES = ("EiscueDeviceKit", "EiscueDeviceBackend", "CEiscueDeviceBackend", "EiscueNativeBackend", "CEiscueAutomation", "PhoneAgentNCM", "CNCMBackend", "NCMNativeBackend")
 
 
 def command(*arguments):

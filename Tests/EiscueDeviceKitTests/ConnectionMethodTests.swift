@@ -5,7 +5,7 @@ import ImageIO
 import Testing
 @testable import EiscueDeviceKit
 @testable import EiscueDeviceCore
-@testable import PhoneAgentNCM
+@testable import EiscueDeviceBackend
 
 @Suite @MainActor struct ConnectionMethodTests {
     @Test func cachedStatusDoesNotProbeAndFailedProbeKeepsTheSession() async throws {
@@ -87,6 +87,116 @@ import Testing
         #expect(fixture.sessionBackends.isEmpty)
         #expect(fixture.session.mediaStops == 0 && fixture.session.mediaStarts == 0)
         #expect(fixture.vpnFactoryCalls == 0 && fixture.boardFactoryCalls == 0)
+    }
+
+    @Test(arguments: [true, false])
+    func identityMutationWaitsForConfirmedLiveRelease(replacing: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let original = try fixture.store.load()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        fixture.session.mediaStopDelay = .milliseconds(50)
+        let mutation = Task { try await changePairingIdentity(client, replacing: replacing) }
+        try await waitUntil { fixture.session.mediaStops == 1 }
+        #expect(try fixture.store.load() == original)
+        #expect(fixture.store.mutationCalls == 0)
+        try await mutation.value
+        #expect(try fixture.store.load().map { try PairingIdentityCodec.decode($0).peerID } == (replacing ? "SYNTHETIC-REPLACEMENT" : nil))
+        #expect(fixture.store.mutationCalls == 1 && fixture.session.closed)
+        #expect(fixture.session.mediaStops == 1 && fixture.session.cleanupCalls == 0)
+        #expect(fixture.session.mediaStarts == 1 && fixture.session.vpnConnections == 1)
+    }
+
+    @Test(arguments: [true, false])
+    func identityMutationPreservesOriginalThroughFailedReleaseAndRecovery(replacing: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let original = try fixture.store.load()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        fixture.session.mediaFailure = NativeBackendError.closed
+        fixture.session.hasRetainedMediaCleanup = true
+        await #expect(throws: unconfirmedReleaseError) { try await changePairingIdentity(client, replacing: replacing) }
+        #expect(try fixture.store.load() == original)
+        #expect(fixture.store.mutationCalls == 0 && fixture.session.closed)
+        #expect(fixture.session.cleanupCalls == 0, "An unconfirmed live release must not silently retry.")
+
+        fixture.session.cleanupFailure = NativeBackendError.protocolFailure(stage: 10, cause: 7)
+        await #expect(throws: unconfirmedReleaseError) { try await changePairingIdentity(client, replacing: replacing) }
+        #expect(try fixture.store.load() == original)
+        #expect(fixture.store.mutationCalls == 0 && fixture.session.hasRetainedMediaCleanup)
+        #expect(fixture.session.cleanupPeerIDs == ["SYNTHETIC-PEER"])
+
+        fixture.session.cleanupFailure = nil
+        try await changePairingIdentity(client, replacing: replacing)
+        #expect(try fixture.store.load().map { try PairingIdentityCodec.decode($0).peerID } == (replacing ? "SYNTHETIC-REPLACEMENT" : nil))
+        #expect(fixture.store.mutationCalls == 1 && !fixture.session.hasRetainedMediaCleanup)
+        #expect(fixture.session.cleanupPeerIDs == ["SYNTHETIC-PEER", "SYNTHETIC-PEER"])
+        #expect(fixture.session.mediaStarts == 1 && fixture.session.mediaStops == 1 && fixture.session.vpnConnections == 1)
+    }
+
+    @Test(arguments: [true, false])
+    func identityMutationRejectsUnrecoverableRelease(replacing: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let original = try fixture.store.load()
+        try await client.connectUSBBoard(backend: .coreDevice)
+        fixture.session.mediaFailure = NativeBackendError.closed
+        #expect(await client.disconnectAndConfirmRelease() == false)
+        await #expect(throws: unconfirmedReleaseError) { try await changePairingIdentity(client, replacing: replacing) }
+        #expect(try fixture.store.load() == original)
+        #expect(fixture.store.mutationCalls == 0)
+        #expect(fixture.session.mediaStops == 1 && fixture.session.cleanupCalls == 0)
+        #expect(fixture.session.mediaStarts == 1 && fixture.vpn.calls == 0)
+    }
+
+    @Test(arguments: [true, false])
+    func identityMutationRejectsBusyConnection(replacing: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let original = try fixture.store.load()
+        fixture.board.suspend = true
+        let connection = Task { try await client.connectUSBBoard(backend: .coreDevice) }
+        try await waitUntil { fixture.board.calls == 1 }
+        await #expect(throws: DeviceControlError.busy) { try await changePairingIdentity(client, replacing: replacing) }
+        #expect(try fixture.store.load() == original)
+        #expect(fixture.store.mutationCalls == 0 && !fixture.board.cancelled && !fixture.session.closed)
+        await client.disconnect()
+        await #expect(throws: CancellationError.self) { try await connection.value }
+    }
+
+    @Test(arguments: [true, false], [true, false])
+    func cancelledIdentityMutationPreservesIdentityAndSerializesChanges(replacing: Bool, retained: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let original = try fixture.store.load()
+        try await client.connectLocalVPN(backend: .coreDevice)
+        if retained {
+            fixture.session.mediaFailure = NativeBackendError.closed
+            fixture.session.hasRetainedMediaCleanup = true
+            #expect(await client.disconnectAndConfirmRelease() == false)
+            fixture.session.cleanupDelay = .milliseconds(50)
+        } else { fixture.session.mediaStopDelay = .milliseconds(50) }
+        let mutation = Task { try await changePairingIdentity(client, replacing: replacing) }
+        try await waitUntil { retained ? fixture.session.cleanupCalls == 1 : fixture.session.mediaStops == 1 }
+        await #expect(throws: DeviceControlError.busy) { try await changePairingIdentity(client, replacing: !replacing) }
+        await #expect(throws: DeviceControlError.busy) { try await client.connectLocalVPN(backend: .coreDevice) }
+        mutation.cancel()
+        await #expect(throws: CancellationError.self) { try await mutation.value }
+        #expect(try fixture.store.load() == original)
+        #expect(fixture.store.mutationCalls == 0 && fixture.session.closed)
+        #expect(fixture.session.mediaStarts == 1 && fixture.session.vpnConnections == 1)
+        #expect(fixture.session.cleanupCalls == (retained ? 1 : 0))
+        if retained { #expect(fixture.session.cleanupPeerIDs == ["SYNTHETIC-PEER"]) }
+        try await changePairingIdentity(client, replacing: replacing)
+        #expect(fixture.store.mutationCalls == 1)
+        #expect(fixture.session.mediaStops == 1 && fixture.session.cleanupCalls == (retained ? 1 : 0),
+                "Retry after confirmed cleanup must not send another stop.")
+    }
+
+    @Test(arguments: [true, false])
+    func alreadyCancelledIdentityMutationPreservesIdleIdentity(replacing: Bool) async throws {
+        let fixture = try ConnectionFixture(majorVersion: 27), client = fixture.client()
+        let original = try fixture.store.load()
+        let mutation = Task { try await changePairingIdentity(client, replacing: replacing) }
+        mutation.cancel()
+        await #expect(throws: CancellationError.self) { try await mutation.value }
+        #expect(try fixture.store.load() == original)
+        #expect(fixture.store.mutationCalls == 0 && fixture.sessionBackends.isEmpty)
     }
 
     @Test func explicitReleaseRecoversOnlyRetainedVPNMediaWithoutStartingControl() async throws {
@@ -601,6 +711,15 @@ import Testing
         }
     }
 
+    private var unconfirmedReleaseError: DeviceControlError {
+        .connection(String(localized: "device.status.release-unconfirmed", defaultValue: "Device control stopped, but the screen connection may still be active. Check the system’s remote-control status.", bundle: EiscueDeviceResources.bundle))
+    }
+
+    private func changePairingIdentity(_ client: DeviceClient, replacing: Bool) async throws {
+        if replacing { try await client.importPairingIdentity(connectionIdentity(peerID: "SYNTHETIC-REPLACEMENT")) }
+        else { try await client.removePairingIdentity() }
+    }
+
     private func waitUntil(_ predicate: () -> Bool) async throws {
         for _ in 0..<1000 {
             if predicate() { return }
@@ -672,12 +791,7 @@ private actor BackendRecordingController: DeviceActuator, NetworkRouteSetup {
         operatingSystemVersion = OperatingSystemVersion(majorVersion: majorVersion, minorVersion: 0, patchVersion: 0)
         board = TestBoardDiscovery(candidate: try boardCandidate())
         session = try TestDeviceSession()
-        store = TestConnectionIdentityStore(data: try JSONSerialization.data(withJSONObject: [
-            "version": 1, "seed": Array(repeating: 66, count: 32), "controllerID": "SYNTHETIC-CONTROLLER",
-            "peerID": "SYNTHETIC-PEER", "peerPublicKey": Array(repeating: 68, count: 32),
-            "alternateIRK": Array(repeating: 51, count: 16), "peerUDID": "SYNTHETIC-UDID",
-            "peerModel": "SYNTHETIC-MODEL", "committed": true,
-        ]))
+        store = TestConnectionIdentityStore(data: try connectionIdentity())
     }
     func client() -> DeviceClient {
         if let controller { return DeviceClient(actuator: controller, networkSetup: controller) }
@@ -698,11 +812,22 @@ private final class TestConnectionIdentityStore: PairingIdentityStore, @unchecke
     private let lock = NSLock()
     private var data: Data?
     private var loads = 0
+    private var mutations = 0
     var loadCalls: Int { lock.withLock { loads } }
+    var mutationCalls: Int { lock.withLock { mutations } }
     init(data: Data) { self.data = data }
     func load() throws -> Data? { lock.withLock { loads += 1; return data } }
-    func save(_ data: Data) throws { lock.withLock { self.data = data } }
-    func remove() throws { lock.withLock { data = nil } }
+    func save(_ data: Data) throws { lock.withLock { mutations += 1; self.data = data } }
+    func remove() throws { lock.withLock { mutations += 1; data = nil } }
+}
+
+private func connectionIdentity(peerID: String = "SYNTHETIC-PEER") throws -> Data {
+    try JSONSerialization.data(withJSONObject: [
+        "version": 1, "seed": Array(repeating: 66, count: 32), "controllerID": "SYNTHETIC-CONTROLLER",
+        "peerID": peerID, "peerPublicKey": Array(repeating: 68, count: 32),
+        "alternateIRK": Array(repeating: 51, count: 16), "peerUDID": "SYNTHETIC-UDID",
+        "peerModel": "SYNTHETIC-MODEL", "committed": true,
+    ])
 }
 
 @MainActor private final class TestVPNDiscovery: LocalVPNDiscovering {

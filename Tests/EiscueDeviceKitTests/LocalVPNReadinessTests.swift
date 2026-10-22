@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import Testing
-@testable import PhoneAgentNCM
+@testable import EiscueDeviceBackend
 
 @Suite @MainActor struct LocalVPNReadinessTests {
     #if DEBUG

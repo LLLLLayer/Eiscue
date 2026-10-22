@@ -96,7 +96,8 @@ struct ConnectionRepairView: View {
                 } header: {
                     Text("connectionRepair.pairingSection", tableName: "Connections").font(.caption)
                 } footer: {
-                    Text(model.isDeviceReady ? "connectionRepair.disconnectBeforeReset" : "connectionRepair.resetPairingDetail",
+                    Text(model.deviceSession.hasUnconfirmedRelease ? "connectionRepair.unconfirmedNextSteps" :
+                            model.isDeviceReady ? "connectionRepair.disconnectBeforeReset" : "connectionRepair.resetPairingDetail",
                          tableName: "Connections")
                 }
                 .listRowBackground(EiscueStyle.surface)
@@ -128,7 +129,8 @@ struct ConnectionRepairView: View {
     }
 
     private var canResetPairing: Bool {
-        model.hasPairingIdentity && checkTask == nil && !model.isBusy && !model.isDeviceReady && !model.isConnecting
+        model.hasPairingIdentity && checkTask == nil && !model.isBusy && !model.isDeviceReady &&
+            !model.isConnecting && !model.deviceSession.hasUnconfirmedRelease
     }
 
     private func resultRow(title: String, detail: String, systemImage: String, identifier: String) -> some View {

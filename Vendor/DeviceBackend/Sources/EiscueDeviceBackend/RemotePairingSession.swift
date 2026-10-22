@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import Foundation
-import CNCMBackend
+import CEiscueDeviceBackend
 import OSLog
 
 private let pairingLogger = Logger(subsystem: "org.eiscue.device", category: "connection")
@@ -69,55 +69,68 @@ public enum PairingUpdate {
         let status = ncm_pairing_start(1, &token)
         guard status == 0, token != 0 else { throw NativeBackendError.transport(code: status) }
         handle = token; defer { if handle == token { close() } }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(185))
-        while ContinuousClock.now < deadline {
+        let expires = ContinuousClock.now.advanced(by: .seconds(185))
+        repeat {
             try Task.checkCancellation()
-            guard handle == token else { throw NativeBackendError.closed }
-            var event = ncm_event()
-            let status = ncm_backend_poll(token, &event, nil, 0)
-            if status == 4 { try await Task.sleep(for: .milliseconds(20)); continue }
-            if status == 3 { throw NativeBackendError.closed }
-            var data = Data()
-            defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
-            if status == 5 {
-                guard event.size > 0, event.size <= 32 * 1024 else { throw NativeBackendError.malformedEvent }
-                data = Data(count: event.size)
-                let copied = data.withUnsafeMutableBytes { b in ncm_backend_poll(token, &event, b.bindMemory(to: UInt8.self).baseAddress, b.count) }
-                guard copied == 0 else { throw NativeBackendError.transport(code: copied) }
-            } else if status != 0 { throw NativeBackendError.transport(code: status) }
-            guard event.request_id == 0, event.reserved == 0 else { throw NativeBackendError.malformedEvent }
-            switch event.kind {
-            case 3: throw NativeBackendError.protocolFailure(stage: event.stage, cause: event.cause)
-            case 5:
-                let advertisement = try JSONDecoder().decode(PairingAdvertisement.self, from: data)
-                guard advertisement.port != 0, !advertisement.identifier.isEmpty, advertisement.txt["identifier"] == advertisement.identifier else { throw NativeBackendError.malformedEvent }
-                logStage(0)
-                try update(.listening(advertisement))
-            case 10:
-                guard event.stage == 1, event.cause == 0, event.size == 0, data.isEmpty else { throw NativeBackendError.malformedEvent }
-                logStage(1)
-            case 6:
-                guard let pin = String(data: data, encoding: .utf8), !pin.isEmpty, pin.count <= 12,
-                      pin.allSatisfy({ $0.isNumber || $0 == "-" }) else { throw NativeBackendError.malformedEvent }
-                logStage(2)
-                try update(.code(pin))
-            case 7, 8:
-                let record = try JSONDecoder().decode(RemotePairRecord.self, from: data)
-                var identity = try record.identity(); identity.clearSeed()
-                guard record.committed == (event.kind == 8) else { throw NativeBackendError.malformedEvent }
+            guard token == handle else { throw NativeBackendError.closed }
+            guard var message = try NativeEventReader.poll(limit: 32 * 1024, read: {
+                ncm_backend_poll(token, $0, $1, $2)
+            }) else {
+                try await Task.sleep(for: .milliseconds(20))
+                continue
+            }
+            defer { message.payload.resetBytes(in: 0..<message.payload.count) }
+            try message.validate(request: 0)
+            let kind = message.header.kind
+            if kind == 3 { try message.checkFailure() }
+            switch try Self.decodeUpdate(kind: kind, stage: message.header.stage, cause: message.header.cause, payload: message.payload) {
+            case .update(let value, let stage):
+                logStage(stage)
+                try update(value)
+            case .record(let record):
+                // The caller's durable write is the acknowledgement boundary.
                 try persist(record)
-                let ack = ncm_pairing_ack(token, event.kind == 8 ? 2 : 1)
-                guard ack == 0 else { throw NativeBackendError.transport(code: ack) }
+                let result = ncm_pairing_ack(token, record.committed ? 2 : 1)
+                if result != 0 { throw NativeBackendError.transport(code: result) }
                 logStage(record.committed ? 4 : 3)
                 try update(.persisted(committed: record.committed))
-            case 9:
+            case .progress:
+                logStage(1)
+            case .complete:
                 try update(.completed)
-                logStage(5); diagnosticFinished = true
+                diagnosticFinished = true
+                logStage(5)
                 return
-            default: throw NativeBackendError.malformedEvent
             }
-        }
+        } while .now < expires
         logStage(6); diagnosticFinished = true
         throw NCMError.timeout
     }
+    private enum DecodedUpdate {
+        case update(PairingUpdate, Int), record(RemotePairRecord), progress, complete
+    }
+    private static func decodeUpdate(kind: UInt32, stage: UInt32, cause: UInt32, payload: Data) throws -> DecodedUpdate {
+        switch kind {
+        case 5:
+            let advertisement = try JSONDecoder().decode(PairingAdvertisement.self, from: payload)
+            if advertisement.port == 0 || advertisement.identifier.isEmpty || advertisement.txt["identifier"] != advertisement.identifier {
+                throw NativeBackendError.malformedEvent
+            }
+            return .update(.listening(advertisement), 0)
+        case 6:
+            guard let code = String(data: payload, encoding: .utf8), (1...12).contains(code.count),
+                  code.allSatisfy({ $0 == "-" || $0.isNumber }) else { throw NativeBackendError.malformedEvent }
+            return .update(.code(code), 2)
+        case 7, 8:
+            let record = try JSONDecoder().decode(RemotePairRecord.self, from: payload)
+            guard (kind == 8) == record.committed else { throw NativeBackendError.malformedEvent }
+            var validated = try record.identity()
+            validated.clearSeed()
+            return .record(record)
+        case 9: return .complete
+        case 10 where stage == 1 && cause == 0 && payload.isEmpty: return .progress
+        default: throw NativeBackendError.malformedEvent
+        }
+    }
+
 }

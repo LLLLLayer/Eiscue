@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
+//! Eiscue transport implementation. Existing upstream regression fixtures are retained below.
 use std::{
     future::Future,
     io,
+    net::{Ipv4Addr, SocketAddr},
     pin::Pin,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
+    time::Duration,
 };
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::TcpSocket,
+};
 
 pub type Stream = Box<dyn idevice::ReadWrite>;
 pub type DialFuture<'a> = Pin<Box<dyn Future<Output = io::Result<Stream>> + Send + 'a>>;
@@ -19,46 +22,61 @@ pub enum Purpose {
     NegotiatedTunnel { port: u16 },
     LockdownSession,
 }
-/// The embedding app explicitly selects S3 relay or VPN loopback before connecting.
-/// Every call stays on that connector and the same authenticated peer: S3 uses its
-/// discovery generation; VPN loopback uses its configured, bound utun interface.
-/// Neither connector falls back to another route, usbmux, or a Mac.
 pub trait NcmConnector: Send + Sync {
     fn connect(&self, purpose: Purpose) -> DialFuture<'_>;
 }
+
+#[derive(Default)]
+struct Waiters(Mutex<[Option<Waker>; 2]>);
+#[derive(Default)]
+struct GateState {
+    closed: bool,
+    streams: Vec<Weak<Waiters>>,
+}
 #[derive(Default)]
 pub(crate) struct Gate {
-    closed: AtomicBool,
-    wakers: Mutex<Vec<Waker>>,
+    state: Mutex<GateState>,
 }
 impl Gate {
+    pub fn is_closed(&self) -> bool {
+        self.state.lock().map_or(true, |state| state.closed)
+    }
     pub fn close(&self) {
-        self.closed.store(true, Ordering::SeqCst);
-        for w in self.wakers.lock().unwrap().drain(..) {
-            w.wake();
+        let streams = {
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.closed = true;
+            std::mem::take(&mut state.streams)
+        };
+        for stream in streams.into_iter().filter_map(|stream| stream.upgrade()) {
+            let pending = {
+                let mut slots = stream.0.lock().unwrap_or_else(|e| e.into_inner());
+                std::mem::take(&mut *slots)
+            };
+            for waker in pending.into_iter().flatten() {
+                waker.wake();
+            }
         }
     }
-    pub fn is_closed(&self) -> bool {
-        self.closed.load(Ordering::SeqCst)
-    }
-    fn check(&self, cx: &Context<'_>) -> io::Result<()> {
-        let mut w = self.wakers.lock().unwrap();
-        if self.closed.load(Ordering::SeqCst) {
+    fn register(&self, waiters: &Waiters, direction: usize, cx: &Context<'_>) -> io::Result<()> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::ErrorKind::ConnectionAborted)?;
+        if state.closed {
             return Err(io::ErrorKind::ConnectionAborted.into());
         }
-        if !w.iter().any(|v| v.will_wake(cx.waker())) {
-            if w.len() == 8 {
-                w.remove(0);
-            }
-            w.push(cx.waker().clone());
-        }
+        let mut slots = waiters
+            .0
+            .lock()
+            .map_err(|_| io::ErrorKind::ConnectionAborted)?;
+        slots[direction] = Some(cx.waker().clone());
         Ok(())
     }
 }
 pub(crate) struct Owner(pub Arc<Gate>);
 impl Default for Owner {
     fn default() -> Self {
-        Self(Arc::new(Gate::default()))
+        Owner(Arc::default())
     }
 }
 impl Drop for Owner {
@@ -66,67 +84,226 @@ impl Drop for Owner {
         self.0.close();
     }
 }
+
 pub(crate) struct Gated {
     inner: Stream,
     gate: Arc<Gate>,
+    waiters: Arc<Waiters>,
 }
 impl std::fmt::Debug for Gated {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("NcmStream(<redacted>)")
+        f.write_str("EiscueTransport")
     }
 }
 impl Gated {
     pub fn new(inner: Stream, gate: Arc<Gate>) -> Self {
-        Self { inner, gate }
+        let waiters = Arc::new(Waiters::default());
+        {
+            let mut state = gate.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.streams.retain(|entry| entry.strong_count() > 0);
+            if !state.closed {
+                state.streams.push(Arc::downgrade(&waiters));
+            }
+        }
+        Self {
+            inner,
+            gate,
+            waiters,
+        }
     }
 }
 impl AsyncRead for Gated {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
+        output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if let Err(e) = self.gate.check(cx) {
-            return Poll::Ready(Err(e));
-        }
-        Pin::new(&mut self.inner).poll_read(cx, buf)
+        self.gate.register(&self.waiters, 0, cx)?;
+        Pin::new(&mut self.inner).poll_read(cx, output)
     }
 }
 impl AsyncWrite for Gated {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &[u8],
+        bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        if let Err(e) = self.gate.check(cx) {
-            return Poll::Ready(Err(e));
-        }
-        Pin::new(&mut self.inner).poll_write(cx, buf)
+        self.gate.register(&self.waiters, 1, cx)?;
+        Pin::new(&mut self.inner).poll_write(cx, bytes)
     }
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if let Err(e) = self.gate.check(cx) {
-            return Poll::Ready(Err(e));
-        }
+        self.gate.register(&self.waiters, 1, cx)?;
         Pin::new(&mut self.inner).poll_flush(cx)
     }
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // Local shutdown remains possible after authority has been revoked.
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }
-/// Cancellation of a mutating future closes the whole transport generation.
 pub(crate) struct OperationGuard(pub Option<Arc<Gate>>);
 impl Drop for OperationGuard {
     fn drop(&mut self) {
-        if let Some(g) = self.0.take() {
-            g.close();
+        if let Some(gate) = &self.0 {
+            gate.close();
         }
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum Binding {
+    Vpn,
+    Usb,
+    #[cfg(any(test, feature = "offline-fixtures"))]
+    Loopback,
+}
+pub(crate) async fn dial_bound(
+    index: u32,
+    local: Ipv4Addr,
+    peer: SocketAddr,
+    binding: Binding,
+) -> io::Result<tokio::net::TcpStream> {
+    let socket = TcpSocket::new_v4()?;
+    bind_socket(&socket, index, local, binding)?;
+    socket.bind(SocketAddr::from((local, 0)))?;
+    let connected = tokio::time::timeout(Duration::from_secs(4), socket.connect(peer))
+        .await
+        .map_err(|_| io::ErrorKind::TimedOut)??;
+    if connected.local_addr()?.ip() != local || connected.peer_addr()? != peer {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    connected.set_nodelay(true)?;
+    Ok(connected)
+}
+#[cfg(target_vendor = "apple")]
+fn bind_socket(
+    socket: &TcpSocket,
+    index: u32,
+    local: Ipv4Addr,
+    binding: Binding,
+) -> io::Result<()> {
+    use std::{ffi::CStr, os::fd::AsRawFd};
+    #[cfg(any(test, feature = "offline-fixtures"))]
+    if matches!(binding, Binding::Loopback) && index == 0 && local.is_loopback() {
+        return Ok(());
+    }
+    if index == 0 {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    struct Addresses(*mut libc::ifaddrs);
+    impl Drop for Addresses {
+        fn drop(&mut self) {
+            unsafe { libc::freeifaddrs(self.0) };
+        }
+    }
+    let mut addresses = Addresses(std::ptr::null_mut());
+    if unsafe { libc::getifaddrs(&mut addresses.0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut cursor = addresses.0;
+    let mut found = 0;
+    while let Some(row) = unsafe { cursor.as_ref() } {
+        cursor = row.ifa_next;
+        if row.ifa_name.is_null() || row.ifa_addr.is_null() {
+            continue;
+        }
+        if unsafe { libc::if_nametoindex(row.ifa_name) } != index
+            || unsafe { (*row.ifa_addr).sa_family } != libc::AF_INET as u8
+        {
+            continue;
+        }
+        let address = unsafe { &*row.ifa_addr.cast::<libc::sockaddr_in>() };
+        if address.sin_addr.s_addr.to_ne_bytes() != local.octets() {
+            continue;
+        }
+        let flags = row.ifa_flags as i32;
+        if flags & (libc::IFF_UP | libc::IFF_RUNNING) != libc::IFF_UP | libc::IFF_RUNNING
+            || flags & libc::IFF_LOOPBACK != 0
+        {
+            continue;
+        }
+        let accepted = match binding {
+            Binding::Vpn => {
+                flags & libc::IFF_POINTOPOINT != 0
+                    && unsafe { CStr::from_ptr(row.ifa_name) }
+                        .to_bytes()
+                        .starts_with(b"utun")
+            }
+            Binding::Usb => {
+                flags & libc::IFF_POINTOPOINT == 0
+                    && !row.ifa_netmask.is_null()
+                    && unsafe { &*row.ifa_netmask.cast::<libc::sockaddr_in>() }
+                        .sin_addr
+                        .s_addr
+                        .to_ne_bytes()
+                        == [255, 255, 255, 0]
+            }
+            #[cfg(any(test, feature = "offline-fixtures"))]
+            Binding::Loopback => false,
+        };
+        found += usize::from(accepted);
+    }
+    if found != 1 {
+        return Err(io::ErrorKind::AddrNotAvailable.into());
+    }
+    let result = unsafe {
+        libc::setsockopt(
+            socket.as_raw_fd(),
+            libc::IPPROTO_IP,
+            libc::IP_BOUND_IF,
+            (&index as *const u32).cast(),
+            std::mem::size_of::<u32>() as libc::socklen_t,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+#[cfg(not(target_vendor = "apple"))]
+fn bind_socket(_: &TcpSocket, index: u32, local: Ipv4Addr, binding: Binding) -> io::Result<()> {
+    #[cfg(any(test, feature = "offline-fixtures"))]
+    if matches!(binding, Binding::Loopback) && index == 0 && local.is_loopback() {
+        return Ok(());
+    }
+    let _ = (index, local, binding);
+    Err(io::ErrorKind::Unsupported.into())
+}
+
+// Retained upstream regression fixture (GPL-3.0-only).
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::AsyncReadExt;
+    #[tokio::test]
+    async fn eiscue_close_wakes_every_live_stream_and_rejects_late_streams() {
+        let owner = Owner::default();
+        let mut reads = Vec::new();
+        let mut peers = Vec::new();
+        for _ in 0..32 {
+            let (socket, peer) = tokio::io::duplex(16);
+            peers.push(peer);
+            let mut guarded = Gated::new(Box::new(socket), owner.0.clone());
+            reads.push(tokio::spawn(async move { guarded.read(&mut [0; 1]).await }));
+        }
+        tokio::task::yield_now().await;
+        owner.0.close();
+        for read in reads {
+            let failure = tokio::time::timeout(Duration::from_secs(1), read)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap_err();
+            assert_eq!(failure.kind(), io::ErrorKind::ConnectionAborted);
+        }
+        let (socket, _peer) = tokio::io::duplex(16);
+        let mut late = Gated::new(Box::new(socket), owner.0.clone());
+        assert_eq!(
+            late.read(&mut [0; 1]).await.unwrap_err().kind(),
+            io::ErrorKind::ConnectionAborted
+        );
+        drop(peers);
+    }
     #[tokio::test]
     async fn cancellation_wakes_pending_read_without_network() {
         let (stream, _peer) = tokio::io::duplex(64);

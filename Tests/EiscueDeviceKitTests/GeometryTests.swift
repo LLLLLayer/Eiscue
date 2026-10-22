@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import EiscueDeviceKit
 @testable import EiscueDeviceCore
-@testable import PhoneAgentNCM
+@testable import EiscueDeviceBackend
 
 @Suite struct GeometryTests {
     private let portrait = CGRect(x: 0, y: 8, width: 100, height: 200)

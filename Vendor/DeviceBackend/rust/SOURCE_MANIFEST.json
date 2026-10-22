@@ -1,12 +1,13 @@
 {
   "device_hub_revision": "1fcdfb0a6799b62f05625d0cbb359bec57256b94",
   "idevice_upstream_pin": "a64b8867815b3da17b5c927531bdba877e8456ef",
-  "note": "Device Hub patched snapshot, not clean upstream; tests contain public synthetic fixtures, never local pairing records. Cargo manifest trimmed to native backend dependency closure; RSD control lifetime adaptation.",
+  "note": "Pinned MIT idevice plus the pinned Device Hub MIT patch. Eiscue adaptations are recorded against that independent baseline. Control implementation and historical compatibility origins are recorded separately below.",
   "files": {
     "vendor/idevice/Cargo.toml": {
-      "sha256": "d303e1c2c9f3bf1f60758cc61ce10f260c9f9451c78d472fd03a1b5352c45c98",
+      "sha256": "4c4d536ad9d2b69b1aaac12fc10c3485c50fedce21af18ee07fb9d9d2629311e",
       "device_hub_snapshot_sha256": "598c00feedb93c3d65863ace4707661baa8e42fb074a4ec6af2abecb46a1d7ba",
-      "modified": true
+      "modified": true,
+      "change": "Eiscue native-only dependency/feature closure regenerated from the independent MIT baseline; retain pinned USB bootstrap and DTX features."
     },
     "vendor/idevice/Cargo.toml.upstream": {
       "sha256": "598c00feedb93c3d65863ace4707661baa8e42fb074a4ec6af2abecb46a1d7ba",
@@ -16,7 +17,7 @@
     "vendor/idevice/LICENSE.txt": {
       "sha256": "131488ce7e302b9f62e3236793e57c86a208d3dfaf03e6d7d03ddc0fc82392ed",
       "device_hub_snapshot_sha256": null,
-      "modified": false
+      "modified": true
     },
     "vendor/idevice/src/ca.rs": {
       "sha256": "0d9c44a49b46ad3e44a8ae8159c8d3d44ad460e980113404c98b0d595850c6ef",
@@ -172,10 +173,10 @@
       "modified": false
     },
     "vendor/idevice/src/services/core_device/app_service.rs": {
-      "sha256": "ac7ddf6a2da0f050c8b0f3358dcb09ca6064c1728a5f4e00fc6dfb03c80bba43",
+      "sha256": "59942194e1934f42edd67335d89f4f22e864e7e0453e7837aa93e83b06a6a724",
       "device_hub_snapshot_sha256": "a355b93b76b62ca70262d5fa2c216327709f4795a422de81a158211564985082",
       "modified": true,
-      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained."
+      "change": "Eiscue app query wrapper and non-container metadata options; support bounded streaming and single-reply peers."
     },
     "vendor/idevice/src/services/core_device/diagnosticsservice.rs": {
       "sha256": "0f667d0766c7baa79ae1f3bf767146a85ffe73d07623db6e1489616fc1f61874",
@@ -183,16 +184,16 @@
       "modified": false
     },
     "vendor/idevice/src/services/core_device/display_stream/client.rs": {
-      "sha256": "62421989701bfc52b8c7a50bfd0f170d9161c5e3fab9e3d798341cd832adbcde",
+      "sha256": "e97b4697fa627149b951f060929da7330d711bbdd49b8b2325c16f16c1f8c636",
       "device_hub_snapshot_sha256": "bd8666dd078c7c782134cce08bff2aa9a188cb10d54147a2699ee8d6b8a0f721",
       "modified": true,
-      "change": "Scoped StopRequest with unsigned stream identifiers and explicit action; caller uses a fresh service connection and never stopAll."
+      "change": "Eiscue scoped media stop builder; nonempty owned identifier list encoded as XPC UInt64 with stopAll=false, with synthetic type/bounds checks."
     },
     "vendor/idevice/src/services/core_device/display_stream/hevc.rs": {
-      "sha256": "87effb98fc11ce2096217f3a12c6c29c74317b61a255057e1978c6fca9495dcb",
+      "sha256": "261d9d8a08538f755aa0ed78b2c7b2e87e2c278fb10780c1e371be81d84b9711",
       "device_hub_snapshot_sha256": "e01f2cebe72ec5969859a40828a8ef2b817e811c3207e37f9b3cae96cdd3e7ee",
       "modified": true,
-      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained. Complete synchronized access-unit boundary query for sender-confirmed idle snapshots; remove environment-controlled sequence-gap diagnostics."
+      "change": "Eiscue complete-picture tracking and retained opaque geometry footer; reject footer-only payloads while leaving footer interpretation to Swift."
     },
     "vendor/idevice/src/services/core_device/display_stream/media_negotiation.proto": {
       "sha256": "ee3d03178e506f5e86eb360ca8067e80c7f9d612fb6114734f8b799d763ae5ea",
@@ -205,10 +206,10 @@
       "modified": false
     },
     "vendor/idevice/src/services/core_device/display_stream/negotiation.rs": {
-      "sha256": "78d1a7106965f56679a7706c2ba258df99ae3bf27144cb2e074f76143593a446",
+      "sha256": "866c2e7c9acbe653a66e30d95944c452262b1c3115e0fd876fd4692b824d4fc1",
       "device_hub_snapshot_sha256": "f1883b5166669fa01e4be2190887d4ccfbb14a5031b59a780d4538bbc5462527",
       "modified": true,
-      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained. Receiver-specific video bitrate budget, preserving the generic desktop and audio offer defaults."
+      "change": "Eiscue optional bitrate and SW capability adaptations on the independent MIT offer builder."
     },
     "vendor/idevice/src/services/core_device/display_stream/protobuf.rs": {
       "sha256": "75f9a8b83c266d5f3c85855a4faffb04251b8a7d4a2f3c6636c3dad97ddb489f",
@@ -216,10 +217,10 @@
       "modified": false
     },
     "vendor/idevice/src/services/core_device/display_stream/rtcp.rs": {
-      "sha256": "3fe7f0741288e7846bea7b55349c4740c0a56ba656ac278ad68d2314d63a4fbf",
+      "sha256": "510a5835e547712a85e32f8a6c412e95354e2f0d88dabede2c9c07fa10b70523",
       "device_hub_snapshot_sha256": "8925da50470ea0891deccc4abe3fa26f46c61b2a07cea8ba3f481e80f3576b88",
       "modified": true,
-      "change": "RCTL receipt timestamp/packet counters/constant suffix; independent public wire fixture. Sender packet-count parsing and explicit receiver bandwidth in RCTL; 60001-to-2000 semantics verified in iOS VCRC logs."
+      "change": "Eiscue bounded sender-report parser with packet count and fixed-layout RCTL receiver feedback encoder; retain other independent MIT RTCP helpers."
     },
     "vendor/idevice/src/services/core_device/display_stream/rtp.rs": {
       "sha256": "3cd49ade63d0e63bd6949d1ff7e64b736fce32d525386d27741bdb4f2f39405c",
@@ -242,10 +243,10 @@
       "modified": false
     },
     "vendor/idevice/src/services/core_device/mod.rs": {
-      "sha256": "eacd9d89376b23877fb6fe1864d3eba4356844645b54625aac0525dba1b4e52f",
+      "sha256": "abf21868143fb0d471d4ce8afa022355c266240b8d0230a8c155cb402c1cbeab",
       "device_hub_snapshot_sha256": "667a10b353c4be6830bf57313e34b9f89e14c2bf94d8e60cc5bf2fada9d174ab",
       "modified": true,
-      "change": "Manifest corrected to the already-committed local adaptation; upstream snapshot hash retained. Add an Eiscue integration for a dedicated authenticated protocol-v2 stream: retain side-channel/invocation identity, read bounded batches in order, distinguish finish/error from empty batches, and reject reuse after a failed stream. Existing bounded app-list collection remains separate. Eiscue geometry-only integration: retain the fresh getdisplayinfo invocation UUID, reject a present mismatched/malformed reply identity before reading output, and preserve missing-ID compatibility. The existing invoke method signature and unchecked legacy behavior are retained. Real HTTP/2 and RemoteXPC duplex fixtures decode the emitted request UUID and cover matching string/UUID, missing, foreign, malformed and mistyped reply IDs plus legacy compatibility."
+      "change": "Eiscue bounded app-list collection over the MIT protocol-v2 request schema; retain Eiscue strict display metadata stream and current-display invocation correlation."
     },
     "vendor/idevice/src/services/core_device/openstdiosocket.rs": {
       "sha256": "7991b0ca0e1210e8148fa419fe046b45ab4a388a5547489631e817835c5e598b",
@@ -539,9 +540,10 @@
       "modified": false
     },
     "vendor/idevice/src/services/rsd.rs": {
-      "sha256": "6e94b9ccb085121dca9837c791100d4a1bd66468bf6f640f1854323c40a9a434",
+      "sha256": "0089d6b201f7f820db4386ad3db945a80611a384b385fb6f0c0eb2b371c29753",
       "device_hub_snapshot_sha256": "bdb483a6bbc30b586e4d2d04190d432219059149298c2bca85f9033042bd03f7",
-      "modified": true
+      "modified": true,
+      "change": "Eiscue retained-lifetime constructor: parse the MIT catalog and return its live authenticated RemoteXPC channel alongside it."
     },
     "vendor/idevice/src/services/screenshotr.rs": {
       "sha256": "71958cb2df8268ca6cb9303bef444a4b0ec9ec47626b4d6fa0424276b7129c1e",
@@ -681,112 +683,200 @@
     "source_sha256": "8618abf65ddfbf0e904d583e244e8fb9d79c88d6283f2f9d5c06291cba3bb5c9",
     "change": "MIT attribution header only"
   },
-  "eiscue_backend_changes": {
-    "actell_revision": "032864e2339da19ee13025c471f4cf1dfdf4c5cd",
-    "note": "Paths are relative to this manifest. These entries record local changes to the actell-derived backend; the Device Hub snapshot entries above retain their original scope.",
+  "device_hub_patch_sha256": "6654ef68a966f5a05e04470d08871e1f70f5b4747eb4d5865b6fcb2ea32d00bd",
+  "native_artifacts": {
+    "manifest": "../Frameworks/EiscueNativeBackend.xcframework/BUILD_MANIFEST.json",
+    "check": "python3 Scripts/device-backend-artifacts.py check",
+    "note": "Build freshness only; software checks and physical-device acceptance are recorded separately."
+  },
+  "control_implementation": {
+    "owner": "Eiscue",
+    "runtime_dependency_on_actell": false,
+    "historical_actell_revision": "032864e2339da19ee13025c471f4cf1dfdf4c5cd",
+    "note": "No actell package or archived implementation is built or linked. Reimplementation does not erase the origin of compatibility declarations, small adapters, or retained test fixtures and does not change GPL licensing. Paths below are relative to this manifest.",
     "files": {
-      "../Sources/PhoneAgentNCM/InterfaceBinding.swift": {
-        "sha256": "fa16add1d46ea9257517c0d2896bb3f7da7715555169500d91f8049483399256",
-        "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/InterfaceBinding.swift",
-        "modified": true,
-        "change": "Remove the Wi-Fi hotspot board transport and /30 subnet selection; retain USB /24 interface validation."
-      },
-      "../Sources/PhoneAgentNCM/NativeDeveloperServices.swift": {
-        "sha256": "25964e393ace3169f314120cddc495529b010c6bd91c25d7aee1502d41a458da",
-        "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/NativeDeveloperServices.swift",
-        "modified": true,
-        "change": "Update the USB discovery API comment after removal of the Wi-Fi hotspot board transport. Validate DisplayService input geometry against the latest assembled-picture decode cursor instead of the RTCP-confirmed screenshot cursor, so incoming animation packets alone do not reject input; retain decoder catch-up and generation checks. Capture an explicit CoreDevice or owned XCTest control backend at session initialization; retain automatic iOS 26 XCTest / iOS 27+ CoreDevice defaults and use the immutable selection for screenshot, input, geometry and cleanup. Swift-only selection change; native archive contents and ABI are unchanged. Eiscue integration: normalize owned XCTest PNG orientation outside MainActor and recheck cancellation/session/lease/geometry before publication; derive the owned native-text receipt deadline from the bounded UTF-8 byte count while retaining Home/touch deadlines and unknown/no-replay behavior. Add DEBUG-only numeric local-VPN interface snapshots at connection admission; no endpoint, identity or credential contents are recorded. Eiscue cancellation cleanup: retain accepted Rust request IDs and owned XCTest event leases after cancellation or uncertain delivery, reject new ordinary requests, drain the original request before scoped stop, and preserve the original receipt deadline (including bounded long text) in the outer release budget. Malformed/closed channels and expired cleanup remain unconfirmed; no input is resubmitted and draining never changes the work outcome. Freeze each geometry-read decode barrier at admission instead of chasing later same-epoch animation pictures; decode every already-received picture and retain epoch, sync, session and geometry-identity rejection. DEBUG-only geometry-read nil diagnostics contain numeric reason, barrier/current/decoded epoch and serial, decoder presence and elapsed milliseconds. Eiscue input geometry barrier: issue read-only action 17 before reusing CoreDevice geometry, validate its exact one-byte confirmation through the ordinary serialized request/receipt/drain path, and retain cancellation, handle and decoder checks before reading the frozen decode barrier. Add an explicit DEBUG-only --media-session-diagnostics collection after normal CoreDevice media start. Query action 18 once on the existing serialized receipt path; export only a strictly validated fixed numeric/boolean summary in a protected cache file. Settled Media/Unprepared or MediaInactive diagnostic refusals do not change cleanup state; cancellation, pending receipts, malformed ABI and genuine loss retain the existing cleanup path. Invalidate the prior diagnostic artifact before each attempt so cancellation, transport failure or a failed write cannot reuse an older success; if invalidation fails, skip this optional query without changing the connected media."
-      },
-      "src/relay.rs": {
-        "sha256": "94fe98b4d2cda66eed0a48eced9346d7d00e89f171c0e62256fb619dc14e29e0",
-        "source": "ncm-dev/rust/src/relay.rs",
-        "modified": true,
-        "change": "Remove the Wi-Fi hotspot /30 subnet allowance from the Darwin relay socket binding guard; retain USB /24 binding."
-      },
-      "src/pairing.rs": {
-        "sha256": "ec33d3887726936954aad44049ef24b987cabcc854db074558c9c6642e4625c7",
-        "source": "ncm-dev/rust/src/pairing.rs",
-        "modified": true,
-        "change": "Use Eiscue as the advertised controller/host display name and a fresh UUIDv4 identifier for each explicit new pairing, consistently across discovery, protocol identity and persistence. Emit an empty kind 10 / stage 1 diagnostic event after TCP accept without changing listener family or wire protocol."
-      },
-      "../Sources/PhoneAgentNCM/RemotePairingSession.swift": {
-        "sha256": "bd6a577c0d2fd3e5950dcabf82c7e7b4f3d346de5170d6899aa4ff88f2057420",
-        "source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/RemotePairingSession.swift",
-        "modified": true,
-        "change": "Validate the empty TCP-accepted diagnostic event and log numeric pairing phases at notice level; explicit Debug-only --pairing-diagnostics writes only stage, previousStage and elapsedSeconds to a file-protected cache report. No PINs, endpoints, identifiers, packets, identities or raw errors are logged or included in that report."
-      },
-      "../Sources/CNCMBackend/include/ncm_backend.h": {
-        "sha256": "79e38df76521b635a0f3127ca30b9bc822200f9a17dbe865653168bfbc5b1094",
-        "source": "ncm-dev/PhoneAgentNCM/Sources/CNCMBackend/include/ncm_backend.h",
-        "modified": true,
-        "change": "Document kind 10 as empty TCP-accepted stage 1 only on pairing handles, distinguished from ordinary control-handle touch preparation failures. Add a separate numeric video decode-cursor struct and getter; existing ABI layouts remain unchanged. Add action 17 for a read-only authenticated DisplayInfo roundtrip, using existing ABI structures and an exact one-byte event-2 result; no input, replacement metadata or replay. Add read-only action 18 with SCREEN | MEDIA | EXISTING_VERIFY permissions and a documented 25-field boolean/count/null summary. Existing ABI layouts are unchanged; no cross-process ownership or stop authority is granted."
+      "src/bin/pair_usb.rs": {
+        "sha256": "d6773ada9ea076dba904a1de456f35395208b14c8594d7b726acc111b4c03778",
+        "origin": "Eiscue addition",
+        "historical_source": null
       },
       "src/ffi.rs": {
-        "sha256": "2d3231e5cae081f595227d407291076ad2e0fc5f839059d8a588fabf62cc19ef",
-        "source": "ncm-dev/rust/src/ffi.rs",
-        "modified": true,
-        "change": "Extend the consent/listener-close fixture to validate the empty TCP-accepted event, handle revocation, connection closure and port release. Add two-attempt C ABI coverage requiring distinct UUIDv4 identifiers with matching advertisement TXT identifiers. Export the screen-authorized video decode cursor with invalid/closed handle and null-pointer coverage. Add SCREEN | VERIFY-gated read-only geometry action 17 to the existing serialized request/receipt queue; return one exact Boolean byte and cover its permission gate. Route action 18 through the existing serialized queue and require screen, media and verified-identity permissions without requiring input. Cover the additive permission gate and invalid handle."
-      },
-      "src/video.rs": {
-        "sha256": "01c39b9c174770f8881f62235c1766ea9bf602b182e1d628410f0ee24ae80a77",
-        "source": "ncm-dev/rust/src/video.rs",
-        "modified": true,
-        "change": "Separate the latest assembled-picture decode cursor from RTCP screenshot confirmation. Receiving new RTP packets alone leaves input geometry valid; reference-chain resets, codec changes and display-size metadata changes revoke it. Cover continuous incoming pictures, queued layout changes and rotation back to the original dimensions. Track authenticated current/native display rotation as part of geometry identity; every metadata transition, including same-size 180-degree rotation and A-to-B-to-A updates between pictures, advances the epoch. Missing metadata forces the input decode cursor to serial zero; pixels alone still do not revoke geometry. Expose the actual mailbox reference-chain sync requirement independently of one-shot refresh requests; a discarded P-frame cannot clear recovery, and an accepted sync picture ends it. Add a geometry-reset/inter-frame/sync recovery fixture. Fresh read-only metadata can only confirm the same synchronized epoch or invalidate it, never promote a replacement geometry; reject replies for an epoch changed by the ordered stream."
-      },
-      "src/media.rs": {
-        "source": "ncm-dev/rust/src/media.rs",
-        "modified": true,
-        "sha256": "4efe0760f6ee9e5a503eb8a02f5a5b6bfd1cb17d19aa0f5e6acf39eb5cbf66ae",
-        "change": "Retain scoped media ownership before fallible reply parsing and HID setup. Preserve unknown/failed release state, ignore foreign server-status answers, bind fallback configuration to the owned answer, and clear ownership only after confirmed absence. Box negotiation to bound async stack usage; add synthetic partial-start/cleanup regressions. Eiscue integration: subscribe to a dedicated authenticated displayinfoupdates stream before media startup; apply every current/nativeOrientation update to mailbox geometry without blocking RTP/RTCP. Stream failure, finish or invalid display metadata clears geometry and input health; owned drain cancellation drops the dedicated subscription. Check the mailbox's actual sync requirement on every existing one-second feedback tick, retaining Receiver Reports and repeated PLI after geometry resets, dropped P-frames or absent RTP until a sync picture is accepted. Test lost one-shot refresh and recovery completion without resubmitting input. Before input geometry reuse, perform a two-second authenticated DeviceInfo getdisplayinfo request on a separate short-lived service client. Compare against the epoch captured before the RPC; mismatch or failure revokes authority, without writing snapshot metadata into the ordered subscription. Synthetic fixtures cover unchanged geometry, fresh mismatch, delayed old notification, stream epoch change during the RPC and failed RPC. The peer supplies no monotonic display revision; no claim of detecting an unreported A-to-B-to-A interval or bypassing peer caching. Use the narrow invocation-correlated getdisplayinfo call for the geometry-only roundtrip; older invoke callers are unchanged. Retain caller session/call UUIDs and negotiated stream tokens privately in the live Media object for comparison only. A two-second read-only status query uses a temporary DisplayService client on the same authenticated adapter; no media start, stop, release-state mutation or recovery authority."
-      },
-      "src/lib.rs": {
-        "source": "ncm-dev/rust/src/lib.rs",
-        "modified": true,
-        "sha256": "105a6b602604256860c9975a94e97ce1c24acbce3bf27ad0d7e4d8b85dfc4fb0",
-        "change": "Keep media release state separate from completed Media, refuse a new start while cleanup is unresolved, and stop an identified partial start even when no Media object exists. Add Session cleanup regression fixtures. Route the explicit read-only geometry verification to the active owned Media while preserving request serialization and scoped cleanup. Expose the read-only live-media status diagnostic only for a current valid Session with active Media; reject idle media without changing release state, and recheck the owner after the awaited query."
+        "sha256": "57b92d9b5ba5e1fe1364959a2ac585dfd2c3f9461b68adf3e310866a38211b71",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/ffi.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
       },
       "src/legacy_probe.rs": {
-        "source": "ncm-dev/rust/src/legacy_probe.rs",
-        "modified": true,
-        "sha256": "38dbcfd69c8225d6f51b7e266ab1d16e62b5efdbd20832ff0b0538fce0865a60",
-        "change": "Initialize the separate media release state in an existing synthetic Session fixture; production probe unchanged."
+        "sha256": "e60933ed094b32f101e6584571c2589d2d57b4d11e0c511f6c162dddca2f7b83",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "src/lib.rs": {
+        "sha256": "fd3b191c785c54f04ae5da493be755203e7e4fa33b5ec522ec172ef51579e0ee",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/lib.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
+      },
+      "src/local_vpn.rs": {
+        "sha256": "b615e8936c717ebf530e0b373668cbda160e64035bf0219f4d81c5cf238f1ad6",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/local_vpn.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
+      },
+      "src/lockdown.rs": {
+        "sha256": "c2b72f32db691903c69fc282d617a827df85eadec0d58d803323723117f2eb72",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/lockdown.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
+      },
+      "src/media.rs": {
+        "sha256": "96ddddaa2babfac97f1a9ba5d87e11bc0ca44939d3012f45bdd676a5cd9d0e6e",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/media.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
+      },
+      "src/media_cleanup.rs": {
+        "sha256": "28070279813fed887e0cc5f2ff76c057d0b336ce957479b75c27f7cfaaa5bf71",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "src/media_cleanup_ffi.rs": {
+        "sha256": "31823825ba2b5b1bb7d0b33758f9973ff49f9e81053d7e0b8cc05b61972e48a5",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "src/media_diagnostic.rs": {
+        "sha256": "7a29e7c100b2e0882ef0251acdc63283829c0febb93aff1e29dc01d8ca54fa35",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "src/pairing.rs": {
+        "sha256": "212a86b3a0719a0e5b3e86ae4d2f6be0ca37c98895bcc915a85b09dd9c1e0f1a",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/pairing.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
+      },
+      "src/png.rs": {
+        "sha256": "7c29023f216d2dc8038d790ccf7beebd260f7af4f8b84054a5a0a3e852a61b44",
+        "origin": "Device Hub MIT",
+        "source": "Rust/DeviceHubFFI/src/png.rs"
+      },
+      "src/relay.rs": {
+        "sha256": "140da37ff8e48a2169d3d5ad34b5d4bb98d982fe705802d122725a64dc4f3df1",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/relay.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
+      },
+      "src/transport.rs": {
+        "sha256": "0dadb512e1a952e5c100e83dcfcae637c87390fcfe92358c09b978e7ac2fde96",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/transport.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
+      },
+      "src/video.rs": {
+        "sha256": "9acadea7392695ae9faf384859c3f242ba9e57c325dea133ba0445e7d5d3d792",
+        "origin": "Eiscue replacement control implementation",
+        "historical_source": "ncm-dev/rust/src/video.rs",
+        "retained": "Stable ABI/data types and constants, simple compatibility/data wrappers, and regression/offline fixtures retain previous GPL provenance; protocol clients are MIT idevice."
       },
       "src/xctest_session.rs": {
-        "source": "ncm-dev/rust/src/xctest_session.rs",
-        "modified": true,
-        "sha256": "a0933f57fb447bea76b1e48ab3c7bdef3e48e2118a93f84a0bfd0ae7c1ccf4c4",
-        "change": "Initialize the separate media release state in an existing synthetic Session fixture; production XCTest path unchanged."
-      },
-      "../Sources/PhoneAgentNCM/LocalVPNDiscovery.swift": {
-        "sha256": "2bb5e48649829337d9593a58a16ada702aff6c1112d8587d8d6db7d7051dfe44",
-        "source": null,
-        "modified": true,
-        "change": "Eiscue-owned local-VPN integration changes, not attributed to upstream actell. Select only the configured active point-to-point utun, wait at most two seconds for its read-only readiness before Bonjour discovery, and reserve/cancel each request by identity without restarting VPN or replaying input. DEBUG-only snapshots contain counts, interface index/flags and uptime, never endpoint or identity contents."
+        "sha256": "fea2685c26ab7b6565239a6a4a30129ded102a8ce10ff4c85fa99e79de345fbf",
+        "origin": "Eiscue addition",
+        "historical_source": null
       },
       "../Sources/CEiscueAutomation/EiscueAutomation.m": {
         "sha256": "e06033c8578cf547e70f7ae7c2fb1eb9cf64dfd5b80823aa65366620edd59942",
-        "source": null,
-        "modified": true,
-        "change": "Eiscue-owned independently implemented Objective-C addition, not upstream actell or TouchSynthesis source. Runtime-check DDI framework signatures, create and release only the owned XCTest runner/XPC session, bind screenshots and input to lease/request/geometry revision, fail unknown delivery without replay, and send one redacted native Unicode text event without clipboard access."
+        "origin": "Eiscue addition",
+        "historical_source": null
       },
       "../Sources/CEiscueAutomation/include/EiscueAutomation.h": {
         "sha256": "8fb7dc78e49fca313800320ef81eca8da98bcf75f90b2b39155bdebcc4c67ce8",
-        "source": null,
-        "modified": true,
-        "change": "Eiscue-owned C interface addition for the independently implemented owned XCTest integration, not an upstream actell interface. Define lease/request/geometry-bound asynchronous screenshot, touch, Home, native Unicode text, stop and abort entry points; event receipts do not prove visible effects."
+        "origin": "Eiscue addition",
+        "historical_source": null
       },
-      "src/media_diagnostic.rs": {
-        "source": null,
-        "modified": true,
-        "sha256": "7a29e7c100b2e0882ef0251acdc63283829c0febb93aff1e29dc01d8ca54fa35",
-        "change": "Eiscue addition: fixed private status summary with canonical UUID-string comparisons, known stream-config shape counts and same-entry correlation. One bounded decoded-tree traversal, opaque Data presence only, null unknown/truncated facts and redacted query errors; no IDs, unknown keys/paths or release authority. Synthetic privacy, bounds, correlation, timeout and health fixtures. Interpret the status reply as root DeviceServerInfo sessions, separate from StopResponse.serverInfo. Independently count exact connection.options.avcMediaStreamOptionClientSessionID.uuid plus the same session entry live stream pair, without requiring a call UUID absent from the SDK status model; fixed candidate path was matched once on iPhone 12 mini / iOS 27 as live-session evidence only, not orphan recovery."
+      "../Sources/CEiscueDeviceBackend/include/module.modulemap": {
+        "sha256": "338d9b4f69366ac8d9e4089add07f948e7f961c74649b27531a9ddbfa4d4ceba",
+        "origin": "Compatibility C ABI declarations and module shim",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/CNCMBackend/include/module.modulemap",
+        "retained": "Stable ncm_* symbols and ABI layouts; Eiscue-owned cleanup, geometry and XCTest additions."
       },
-      "../Sources/PhoneAgentNCM/MediaSessionDiagnostic.swift": {
-        "source": null,
-        "modified": true,
+      "../Sources/CEiscueDeviceBackend/include/ncm_backend.h": {
+        "sha256": "0bc229e5140f95d5a8bb4d3be6d25fd17f2964ff7711d85bbabefae049f1a094",
+        "origin": "Compatibility C ABI declarations and module shim",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/CNCMBackend/include/ncm_backend.h",
+        "retained": "Stable ncm_* symbols and ABI layouts; Eiscue-owned cleanup, geometry and XCTest additions."
+      },
+      "../Sources/CEiscueDeviceBackend/shim.c": {
+        "sha256": "b605696dd2b2b535affa6818982fd581a0ba86446d0dfcaebf73cfa63e9c3187",
+        "origin": "Compatibility C ABI declarations and module shim",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/CNCMBackend/shim.c",
+        "retained": "Stable ncm_* symbols and ABI layouts; Eiscue-owned cleanup, geometry and XCTest additions."
+      },
+      "../Sources/EiscueDeviceBackend/Diagnostic.swift": {
+        "sha256": "ac8e512834f376cc62f9ef6f48570075d9baf8ac80d7fbedf5768155ee8ec339",
+        "origin": "Eiscue replacement Swift bridge with retained Eiscue lifecycle/cleanup integration",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/Diagnostic.swift",
+        "retained": "Public compatibility types and small encoding/validation adapters; InterfaceBinding retains the explicitly attributed IPv4 scoped-address workaround."
+      },
+      "../Sources/EiscueDeviceBackend/InterfaceBinding.swift": {
+        "sha256": "9f4aa3c1104207e274884d31df7483fbb6a9b733eaf20fbc37963249fbae738d",
+        "origin": "Eiscue replacement Swift bridge with retained Eiscue lifecycle/cleanup integration",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/InterfaceBinding.swift",
+        "retained": "Public compatibility types and small encoding/validation adapters; InterfaceBinding retains the explicitly attributed IPv4 scoped-address workaround."
+      },
+      "../Sources/EiscueDeviceBackend/LegacyDeveloperServicesProbe.swift": {
+        "sha256": "b87825f07e122bed8a86cab6391eae40b3e2a3c3d0a206e6643ea3da05bcb839",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "../Sources/EiscueDeviceBackend/LocalVPNDiscovery.swift": {
+        "sha256": "a25eb54ca9496d01fab884d44fa8d4f8a6cd4c2d4e3e3f665ceed1f83dbb567c",
+        "origin": "Eiscue replacement Swift bridge with retained Eiscue lifecycle/cleanup integration",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/LocalVPNDiscovery.swift",
+        "retained": "Public compatibility types and small encoding/validation adapters; InterfaceBinding retains the explicitly attributed IPv4 scoped-address workaround."
+      },
+      "../Sources/EiscueDeviceBackend/MediaSessionDiagnostic.swift": {
         "sha256": "8f6a6054e508f19ea7eb03afb8a976a71f6b4024260481f4b2153f0c4deeb09c",
-        "change": "Eiscue addition: DEBUG-only strict 25-field numeric/boolean/null validator and protected diagnostic-record encoder. Reject unknown fields/types/bounds and incomplete scan matches; replace stale summaries with fixed issue records on malformed/refused diagnostics. No raw native payload is persisted."
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "../Sources/EiscueDeviceBackend/NCMDiscoveredEndpoint.swift": {
+        "sha256": "e7411a9ace982d102ccad99700bf995f84d755d7ec2f5eb8fd8dfe46bda62f22",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "../Sources/EiscueDeviceBackend/NCMProbeClient.swift": {
+        "sha256": "c624aad807b94ce04625833e0f9ce53ec947f6be15d15ceeadc8303ac92fc7b9",
+        "origin": "Eiscue replacement Swift bridge with retained Eiscue lifecycle/cleanup integration",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/NCMProbeClient.swift",
+        "retained": "Public compatibility types and small encoding/validation adapters; InterfaceBinding retains the explicitly attributed IPv4 scoped-address workaround."
+      },
+      "../Sources/EiscueDeviceBackend/NativeABI.swift": {
+        "sha256": "1ef47c156f80b5012adfdb72999c07be6a38cd00b13def339dab20caf6d33354",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "../Sources/EiscueDeviceBackend/NativeDeveloperServices.swift": {
+        "sha256": "e3b5e48bbd4b6a2d6777f9d9cea049286ca3dedba4bb05bc82a01c74be494ea4",
+        "origin": "Eiscue replacement Swift bridge with retained Eiscue lifecycle/cleanup integration",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/NativeDeveloperServices.swift",
+        "retained": "Public compatibility types and small encoding/validation adapters; InterfaceBinding retains the explicitly attributed IPv4 scoped-address workaround."
+      },
+      "../Sources/EiscueDeviceBackend/NativeVideoPipeline.swift": {
+        "sha256": "624a21b259b5dd0ce06029b62cb8b16e1ef8ffae689ee8f1b5a24f11e7592618",
+        "origin": "Eiscue addition",
+        "historical_source": null
+      },
+      "../Sources/EiscueDeviceBackend/RemotePairingSession.swift": {
+        "sha256": "ef6987de11ac2102f0da407d6e5a869ef0e87c2dd7ed14b80c62c724e05b3f18",
+        "origin": "Eiscue replacement Swift bridge with retained Eiscue lifecycle/cleanup integration",
+        "historical_source": "ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM/RemotePairingSession.swift",
+        "retained": "Public compatibility types and small encoding/validation adapters; InterfaceBinding retains the explicitly attributed IPv4 scoped-address workaround."
       }
-    }
+    },
+    "removed": [
+      "Sources/PhoneAgentNCM/RemotePairRecordStore.swift: unused unprotected file-store implementation removed; app-owned Keychain persistence is used.",
+      "NativeLockdownSession: unused Swift wrapper removed; pinned native protocol client retained for explicit bootstrap/diagnostics."
+    ]
   }
 }

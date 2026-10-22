@@ -28,19 +28,19 @@ struct NCMInterfaceBinding {
     let transport: NCMBoardTransport
 
     static func select(_ rows: [Row], transport: NCMBoardTransport = .usb) throws -> Row {
-        let addressed = rows.filter { $0.address == localIP }
-        guard !addressed.isEmpty else { throw NCMError.interfaceUnavailable }
-        let matches = addressed.filter { $0.mask == netmask }
-        guard matches.count == 1, let row = matches.first else {
-            throw matches.isEmpty ? NCMError.interfaceInvalid : NCMError.interfaceAmbiguous
+        var candidates: [Row] = []
+        var hasAddress = false
+        for row in rows where row.address == localIP {
+            hasAddress = true
+            if row.mask == netmask { candidates.append(row) }
         }
-        let required = UInt32(IFF_UP | IFF_RUNNING | IFF_BROADCAST)
-        let forbidden = UInt32(IFF_LOOPBACK | IFF_POINTOPOINT)
-        guard row.index > 0, row.mask == netmask, row.flags & required == required,
-              row.flags & forbidden == 0, row.linkType == UInt8(IFT_ETHER) else {
-            throw NCMError.interfaceInvalid
-        }
-        return row
+        guard hasAddress else { throw NCMError.interfaceUnavailable }
+        guard candidates.count == 1 else { throw candidates.isEmpty ? NCMError.interfaceInvalid : .interfaceAmbiguous }
+        let selected = candidates[0]
+        let mustSet = [IFF_UP, IFF_RUNNING, IFF_BROADCAST].allSatisfy { selected.flags & UInt32($0) != 0 }
+        let mustClear = [IFF_LOOPBACK, IFF_POINTOPOINT].allSatisfy { selected.flags & UInt32($0) == 0 }
+        guard mustSet, mustClear, selected.index > 0, selected.linkType == UInt8(IFT_ETHER) else { throw NCMError.interfaceInvalid }
+        return selected
     }
     static func validateType(_ type: NWInterface.InterfaceType, transport: NCMBoardTransport = .usb) throws {
         switch (transport, type) {
@@ -74,31 +74,36 @@ struct NCMInterfaceBinding {
         return parameters
     }
     static func inventory() throws -> [Row] {
-        var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0 else { throw NCMError.interfaceInvalid }
-        defer { freeifaddrs(head) }
-        var entries: [(String, String, String, UInt32)] = []
-        var linkTypes: [String: UInt8] = [:]
-        var cursor = head
-        func ipv4(_ pointer: UnsafeMutablePointer<sockaddr>?) -> String? {
-            guard let pointer, pointer.pointee.sa_family == UInt8(AF_INET) else { return nil }
-            var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            guard getnameinfo(pointer, socklen_t(pointer.pointee.sa_len), &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 else { return nil }
-            return String(cString: buffer)
-        }
-        while let entry = cursor {
-            defer { cursor = entry.pointee.ifa_next }
-            let value = entry.pointee, name = String(cString: value.ifa_name)
-            if let address = ipv4(value.ifa_addr) {
-                entries.append((name, address, ipv4(value.ifa_netmask) ?? "unknown", value.ifa_flags))
-            }
-            if let address = value.ifa_addr, address.pointee.sa_family == UInt8(AF_LINK) {
-                // Read the link type only, never link-layer addresses (MACs).
-                linkTypes[name] = UnsafeRawPointer(address).assumingMemoryBound(to: sockaddr_dl.self).pointee.sdl_type
+        var list: UnsafeMutablePointer<ifaddrs>?
+        if getifaddrs(&list) != 0 { throw NCMError.interfaceInvalid }
+        defer { freeifaddrs(list) }
+        var hardware: [String: UInt8] = [:]
+        var rows: [Row] = []
+        var next = list
+        while let pointer = next {
+            let record = pointer.pointee
+            next = record.ifa_next
+            let name = String(cString: record.ifa_name)
+            guard let address = record.ifa_addr else { continue }
+            switch Int32(address.pointee.sa_family) {
+            case AF_LINK:
+                hardware[name] = UnsafeRawPointer(address).loadUnaligned(as: sockaddr_dl.self).sdl_type
+            case AF_INET:
+                guard let ip = numericIPv4(address) else { continue }
+                rows.append(Row(name: name, index: if_nametoindex(name), address: ip,
+                                mask: numericIPv4(record.ifa_netmask) ?? "unknown", flags: record.ifa_flags, linkType: nil))
+            default: break
             }
         }
-        return entries.map { name, address, mask, flags in
-            Row(name: name, index: if_nametoindex(name), address: address, mask: mask, flags: flags, linkType: linkTypes[name])
-        }
+        return rows.map { Row(name: $0.name, index: $0.index, address: $0.address, mask: $0.mask,
+                              flags: $0.flags, linkType: hardware[$0.name]) }
+    }
+    private static func numericIPv4(_ address: UnsafeMutablePointer<sockaddr>?) -> String? {
+        guard let address, Int32(address.pointee.sa_family) == AF_INET,
+              Int(address.pointee.sa_len) >= MemoryLayout<sockaddr_in>.size else { return nil }
+        var binary = UnsafeRawPointer(address).loadUnaligned(as: sockaddr_in.self).sin_addr
+        var output = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard inet_ntop(AF_INET, &binary, &output, socklen_t(output.count)) != nil else { return nil }
+        return String(cString: output)
     }
 }

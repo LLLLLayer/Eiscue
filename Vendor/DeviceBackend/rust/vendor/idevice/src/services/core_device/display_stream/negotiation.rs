@@ -157,10 +157,10 @@ impl CallInfoBlob {
 
 /// Build the CoreDevice screen-sharing media blob
 pub fn build_screen_media_blob(session_id: u32, ntp_time: u64) -> Vec<u8> {
-    build_screen_media_blob_with_fls(session_id, ntp_time, SCREEN_HEVC_FLS, 6_000_000)
+    build_screen_media_blob_with_fls(session_id, ntp_time, SCREEN_HEVC_FLS, None)
 }
 
-fn build_screen_media_blob_with_fls(session_id: u32, ntp_time: u64, hevc_fls: &str, max_bitrate: u32) -> Vec<u8> {
+fn build_screen_media_blob_with_fls(session_id: u32, ntp_time: u64, hevc_fls: &str, receiver_bitrate: Option<u32>) -> Vec<u8> {
     fn format_desc(e: &mut Encoder, variant: u64) {
         e.message_field(2, |m| {
             m.uint_field(1, 1);
@@ -198,7 +198,7 @@ fn build_screen_media_blob_with_fls(session_id: u32, ntp_time: u64, hevc_fls: &s
         m.uint_field(8, 63);
         m.uint_field(12, 1);
     });
-    write_blob_tail(&mut e, ntp_time, max_bitrate);
+    write_blob_tail(&mut e, ntp_time, receiver_bitrate);
     e.into_bytes()
 }
 
@@ -215,14 +215,14 @@ pub fn build_audio_media_blob(session_id: u32, ntp_time: u64) -> Vec<u8> {
         m.uint_field(5, 0);
         m.uint_field(6, 0);
     });
-    write_blob_tail(&mut e, ntp_time, 6_000_000);
+    write_blob_tail(&mut e, ntp_time, None);
     e.into_bytes()
 }
 
 /// Write the fields shared by the audio and video screen blobs: the UserAgent
 /// (field 6), field 8, the bandwidth/parameter ladder (field 9, repeated), and
 /// the trailing scalars (13 = NTP, 14, 16, 18).
-fn write_blob_tail(e: &mut Encoder, ntp_time: u64, max_bitrate: u32) {
+fn write_blob_tail(e: &mut Encoder, ntp_time: u64, receiver_bitrate: Option<u32>) {
     fn param(e: &mut Encoder, id: u64, value: u64, flags: Option<u64>) {
         e.message_field(9, |m| {
             m.uint_field(1, id);
@@ -239,7 +239,7 @@ fn write_blob_tail(e: &mut Encoder, ntp_time: u64, max_bitrate: u32) {
     param(e, 0, 60_000_000, Some(0x40000));
     param(e, 0, 40_000_000, Some(0x3000));
     param(e, 16, 4100, None);
-    param(e, 0, u64::from(max_bitrate), Some(0x20000));
+    param(e, 0, u64::from(receiver_bitrate.unwrap_or(6_000_000)), Some(0x20000));
     param(e, 4, 6500, None);
     param(e, 0, 100_000_000, Some(0x100000));
     param(e, 1, 299, None);
@@ -268,20 +268,20 @@ fn zlib_compress(raw: &[u8]) -> Result<Vec<u8>, IdeviceError> {
 /// - `avcMediaStreamNegotiatorMode`      - 5 (CoreDeviceScreenSharing; the audio
 ///   offer uses 6 / CoreDeviceSystemAudio
 /// - `avcMediaStreamOptionRemoteEndpointInfo` - `VCCallInfoBlob` protobuf
+/// Eiscue's explicit receiver budget, using the normal MIT screen-offer codec.
+pub fn build_screen_video_offer_with_bitrate(
+    call_id: &str, call_info: &CallInfoBlob, ssrc: u32, max_bitrate: u32,
+) -> Result<Vec<u8>, IdeviceError> {
+    let description = build_screen_media_blob_with_fls(ssrc, ntp_now(), SCREEN_HEVC_FLS, Some(max_bitrate));
+    build_offer_plist(call_id, call_info, description.as_slice(), NEGOTIATOR_MODE_COREDEVICE_SCREEN)
+}
+
 pub fn build_screen_video_offer(
     call_id: &str,
     call_info: &CallInfoBlob,
     ssrc: u32,
 ) -> Result<Vec<u8>, IdeviceError> {
     let blob = build_screen_media_blob(ssrc, ntp_now());
-    build_offer_plist(call_id, call_info, &blob, NEGOTIATOR_MODE_COREDEVICE_SCREEN)
-}
-
-/// Receiver-specific link budget, independent of the generic desktop profile.
-pub fn build_screen_video_offer_with_bitrate(
-    call_id: &str, call_info: &CallInfoBlob, ssrc: u32, max_bitrate: u32,
-) -> Result<Vec<u8>, IdeviceError> {
-    let blob = build_screen_media_blob_with_fls(ssrc, ntp_now(), SCREEN_HEVC_FLS, max_bitrate);
     build_offer_plist(call_id, call_info, &blob, NEGOTIATOR_MODE_COREDEVICE_SCREEN)
 }
 

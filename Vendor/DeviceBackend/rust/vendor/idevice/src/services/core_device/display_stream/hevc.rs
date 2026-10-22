@@ -36,9 +36,8 @@ const MAX_NAL_UNIT_COUNT: usize = 256;
 const MAX_CODED_PIXEL_DIMENSION: u32 = 16_384;
 const MAX_CODED_PIXEL_COUNT: u64 = 128 * 1024 * 1024;
 
-// Observed DisplayService coded-slice trailer. Preserve this opaque metadata
-// for the consumer: its bytes include device-specific geometry and must not be
-// matched/stripped as a universal constant before geometry can be inspected.
+// Known trailer fixture. Real trailers can carry geometry-specific values;
+// retain the bytes for the geometry-aware consumer rather than stripping them.
 const DISPLAYSERVICE_NAL_TRAILER: [u8; 14] = [
     0x04, 0xf0, 0x0a, 0xc0, 0x00, 0x00, 0x03, 0x00, 0x00, 0x04, 0xec, 0x0a, 0xb0, 0x03,
 ];
@@ -582,20 +581,15 @@ fn validate_complete_nal(
         return Err(HevcDiscontinuity::MalformedPayload);
     }
 
-    let end = nal.len();
-    if is_vcl(nal_type(nal[0]))
-        && nal.len() >= HEVC_NAL_HEADER_LEN + DISPLAYSERVICE_NAL_TRAILER.len()
-        && nal.ends_with(&DISPLAYSERVICE_NAL_TRAILER)
-    {
-        // Preserve metadata, but reject a NAL containing only header + trailer.
-        if end == HEVC_NAL_HEADER_LEN + DISPLAYSERVICE_NAL_TRAILER.len() {
-            return Err(HevcDiscontinuity::MalformedPayload);
+    if is_vcl(nal_type(nal[0])) {
+        if let Some(prefix) = nal.strip_suffix(&DISPLAYSERVICE_NAL_TRAILER) {
+            if prefix.len() == HEVC_NAL_HEADER_LEN {
+                return Err(HevcDiscontinuity::MalformedPayload);
+            }
         }
     }
-    if end <= HEVC_NAL_HEADER_LEN {
-        return Err(HevcDiscontinuity::MalformedPayload);
-    }
-    Ok(nal[..end].to_vec())
+    // Opaque DisplayService metadata is needed by the geometry-aware decoder.
+    Ok(Vec::from(nal))
 }
 
 /// A bounded MSB-first bit reader for the SPS prefix.
@@ -992,9 +986,10 @@ impl HevcAccessUnitAssembler {
         }
     }
 
-    /// True only at a fully assembled, synchronized frame boundary.
+    /// True at a synchronized picture boundary with no buffered fragment/gap.
     pub fn is_complete(&self) -> bool {
-        !self.requires_sync_sample && self.reorder.is_empty() && self.current.timestamp.is_none()
+        if self.requires_sync_sample || self.current.timestamp.is_some() { return false; }
+        self.reorder.is_empty()
     }
 
     /// Returns a copy of the latest complete parameter-set configuration.
@@ -1919,7 +1914,7 @@ mod tests {
     }
 
     #[test]
-    fn reassembles_fu_and_preserves_displayservice_geometry_for_the_consumer() {
+    fn reassembles_fu_and_preserves_the_displayservice_slice_trailer() {
         let mut assembler = HevcAccessUnitAssembler::new(PAYLOAD_TYPE, SSRC);
         synchronize(&mut assembler, 20);
         prime_parameter_sets(&mut assembler, 21);
@@ -1934,9 +1929,9 @@ mod tests {
         let output = access_units(push(&mut assembler, 24, 4, true, &last));
 
         assert_eq!(output.len(), 1);
-        let mut payload = vec![0xaa, 0xbb, 0xcc, 0xdd];
-        payload.extend_from_slice(&DISPLAYSERVICE_NAL_TRAILER);
-        assert_eq!(output[0].bytes, length_prefixed(&[nal(19, &payload)]));
+        let mut coded_payload = vec![0xaa, 0xbb, 0xcc, 0xdd];
+        coded_payload.extend(DISPLAYSERVICE_NAL_TRAILER);
+        assert_eq!(output[0].bytes, length_prefixed(&[nal(19, &coded_payload)]));
     }
 
     #[test]

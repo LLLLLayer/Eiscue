@@ -1,105 +1,128 @@
-# Device backend provenance
+# Eiscue device backend
 
-Source: https://github.com/ja1chen/actell
+Eiscue's developer-services implementation connects the app to the device's own
+developer services. The control runtime is maintained here; it does not build,
+fetch or call an actell package. The MIT **idevice** protocol library is retained
+at a pinned revision with Device Hub's MIT extensions and documented Eiscue
+adaptations.
 
-Pinned commit: `032864e2339da19ee13025c471f4cf1dfdf4c5cd`
+The directory remains under `Vendor/` to keep existing source and setup links
+stable. This is not a clean-room or relicensing claim: the compatibility ABI,
+some small adapters and regression fixtures retain their earlier provenance.
+See [source origins](UPSTREAM_THIRD_PARTY.md) and the
+[manifest](rust/SOURCE_MANIFEST.json). The backend remains **GPL-3.0-only**;
+idevice and Device Hub files keep their MIT notices.
 
-Copied source directories:
+## Composition
 
-- `ncm-dev/PhoneAgentNCM/Sources/CNCMBackend` → `Sources/CNCMBackend`
-- `ncm-dev/PhoneAgentNCM/Sources/PhoneAgentNCM` → `Sources/PhoneAgentNCM`
-- `ncm-dev/rust` → `rust` (including Cargo.lock, source, tests and vendored idevice)
+```text
+EiscueDeviceKit / LocalDeviceController
+  └─ EiscueDeviceBackend (Swift)
+       ├─ discovery, pairing callbacks, request ownership, HEVC → JPEG
+       ├─ CEiscueAutomation (Objective-C, owned XCTest session)
+       └─ CEiscueDeviceBackend (versioned C ABI)
+            └─ EiscueNativeBackend.xcframework (Rust)
+                 ├─ bounded session workers, cancellation and receipt queues
+                 ├─ local-VPN / USB-network transport
+                 ├─ DisplayService media, HID input and scoped media release
+                 └─ idevice (MIT protocol clients)
+```
 
-No upstream App, model agent, ESP32 firmware, credentials or captured device data is included.
+These are internal build targets, not additional public Kit products. Use
+`EiscueDeviceKit` or inject an actuator through `DeviceClient`. The AgentKit has
+no dependency on this backend. `EiscueHIDKit` and the `EiscueHID` app omit it;
+Bluetooth/USB HID input and ReplayKit remain in DeviceCore.
 
-## Local changes
+| Layer | Key implementation |
+| --- | --- |
+| Swift bridge | [NativeDeveloperServices](Sources/EiscueDeviceBackend/NativeDeveloperServices.swift), [NativeABI](Sources/EiscueDeviceBackend/NativeABI.swift) |
+| Screen decoding | [NativeVideoPipeline](Sources/EiscueDeviceBackend/NativeVideoPipeline.swift) |
+| Discovery and pairing | [LocalVPNDiscovery](Sources/EiscueDeviceBackend/LocalVPNDiscovery.swift), [RemotePairingSession](Sources/EiscueDeviceBackend/RemotePairingSession.swift) |
+| Runtime and transport | [ffi.rs](rust/src/ffi.rs), [transport.rs](rust/src/transport.rs), [lib.rs](rust/src/lib.rs) |
+| DisplayService | [media.rs](rust/src/media.rs), [video.rs](rust/src/video.rs) |
+| Owned cleanup | [media_cleanup.rs](rust/src/media_cleanup.rs), [media_cleanup_ffi.rs](rust/src/media_cleanup_ffi.rs) |
+| XCTest bridge | [EiscueAutomation.m](Sources/CEiscueAutomation/EiscueAutomation.m), [xctest_session.rs](rust/src/xctest_session.rs) |
 
-- Same-process CoreDevice cleanup survives a local-VPN transport loss. `media_cleanup.rs` / `media_cleanup_ffi.rs` retain an opaque receipt from the original start, bound to the controller and paired peer. Detach revokes the old control handle; cleanup waits for its entire worker/runtime to drain, authenticates a fresh transport, requires a unique client-session UUID and both SSRCs in the full status response, then stops only that owned stream. Ordinary control/video APIs reject cleanup handles. Failure or cancellation retains the receipt; confirmed stop is required before the App clears its release gate. Capacity is reserved before accepting the original connection. Settings repair can resume an existing enabled Eiscue VPN without creating or changing configuration. This does not recover receipts lost by old versions or process termination. Status and stop are separate RPCs, so their remote token-reuse race is not eliminated. The C relay entry exists but has no App integration or new USB acceptance in this iteration.
-- The DEBUG `--media-session-diagnostics` option also records bounded same-process cleanup metadata in protected `Caches/EiscueMediaCleanupDiagnostic.json`: fixed phases/outcomes, attempt times and numeric failure codes only. It exports no handles, receipts, session identifiers, SSRCs, peer data, credentials or error text, and grants no cleanup authority. A fresh CoreDevice connection resets this report; export it before reconnecting and require fresh timestamps. A local confirmation means the original receipt settled without a new network request. A successful fresh-cleanup result may also reflect a late original confirmation, so it does not by itself prove a new remote stop was sent. These Swift-only diagnostics do not require an archive rebuild.
-- `rust/src/media_diagnostic.rs`, `media.rs`, `lib.rs`, `ffi.rs` and action 18 add a read-only live-media status diagnostic. It requires screen, media and verified-identity permissions, queries a temporary DisplayService client on the same authenticated adapter once with a two-second deadline, and leaves the active media and release state unchanged. The fixed 25-field summary contains only booleans, counts and nulls: canonical caller UUID string matches, root `DeviceServerInfo.sessions` stream-config counts, and same-entry correlation. The fixed candidate `connection.options.avcMediaStreamOptionClientSessionID.uuid` is compared with that entry’s live stream pair independently of the call UUID; `serverInfo` shape flags remain observations, not a second supported query schema. Unknown fields/paths, UUIDs, SSRCs, addresses and opaque data are not exported. Decoded-tree traversal has depth/node/byte limits; these are not a bound on the lower-level RemoteXPC decoder. Failed or truncated queries leave unavailable facts null. Swift collects this only with the DEBUG argument `--media-session-diagnostics`, validates and re-encodes the allowlist, and writes a protected `Caches/EiscueMediaSessionDiagnostic.json`. Previous output is invalidated before an attempt; failed invalidation skips this optional query. Always require a fresh attempt timestamp when reading the artifact. Settled diagnostic refusals preserve the connection; cancellation, pending receipts and genuine transport/ABI failures retain normal cleanup. This is evidence collection, not cross-process recovery or authority to stop an old stream. Ship the Swift consumer, source header and rebuilt three-platform archives together.
-- `rust/src/pairing.rs` emits an empty diagnostic event (kind 10, stage 1) only after TCP accept. On pairing handles this is distinct from ordinary control handles' kind 10 touch preparation failure; the C header documents both meanings. `Sources/PhoneAgentNCM/RemotePairingSession.swift` validates the event and records numeric pairing phases at OSLog notice level (`org.eiscue.device` / `connection`): -1 entered, 0 listening, 1 TCP accepted, 2 code received, 3 provisional identity persisted and acknowledged, 4 committed identity persisted and acknowledged, 5 completed, 6 Swift deadline expired, 7 error/cancellation. The error log also records the previous numeric phase. An explicit Debug-only `--pairing-diagnostics` argument additionally writes only the numeric `stage`, `previousStage` and `elapsedSeconds` to file-protected `Caches/EiscuePairingDiagnostic.json`; Release builds have no diagnostic-file path. No PIN, endpoint, identifier, packet, identity or raw error text is logged or written to that report. Listener address family and pairing protocol are unchanged. The rebuilt xcframework includes the new event; deploy its Swift consumer together with the binary because older Swift consumers reject unknown pairing events.
-- The Wi-Fi hotspot board route has been removed. `Sources/PhoneAgentNCM/InterfaceBinding.swift` accepts only the USB board transport and its /24 subnet; `rust/src/relay.rs` rejects the former hotspot /30 subnet. Local-VPN discovery and desktop USB pairing with optional Wi-Fi Lockdown remain available. The changed backend files are recorded under `eiscue_backend_changes` in `rust/SOURCE_MANIFEST.json`.
-- Raw media/protocol probes have been removed from `rust/src/media.rs` and the vendored HEVC parser. Environment variables cannot enable screen or negotiation dumps in shipped builds. Cursor diagnostics retain structural metadata only; the backend compiles all `tracing` levels out. Numeric video counters remain available through the existing backend status API.
-- `rust/src/media.rs` and `rust/src/lib.rs`: retain media-release state independently of completed HID/video initialization. A failed start can still release its identified stream; an unknown outcome or failed stop remains unconfirmed instead of turning into a successful no-op. Cleanup uses only the owned stream identifier, never global `stopAll`. This state is in memory: process termination still loses it, and the saved pairing identity does not identify an old media stream. The rebuilt native archives must ship with these sources.
+## Routes and control methods
 
-- `rust/src/pairing.rs`: the newly advertised controller / host display name is `Eiscue` instead of the upstream App name. Each explicitly authorized new pairing generates a fresh UUIDv4 controller identifier together with its new signing key, rather than sharing a name-derived identifier across attempts and installations. The same identifier is used in discovery, the pairing signature and the persisted identity. Existing and provisional identities remain protected by the host's no-replacement gate and retain their identifiers during reconnection. Wire protocol and listener address family are unchanged.
-- `rust/src/bin/pair_usb.rs` and the opt-in `desktop-bootstrap` feature provide an explicit USB initialization tool for iOS 26. The vendored idevice `pinned-usb` feature authenticates the selected device using the system USB trust certificate and validates TLS signatures; `remote_pairing/usb_bootstrap.rs` implements explicit first-pairing negotiation. These features are absent from shipped iOS archives. See [USB setup](../../Scripts/pair-device-usb.md).
-- `Sources/PhoneAgentNCM/NativeDeveloperServices.swift`: adds a shutdown helper that stops local decode, waits for an in-flight operation to drain, and requests explicit owned-media release before the caller closes transport. The host supplies a bounded deadline; incomplete media startup is not reported as confirmed release. Geometry-tagged snapshots / current geometry checks are also exposed so the Kit can invalidate coordinates after display changes.
-- `Sources/PhoneAgentNCM/NativeDeveloperServices.swift`: owned XCTest PNG normalization runs outside `MainActor`; cancellation, session/lease readiness and display geometry are checked again before publishing the converted screenshot. PNG bytes, MIME type and orientation rules are unchanged. This is a Swift-only change; native archives and the C ABI are unchanged and do not require rebuilding.
-- DisplayService input geometry uses a separate numeric decode cursor from `rust/src/video.rs` through the additive `ncm_backend_video_get_decode_cursor` C API. Incoming RTP packets clear screenshot confirmation but no longer invalidate otherwise current input geometry. Each geometry read freezes the assembled-picture serial at entry and requires the decoder to reach that barrier in the same epoch with a nonzero synchronized cursor. Pictures arriving later do not move the barrier; epoch changes and sync loss still revoke authorization. Display-size metadata changes revoke geometry before the next picture arrives; reference-chain resets, codec/layout changes and single-use observation limits remain enforced. Screenshot freshness continues to use the existing RTCP snapshot API. Ship the updated Swift bridge and rebuilt native archives together.
-- `rust/src/media.rs`, `rust/src/video.rs` and the vendored `core_device/mod.rs`: a dedicated authenticated `displayinfoupdates` stream supplies the selected display's `currentOrientation` and `nativeOrientation`. Every metadata transition advances the geometry epoch, including a 180-degree rotation on a fixed physical canvas and A→B→A updates between pictures. Unchanged metadata and new pixels preserve the epoch. Missing/invalid metadata or a finished/failed subscription revokes coordinate authorization; local drain cleanup drops this dedicated stream. Side-channel identity and any supplied invocation identity must match the subscription. C ABI structures and video-sample layout are unchanged; ship the rebuilt native archives with these sources.
-- Before reusing CoreDevice input geometry, action 17 performs a bounded, read-only authenticated DeviceInfo `getdisplayinfo` roundtrip for display 1. This narrow request retains its invocation UUID and rejects a present reply UUID that is malformed or does not match; an omitted UUID remains compatible with observed peers. Other legacy invoke paths retain their behavior. Its current/native orientation and dimensions must match the subscribed metadata in the same synchronized epoch. A mismatch revokes that epoch; the reply never publishes replacement geometry, so a late reply cannot overwrite an ordered notification. Identical snapshots preserve authority, and cancellation uses the existing request-ID receipt/drain path without sending or retrying input. The peer exposes no monotonic display revision here: this checks its returned current snapshot, without claiming that Apple's internal metadata is uncached or that an unreported A→B→A transition is detectable. Existing ABI structures are unchanged; ship the Swift action mapping and rebuilt native archives together.
-- `rust/src/media.rs` and `rust/src/video.rs`: the existing one-second feedback tick also checks the mailbox's actual HEVC reference-chain state. Geometry resets and discarded P-frames keep requesting a keyframe until a sync picture is accepted, even after the one-shot refresh was consumed or no more RTP arrived. Recovery keeps Receiver Reports and control feedback running and stops periodic PLI after synchronization; it never replays device input. The C ABI is unchanged; rebuild native archives to include this Rust change.
-- `rust/src/legacy_probe.rs` and `Sources/PhoneAgentNCM/LegacyDeveloperServicesProbe.swift`: an explicitly requested read-only probe of Instruments screenshots and testmanagerd DTX on the existing authenticated tunnel. The vendored MIT DTX implementation is enabled and its existing handshake method made public; upstream-file changes are recorded in `rust/SOURCE_MANIFEST.json`. The probe requires verified-identity and screen authorization, reports only dimensions/status, and does not initialize XCTest or send input. It is compatibility evidence, not a completed iOS 26 control backend.
-- `rust/src/xctest_session.rs`: the iOS 26 control path owns two testmanagerd DTX channels over the existing authenticated transport, initializes a session UUID, and authorizes only the current process's `getpid()`. Authorization requires a correlated reply containing the Boolean `true`; no PID is accepted from a caller or remote peer. The Swift bridge validates the same UUID and PID before preparing local automation. Added C actions 14/15/16 start or stop these owned channels and obtain a validated Instruments PNG; existing action numbers and ABI version remain unchanged.
-- `Sources/CEiscueAutomation`: new, independently implemented GPL-3.0-only Objective-C bridge with runtime-checked SDK signatures. It dynamically loads developer frameworks from the device's DDI, creates a new runner/XPC session using the same UUID, and asynchronously requests system UI automation consent. It does not create a shared XCTest session, start a test plan, install a UI Test Runner, or incorporate TouchSynthesis source. Touch submission binds a request receipt to the owned session's current display, orientation, scale and geometry revision; unknown delivery is not replayed. Cleanup revokes only owned connections. Home and text submission passed historical checks using the former Wi-Fi board route on 2026-10-11 and are included in the iOS 26 Release capability set after the owned automation session is ready. Owned XCTest text now uses one redacted native Unicode text event at 60 characters per second, without accessing the clipboard. The Swift receipt deadline allows 15 seconds plus one second per started 60 UTF-8 bytes, bounded at 152 seconds; Home/touch retain 15 seconds and the host's overall run deadline still applies. CoreDevice text still writes the supplied value to the clipboard and pastes without reading prior contents. Event delivery requires visual verification and is never retried after an unknown result. These Objective-C and Swift sources are compiled directly by the package; this text change does not require rebuilding the Rust xcframework. The Unicode event passed the owned-page full check on iPhone 12 mini / iOS 27.0 on 2026-10-18, including visible text verification; broader device/task acceptance remains separate.
-- `Sources/PhoneAgentNCM/NativeDeveloperServices.swift`: each session fixes its control backend at initialization. Automatic selection uses owned XCTest on iOS 26 and CoreDevice DisplayService/HID on iOS 27+; Eiscue can explicitly select XCTest on iOS 26+ or CoreDevice on iOS 27+. Eiscue rejects unavailable selections before reading the identity or starting discovery and never retries with another backend. Screenshot, input, geometry and cleanup use the same immutable choice. This selection change touches Swift sources only and does not require rebuilding the Rust xcframework. PNG capture now uses the same owned runner session as input, with a ten-second deadline and lease/request guards that discard cancelled or late replies. It no longer opens a separate Instruments screenshot stream for each normal capture. PNG orientation metadata is normalized into upright pixels once; geometry is checked before and after acquisition, and the resulting dimensions must match the display. The independently implemented screenshot bridge uses runtime-checked SDK signatures; no upstream screenshot implementation was copied. Preparation does not report media ready until the owned automation session reports ready. Host/simulator automation is unsupported. The package does not embed Apple's test Runner frameworks; this path requires developer/DDI private interfaces and is not an App Store distribution commitment.
-- Package composition is owned by Eiscue's root Package.swift. CNCMBackend depends on the internal NCMNativeBackend binary target, removing upstream's absolute host archive linker path. The upstream package manifest is not used.
-- `Frameworks/NCMNativeBackend.xcframework` is generated from this source with Rust 1.96.0 for aarch64-apple-ios, aarch64-apple-ios-sim and aarch64-apple-darwin. The script strips debug symbols with `xcrun strip -S` and retains exported C symbols. No offline-fixture feature is enabled in shipped archives.
+Transport and control method are separate choices:
 
-Rebuild: `Scripts/build-device-backend.sh` from the repository root. The complete corresponding Rust / Swift / C backend source is retained here. Registry dependency versions and integrity checksums are fixed in `rust/Cargo.lock` and fetched by Cargo; they are not all copied into this directory. The script does not modify the user's global default Rust toolchain.
+- **Local VPN** discovers the device through Eiscue's Packet Tunnel reflector.
+  The reflector lives in the app extension; this library authenticates and opens
+  the developer-service tunnel. It does not create VPN configurations.
+- **USB NCM** uses an ESP32-S3 network relay on `192.168.7.0/24`. Interface binding
+  prevents the connection from silently moving to another route. This is distinct
+  from an ESP32 acting as a USB keyboard/mouse.
+- **XCTest** uses Eiscue's owned automation session for screenshots and input.
+  It supports the app's iOS 26+ path through private developer/DDI interfaces.
+- **DisplayService + HID** uses a streamed HEVC picture and developer-service
+  HID commands on iOS 27+. It is unavailable below iOS 27.
 
-## XCTest host integration
+The app selects one explicit control method for a connection. Legacy automatic
+selection resolves to XCTest on iOS 26 and DisplayService on iOS 27+; there is no
+runtime fallback. Both developer-service routes require Developer Mode, a pairing
+identity and a compatible developer environment/DDI. For iOS 26 initialization,
+see the self-contained [USB pairing instructions](../../Scripts/pair-device-usb.md).
+No Apple frameworks or developer disk image are bundled here.
 
-The iOS host application must retain inherited framework runpaths and add `/System/Developer/usr/lib` and `/Developer/usr/lib` to its device-target `LD_RUNPATH_SEARCH_PATHS`. Eiscue’s `project.yml` supplies these paths for Debug and Release. Xcode 27 DDI’s XCTestCore depends on `@rpath/lib_TestingInterop.dylib`; preloading its absolute path alone did not resolve that dependency on the tested device. The Objective-C loader also preloads interop and Testing before XCTestCore, while allowing older DDIs without these optional files. Both developer roots remain supported, and failure never selects a different backend. Apple’s test libraries remain on the DDI, not in the app bundle. No Rust archive rebuild is required for this loader and host-build configuration change.
+## Ownership and failure behavior
 
-Loader diagnostics record only numeric root/library indices, presence/load flags and fixed error categories (1 missing dependency, 2 missing symbol, 3 signature, 4 other, 5 Testing interop runpath). They never emit the raw `dlerror()` text.
+Each native handle owns a bounded worker and serialized request queue. Accepted
+requests retain their receipts until read; a short output buffer cannot silently
+consume one. Cancellation revokes the connection and drains the entire worker
+runtime before cleanup can reuse its pairing binding. Input with uncertain
+delivery is never replayed.
 
-## Validation boundary
+The video receiver maintains a bounded HEVC reference chain. Geometry changes,
+missing reference pictures or decoder errors invalidate screenshot coordinates;
+new pixels alone do not invalidate a current observation. Swift decodes and crops
+frames outside MainActor. DeviceCore remains responsible for single-use model
+frame grants and post-action observation.
 
-On 2026-10-21, one iPhone 12 mini / iOS 27 local-VPN fault check retained the original receipt after a failed stop (stage 10 / cause 1), then confirmed cleanup and reconnected to Ready without replacing the App process. Local confirmation code 6 followed by successful cleanup admission and result identifies the owned cleanup branch when interpreted against the source; no raw RPC or identifiers were exported. A separate fresh owned-page smoke passed capture, counter tap 0→1, post-action capture and confirmed release. No model calls or board operations were used. This does not establish repeated stability, in-run loss or cross-process recovery.
+A screen start reserves an owned cleanup receipt. Later same-process cleanup can
+use a freshly authenticated transport only for that original pairing, client
+session UUID and both SSRCs, and stops only the owned stream. Cleanup handles
+cannot start media or send input. An unconfirmed release retains the receipt and
+blocks replacing/deleting its pairing identity. There is no `stopAll` recovery,
+cross-process orphan recovery, or proof of release from a local socket close.
 
-Earlier on 2026-10-21, the same-process cleanup recovery passed **101 Rust library tests** and **63 focused Kit tests on each Xcode 26.3/27**. App repair plus adjacent lease/gate checks passed **27 on each simulator OS** against native rebuild 2; the final local-confirmation addition passed the Kit checks and a signed device test build against rebuild 3. All three arm64 archives were rebuilt; headers match and all five cleanup exports are present, with no offline-fixture exports. Logs are local under `.build/media-cleanup-*20261021-*` and `.build/repair-vpn-*`. That software baseline did not establish physical acceptance; the later phone check is recorded above. The old phone process had already discarded its original receipt, so it could not exercise this recovery retroactively.
+Pairing persistence belongs to the caller. Provisional and committed records are
+acknowledged only after durable storage succeeds; diagnostics never contain keys,
+PINs, identities or screenshots. The optional desktop bootstrap is excluded from
+shipped iOS archives. Rust tracing is compiled out.
 
-On 2026-10-20, the additive media-status diagnostic passed **88 Rust library tests**, including seven focused diagnostic cases (overlapping coverage), and four Swift summary/validation cases on each Xcode 26.3/27 toolchain. Continuous-dictation/connection regressions passed **93 App tests on each toolchain**. The first sandboxed full Rust run had four existing localhost-listener failures, and an intermediate Xcode 26 compile missed the new C macro; those failed logs are retained. All three native arm64 slices were rebuilt, packaged headers match source, the 19 public C exports are unchanged, and no fixture exports are present. Signed device and full Release simulator builds passed; the Release executable contains neither the new launch argument nor the diagnostic artifact filename. These software results do not establish orphan-session recovery. A separate fresh query on iPhone 12 mini / iOS 27.0 (24A437) took 0.033667 seconds and matched one root session entry’s fixed client-session UUID option and both live SSRCs (`clientSessionPairMatchCount=1`); the call UUID was absent. Only the 25-field summary was exported. The preview helper explicitly skipped with Debug tools disabled and did not request a screenshot. This is one live-session correlation check, not cross-process ownership, input acceptance or recovery. The earlier diagnostic assumed a `serverInfo.sessions` wrapper and therefore missed the root stream configuration; its zero counts were not evidence that the phone omitted it. Logs are local under `.build/media-session-*`, `.build/media-status-*` and `.build/software-iteration-20261020/dictation-focus*`.
+## Build and verify
 
-The 2026-10-18 touch-clock experiment on iPhone 12 mini / iOS 27.0 over local VPN was unsupported and reverted. With the temporary window TouchProbe removed, the original clock in build 27 and a native UIKit button fixture in build 28 both failed fresh landscape taps. Candidate build 29 with explicit `CLOCK_UPTIME_RAW` timestamps passed one owned-page full check (`.build/mini-fixes-20261018/core-clock-uptime-1-final.json`), but the fresh build 30 repeat without TouchProbe failed the same new-frame landscape tap, with confirmed cleanup (`core-clock-uptime-final-3-status-2.json` in the same local directory). The candidate did not reliably fix input, and no specific UIKit filtering cause was established. Production touch reports retain the vendored default clock; CoreDevice landscape input remains unaccepted.
+Run from the repository root on an Apple Silicon Mac. The public package supports
+iOS 17 / macOS 14; the Eiscue app minimum remains iOS 26.
 
-The reverted clock candidate's three encoding fixtures and 82-test Rust pass remain historical software evidence only. Its first sandboxed full attempt exited 101 with 78 passes and four loopback-listener fixture failures; the local-network rerun exited 0. Those logs remain local under `.build/mini-fixes-20261018/clock-finalize/`. The candidate conversion and its three fixtures were removed when restoring the pre-experiment media source and manifest; all prior peer-geometry, receipt, scoped cleanup and keyframe-recovery changes were retained.
+```sh
+# Keep the global Rust toolchain unchanged.
+rustup toolchain install 1.96.0 --profile minimal \
+  --target aarch64-apple-ios,aarch64-apple-ios-sim
 
-After the revert, the full Rust library suite passed **79 tests** with no failures or ignored tests, and all three arm64 native archives rebuilt with Rust 1.96.0 and Xcode 27. Both commands exited 0; logs remain local at `.build/mini-fixes-20261018/clock-revert/rust-lib-full.log` and `native-build.log` in the same directory. These software checks do not accept landscape input on hardware.
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  bash Scripts/build-device-backend.sh
+python3 Scripts/device-backend-artifacts.py check
 
-On 2026-10-18, the reference-chain recovery change passed **75 Rust library tests**, and the fresh-peer-geometry follow-up passed **79 Rust library tests** plus **8 Swift Geometry tests on each Xcode 26.3 and 27**. All three arm64 native archives were rebuilt; the reference-chain software logs remain local at `.build/video-sync-recovery-rust-20261018-2.log` and `.build/video-sync-recovery-native-build-20261018-1.log`. On iPhone 12 mini / iOS 27.0 over local VPN, build 19 then passed one CoreDevice owned-page full check (`.build/mini-fixes-20261018/core-full-7.json`): old 180-degree frame rejection, new-frame tap, swipe, 11-scalar Unicode text, three Home/background captures, automatic return and two confirmed-release cycles. The earlier paste-consent failure was traced to the test helper matching the wrong source title (`dtpasteboard` instead of `dtpasteboardd`); corrected text-only and full checks passed. Earlier intermittent old-frame acceptance and App-return failures remain recorded. This single full pass does not establish all-scenario stability; the independent real-model Calculator task remains paused and has not been rerun.
+CARGO_TARGET_DIR=.build/device-rust rustup run 1.96.0 cargo test --locked \
+  --manifest-path Vendor/DeviceBackend/rust/Cargo.toml \
+  --workspace --features desktop-bootstrap --lib --bins
 
-On 2026-10-18, the display-direction integration passed all **73 Rust library tests**, and the native rebuild produced the iOS, iOS Simulator and macOS arm64 archives. Logs remain local at `.build/rotation-geometry-rust-20261018-2.log` and `.build/rotation-native-build-20261018-1.log`. These are software checks, not additional real-device acceptance.
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  python3 Scripts/test-swift-package.py --scratch-path .build/kit-xcode26
+bash Scripts/test-owned-automation.sh
+```
 
-On 2026-10-17, iPhone 12 mini / iOS 27.0 (24A437), using Xcode 27 DDI 27A266a / XCTest 25228, initially failed with stage 38/cause 4. Two preloading-only smoke attempts also failed at framework loading. Adding the developer library runpaths allowed the explicit XCTest local-VPN smoke check to complete: connect, capture 1124×2436 PNG, tap the owned counter (0→1) through the model’s 738×1600 coordinates, capture again, and acknowledge local cleanup. Pairing was retained. This establishes foreground owned-app input, not cross-app tasks, background lifetime, microphone coexistence, or USB relay acceptance. The loader fixture includes modern/legacy DDIs, both roots, dependency ordering, failure/retry and already-loaded classes; its 535 assertions and iOS/simulator SDK syntax checks passed with both Xcode 26.3 and 27. Debug and Release device builds passed, their final Mach-O developer runpaths and signatures were verified, and neither bundle contains Apple XCTest/Testing libraries. The pre-fix loader fails the new fixture as expected. Logs and reports are retained locally under `.build/xctest-failure-20261017/` and `.build/xctest-loader-*.log`.
+The build produces arm64 slices for iOS, iOS Simulator and macOS. There is no
+x86_64 slice. It strips debug symbols, records source/header/archive hashes in
+`BUILD_MANIFEST.json`, and replaces the framework only after all slices and the
+manifest are ready. Commit the rebuilt framework with its source. The legacy
+`ncm_*` symbol names and ABI layouts remain stable; they are compatibility names,
+not an actell runtime dependency.
 
-On 2026-10-15, the partial-media-start cleanup changes passed all **72 Rust library tests** (no failures or skips), including four new ownership/cleanup regressions. Two earlier fixture compilation failures and one corrected async-stack-overflow abort are retained in local logs. The final rebuild includes all three arm64 native slices; packaged headers match the source, each exports 19 public `ncm_*` symbols, and no offline-fixture symbols are exported. App connection/voice startup checks passed 61 tests; one voice UI case passed and one iOS 27-only case was skipped on the iOS 26 simulator. These are software checks, not acceptance of microphone handoff on hardware or cleanup after app-process termination.
-
-On 2026-10-15, `swift test --filter EiscueDeviceKitTests` with Xcode 26.3 passed 108 tests in 14 suites after adding explicit backend selection. The fixtures cover automatic iOS 26/27 selection, explicit XCTest on iOS 27, backend forwarding, rejection before identity/discovery/session creation, no fallback after preparation failure, and task cleanup. The run emitted the existing `Optional<AnyObject>` unsafe-pointer warning in the Swift decoder bridge. Logs remain local under `.build/backend-selection-20261015/`. These are software checks; explicit XCTest on iOS 27 still requires physical-device acceptance. No native archive rebuild or device operation was performed for this Swift-only change.
-
-On 2026-10-14, two recent iPhone 12 mini / iOS 27 run journals showed Home succeeding and screenshots continuing, followed by three pre-input stale-frame rejections despite using the latest observation within its 30-second lifetime. The third rejection paused the run, after which the app's cleanup disconnected the control session. Code inspection identified the input guard's use of the RTCP-confirmed screenshot serial, which every incoming RTP packet clears. This is evidence for the erroneous input prerequisite and the recorded pause/disconnect chain; it does not establish long-running background stability.
-
-After separating the decode cursor, Rust 1.96.0 `cargo test --locked --lib` passed 68 tests with no failures or ignored tests, including three new video regressions. The focused video run passed 11 tests (57 filtered out); these overlap with the full run and are not additional coverage. `swift test --filter GeometryTests` with Xcode 26.3 passed seven tests. All three arm64 xcframework slices were rebuilt with Xcode 27, their headers matched the source, and each exported 19 public `ncm_*` symbols including the new getter. No offline-fixture exports were present. Logs remain local under `.build/mini-background-audit/`; no post-fix phone input or background-task acceptance has been performed.
-
-On 2026-10-14, `cargo test --locked --lib explicit_pairing_` with Rust 1.96.0 passed both focused host fixtures (2 passed, 0 failed, 63 filtered out). They verify distinct UUIDv4 identifiers across two explicitly started pairing listeners, matching discovery identifiers, the empty TCP-accepted event and local connection/listener cleanup. The run emitted eight existing vendored `idevice` warnings. This is host-side software evidence only; it does not establish device discovery, system pairing or control success.
-
-The same day's Xcode 27 rebuild includes the UUIDv4 identity change in all three native slices. Each remains arm64 and defines the same 18 public `ncm_*` symbols as HEAD and the preceding build; platform descriptors and packaged C headers were also checked. Previous archives are retained under `.build/previous-NCMNativeBackend-*`. Logs are local at `.build/pairing-identity-tests.log` and `.build/pairing-identity-native-build.log`. These checks do not establish real-device pairing acceptance.
-
-On 2026-10-14, `Scripts/build-device-backend.sh` rebuilt all three arm64 xcframework slices with Rust 1.96.0 after removal of the hotspot relay's /30 subnet allowance. `CARGO_TARGET_DIR=.build/device-rust rustup run 1.96.0 cargo test --locked --manifest-path Vendor/DeviceBackend/rust/Cargo.toml --lib` passed 64 tests, with no failures or ignored tests. The build and tests emitted vendored `idevice` unused-code warnings. These are software checks; no device operation was performed for this change. Full build/test logs remain locally under `.build/device-backend-hotspot-removal-{build,tests}.log`.
-
-Historical validation of the former Wi-Fi hotspot board route: on 2026-10-11, the designated iPhone 14 Pro / iOS 26.5.2 authorized the current App PID, created a new DDI runner/XPC session and completed the system UI automation authorization. The user entered the passcode directly on the device; it was not collected by this backend. Subsequent Wi-Fi board validation returned a valid 1179 × 2556 PNG and passed actual taps with follow-up screenshots, swiping, Unicode paste (`你好，Eiscue 🧊`), Home/App return, two connection cycles and 180-degree rotation checks that rejected an old frame before accepting a new-frame tap. The local VPN stayed disconnected. Local disconnect records do not prove remote daemon teardown acknowledgement; sustained background work, cellular model requests and company VPN coexistence remain unverified.
-
-After those checks, the iOS 26 Home/text Release restriction was removed. The signed Release build, strict signature verification, installation and normal launch passed on that phone. These results do not validate the physical S3 USB NCM route, other phone/OS combinations or a complete model-driven task.
-
-Historical host validation recorded on 2026-10-11 passed 64 backend Rust tests, 184 vendored idevice tests, 56 DeviceKit tests and 203 Objective-C fixture checks. `Scripts/test-owned-automation.sh` uses fake runtime classes and no device IPC, then syntax-checks the production source against device and simulator SDKs. It validates guards, receipts and cleanup, not physical input. The App's 21 connection-method tests included seven new authorization/background lifecycle cases. Passcode-page images, identity files and full raw phone logs are not included here.
-
-On 2026-10-13, the owned screenshot path passed 332 Objective-C fixture checks,
-device/simulator SDK syntax checks, nine focused Kit tests and 39 focused App
-tests. The first phone run stopped at landscape capture because XCTest encodes
-rotation in PNG metadata; after normalization, the designated iPhone 14 Pro
-completed both local-VPN connection cycles, model-viewport-to-native button
-clicks, 180-degree stale/fresh-frame checks, swiping and Unicode input. With a
-continued-processing lease, three screenshots after Home completed in 0.268,
-0.224 and 0.224 seconds, followed by a successful return to Eiscue. This proves
-short background capture and deterministic input on that phone, not model
-visual grounding, a complete cross-app agent task or long background stability.
-
-## Licenses
-
-The combined upstream backend declares **GPL-3.0-only**. Individual files retain their original SPDX headers, including GPL-3.0-or-later where applicable. `LICENSE` is the upstream GPL text. `UPSTREAM_THIRD_PARTY.md` is preserved verbatim as the upstream source's provenance record; it also discusses components outside this selected backend and does not imply they have been copied here.
-
-`rust/vendor/idevice/LICENSE.txt` retains the vendored idevice MIT license. Cargo dependencies retain their own licenses; see their pinned Cargo manifests / registry source for distribution notices. Upstream includes adaptations/references to pymobiledevice3 under GPL; see the preserved source headers and notices.
-
-These notices apply to the incorporated backend. They do not declare a license for all Eiscue source. Distribution of a linked product must account for the backend's GPL requirements.
+Tests use synthetic fixtures and local sockets, with no phone or model API.
+Host tests and simulator builds verify software contracts; actual pairing,
+streaming, input, background behavior and microphone handoff still require
+physical-device checks after backend changes. No App Store compatibility is
+claimed for these private developer-service interfaces.

@@ -69,13 +69,11 @@ impl<R: ReadWrite> DisplayServiceClient<R> {
             .await
     }
 
-    /// Stop only the named receiver stream tokens. Use a fresh service
-    /// connection: the stop must be its sole reply-bearing request.
+    /// Eiscue scoped release: the caller supplies only its owned receiver tokens.
     pub async fn stop_media_stream_identifiers(&mut self, identifiers: &[u32]) -> Result<plist::Value, IdeviceError> {
-        let input = scoped_stop_input(identifiers)?;
         self.inner.invoke_inner(
-            obf!("com.apple.coredevice.feature.stopmediastream"), Some(input),
-            Some(obf!("com.apple.coredevice.action.mediastreamstop").into()),
+            "com.apple.coredevice.feature.stopmediastream", Some(owned_stop_input(identifiers)?),
+            Some(String::from("com.apple.coredevice.action.mediastreamstop")),
         ).await
     }
 
@@ -111,26 +109,35 @@ impl<R: ReadWrite> DisplayServiceClient<R> {
     }
 }
 
-fn scoped_stop_input(identifiers: &[u32]) -> Result<XpcDictionary, IdeviceError> {
+// Keep tokens unsigned on the wire. The generic plist -> XPC adapter emits
+// signed integers, which is not the DisplayService identifiers schema.
+fn owned_stop_input(identifiers: &[u32]) -> Result<XpcDictionary, IdeviceError> {
     if identifiers.is_empty() {
-        return Err(crate::core_device::CoreDeviceError::MalformedField("stop identifiers").into());
+        return Err(super::super::CoreDeviceError::MalformedField("empty owned stream set").into());
     }
-    let mut input = XpcDictionary::new();
-    input.insert("stopAll".into(), XPCObject::Bool(false));
-    input.insert("identifiers".into(), XPCObject::Array(identifiers.iter().map(|id| XPCObject::UInt64(u64::from(*id))).collect()));
-    Ok(input)
+    Ok(XpcDictionary::from_iter([
+        (String::from("identifiers"), XPCObject::Array(identifiers.iter()
+            .map(|token| XPCObject::UInt64(u64::from(*token))).collect())),
+        (String::from("stopAll"), XPCObject::Bool(false)),
+    ]))
 }
 
 #[cfg(test)]
-mod scoped_stop_tests {
+mod owned_stop_tests {
     use super::*;
+
     #[test]
-    fn stop_request_names_only_owned_tokens_without_signed_conversion() {
-        let input = scoped_stop_input(&[7, u32::MAX]).unwrap();
+    fn refuses_an_empty_owned_set_without_a_global_stop() {
+        assert!(owned_stop_input(&[]).is_err());
+    }
+
+    #[test]
+    fn preserves_unsigned_tokens_and_scoped_stop() {
+        let input = owned_stop_input(&[1, u32::MAX]).unwrap();
         assert!(matches!(input.get("stopAll"), Some(XPCObject::Bool(false))));
-        let Some(XPCObject::Array(ids)) = input.get("identifiers") else { panic!("missing identifiers") };
-        assert!(matches!(ids.as_slice(), [XPCObject::UInt64(7), XPCObject::UInt64(4_294_967_295)]));
-        assert!(scoped_stop_input(&[]).is_err());
+        let Some(XPCObject::Array(tokens)) = input.get("identifiers") else { panic!("missing tokens") };
+        assert!(matches!(tokens.as_slice(), [XPCObject::UInt64(1), XPCObject::UInt64(4_294_967_295)]));
+        assert_eq!(input.len(), 2);
     }
 }
 

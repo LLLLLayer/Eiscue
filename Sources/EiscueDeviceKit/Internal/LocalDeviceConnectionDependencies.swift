@@ -1,6 +1,6 @@
 import EiscueDeviceCore
 import Foundation
-@preconcurrency import PhoneAgentNCM
+@preconcurrency import EiscueDeviceBackend
 
 /// Internal seams exercise lifecycle and transport isolation without attaching
 /// a device or starting a VPN. Production uses the native implementations only.

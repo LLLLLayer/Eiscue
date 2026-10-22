@@ -2,7 +2,7 @@ import EiscueDeviceCore
 import Foundation
 import ImageIO
 import OSLog
-@preconcurrency import PhoneAgentNCM
+@preconcurrency import EiscueDeviceBackend
 
 @MainActor final class LocalDeviceController: NSObject, DeviceActuator, NetworkRouteSetup, @preconcurrency NetServiceDelegate {
     private let identityStore: any PairingIdentityStore
@@ -18,6 +18,7 @@ import OSLog
     private var pairingContinuation: AsyncThrowingStream<DevicePairingEvent, Error>.Continuation?
     private var epoch = UUID()
     private var busy = false
+    private var updatingPairingIdentity = false
     private var ready = false
     private var failure = String(localized: "device.status.not-connected", defaultValue: "Device not connected", bundle: EiscueDeviceResources.bundle)
     private var capturedGeometry: DeviceFrameGeometry?
@@ -69,17 +70,29 @@ import OSLog
     }
 
     func importPairingIdentity(_ data: Data) async throws {
-        guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
         let record = try PairingIdentityCodec.decode(data)
-        disconnectNow()
         var canonical = try PairingIdentityCodec.encode(record)
         defer { canonical.resetBytes(in: canonical.startIndex..<canonical.endIndex) }
-        try identityStore.save(canonical)
+        try await updatePairingIdentity { try identityStore.save(canonical) }
     }
 
     func removePairingIdentity() async throws {
-        disconnectNow()
-        try identityStore.remove()
+        try await updatePairingIdentity { try identityStore.remove() }
+    }
+
+    private func updatePairingIdentity(_ update: () throws -> Void) async throws {
+        guard !busy, pairingTask == nil, mediaReleaseTask == nil, !updatingPairingIdentity else { throw DeviceControlError.busy }
+        try Task.checkCancellation()
+        updatingPairingIdentity = true
+        defer { updatingPairingIdentity = false }
+        // Retained media cleanup may still need the original pairing key. Hold
+        // the mutation gate across cleanup and keep that key on failure/cancel.
+        let release = await disconnect()
+        try Task.checkCancellation()
+        guard release == .confirmed else {
+            throw DeviceControlError.connection(String(localized: "device.status.release-unconfirmed", defaultValue: "Device control stopped, but the screen connection may still be active. Check the system’s remote-control status.", bundle: EiscueDeviceResources.bundle))
+        }
+        try update()
     }
 
     func beginPairing() async -> AsyncThrowingStream<DevicePairingEvent, Error> {
@@ -99,7 +112,7 @@ import OSLog
             // responder protocol cannot make a missing iOS 26 Settings UI appear.
             try LocalPairingRequirements.validateSystemPairing(on: ProcessInfo.processInfo.operatingSystemVersion)
             vpn = try localVPNConfiguration.map { try VPNLoopbackConfiguration(localAddress: $0.localAddress, peerAddress: $0.peerAddress) }
-            guard !busy, pairingTask == nil, mediaReleaseTask == nil else { throw DeviceControlError.busy }
+            guard !busy, pairingTask == nil, mediaReleaseTask == nil, !updatingPairingIdentity else { throw DeviceControlError.busy }
             guard try identityStore.load() == nil else { throw DeviceControlError.pairingAlreadyExists }
         } catch { continuation.finish(throwing: error); return stream }
         disconnectNow()
@@ -213,7 +226,7 @@ import OSLog
         guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
         let resolvedBackend = backend.resolved(on: dependencies.operatingSystemVersion)
         guard resolvedBackend.isAvailable(on: dependencies.operatingSystemVersion) else { throw DeviceControlError.backendUnavailable(resolvedBackend) }
-        guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
+        guard !busy, mediaReleaseTask == nil, !updatingPairingIdentity else { throw DeviceControlError.busy }
         #if DEBUG
         connectionDiagnostic = ["state": "preparing", "phase": "identity", "method": method.rawValue,
                                 "backend": resolvedBackend.rawValue]
@@ -234,7 +247,7 @@ import OSLog
             throw DeviceControlError.connection(String(localized: "device.media.previous-release-unconfirmed", defaultValue: "The previous screen connection may still be active. Check the system’s remote-control status before reconnecting.", bundle: EiscueDeviceResources.bundle))
         }
         try ensureCurrent(connectionEpoch)
-        guard !busy, mediaReleaseTask == nil else { throw DeviceControlError.busy }
+        guard !busy, mediaReleaseTask == nil, !updatingPairingIdentity else { throw DeviceControlError.busy }
         let token = epoch
         busy = true
         failure = switch method {
@@ -329,7 +342,7 @@ import OSLog
     /// no media/input session and does not change production readiness state.
     func probeLegacyDeveloperServices(configuration: LocalVPNConfiguration) async throws -> Data {
         guard dependencies.supportsPhysicalDevice else { throw DeviceControlError.unsupported }
-        guard !busy, !ready, pairingTask == nil, mediaReleaseTask == nil else { throw DeviceControlError.busy }
+        guard !busy, !ready, pairingTask == nil, mediaReleaseTask == nil, !updatingPairingIdentity else { throw DeviceControlError.busy }
         let vpn = try VPNLoopbackConfiguration(localAddress: configuration.localAddress, peerAddress: configuration.peerAddress)
         guard var data = try identityStore.load() else { throw DeviceControlError.noIdentity }
         defer { data.resetBytes(in: data.startIndex..<data.endIndex) }

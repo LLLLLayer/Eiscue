@@ -1468,12 +1468,13 @@ final class NetworkAcceptanceUITests: XCTestCase {
 
     @MainActor
     private func requireIdleControls(in app: XCUIApplication) throws {
-        let permission = app.switches["deviceControlToggle"]
+        try requireIdleConnectionWork(in: app)
+        // A historical device continuation can lock Allow AI to operate while
+        // canChangeDeviceRoute still permits selecting an unowned route.
         let method = app.buttons["deviceConnectionMethodPicker"]
-        try waitFor(NSPredicate(format: "exists == true AND enabled == true"), on: permission,
-                    message: "Finish tasks, recovery, recording and connection work before changing preferences.")
-        try require(method.isEnabled, "The route is still owned by another operation.")
-        try require(app.alerts.count == 0, "This preparation does not handle authorization dialogs.")
+        try waitFor(NSPredicate(format: "exists == true AND enabled == true"), on: method,
+                    message: "The route is unavailable or still owned by another operation.")
+        try requireIdleConnectionWork(in: app)
     }
 
     @MainActor

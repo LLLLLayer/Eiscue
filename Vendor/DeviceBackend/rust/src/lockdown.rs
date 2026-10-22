@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Ordinary network Lockdown. No RemotePairing, Pair, key lookup or TLS fallback.
+//! Eiscue pinned Lockdown client. Retained upstream TLS fixtures are identified below.
 use crate::{NcmConnector, Purpose, Stream};
 use plist::{Dictionary, Value};
 use rustls::{
@@ -8,7 +8,7 @@ use rustls::{
     crypto::{ring, verify_tls12_signature, verify_tls13_signature},
     pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime, pem::PemObject},
 };
-use std::{io::Cursor, sync::Arc, time::Duration};
+use std::{future::Future, io::Cursor, sync::Arc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use zeroize::Zeroizing;
 const LIMIT: usize = 64 * 1024;
@@ -22,8 +22,6 @@ pub enum Failure {
     StopSession,
     Closed,
 }
-/// Only the client identity and pinned DeviceCertificate are retained. A plist
-/// containing RemotePairing keys cannot satisfy these ordinary Lockdown fields.
 pub struct ExistingIdentity {
     host_id: String,
     system_buid: String,
@@ -31,234 +29,248 @@ pub struct ExistingIdentity {
     host_certificate: CertificateDer<'static>,
     host_key: Zeroizing<Vec<u8>>,
 }
-fn identifier(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 256 && s.bytes().all(|b| (33..=126).contains(&b))
+fn identifier(value: &str) -> bool {
+    (1..=256).contains(&value.len())
+        && value
+            .as_bytes()
+            .iter()
+            .all(|byte| matches!(*byte, 33..=126))
+}
+struct Record(Dictionary);
+impl Record {
+    fn string(&self, field: &str) -> Result<String, Failure> {
+        self.0
+            .get(field)
+            .and_then(Value::as_string)
+            .filter(|text| identifier(text))
+            .map(String::from)
+            .ok_or(Failure::Identity)
+    }
+    fn bytes(&self, field: &str) -> Result<&[u8], Failure> {
+        self.0
+            .get(field)
+            .and_then(Value::as_data)
+            .filter(|data| (1..=LIMIT).contains(&data.len()))
+            .ok_or(Failure::Identity)
+    }
+    fn certificate(&self, field: &str) -> Result<CertificateDer<'static>, Failure> {
+        CertificateDer::from_pem_slice(self.bytes(field)?).map_err(|_| Failure::Identity)
+    }
 }
 impl ExistingIdentity {
-    /// Caller selects/authorizes the record; no filesystem or keychain lookup.
-    pub fn from_plist(data: &[u8], expected_udid: &str) -> Result<Self, Failure> {
-        if data.len() > 1024 * 1024 || !identifier(expected_udid) {
+    pub fn from_plist(encoded: &[u8], expected_udid: &str) -> Result<Self, Failure> {
+        if encoded.is_empty() || encoded.len() > 1024 * 1024 || !identifier(expected_udid) {
             return Err(Failure::Identity);
         }
-        let value = Value::from_reader(Cursor::new(data)).map_err(|_| Failure::Identity)?;
-        let d = value.as_dictionary().ok_or(Failure::Identity)?;
-        if d.get("UDID")
-            .is_some_and(|v| v.as_string() != Some(expected_udid))
-        {
-            return Err(Failure::Identity);
+        let record = Value::from_reader(Cursor::new(encoded))
+            .ok()
+            .and_then(Value::into_dictionary)
+            .map(Record)
+            .ok_or(Failure::Identity)?;
+        if let Some(value) = record.0.get("UDID") {
+            if value.as_string() != Some(expected_udid) {
+                return Err(Failure::Identity);
+            }
         }
-        let text = |name: &str| -> Result<String, Failure> {
-            let s = d
-                .get(name)
-                .and_then(Value::as_string)
-                .ok_or(Failure::Identity)?;
-            if !identifier(s) {
-                return Err(Failure::Identity);
-            }
-            Ok(s.to_owned())
+        let identity = Self {
+            host_id: record.string("HostID")?,
+            system_buid: record.string("SystemBUID")?,
+            device_certificate: record.certificate("DeviceCertificate")?,
+            host_certificate: record.certificate("HostCertificate")?,
+            host_key: Zeroizing::new(record.bytes("HostPrivateKey")?.to_vec()),
         };
-        let data = |name: &str| -> Result<Vec<u8>, Failure> {
-            let s = d
-                .get(name)
-                .and_then(Value::as_data)
-                .ok_or(Failure::Identity)?;
-            if s.is_empty() || s.len() > LIMIT {
-                return Err(Failure::Identity);
-            }
-            Ok(s.to_vec())
-        };
-        let cert = |name: &str| -> Result<CertificateDer<'static>, Failure> {
-            CertificateDer::from_pem_slice(&data(name)?).map_err(|_| Failure::Identity)
-        };
-        let id = Self {
-            host_id: text("HostID")?,
-            system_buid: text("SystemBUID")?,
-            device_certificate: cert("DeviceCertificate")?,
-            host_certificate: cert("HostCertificate")?,
-            host_key: Zeroizing::new(data("HostPrivateKey")?),
-        };
-        id.tls_config()?; // Reject key/certificate mismatch before any socket opens.
-        Ok(id)
+        identity.tls_config()?;
+        Ok(identity)
     }
     fn tls_config(&self) -> Result<ClientConfig, Failure> {
         let provider = Arc::new(ring::default_provider());
-        let mut config = ClientConfig::builder_with_provider(provider)
-            .with_protocol_versions(&[&rustls::version::TLS12])
-            .map_err(|_| Failure::Identity)?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(PinnedDevice(
-                self.device_certificate.clone(),
-            )))
-            .with_client_auth_cert(
-                vec![self.host_certificate.clone()],
-                PrivateKeyDer::from_pem_slice(&self.host_key).map_err(|_| Failure::Identity)?,
-            )
+        let verifier = PinnedDevice {
+            certificate: self.device_certificate.clone(),
+            provider: provider.clone(),
+        };
+        let key = PrivateKeyDer::from_pem_slice(self.host_key.as_slice())
             .map_err(|_| Failure::Identity)?;
-        config.enable_sni = false;
-        Ok(config)
+        let builder = ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS12])
+            .map_err(|_| Failure::Identity)?;
+        let mut configuration = builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(verifier))
+            .with_client_auth_cert(vec![self.host_certificate.clone()], key)
+            .map_err(|_| Failure::Identity)?;
+        configuration.enable_sni = false;
+        Ok(configuration)
     }
 }
-/// Match the already trusted pairing certificate and verify proof of possession.
-/// No hostname/CA assumptions about Apple's locally generated pairing identity.
 #[derive(Debug)]
-struct PinnedDevice(CertificateDer<'static>);
+struct PinnedDevice {
+    certificate: CertificateDer<'static>,
+    provider: Arc<rustls::crypto::CryptoProvider>,
+}
 impl ServerCertVerifier for PinnedDevice {
     fn verify_server_cert(
         &self,
-        cert: &CertificateDer<'_>,
+        presented: &CertificateDer<'_>,
         _: &[CertificateDer<'_>],
         _: &ServerName<'_>,
         _: &[u8],
         _: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
-        if cert.as_ref() != self.0.as_ref() {
-            return Err(rustls::Error::InvalidCertificate(
+        match presented.as_ref() == self.certificate.as_ref() {
+            true => Ok(ServerCertVerified::assertion()),
+            false => Err(rustls::Error::InvalidCertificate(
                 rustls::CertificateError::ApplicationVerificationFailure,
-            ));
+            )),
         }
-        Ok(ServerCertVerified::assertion())
     }
     fn verify_tls12_signature(
         &self,
         message: &[u8],
-        cert: &CertificateDer<'_>,
+        certificate: &CertificateDer<'_>,
         signature: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
         verify_tls12_signature(
             message,
-            cert,
+            certificate,
             signature,
-            &ring::default_provider().signature_verification_algorithms,
+            &self.provider.signature_verification_algorithms,
         )
     }
     fn verify_tls13_signature(
         &self,
         message: &[u8],
-        cert: &CertificateDer<'_>,
+        certificate: &CertificateDer<'_>,
         signature: &DigitallySignedStruct,
     ) -> Result<HandshakeSignatureValid, rustls::Error> {
         verify_tls13_signature(
             message,
-            cert,
+            certificate,
             signature,
-            &ring::default_provider().signature_verification_algorithms,
+            &self.provider.signature_verification_algorithms,
         )
     }
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        ring::default_provider()
+        self.provider
             .signature_verification_algorithms
             .supported_schemes()
     }
 }
-async fn exchange(stream: &mut Stream, request: Dictionary) -> Result<Dictionary, ()> {
-    let mut bytes = Vec::new();
-    Value::Dictionary(request)
-        .to_writer_xml(&mut bytes)
+async fn within<T, E>(
+    seconds: u64,
+    failure: Failure,
+    operation: impl Future<Output = Result<T, E>>,
+) -> Result<T, Failure> {
+    match tokio::time::timeout(Duration::from_secs(seconds), operation).await {
+        Ok(Ok(value)) => Ok(value),
+        _ => Err(failure),
+    }
+}
+fn request(operation: &str) -> Dictionary {
+    Dictionary::from_iter([
+        ("Label", Value::String("EiscueNative".into())),
+        ("Request", Value::String(operation.into())),
+    ])
+}
+async fn exchange(socket: &mut Stream, fields: Dictionary) -> Result<Dictionary, ()> {
+    let mut outgoing = Vec::with_capacity(1024);
+    outgoing.extend_from_slice(&[0; 4]);
+    Value::Dictionary(fields)
+        .to_writer_xml(&mut outgoing)
         .map_err(|_| ())?;
-    if bytes.len() > LIMIT {
+    let body_size = outgoing.len() - 4;
+    if body_size > LIMIT {
         return Err(());
     }
-    stream.write_u32(bytes.len() as u32).await.map_err(|_| ())?;
-    stream.write_all(&bytes).await.map_err(|_| ())?;
-    stream.flush().await.map_err(|_| ())?;
-    let len = stream.read_u32().await.map_err(|_| ())? as usize;
-    if len == 0 || len > LIMIT {
+    outgoing[..4].copy_from_slice(&(body_size as u32).to_be_bytes());
+    socket.write_all(&outgoing).await.map_err(|_| ())?;
+    socket.flush().await.map_err(|_| ())?;
+    let mut prefix = [0; 4];
+    socket.read_exact(&mut prefix).await.map_err(|_| ())?;
+    let incoming_size = u32::from_be_bytes(prefix) as usize;
+    if !(1..=LIMIT).contains(&incoming_size) {
         return Err(());
     }
-    let mut reply = vec![0; len];
-    stream.read_exact(&mut reply).await.map_err(|_| ())?;
-    Value::from_reader(Cursor::new(reply))
-        .map_err(|_| ())?
-        .into_dictionary()
+    let mut incoming = vec![0; incoming_size];
+    socket.read_exact(&mut incoming).await.map_err(|_| ())?;
+    Value::from_reader(Cursor::new(incoming))
+        .ok()
+        .and_then(Value::into_dictionary)
         .ok_or(())
 }
-fn request(name: &str) -> Dictionary {
-    let mut d = Dictionary::new();
-    d.insert("Request".into(), name.into());
-    d.insert("Label".into(), "PhoneAgentNCM".into());
-    d
-}
-fn session_id(d: &Dictionary) -> Result<String, Failure> {
-    if d.contains_key("Error") {
+fn session_id(reply: &Dictionary) -> Result<String, Failure> {
+    if reply.contains_key("Error") {
         return Err(Failure::PeerRejected);
     }
-    if d.get("Request").and_then(Value::as_string) != Some("StartSession")
-        || d.get("EnableSessionSSL").and_then(Value::as_boolean) != Some(true)
-    {
+    let valid = reply.get("Request").and_then(Value::as_string) == Some("StartSession")
+        && reply.get("EnableSessionSSL").and_then(Value::as_boolean) == Some(true);
+    if !valid {
         return Err(Failure::StartSession);
     }
-    let id = d
+    reply
         .get("SessionID")
         .and_then(Value::as_string)
-        .ok_or(Failure::StartSession)?;
-    if !identifier(id) {
-        return Err(Failure::StartSession);
-    }
-    Ok(id.into())
+        .filter(|id| identifier(id))
+        .map(String::from)
+        .ok_or(Failure::StartSession)
+}
+struct Live {
+    socket: Stream,
+    identifier: String,
 }
 pub struct Session {
-    stream: Option<Stream>,
-    session_id: String,
+    active: Option<Live>,
 }
 impl Session {
-    /// Fixed Lockdown purpose only. The session is ready only after mutual TLS
-    /// finishes. A response or TCP ACK alone is never an authentication result.
     pub async fn connect(
         connector: &impl NcmConnector,
         identity: &ExistingIdentity,
     ) -> Result<Self, Failure> {
-        let config = identity.tls_config()?;
-        let mut stream = tokio::time::timeout(
-            Duration::from_secs(4),
+        let configuration = Arc::new(identity.tls_config()?);
+        let mut socket = within(
+            4,
+            Failure::Connect,
             connector.connect(Purpose::LockdownSession),
         )
-        .await
-        .map_err(|_| Failure::Connect)?
-        .map_err(|_| Failure::Connect)?;
-        let mut start = request("StartSession");
-        start.insert("HostID".into(), identity.host_id.clone().into());
-        start.insert("SystemBUID".into(), identity.system_buid.clone().into());
-        let reply = tokio::time::timeout(Duration::from_secs(15), exchange(&mut stream, start))
-            .await
-            .map_err(|_| Failure::StartSession)?
-            .map_err(|_| Failure::StartSession)?;
-        let id = session_id(&reply)?;
-        let tls = tokio::time::timeout(
-            Duration::from_secs(15),
-            tokio_rustls::TlsConnector::from(Arc::new(config)).connect(
-                ServerName::try_from("Device").map_err(|_| Failure::Identity)?,
-                stream,
-            ),
-        )
-        .await
-        .map_err(|_| Failure::SessionTls)?
-        .map_err(|_| Failure::SessionTls)?;
-        Ok(Self {
-            stream: Some(Box::new(tls)),
-            session_id: id,
+        .await?;
+        let mut fields = request("StartSession");
+        fields.extend([
+            ("HostID".into(), identity.host_id.clone().into()),
+            ("SystemBUID".into(), identity.system_buid.clone().into()),
+        ]);
+        let response = within(15, Failure::StartSession, exchange(&mut socket, fields)).await?;
+        let identifier = session_id(&response)?;
+        let tls = tokio_rustls::TlsConnector::from(configuration);
+        let name = ServerName::try_from("Device").map_err(|_| Failure::Identity)?;
+        let secured = within(15, Failure::SessionTls, tls.connect(name, socket)).await?;
+        Ok(Session {
+            active: Some(Live {
+                socket: Box::new(secured),
+                identifier,
+            }),
         })
     }
     pub fn tls_ready(&self) -> bool {
-        self.stream.is_some()
+        matches!(self.active, Some(_))
     }
     pub async fn stop(&mut self) -> Result<(), Failure> {
-        // Taking ownership makes timeout/error terminal; no plaintext downgrade.
-        let mut stream = self.stream.take().ok_or(Failure::Closed)?;
-        let mut stop = request("StopSession");
-        stop.insert("SessionID".into(), self.session_id.clone().into());
-        let result = tokio::time::timeout(Duration::from_secs(5), exchange(&mut stream, stop))
-            .await
-            .map_err(|_| Failure::StopSession)?
-            .map_err(|_| Failure::StopSession)?;
-        if result.contains_key("Error")
-            || result.get("Request").and_then(Value::as_string) != Some("StopSession")
-        {
-            return Err(Failure::StopSession);
+        let Live {
+            mut socket,
+            identifier,
+        } = self.active.take().ok_or(Failure::Closed)?;
+        let mut fields = request("StopSession");
+        fields.insert("SessionID".into(), identifier.into());
+        let response = within(5, Failure::StopSession, exchange(&mut socket, fields)).await?;
+        match (
+            response.contains_key("Error"),
+            response.get("Request").and_then(Value::as_string),
+        ) {
+            (false, Some("StopSession")) => Ok(()),
+            _ => Err(Failure::StopSession),
         }
-        Ok(())
     }
 }
 
+// Retained upstream regression fixtures (GPL-3.0-only), including pinned mTLS.
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

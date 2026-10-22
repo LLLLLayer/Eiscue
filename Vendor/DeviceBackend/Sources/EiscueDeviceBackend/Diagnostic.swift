@@ -44,20 +44,30 @@ public struct DiagnosticReply: Decodable, Sendable {
     }
     /// Only consumes diagnostic metadata. A diagnostic peer can never grant developer capabilities.
     public static func decode(_ data: Data) throws -> Self {
-        guard data.count <= 4096, data.last == 10, data.dropLast().firstIndex(of: 10) == nil else { throw NCMError.malformedReply }
-        let value: Self
-        do { value = try JSONDecoder().decode(Self.self, from: data) } catch { throw NCMError.malformedReply }
-        let layers = ["ncm", "discovery", "tcp", "greeting", "lockdown-querytype", "command", "pairing", "authentication"]
-        let results = ["diagnostic-only", "backend-not-implemented", "candidates", "no-candidates", "unsupported", "stale-candidate", "authorization-required", "ok", "argument", "io", "eof", "timeout", "limit", "format", "type", "not_found"]
-        guard value.protocolVersion == "ND1", layers.contains(value.layer), results.contains(value.result), !value.authenticated,
-              value.screenCaptured != true, value.inputExecuted != true else { throw NCMError.malformedReply }
-        if let endpoints = value.endpoints {
-            guard value.layer == "discovery", let generation = value.generation, generation > 0, endpoints.count <= 16,
-                  Set(endpoints.map(\.index)).count == endpoints.count,
-                  endpoints.allSatisfy({ $0.index < 16 && [4,6].contains($0.family) && $0.port > 0 && ["remotepairing","lockdown","pairable-host"].contains($0.service) }) else { throw NCMError.malformedReply }
-        }
-        return value
+        guard !data.isEmpty, data.count <= 4096 else { throw NCMError.malformedReply }
+        let lines = data.split(separator: 10, omittingEmptySubsequences: false)
+        guard lines.count == 2, lines[1].isEmpty, !lines[0].isEmpty else { throw NCMError.malformedReply }
+        do {
+            let reply = try JSONDecoder().decode(Self.self, from: Data(lines[0]))
+            try reply.validate()
+            return reply
+        } catch { throw NCMError.malformedReply }
     }
+    private func validate() throws {
+        let validLayers: Set<String> = ["ncm", "discovery", "tcp", "greeting", "lockdown-querytype", "command", "pairing", "authentication"]
+        let validResults: Set<String> = ["diagnostic-only", "backend-not-implemented", "candidates", "no-candidates", "unsupported", "stale-candidate", "authorization-required", "ok", "argument", "io", "eof", "timeout", "limit", "format", "type", "not_found"]
+        guard protocolVersion == "ND1", validLayers.contains(layer), validResults.contains(result),
+              authenticated == false, screenCaptured != true, inputExecuted != true else { throw NCMError.malformedReply }
+        guard let endpoints else { return }
+        guard layer == "discovery", (generation ?? 0) > 0, endpoints.count <= 16 else { throw NCMError.malformedReply }
+        var indexes = Set<UInt8>()
+        for endpoint in endpoints {
+            let knownService = Set(["remotepairing", "lockdown", "pairable-host"]).contains(endpoint.service)
+            guard endpoint.index < 16, indexes.insert(endpoint.index).inserted, endpoint.port > 0,
+                  endpoint.family == 4 || endpoint.family == 6, knownService else { throw NCMError.malformedReply }
+        }
+    }
+
 }
 
 /// Deliberately separate from diagnostic results. Implementations must own an

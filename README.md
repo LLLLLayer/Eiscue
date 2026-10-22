@@ -127,7 +127,7 @@ The full app and UI suite also needs the local model fixture, `python3 Scripts/t
 
 ## Status and limitations
 
-Eiscue is a development preview. All routes are implemented and have been exercised on real devices, but coverage is limited: other devices, iOS versions and long-running tasks may behave differently. The developer-services routes rely on private interfaces and are not intended for App Store distribution. Background execution time is decided by iOS. The ESP32 firmware is a development prototype; pair boards only with phones you trust.
+Eiscue is a development preview. Coverage is limited: devices, iOS versions and long-running tasks may behave differently. Backend updates require renewed device checks; software tests alone do not establish input or background reliability. The developer-services routes rely on private interfaces and are not intended for App Store distribution. Background execution time is decided by iOS. The ESP32 firmware is a development prototype; pair boards only with phones you trust.
 
 ## Licenses and provenance
 
@@ -135,7 +135,7 @@ Eiscue as a whole does not yet have a unified distribution license. Components k
 
 | Component | Source / license |
 | --- | --- |
-| [DeviceBackend](Vendor/DeviceBackend/README.md) | Pinned actell commit, GPL-3.0-only; includes MIT-licensed idevice. Linked by the full `Eiscue` app, not by `EiscueHID` |
+| [DeviceBackend](Vendor/DeviceBackend/README.md) | Eiscue-maintained control runtime over pinned MIT idevice; GPL-3.0-only with retained compatibility notices. Linked by `Eiscue`, not `EiscueHID` |
 | [LocalTunnel](Vendor/LocalTunnel/README.md) | Derived from LocalDevVPN / StosVPN under the custom StosVPN License |
 | [Passport-BLE](Firmware/Passport-BLE/README.md#license-and-api-references) | Original firmware source is Apache-2.0; this does not extend to the [expression artwork](Firmware/Passport-BLE/Resources/README.md) |
 | [NCM-Relay](Firmware/NCM-Relay/README.md) | The upstream combined project declares GPL-3.0-only; local files have GPL-3.0-or-later headers. See its `SOURCE_MANIFEST.json` |

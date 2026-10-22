@@ -3,7 +3,7 @@
 Version **1.0.0**, target **ESP32-S3**, minimum **4 MB Flash**, ESP-IDF **5.5.3**.
 
 This standalone firmware exposes a USB CDC-NCM Ethernet device and the bounded
-ND1/NR1/NL1 relay used by Eiscue's `PhoneAgentNCM` backend. The App owns pairing,
+ND1/NR1/NL1 relay used by Eiscue's `EiscueDeviceBackend` backend. The App owns pairing,
 authentication and developer-service protocols; the board supplies an external
 network origin. It does not implement an Agent or store pairing keys.
 

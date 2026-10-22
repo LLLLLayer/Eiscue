@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PhoneAgentNCM
+@testable import EiscueDeviceBackend
 
 #if DEBUG
 @Suite struct MediaSessionDiagnosticTests {

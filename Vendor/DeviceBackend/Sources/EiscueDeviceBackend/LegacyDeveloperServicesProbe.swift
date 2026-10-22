@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
-import CNCMBackend
+import CEiscueDeviceBackend
 
 extension NativeDeveloperServices {
     /// Explicit read-only compatibility probe on the current authenticated session.

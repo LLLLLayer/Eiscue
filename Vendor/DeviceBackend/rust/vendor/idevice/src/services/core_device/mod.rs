@@ -97,24 +97,30 @@ impl<R: ReadWrite> CoreDeviceServiceClient<R> {
     /// Bounded collection of CoreDevice protocol-v2 side-channel batches.
     /// Caller supplies an overall deadline; malformed/error streams fail closed.
     pub async fn stream_with_plist(&mut self, feature: &str, input: plist::Dictionary) -> Result<plist::Value, IdeviceError> {
-        // Preserve the physically checked app-list parser. Strict per-message
-        // identity validation belongs to the new dedicated long-lived interface.
-        let (req, _) = stream_request(feature, input, None);
-        self.inner.send_object(req, true).await?;
-        let mut rows = Vec::new();
-        for _ in 0..4096 {
-            // Streaming pushes are unsolicited root-channel messages, unlike invoke replies.
-            let reply = self.inner.recv_root().await?;
-            let status = reply.as_dictionary().and_then(|d| d.get("CoreDevice.XPCMessageKey.sideChannelStatus")).and_then(plist::Value::as_dictionary)
-                .ok_or(CoreDeviceError::MalformedField("sideChannelStatus"))?;
-            if status.contains_key("receivedError") { return Err(CoreDeviceError::MalformedField("receivedError").into()); }
-            if status.contains_key("finishStreaming") { return Ok(plist::Value::Array(rows)); }
-            let elements = status.get("pushing").and_then(plist::Value::as_dictionary).and_then(|d| d.get("elements")).and_then(plist::Value::as_array)
-                .ok_or(CoreDeviceError::MalformedField("elements"))?;
-            if rows.len() + elements.len() > 4096 { return Err(CoreDeviceError::MalformedField("app count").into()); }
-            rows.extend(elements.iter().cloned());
+        let (request, _) = stream_request(feature, input, None);
+        self.inner.send_object(request, true).await?;
+        let mut collection = Vec::new();
+        let mut remaining_batches = MAX_STREAM_BATCH_ELEMENTS;
+        loop {
+            remaining_batches = remaining_batches.checked_sub(1)
+                .ok_or(CoreDeviceError::MalformedField("too many application batches"))?;
+            let message = self.inner.recv_root().await?;
+            let status = message.as_dictionary().and_then(|root| root.get(SIDE_CHANNEL_STATUS))
+                .and_then(plist::Value::as_dictionary)
+                .ok_or(CoreDeviceError::MalformedField("application stream status"))?;
+            if status.get("receivedError").is_some() {
+                return Err(CoreDeviceError::MalformedField("application stream failed").into());
+            }
+            if status.get("finishStreaming").is_some() { break; }
+            let batch = status.get("pushing").and_then(plist::Value::as_dictionary)
+                .and_then(|pushing| pushing.get("elements")).and_then(plist::Value::as_array)
+                .ok_or(CoreDeviceError::MalformedField("application stream batch"))?;
+            if batch.len() > MAX_STREAM_BATCH_ELEMENTS - collection.len() {
+                return Err(CoreDeviceError::MalformedField("too many applications").into());
+            }
+            collection.extend_from_slice(batch);
         }
-        Err(CoreDeviceError::MalformedField("stream batch count").into())
+        Ok(collection.into())
     }
     pub async fn invoke_with_plist(
         &mut self,

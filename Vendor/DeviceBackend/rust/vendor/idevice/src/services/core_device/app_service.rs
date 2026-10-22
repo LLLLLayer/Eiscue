@@ -139,57 +139,31 @@ impl<R: ReadWrite> AppServiceClient<R> {
     }
 
     pub async fn list_apps(
-        &mut self,
-        app_clips: bool,
-        removable_apps: bool,
-        hidden_apps: bool,
-        internal_apps: bool,
-        default_apps: bool,
+        &mut self, app_clips: bool, removable_apps: bool, hidden_apps: bool,
+        internal_apps: bool, default_apps: bool,
     ) -> Result<Vec<AppListEntry>, IdeviceError> {
         self.list_apps_mode(app_clips, removable_apps, hidden_apps, internal_apps, default_apps, false).await
     }
-    pub async fn list_apps_mode(&mut self, app_clips: bool, removable_apps: bool, hidden_apps: bool, internal_apps: bool, default_apps: bool, streaming: bool) -> Result<Vec<AppListEntry>, IdeviceError> {
-        let options = crate::plist!(dict {
-            "includeAppClips": app_clips,
-            "includeRemovableApps": removable_apps,
-            "includeHiddenApps": hidden_apps,
-            "includeInternalApps": internal_apps,
-            "includeDefaultApps": default_apps,
-            "requireContainerAccess": false,
-            "includeAppGroupIdentifiers": false,
-            "includeContainerPaths": false,
-        });
-        let res = if streaming {
-            self.inner.stream_with_plist("com.apple.coredevice.feature.streamapplist", options).await?
-        } else {
-            self.inner.invoke_with_plist("com.apple.coredevice.feature.listapps", options).await?
+
+    /// Eiscue requests names and identifiers, without container filesystem access.
+    pub async fn list_apps_mode(
+        &mut self, app_clips: bool, removable_apps: bool, hidden_apps: bool,
+        internal_apps: bool, default_apps: bool, streaming: bool,
+    ) -> Result<Vec<AppListEntry>, IdeviceError> {
+        let fields = [
+            ("includeAppClips", app_clips), ("includeRemovableApps", removable_apps),
+            ("includeHiddenApps", hidden_apps), ("includeInternalApps", internal_apps),
+            ("includeDefaultApps", default_apps), ("requireContainerAccess", false),
+            ("includeAppGroupIdentifiers", false), ("includeContainerPaths", false),
+        ];
+        let options = fields.into_iter().map(|(key, value)| (key.to_owned(), plist::Value::Boolean(value))).collect();
+        let response = match streaming {
+            true => self.inner.stream_with_plist("com.apple.coredevice.feature.streamapplist", options).await?,
+            false => self.inner.invoke_with_plist("com.apple.coredevice.feature.listapps", options).await?,
         };
-
-        let res = match res.as_array() {
-            Some(a) => a,
-            None => {
-                warn!("CoreDevice result was not an array");
-                return Err(IdeviceError::UnexpectedResponse(
-                    "list apps result was not an array".into(),
-                ));
-            }
-        };
-
-        let mut desd = Vec::new();
-        for r in res {
-            let r: AppListEntry = match plist::from_value(r) {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!("Failed to parse app entry: {e:?}");
-                    return Err(IdeviceError::UnexpectedResponse(
-                        "failed to parse app list entry".into(),
-                    ));
-                }
-            };
-            desd.push(r);
-        }
-
-        Ok(desd)
+        let entries = response.as_array().ok_or_else(|| IdeviceError::UnexpectedResponse("expected application array".into()))?;
+        entries.iter().map(|entry| plist::from_value(entry)
+            .map_err(|_| IdeviceError::UnexpectedResponse("invalid application entry".into()))).collect()
     }
 
     /// Launches an application by a bundle ID.

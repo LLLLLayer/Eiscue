@@ -455,8 +455,7 @@ extension AppModel {
         guard !isBusy, let lease = try? deviceSession.acquire(.setup) else { return }
         defer { lease.release() }
         let operationID = UUID()
-        guard let operation = try? deviceSession.beginSetup(owner: lease.owner, id: operationID) else { return }
-        defer { deviceSession.completeSetup(operation, transportConnected: false) }
+        let initialIdentity = deviceSession.identity
         let granted = url.startAccessingSecurityScopedResource()
         defer { if granted { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -465,12 +464,22 @@ extension AppModel {
             var data = try Data(contentsOf: url)
             defer { data.resetBytes(in: data.startIndex..<data.endIndex) }
             try PairingTransfer.validateIdentitySchema(in: data)
+            let released = await releaseDeviceConnection(operationID: operationID)
+            guard deviceOperationID == operationID else { return }
+            guard released else { throw DeviceSession.Failure.releaseUnconfirmed }
+            try Task.checkCancellation()
+            let operation = try deviceSession.beginSetup(owner: lease.owner, id: operationID)
+            defer { deviceSession.completeSetup(operation, transportConnected: false) }
             try await deviceClient.importPairingIdentity(data)
             guard deviceOperationID == operationID else { return }
             deviceConnectionError = nil
             connectionMessage = String(localized: "connection.identityImported")
             await refreshDeviceStatus()
-        } catch { if deviceOperationID == operationID { deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription } }
+        } catch {
+            if !(error is CancellationError), deviceOperationID == operationID || deviceSession.isCurrent(initialIdentity) {
+                deviceConnectionError = error.localizedDescription; connectionMessage = error.localizedDescription
+            }
+        }
     }
 
     func forgetPairingIdentity() async {
@@ -478,8 +487,14 @@ extension AppModel {
         guard !isBusy, let lease = try? deviceSession.acquire(.setup) else { return }
         defer { lease.release() }
         let operationID = UUID()
-        await releaseDeviceConnection(operationID: operationID)
-        guard deviceOperationID == operationID,
+        let released = await releaseDeviceConnection(operationID: operationID)
+        guard deviceOperationID == operationID else { return }
+        guard released else {
+            let message = DeviceSession.Failure.releaseUnconfirmed.localizedDescription
+            deviceConnectionError = message; connectionMessage = message
+            return
+        }
+        guard !Task.isCancelled,
               let operation = try? deviceSession.beginSetup(owner: lease.owner, id: operationID) else { return }
         defer { deviceSession.completeSetup(operation, transportConnected: false) }
         do {

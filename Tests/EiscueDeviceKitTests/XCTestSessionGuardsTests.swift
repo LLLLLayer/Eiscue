@@ -3,9 +3,58 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import Testing
-@testable import PhoneAgentNCM
+@testable import EiscueDeviceBackend
 
 @Suite struct XCTestSessionGuardsTests {
+    @Test(arguments: [nil, 0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14] as [UInt32?])
+    @MainActor func ownedScreenshotRequiresTheSessionsExplicitScreenPermission(mask: UInt32?) async {
+        let authorization = mask.map {
+            ExistingSessionAuthorization(verifyExistingIdentity: $0 & 8 != 0,
+                                         screen: $0 & 1 != 0, screenVideoStream: $0 & 2 != 0,
+                                         input: $0 & 4 != 0)
+        }
+        var captures = 0
+        await #expect(throws: NativeBackendError.authorizationRequired) {
+            _ = try await NCMXCTestAuthorization.captureScreen(authorization: authorization) {
+                captures += 1
+                throw NativeBackendError.unsupportedABI
+            }
+        }
+        // This is the closure containing the ObjC geometry and screenshot calls
+        // in production; neither input nor stream permission may reach it.
+        #expect(captures == 0)
+    }
+
+    @Test(arguments: [UInt32(9), 11, 13, 15])
+    @MainActor func ownedScreenshotPermissionDoesNotRequireVideoStreaming(mask: UInt32) async throws {
+        let authorization = ExistingSessionAuthorization(verifyExistingIdentity: true, screen: true,
+                                                          screenVideoStream: mask & 2 != 0, input: mask & 4 != 0)
+        let expected = NativeVideoSnapshot(data: Data([1, 2, 3]),
+            geometry: NativeVideoGeometry(id: UUID(), epoch: 3, revision: 5), mimeType: "image/png")
+        var captures = 0
+        let actual = try await NCMXCTestAuthorization.captureScreen(authorization: authorization) {
+            captures += 1
+            return expected
+        }
+        #expect(captures == 1 && actual.data == expected.data && actual.geometry == expected.geometry)
+        #expect(actual.mimeType == expected.mimeType)
+    }
+
+    @Test @MainActor func canceledOwnedScreenshotNeverEntersCapture() async {
+        var captures = 0
+        let task = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            _ = try await NCMXCTestAuthorization.captureScreen(
+                authorization: ExistingSessionAuthorization(verifyExistingIdentity: true, screen: true)
+            ) {
+                captures += 1
+                throw NativeBackendError.unsupportedABI
+            }
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(captures == 0)
+    }
+
     @Test @MainActor func canceledOwnedDeliveryRetainsTheExactReceiptAndLongTextBudget() async throws {
         let delivery = NCMOwnedDelivery(), began = ContinuousClock.now
         try delivery.receipt.begin(token: 7, requestID: 19,

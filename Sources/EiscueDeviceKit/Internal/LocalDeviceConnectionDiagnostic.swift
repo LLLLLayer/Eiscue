@@ -1,7 +1,7 @@
 #if DEBUG
 import EiscueDeviceCore
 import Foundation
-@preconcurrency import PhoneAgentNCM
+@preconcurrency import EiscueDeviceBackend
 
 @MainActor protocol LocalDeviceConnectionDiagnosing: AnyObject, Sendable {
     var connectionDiagnostic: [String: String] { get }

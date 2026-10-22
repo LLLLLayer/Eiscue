@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import Foundation
-import CNCMBackend
+import CEiscueDeviceBackend
 import CEiscueAutomation
 
 /// Existing, authorized RemotePairing identity only. No filesystem/Keychain
@@ -177,6 +177,7 @@ public enum NativeControlBackend: Sendable, Equatable {
 @MainActor public final class NativeDeveloperServices: DeveloperServices {
     public static var linkedABIVersion: UInt32 { ncm_backend_abi() }
     private var handle: UInt64 = 0
+    private var sessionAuthorization: ExistingSessionAuthorization?
     private var serial: UInt64 = 0
     private var busy = false
     private var ready = false
@@ -263,7 +264,7 @@ public enum NativeControlBackend: Sendable, Equatable {
         ownsXCTestChannels = false
         videoPump?.cancel(); videoPump = nil
         videoDecoder = nil; videoDecodeFailure = nil; mediaStartCompleted = false
-        let old = handle; handle = 0; ready = false; services = []
+        let old = handle; handle = 0; sessionAuthorization = nil; ready = false; services = []
         if mediaCleanupOperation != 0 {
             ncm_backend_close(mediaCleanupOperation); mediaCleanupOperation = 0
         }
@@ -286,90 +287,79 @@ public enum NativeControlBackend: Sendable, Equatable {
         }
         mediaStartRequested = false
     }
-    /// Caller must refresh discovery just before this call (candidate TTL).
-    /// Compatibility entry point for USB. Prefer the scoped discovery overload.
     public func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                         discovery: DiagnosticReply, endpoint: DiagnosticReply.Endpoint) async throws {
-        try Task.checkCancellation()
-        guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
-        guard !busy, handle == 0, mediaCleanupReceipt == 0 else { throw NativeBackendError.busy }
-        guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
-        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: .usb)
-        try await connect(identity: identity, authorization: authorization,
-                          discovery: discovery, endpoint: endpoint, binding: binding)
+        try requireAdmission(authorization)
+        let link = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: .usb)
+        try await openBoard(identity: identity, authorization: authorization, reply: discovery, endpoint: endpoint, link: link)
     }
-    private func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
-                         discovery: DiagnosticReply, endpoint: DiagnosticReply.Endpoint,
-                         binding: NCMInterfaceBinding) async throws {
-        try Task.checkCancellation()
-        guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
-        guard !busy, handle == 0, mediaCleanupReceipt == 0 else { throw NativeBackendError.busy }
-        guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
-        guard discovery.layer == "discovery", discovery.result == "candidates", !discovery.authenticated,
-              discovery.screenCaptured != true, discovery.inputExecuted != true,
-              let generation = discovery.generation, generation > 0, endpoint.service == "remotepairing",
-              discovery.endpoints?.contains(where: { $0.index == endpoint.index && $0.family == endpoint.family && $0.port == endpoint.port && $0.service == endpoint.service }) == true else { throw NativeBackendError.invalidCandidate }
-        try binding.validateCurrent()
-        let row = binding.row
-        var config = ncm_config(abi: 1, interface_index: row.index, generation: generation, endpoint_index: UInt32(endpoint.index), permissions: authorization.mask)
-        let values = [identity.signingSeed, Data(identity.controllerID.utf8), Data(identity.peerID.utf8), identity.peerPublicKey,
-                      identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
-        #if DEBUG
-        if !usesOwnedXCTest { NCMMediaCleanupDiagnostic.resetForFreshSession(owner: ObjectIdentifier(self)) }
-        let diagnostic = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.nativeSessionStart, owner: ObjectIdentifier(self))
-        #endif
-        var started: UInt64 = 0
-        let code = withSlices(values) { b in
-            var raw = ncm_identity(seed: b[0], controller_id: b[1], peer_id: b[2], peer_public_key: b[3], alt_irk: b[4], peer_udid: b[5], peer_model: b[6])
-            return ncm_backend_start(&config, &raw, &started)
-        }
-        #if DEBUG
-        NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: code == 0 && started != 0 ? .accepted : .failed, transportCode: code)
-        #endif
-        guard code == 0, started != 0 else { throw NativeBackendError.transport(code: code) }
-        handle = started
-        try await finishConnect(started)
-    }
-    /// Preferred scoped path. Rejects expired discovery and interface changes
-    /// before importing the identity into the native transport worker.
+
     public func connect(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                         discovery: NCMDiscoveredEndpoint) async throws {
-        try Task.checkCancellation()
-        let binding = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: discovery.transport)
-        try discovery.validate(currentInterface: binding.row, transport: binding.transport)
-        try await connect(identity: identity, authorization: authorization,
-                          discovery: discovery.reply, endpoint: discovery.endpoint, binding: binding)
+        try requireAdmission(authorization)
+        let link = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory(), transport: discovery.transport)
+        try discovery.validate(currentInterface: link.row, transport: link.transport)
+        try await openBoard(identity: identity, authorization: authorization, reply: discovery.reply,
+                            endpoint: discovery.endpoint, link: link)
     }
-    /// Reuses the exact authenticated CoreDevice session over a bound local VPN socket.
+
+    private func openBoard(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
+                           reply: DiagnosticReply, endpoint: DiagnosticReply.Endpoint, link: NCMInterfaceBinding) async throws {
+        guard reply.layer == "discovery", reply.result == "candidates", reply.authenticated == false,
+              reply.screenCaptured != true, reply.inputExecuted != true,
+              let generation = reply.generation, generation != 0, endpoint.service == "remotepairing" else {
+            throw NativeBackendError.invalidCandidate
+        }
+        let advertised = reply.endpoints?.filter {
+            ($0.index, $0.family, $0.port, $0.service) == (endpoint.index, endpoint.family, endpoint.port, endpoint.service)
+        } ?? []
+        guard advertised.count == 1 else { throw NativeBackendError.invalidCandidate }
+        try link.validateCurrent()
+        var configuration = ncm_config(abi: UInt32(NCM_BACKEND_ABI), interface_index: link.row.index,
+            generation: generation, endpoint_index: UInt32(endpoint.index), permissions: authorization.mask)
+        try await openNative(identity: identity, authorization: authorization) { borrowed, output in
+            ncm_backend_start(&configuration, &borrowed, &output)
+        }
+    }
+
     public func connectLocalVPN(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
                                 pairingPort: UInt16, configuration: VPNLoopbackConfiguration = .defaults) async throws {
+        try requireAdmission(authorization)
+        guard pairingPort > 0 else { throw NativeBackendError.invalidCandidate }
+        let inventory = try NCMInterfaceBinding.inventory()
+        #if DEBUG
+        connectionInterfaceDiagnostic = LocalVPNDiscovery.interfaceSnapshot(inventory, configuration: configuration)
+        #endif
+        let link = try LocalVPNDiscovery.selectInterface(inventory, configuration: configuration)
+        try await openNative(identity: identity, authorization: authorization) { borrowed, output in
+            ncm_local_vpn_start_configured(link.index, pairingPort, authorization.mask,
+                configuration.localIPv4, configuration.peerIPv4, &borrowed, &output)
+        }
+    }
+
+    private func requireAdmission(_ authorization: ExistingSessionAuthorization) throws {
         try Task.checkCancellation()
         guard authorization.verifyExistingIdentity else { throw NativeBackendError.authorizationRequired }
         guard !busy, handle == 0, mediaCleanupReceipt == 0 else { throw NativeBackendError.busy }
-        guard Self.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
-        guard pairingPort != 0 else { throw NativeBackendError.invalidCandidate }
-        let rows = try NCMInterfaceBinding.inventory()
-        #if DEBUG
-        connectionInterfaceDiagnostic = LocalVPNDiscovery.interfaceSnapshot(rows, configuration: configuration)
-        #endif
-        let row = try LocalVPNDiscovery.selectInterface(rows, configuration: configuration)
-        let values = [identity.signingSeed, Data(identity.controllerID.utf8), Data(identity.peerID.utf8), identity.peerPublicKey,
-                      identity.alternateIRK, Data(identity.peerUDID.utf8), Data(identity.peerModel.utf8)]
+        guard ncm_backend_abi() == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
+    }
+
+    private func openNative(identity: AuthorizedRemoteIdentity, authorization: ExistingSessionAuthorization,
+                            start: (inout ncm_identity, inout UInt64) -> Int32) async throws {
+        try requireAdmission(authorization)
         #if DEBUG
         if !usesOwnedXCTest { NCMMediaCleanupDiagnostic.resetForFreshSession(owner: ObjectIdentifier(self)) }
-        let diagnostic = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.nativeSessionStart, owner: ObjectIdentifier(self))
+        let ticket = usesOwnedXCTest ? nil : NCMMediaCleanupDiagnostic.begin(.nativeSessionStart, owner: ObjectIdentifier(self))
         #endif
-        var started: UInt64 = 0
-        let code = withSlices(values) { b in
-            var raw = ncm_identity(seed: b[0], controller_id: b[1], peer_id: b[2], peer_public_key: b[3], alt_irk: b[4], peer_udid: b[5], peer_model: b[6])
-            return ncm_local_vpn_start_configured(row.index, pairingPort, authorization.mask, configuration.localIPv4, configuration.peerIPv4, &raw, &started)
-        }
+        var admitted: UInt64 = 0
+        let status = withNativeIdentity(identity) { start(&$0, &admitted) }
         #if DEBUG
-        NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: code == 0 && started != 0 ? .accepted : .failed, transportCode: code)
+        NCMMediaCleanupDiagnostic.finish(ticket, outcome: status == 0 && admitted != 0 ? .accepted : .failed, transportCode: status)
         #endif
-        guard code == 0, started != 0 else { throw NativeBackendError.transport(code: code) }
-        handle = started
-        try await finishConnect(started)
+        guard status == 0, admitted != 0 else { throw NativeBackendError.transport(code: status) }
+        handle = admitted
+        sessionAuthorization = authorization
+        try await finishConnect(admitted)
     }
     /// Explicit same-process recovery only. This authenticates a new transport
     /// to close the original owned stream; it never makes this client ready.
@@ -454,20 +444,30 @@ public enum NativeControlBackend: Sendable, Equatable {
         throw NCMError.timeout
     }
     private func finishConnect(_ token: UInt64) async throws {
-        busy = true; defer { busy = false }
+        busy = true
+        defer { busy = false }
         do {
-            let (header, data) = try await receive(token, requestID: 0)
-            guard header.kind == 1, data.count <= 256 * 1024,
-                  let names = try? JSONDecoder().decode([String].self, from: data), names.count <= 4096 else { throw NativeBackendError.malformedEvent }
-            services = names; ready = true
-        } catch { if handle == token { close() }; throw error }
+            let result = try await receive(token, requestID: 0)
+            guard result.0.kind == 1, result.1.count <= 262_144 else { throw NativeBackendError.malformedEvent }
+            let names: [String]
+            do { names = try JSONDecoder().decode([String].self, from: result.1) }
+            catch { throw NativeBackendError.malformedEvent }
+            guard names.count <= 4096, handle == token else { throw NativeBackendError.malformedEvent }
+            services = names
+            ready = true
+        } catch {
+            if handle == token { close() }
+            throw error
+        }
     }
     public func listServices() async throws -> [String] {
-        guard ready, handle != 0 else { throw NativeBackendError.closed }; return services
+        if ready && handle != 0 { return services }
+        throw NativeBackendError.closed
     }
     public func checkDeveloperReadiness() async throws { _ = try await operation(1) }
     public func capturePNG() async throws -> Data {
-        try await operation(usesOwnedXCTest ? UInt32(NCM_ACTION_LEGACY_SCREENSHOT) : 2, expectedKind: 4)
+        let action: UInt32 = usesOwnedXCTest ? UInt32(NCM_ACTION_LEGACY_SCREENSHOT) : 2
+        return try await operation(action, expectedKind: 4)
     }
     /// Starts an authenticated screen video stream; packets are drained locally.
     public func startTouchMedia() async throws {
@@ -487,33 +487,37 @@ public enum NativeControlBackend: Sendable, Equatable {
         NCMMediaCleanupDiagnostic.finish(diagnostic, outcome: .completed)
         #endif
         mediaStartCompleted = true
-        videoPump?.cancel()
-        let decoder = NCMVideoDecoder()
-        videoDecoder = decoder; videoDecodeFailure = nil
-        let token = handle
-        videoPump = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                let consumed: Bool
-                do {
-                    guard let self, self.handle == token, self.videoDecoder === decoder else { return }
-                    consumed = try await self.receiveVideoPicture(token: token, decoder: decoder)
-                    self.videoPollSerial &+= 1
-                } catch is CancellationError { return }
-                catch {
-                    if let self, self.handle == token, self.videoDecoder === decoder {
-                        self.videoDecodeFailure = .screenshotFailure(stage: 20, cause: 1)
-                    }
-                    return
-                }
-                // Do not retain the service across the idle wait.
-                if !consumed { do { try await Task.sleep(for: .milliseconds(5)) } catch { return } }
-            }
-        }
+        beginVideoObservation()
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--media-session-diagnostics") {
             try await collectMediaSessionDiagnostic()
         }
         #endif
+    }
+    private func beginVideoObservation() {
+        videoPump?.cancel()
+        let decoder = NCMVideoDecoder(), token = handle
+        videoDecoder = decoder
+        videoDecodeFailure = nil
+        videoPump = Task { @MainActor [weak self] in
+            do {
+                while !Task.isCancelled {
+                    let consumed = try await self?.advanceVideo(token: token, decoder: decoder)
+                    guard let consumed else { return }
+                    if !consumed { try await Task.sleep(for: .milliseconds(5)) }
+                }
+            } catch is CancellationError { return }
+            catch {
+                guard let self, token == self.handle, decoder === self.videoDecoder else { return }
+                self.videoDecodeFailure = .screenshotFailure(stage: 20, cause: 1)
+            }
+        }
+    }
+    private func advanceVideo(token: UInt64, decoder: NCMVideoDecoder) async throws -> Bool? {
+        guard token == handle, decoder === videoDecoder else { return nil }
+        let consumed = try await receiveVideoPicture(token: token, decoder: decoder)
+        videoPollSerial &+= 1
+        return consumed
     }
     #if DEBUG
     private func collectMediaSessionDiagnostic() async throws {
@@ -614,52 +618,51 @@ public enum NativeControlBackend: Sendable, Equatable {
     /// DisplayService returns JPEG. Callers must use the snapshot's MIME type.
     public func captureVideoJPEGWithGeometry() async throws -> NativeVideoSnapshot {
         guard !cleanupRequired else { throw NativeBackendError.busy }
-        if usesOwnedXCTest { return try await captureOwnedAutomationSnapshot() }
-        guard ready, handle != 0, let decoder = videoDecoder else { throw NativeBackendError.closed }
+        if usesOwnedXCTest {
+            return try await NCMXCTestAuthorization.captureScreen(authorization: sessionAuthorization) {
+                try await captureOwnedAutomationSnapshot()
+            }
+        }
+        guard ready, let decoder = videoDecoder, handle != 0 else { throw NativeBackendError.closed }
+        let token = handle
+        let began = ContinuousClock.now
+        let initialSnapshot = try videoCursor(token)
+        let pollAtStart = videoPollSerial
+        var initialMetrics = ncm_video_status()
+        let haveInitialMetrics = ncm_backend_video_get_status(token, &initialMetrics) == 0
         videoSnapshotDiagnostics = nil
-        let token = handle, began = ContinuousClock.now
-        var initial = ncm_video_status()
-        let initialCode = ncm_backend_video_get_status(token, &initial)
-        var initialSnapshot = ncm_video_snapshot()
-        guard ncm_backend_video_get_snapshot(token, &initialSnapshot) == 0 else { throw NativeBackendError.closed }
-        let polledAfter = videoPollSerial
-        let deadline = began.advanced(by: .seconds(8))
-        while ContinuousClock.now < deadline {
+        repeat {
             try Task.checkCancellation()
-            guard token == handle, ready else { throw NativeBackendError.closed }
-            // The single video pump owns polling and preserves the reference chain.
-            // Reject cached pixels while a new generation reset is pending.
+            guard ready, handle == token, videoDecoder === decoder else { throw NativeBackendError.closed }
             await Task.yield()
-            guard token == handle, ready else { throw NativeBackendError.closed }
-            guard videoDecoder === decoder else { throw NativeBackendError.closed }
-            var snapshot = ncm_video_snapshot()
-            guard ncm_backend_video_get_snapshot(token, &snapshot) == 0 else { throw NativeBackendError.closed }
-            // A new decoded picture, or a post-request report confirming that all
-            // emitted packets form the already decoded picture. Picture age alone
-            // says nothing about a static display; no input-history dependency.
-            let confirmed = snapshot.report > initialSnapshot.report ? snapshot.serial : 0
-            if videoPollSerial != polledAfter,
-               let image = try await decoder.jpegWithGeometry(notBefore: began, confirmedEpoch: snapshot.epoch, confirmedSerial: confirmed) {
-                guard token == handle, ready else { throw NativeBackendError.closed }
-                var after = ncm_video_snapshot()
-                guard ncm_backend_video_get_snapshot(token, &after) == 0 else { throw NativeBackendError.closed }
-                if after.epoch != snapshot.epoch || after.epoch != image.geometry.epoch { continue }
-                videoDecodeFailure = nil
-                videoSnapshotDiagnostics = "screenshot.video received=true decoder=\(await decoder.diagnosticStatus())"
-                return image
+            let before = try videoCursor(token)
+            let acknowledged = before.report > initialSnapshot.report ? before.serial : 0
+            if videoPollSerial != pollAtStart,
+               let image = try await decoder.jpegWithGeometry(notBefore: began, confirmedEpoch: before.epoch, confirmedSerial: acknowledged) {
+                guard ready, handle == token, videoDecoder === decoder else { throw NativeBackendError.closed }
+                let after = try videoCursor(token)
+                if before.epoch == after.epoch, image.geometry.epoch == after.epoch {
+                    videoDecodeFailure = nil
+                    videoSnapshotDiagnostics = "screenshot.video received=true decoder=\(await decoder.diagnosticStatus())"
+                    return image
+                }
             }
             try await Task.sleep(for: .milliseconds(25))
-        }
-        var status = ncm_video_status()
-        let code = ncm_backend_video_get_status(token, &status)
-        NSLog("NCM screenshot timeout status=%d datagrams=%llu rtp=%llu rejected=%llu frames=%llu discontinuities=%llu overflows=%llu refreshes=%llu sourcePort=%llu", code, status.datagrams, status.rtp, status.rejected, status.frames, status.discontinuities, status.overflows, status.refreshes, status.source_port)
-        let diagnostics = "screenshot.video timeout=true datagrams=\(status.datagrams) rtp=\(status.rtp) frames=\(status.frames) refreshes=\(status.refreshes) intervalDatagrams=\(status.datagrams &- initial.datagrams) intervalFrames=\(status.frames &- initial.frames) decoder=\(await decoder.diagnosticStatus())"
-        videoSnapshotDiagnostics = diagnostics
-        NSLog("NCM %@", diagnostics)
+        } while began.duration(to: .now) < .seconds(8)
+        var finalMetrics = ncm_video_status()
+        let metricsAvailable = ncm_backend_video_get_status(token, &finalMetrics) == 0
+        videoSnapshotDiagnostics = "screenshot.video timeout=true datagrams=\(finalMetrics.datagrams) rtp=\(finalMetrics.rtp) frames=\(finalMetrics.frames) refreshes=\(finalMetrics.refreshes) intervalDatagrams=\(finalMetrics.datagrams &- initialMetrics.datagrams) intervalFrames=\(finalMetrics.frames &- initialMetrics.frames) decoder=\(await decoder.diagnosticStatus())"
         if let videoDecodeFailure { throw videoDecodeFailure }
-        // Historical overload is diagnostic history, not the cause of every later failure.
-        let cause = code == 0 ? NCMVideoSnapshotFailure.timeoutCause(datagrams: status.datagrams, rtp: status.rtp, frames: status.frames, overflows: status.overflows, initialOverflows: initialCode == 0 ? initial.overflows : 0) : UInt32(2)
+        let cause = metricsAvailable ? NCMVideoSnapshotFailure.timeoutCause(datagrams: finalMetrics.datagrams,
+            rtp: finalMetrics.rtp, frames: finalMetrics.frames, overflows: finalMetrics.overflows,
+            initialOverflows: haveInitialMetrics ? initialMetrics.overflows : 0) : UInt32(2)
         throw NativeBackendError.screenshotFailure(stage: 20, cause: cause)
+    }
+    private func videoCursor(_ token: UInt64) throws -> ncm_video_snapshot {
+        guard token == handle, ready else { throw NativeBackendError.closed }
+        var cursor = ncm_video_snapshot()
+        guard ncm_backend_video_get_snapshot(token, &cursor) == 0 else { throw NativeBackendError.closed }
+        return cursor
     }
     /// Lightweight input guard: never compresses another image. Unknown/pending
     /// geometry fails closed, including a reset not yet consumed by the video pump.
@@ -681,35 +684,22 @@ public enum NativeControlBackend: Sendable, Equatable {
         }, decoded: { await decoder.currentGeometry() })
     }
     private func receiveVideoPicture(token: UInt64, decoder: NCMVideoDecoder) async throws -> Bool {
-        var header = ncm_event()
-        var status = ncm_backend_video_poll(token, &header, nil, 0)
-        if status == 4 { return false }
-        if status == 3 { throw NativeBackendError.closed }
-        if status == 0, header.kind == 14 { await decoder.reset(); return true }
-        guard status == 5, header.kind == 13, header.size >= 64, header.size <= 8 * 1024 * 1024 else {
-            throw NativeBackendError.screenshotFailure(stage: 20, cause: 1)
-        }
-        var data = Data(count: header.size)
-        status = data.withUnsafeMutableBytes { ncm_backend_video_poll(token, &header, $0.bindMemory(to: UInt8.self).baseAddress, $0.count) }
-        if status == 0, header.kind == 14 { await decoder.reset(); return true }
-        // A newer independent picture can replace the size-probed one.
-        if status == 4 || status == 5 { return false }
-        if status == 3 { throw NativeBackendError.closed }
-        guard status == 0, header.kind == 13, header.size >= 64, header.size <= data.count else {
-            throw NativeBackendError.screenshotFailure(stage: 20, cause: 1)
-        }
-        if header.size < data.count { data.removeSubrange(header.size..<data.count) }
-        do {
-            let decoded = try await decoder.consume(data)
-            guard handle == token, ready, videoDecoder === decoder else { throw NativeBackendError.closed }
-            if decoded { videoDecodeFailure = nil }
-        } catch {
-            try Task.checkCancellation()
-            guard handle == token, ready, videoDecoder === decoder else { throw NativeBackendError.closed }
-            videoDecodeFailure = (error as? NativeBackendError) ?? .screenshotFailure(stage: 20, cause: 1)
-            NSLog("NCM screenshot decode failed: %@", String(describing: error))
-            await decoder.reset()
-            _ = ncm_backend_video_refresh(token)
+        let delivery = try NativeVideoMailbox.poll { ncm_backend_video_poll(token, $0, $1, $2) }
+        switch delivery {
+        case .idle: return false
+        case .reset: await decoder.reset()
+        case .picture(let bytes):
+            do {
+                let advanced = try await decoder.consume(bytes)
+                guard token == handle, ready, decoder === videoDecoder else { throw NativeBackendError.closed }
+                if advanced { videoDecodeFailure = nil }
+            } catch {
+                try Task.checkCancellation()
+                guard token == handle, ready, decoder === videoDecoder else { throw NativeBackendError.closed }
+                videoDecodeFailure = error as? NativeBackendError ?? .screenshotFailure(stage: 20, cause: 1)
+                await decoder.reset()
+                _ = ncm_backend_video_refresh(token)
+            }
         }
         return true
     }
@@ -1127,30 +1117,20 @@ public enum NativeControlBackend: Sendable, Equatable {
     }
     private func receive(_ token: UInt64, requestID: UInt64, deadline: ContinuousClock.Instant? = nil,
                          discardFailure: Bool = false) async throws -> (ncm_event, Data) {
-        // Overall connect/readiness/media stages can contain multiple 15s protocol
-        // steps. This bound is independent of the Rust per-stage deadlines.
-        let deadline = deadline ?? ContinuousClock.now.advanced(by: .seconds(120))
-        while ContinuousClock.now < deadline {
+        let until = deadline ?? .now.advanced(by: .seconds(120))
+        repeat {
             try Task.checkCancellation()
             guard handle == token else { throw NativeBackendError.closed }
-            var event = ncm_event(); let status = ncm_backend_poll(token, &event, nil, 0)
-            if status == 4 { try await Task.sleep(for: .milliseconds(10)); continue }
-            if status == 3 { throw NativeBackendError.closed }
-            var data = Data()
-            if status == 5 {
-                guard event.size > 0, event.size <= 64 * 1024 * 1024 else { throw NativeBackendError.malformedEvent }
-                data = Data(count: event.size)
-                let copied = data.withUnsafeMutableBytes { bytes in ncm_backend_poll(token, &event, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count) }
-                guard copied == 0 else { throw NativeBackendError.transport(code: copied) }
-            } else if status != 0 { throw NativeBackendError.transport(code: status) }
-            guard event.request_id == requestID, event.reserved == 0 else { throw NativeBackendError.malformedEvent }
-            try submittedRequest.received(token: token, requestID: requestID, kind: event.kind)
-            if discardFailure { return (event, data) }
-            if event.kind == 10 { throw NativeBackendError.touchPreparationFailure(stage: event.stage, cause: event.cause) }
-            if event.kind == 12 { throw NativeBackendError.applicationQueryFailure(stage: event.stage, cause: event.cause) }
-            if event.kind == 3 { throw NativeBackendError.protocolFailure(stage: event.stage, cause: event.cause) }
-            return (event, data)
-        }
+            if let message = try NativeEventReader.poll(limit: 64 * 1024 * 1024, read: {
+                ncm_backend_poll(token, $0, $1, $2)
+            }) {
+                try message.validate(request: requestID)
+                try submittedRequest.received(token: token, requestID: requestID, kind: message.header.kind)
+                if !discardFailure { try message.checkFailure() }
+                return (message.header, message.payload)
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        } while .now < until
         throw NCMError.timeout
     }
     #if NCM_OFFLINE_FIXTURES
@@ -1255,6 +1235,19 @@ enum NCMXCTestDelivery {
 /// Strict host receipt checks; a successful control-channel handshake is not
 /// automation readiness and cannot authorize a different process or UUID.
 struct NCMXCTestAuthorization: Decodable {
+    /// The owned process handshake admits input channels. Screen access still
+    /// requires the caller's separate permission from this native session.
+    @MainActor static func captureScreen(
+        authorization: ExistingSessionAuthorization?,
+        capture: () async throws -> NativeVideoSnapshot
+    ) async throws -> NativeVideoSnapshot {
+        try Task.checkCancellation()
+        guard let authorization, authorization.verifyExistingIdentity, authorization.screen else {
+            throw NativeBackendError.authorizationRequired
+        }
+        return try await capture()
+    }
+
     let authorized: Bool
     let processID: Int32
     let sessionIdentifier: UUID
@@ -1369,128 +1362,9 @@ struct NCMXCTestGeometryTracker {
     }
 }
 
-private func withSlices<T>(_ data: [Data], _ index: Int = 0, _ slices: [ncm_bytes] = [], _ body: ([ncm_bytes]) -> T) -> T {
-    if index == data.count { return body(slices) }
-    return data[index].withUnsafeBytes { bytes in
-        withSlices(data, index + 1, slices + [ncm_bytes(data: bytes.bindMemory(to: UInt8.self).baseAddress, size: bytes.count)], body)
-    }
-}
-
-/// Ordinary Lockdown only. Caller explicitly supplies the existing pairing plist.
-/// Kept separate from the RP identity, discovery and screenshot/media API.
-@MainActor public final class NativeLockdownSession {
-    private var handle: UInt64 = 0
-    private var ready = false
-    private var busy = false
-    public init() {}
-    deinit { if handle != 0 { ncm_backend_close(handle) } }
-    public func close() {
-        let old = handle; handle = 0; ready = false
-        if old != 0 { ncm_backend_close(old) }
-    }
-    public func connect(pairingRecord: Data, expectedUDID: String, authorized: Bool) async throws {
-        try Task.checkCancellation()
-        guard authorized else { throw NativeBackendError.authorizationRequired }
-        guard !busy, handle == 0 else { throw NativeBackendError.busy }
-        guard !pairingRecord.isEmpty, pairingRecord.count <= 1024 * 1024,
-              !expectedUDID.isEmpty, expectedUDID.utf8.count <= 256 else { throw NativeBackendError.invalidIdentity }
-        guard NativeDeveloperServices.linkedABIVersion == NCM_BACKEND_ABI else { throw NativeBackendError.unsupportedABI }
-        let row = try NCMInterfaceBinding.resolve(NCMInterfaceBinding.inventory()).row
-        var started: UInt64 = 0
-        let code = withSlices([pairingRecord, Data(expectedUDID.utf8)]) { slices in
-            ncm_lockdown_start(row.index, UInt32(NCM_ALLOW_EXISTING_VERIFY), slices[0], slices[1], &started)
-        }
-        guard code == 0, started != 0 else { throw NativeBackendError.transport(code: code) }
-        handle = started; busy = true; defer { busy = false }
-        do { try await receive(started, requestID: 0); ready = true }
-        catch { close(); throw error }
-    }
-    /// Normal cleanup sends StopSession on the same TLS channel. Cancellation or
-    /// background close instead revokes transport; it cannot confirm remote stop.
-    public func stop() async throws {
-        guard !busy else { throw NativeBackendError.busy }
-        guard ready, handle != 0 else { throw NativeBackendError.closed }
-        busy = true; defer { busy = false; close() }
-        let token = handle
-        let code = ncm_backend_submit(token, 1, 5, 0, 0)
-        guard code == 0 else { throw NativeBackendError.transport(code: code) }
-        try await receive(token, requestID: 1)
-    }
-    private func receive(_ token: UInt64, requestID: UInt64) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(40))
-        while ContinuousClock.now < deadline {
-            try Task.checkCancellation()
-            guard handle == token else { throw NativeBackendError.closed }
-            var event = ncm_event()
-            let status = ncm_backend_poll(token, &event, nil, 0)
-            if status == 4 { try await Task.sleep(for: .milliseconds(10)); continue }
-            guard status == 0 else { throw NativeBackendError.transport(code: status) }
-            guard event.request_id == requestID, event.size == 0, event.reserved == 0 else { throw NativeBackendError.malformedEvent }
-            if event.kind == 3 { throw NativeBackendError.protocolFailure(stage: event.stage, cause: event.cause) }
-            guard event.kind == 2 else { throw NativeBackendError.malformedEvent }
-            return
-        }
-        throw NCMError.timeout
-    }
-}
-
-// Media decoding is intentionally off MainActor. Only complete, ordered HEVC
-// access units cross the ABI; no compressed packet or decoded image is persisted.
 import VideoToolbox
 import CoreImage
 import ImageIO
-
-struct NCMVideoSample {
-    let serial: UInt64, epoch: UInt64, ageMS: UInt64, revision: UInt64
-    let timestamp: UInt32, sync: Bool, width: Int, height: Int
-    let visibleSize: CGSize?
-    let parameters: [Data]
-    let bytes: Data
-    init(_ data: Data) throws {
-        guard data.count >= 64, data.count <= 8 * 1024 * 1024 else { throw NativeBackendError.malformedEvent }
-        var offset = 0
-        func number(_ count: Int) -> UInt64 {
-            defer { offset += count }
-            return (0..<count).reduce(UInt64(0)) { $0 | UInt64(data[offset + $1]) << (8 * $1) }
-        }
-        serial = number(8); epoch = number(8); ageMS = number(8); revision = number(8)
-        timestamp = UInt32(number(4)); let flags = number(4)
-        sync = flags & 1 != 0; width = Int(number(4)); height = Int(number(4))
-        let lengths = (0..<4).map { _ in Int(number(4)) }
-        let headerSize = flags & 2 != 0 ? 72 : 64
-        guard data.count >= headerSize else { throw NativeBackendError.malformedEvent }
-        if flags & 2 != 0 {
-            let w = Int(number(4)), h = Int(number(4))
-            guard w > 0, h > 0, w <= width, h <= height, width - w < 64, height - h < 64 else { throw NativeBackendError.malformedEvent }
-            visibleSize = CGSize(width: w, height: h)
-        } else { visibleSize = nil }
-        guard flags <= 3, serial > 0, width > 0, height > 0, width <= 16384, height <= 16384,
-              width * height <= 32 * 1024 * 1024, lengths.allSatisfy({ $0 > 0 }),
-              lengths.prefix(3).allSatisfy({ $0 <= 1024 * 1024 }),
-              lengths.reduce(headerSize, +) == data.count else { throw NativeBackendError.malformedEvent }
-        var fields: [Data] = []
-        for length in lengths { fields.append(data.subdata(in: offset..<offset + length)); offset += length }
-        parameters = Array(fields.prefix(3)); bytes = fields[3]
-        // Validate length-prefixed NAL boundaries before CoreMedia sees bytes.
-        var cursor = 0, count = 0
-        while cursor < bytes.count {
-            guard bytes.count - cursor >= 4 else { throw NativeBackendError.malformedEvent }
-            let size = (0..<4).reduce(0) { ($0 << 8) | Int(bytes[cursor + $1]) }
-            cursor += 4; count += 1
-            guard size >= 2, size <= bytes.count - cursor, count <= 256 else { throw NativeBackendError.malformedEvent }
-            cursor += size
-        }
-    }
-}
-
-private final class NCMDecodedOutput: @unchecked Sendable {
-    private let lock = NSLock()
-    private var buffer: CVPixelBuffer?
-    private var status: OSStatus = noErr
-    func store(_ value: CVPixelBuffer?, status: OSStatus) { lock.lock(); defer { lock.unlock() }; buffer = value; self.status = status }
-    func error() -> OSStatus { lock.lock(); defer { lock.unlock() }; return status }
-    func take() -> CVPixelBuffer? { lock.lock(); defer { lock.unlock() }; return buffer }
-}
 
 /// Kept separate from the codec so geometry transitions can be tested without
 /// compressed fixtures or a device. Access is confined to the decoder queue.
@@ -1582,307 +1456,15 @@ struct NCMVideoGeometryTracker {
     }
 }
 
-final class NCMVideoDecoder: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "PhoneAgent.ncm-video-decoder", qos: .userInitiated)
-    private let context = CIContext(options: [.cacheIntermediates: false])
-    private var session: VTDecompressionSession?
-    private var format: CMVideoFormatDescription?
-    private var revision: UInt64?, epoch: UInt64?
-    private var geometry = NCMVideoGeometryTracker()
-    #if DEBUG
-    private var probeKeyframe: Data?
-    func diagnosticKeyframe() async -> Data? {
-        await withCheckedContinuation { continuation in queue.async { continuation.resume(returning: self.probeKeyframe) } }
-    }
-    #endif
-    private var loggedGeometry: String?
-    private var streamContentSize: CGSize?
-    private var requiresSync = true
-    private var latest: (buffer: CVPixelBuffer, rect: CGRect, received: ContinuousClock.Instant, serial: UInt64)?
-    private var lastSerial: UInt64 = 0
-    private var decodedCount: UInt64 = 0
-    func diagnosticStatus() async -> String {
-        await withCheckedContinuation { continuation in queue.async {
-            let age = self.latest.map { String(describing: $0.received.duration(to: .now)) } ?? "none"
-            continuation.resume(returning: "polled=\(self.lastSerial) decoded=\(self.decodedCount) latestAge=\(age) requiresSync=\(self.requiresSync)")
-        } }
-    }
-    deinit { if let session { VTDecompressionSessionInvalidate(session) } }
-    func reset() async {
-        await withCheckedContinuation { continuation in
-            queue.async { self.resetOnQueue(); continuation.resume() }
-        }
-    }
-    private func resetOnQueue() {
-        if let session { VTDecompressionSessionInvalidate(session) }
-        session = nil; format = nil; revision = nil; epoch = nil
-        geometry.reset()
-        latest = nil; streamContentSize = nil; loggedGeometry = nil; requiresSync = true
-        #if DEBUG
-        probeKeyframe = nil
-        #endif
-    }
-    @discardableResult func consume(_ data: Data) async throws -> Bool {
-        let observed = ContinuousClock.now
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
-            queue.async {
-                do { continuation.resume(returning: try self.decode(NCMVideoSample(data), observed: observed)) }
-                catch { self.resetOnQueue(); continuation.resume(throwing: error) }
-            }
-        }
-    }
-    private func decode(_ sample: NCMVideoSample, observed: ContinuousClock.Instant) throws -> Bool {
-        dispatchPrecondition(condition: .notOnQueue(.main))
-        guard sample.serial > lastSerial else { throw NativeBackendError.malformedEvent }
-        // The native mailbox can replace queued pictures with a keyframe. A gap
-        // may hide a transient layout change, so never reuse its former token.
-        if lastSerial > 0, sample.serial != lastSerial &+ 1 { geometry.reset() }
-        lastSerial = sample.serial
-        if revision != sample.revision || epoch != sample.epoch { resetOnQueue() }
-        if requiresSync && !sample.sync { return false }
-        if session == nil {
-            guard sample.sync else { return false }
-            var description: CMVideoFormatDescription?
-            let p = sample.parameters
-            let result = p[0].withUnsafeBytes { vps in p[1].withUnsafeBytes { sps in p[2].withUnsafeBytes { pps in
-                let pointers = [vps.bindMemory(to: UInt8.self).baseAddress!, sps.bindMemory(to: UInt8.self).baseAddress!, pps.bindMemory(to: UInt8.self).baseAddress!]
-                let sizes = p.map(\.count)
-                return pointers.withUnsafeBufferPointer { pointers in sizes.withUnsafeBufferPointer { sizes in
-                    CMVideoFormatDescriptionCreateFromHEVCParameterSets(allocator: kCFAllocatorDefault, parameterSetCount: 3,
-                        parameterSetPointers: pointers.baseAddress!, parameterSetSizes: sizes.baseAddress!, nalUnitHeaderLength: 4,
-                        extensions: nil, formatDescriptionOut: &description)
-                }}
-            }}}
-            guard result == noErr, let description else { throw NativeBackendError.screenshotFailure(stage: 20, cause: 1) }
-            let dimensions = CMVideoFormatDescriptionGetDimensions(description)
-            let presented = CMVideoFormatDescriptionGetPresentationDimensions(description, usePixelAspectRatio: false, useCleanAperture: true)
-            guard (dimensions.width == sample.width && dimensions.height == sample.height) ||
-                  (presented.width == CGFloat(sample.width) && presented.height == CGFloat(sample.height)) else { throw NativeBackendError.malformedEvent }
-            var callback = VTDecompressionOutputCallbackRecord(decompressionOutputCallback: { _, source, status, _, image, _, _ in
-                if let source {
-                    Unmanaged<NCMDecodedOutput>.fromOpaque(source).takeUnretainedValue().store(image, status: status)
-                }
-            }, decompressionOutputRefCon: nil)
-            let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
-            let created = VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: description,
-                decoderSpecification: nil, imageBufferAttributes: attributes, outputCallback: &callback,
-                decompressionSessionOut: &session)
-            NSLog("NCM VT create status=%d", created)
-            guard created == noErr else { throw NativeBackendError.screenshotFailure(stage: 20, cause: created == kVTInvalidSessionErr ? 13 : 14) }
-            #if DEBUG
-            if let session {
-                var hardware: CFTypeRef?
-                let queried = VTSessionCopyProperty(session, key: kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder, allocator: kCFAllocatorDefault, valueOut: &hardware)
-                NSLog("NCM VT hardware query=%d value=%@", queried, String(describing: hardware))
-            }
-            #endif
-            format = description; revision = sample.revision; epoch = sample.epoch
-        }
-        guard let session, let format else { throw NativeBackendError.malformedEvent }
-        #if DEBUG
-        if sample.sync {
-            var annexB = Data()
-            for parameter in sample.parameters { annexB.append(contentsOf: [0,0,0,1]); annexB.append(parameter) }
-            let raw = [UInt8](sample.bytes); var offset = 0
-            while offset < raw.count {
-                let size = raw[offset..<offset+4].reduce(0) { ($0 << 8) | Int($1) }; offset += 4
-                annexB.append(contentsOf: [0,0,0,1]); annexB.append(contentsOf: raw[offset..<offset+size]); offset += size
-            }
-            probeKeyframe = annexB
-        }
-        #endif
-        let picture = try NCMDisplayPicture(sample.bytes, codedWidth: Int(CMVideoFormatDescriptionGetDimensions(format).width),
-                                            codedHeight: Int(CMVideoFormatDescriptionGetDimensions(format).height))
-        if let w = picture.visibleWidth, let h = picture.visibleHeight { streamContentSize = CGSize(width: w, height: h) }
-        let pictureBytes = picture.bytes
-        var block: CMBlockBuffer?
-        guard CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil, blockLength: pictureBytes.count,
-            blockAllocator: kCFAllocatorDefault, customBlockSource: nil, offsetToData: 0, dataLength: pictureBytes.count,
-            flags: 0, blockBufferOut: &block) == noErr, let block else { throw NativeBackendError.malformedEvent }
-        let copied = pictureBytes.withUnsafeBytes { CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: pictureBytes.count) }
-        guard copied == noErr else { throw NativeBackendError.malformedEvent }
-        var buffer: CMSampleBuffer?
-        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: CMTime(value: Int64(sample.timestamp), timescale: 90000), decodeTimeStamp: .invalid)
-        var size = pictureBytes.count
-        guard CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
-            sampleCount: 1, sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleSizeEntryCount: 1,
-            sampleSizeArray: &size, sampleBufferOut: &buffer) == noErr, let buffer else { throw NativeBackendError.malformedEvent }
-        let output = NCMDecodedOutput()
-        let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: buffer, flags: [],
-            frameRefcon: Unmanaged.passUnretained(output).toOpaque(), infoFlagsOut: nil)
-        let waited = VTDecompressionSessionWaitForAsynchronousFrames(session)
-        guard status == noErr, waited == noErr, output.error() == noErr, let pixels = output.take() else {
-            NSLog("NCM VT decode status=%d waited=%d callback=%d output=%d sync=%d", status, waited, output.error(), output.take() == nil ? 0 : 1, sample.sync ? 1 : 0)
-            let invalid = [status, waited, output.error()].contains(kVTInvalidSessionErr)
-            throw NativeBackendError.screenshotFailure(stage: 20, cause: invalid ? 13 : 14)
-        }
-        requiresSync = false
-        decodedCount &+= 1
-        // Include time in the Rust queue when deciding whether capture advanced after the request.
-        let rect: CGRect
-        if let size = streamContentSize ?? sample.visibleSize {
-            rect = CGRect(x: 0, y: CGFloat(CVPixelBufferGetHeight(pixels)) - size.height, width: size.width, height: size.height)
-            guard CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels)).contains(rect) else { throw NativeBackendError.malformedEvent }
-        } else {
-        rect = try NCMVideoImage.visibleRect(buffer: pixels, width: streamContentSize.map { Int($0.width) } ?? sample.width, height: streamContentSize.map { Int($0.height) } ?? sample.height,
-            formatAperture: CMVideoFormatDescriptionGetCleanAperture(format, originIsAtTopLeft: true))
-        }
-        let encoded = CMVideoFormatDescriptionGetDimensions(format)
-        let presentation = CMVideoFormatDescriptionGetPresentationDimensions(format, usePixelAspectRatio: false, useCleanAperture: true)
-        let geometry = "SPS=\(sample.width)x\(sample.height) coded=\(encoded.width)x\(encoded.height) presentation=\(presentation) buffer=\(CVPixelBufferGetWidth(pixels))x\(CVPixelBufferGetHeight(pixels)) stride=\(CVPixelBufferGetBytesPerRow(pixels)) clean=\(CVImageBufferGetCleanRect(pixels)) preferred=\(String(describing: NCMVideoImage.preferredRect(buffer: pixels))) displayContent=\(String(describing: sample.visibleSize)) trailerContent=\(String(describing: streamContentSize)) selected=\(rect)"
-        if loggedGeometry != geometry {
-            NSLog("NCM video geometry %@", geometry)
-            loggedGeometry = geometry
-        }
-        latest = (pixels, rect, observed.advanced(by: .milliseconds(-Int64(min(sample.ageMS, UInt64(Int64.max))))), sample.serial)
-        _ = self.geometry.update(epoch: sample.epoch, revision: sample.revision,
-                                 bufferWidth: CVPixelBufferGetWidth(pixels), bufferHeight: CVPixelBufferGetHeight(pixels),
-                                 visibleRect: rect)
-        return true
-    }
-    func jpeg(notBefore: ContinuousClock.Instant, confirmedEpoch: UInt64? = nil, confirmedSerial: UInt64 = 0) async throws -> Data? {
-        try await jpegWithGeometry(notBefore: notBefore, confirmedEpoch: confirmedEpoch, confirmedSerial: confirmedSerial)?.data
-    }
-    func currentGeometry() async -> (geometry: NativeVideoGeometry, serial: UInt64)? {
-        await withCheckedContinuation { continuation in queue.async {
-            guard let geometry = self.geometry.current, let latest = self.latest, !self.requiresSync else {
-                continuation.resume(returning: nil); return
-            }
-            continuation.resume(returning: (geometry, latest.serial))
-        } }
-    }
-    func jpegWithGeometry(notBefore: ContinuousClock.Instant, confirmedEpoch: UInt64? = nil, confirmedSerial: UInt64 = 0) async throws -> NativeVideoSnapshot? {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<NativeVideoSnapshot?, Error>) in
-            queue.async {
-                do {
-                    guard let latest = self.latest, let geometry = self.geometry.current, !self.requiresSync,
-                          latest.received >= notBefore || (confirmedSerial > 0 && self.epoch == confirmedEpoch && latest.serial >= confirmedSerial)
-                    else { continuation.resume(returning: nil); return }
-                    let data = try NCMVideoImage.jpeg(buffer: latest.buffer, rect: latest.rect, context: self.context)
-                    continuation.resume(returning: NativeVideoSnapshot(data: data, geometry: geometry))
-                } catch { continuation.resume(throwing: error) }
-            }
-        }
-    }
-}
-
 /// Transport/assembly diagnostics; no arbitrary maximum picture age.
 struct NCMVideoSnapshotFailure {
     static func timeoutCause(datagrams: UInt64, rtp: UInt64, frames: UInt64, overflows: UInt64, initialOverflows: UInt64 = 0) -> UInt32 {
-        if datagrams == 0 { return 8 }
-        if rtp == 0 { return 9 }
-        if frames == 0 { return 10 }
-        if overflows > initialOverflows { return 12 }
-        return 11
-    }
-}
-
-/// SW:1 screen-sharing trailers observed on the real stream. Flag 2 carries
-/// a BE16 contents rectangle; flag 3 additionally carries the encoded size.
-/// Parse RBSP after emulation-prevention removal: escaping spans the boundary
-/// between coded slice and metadata, so the footer has no fixed EBSP length.
-struct NCMDisplayPicture {
-    let bytes: Data
-    let visibleWidth: Int?
-    let visibleHeight: Int?
-    init(_ data: Data, codedWidth: Int, codedHeight: Int) throws {
-        let input = [UInt8](data)
-        var output = Data(), offset = 0
-        var visible: (Int, Int)?
-        while offset < input.count {
-            guard input.count - offset >= 4 else { throw NativeBackendError.malformedEvent }
-            let length = input[offset..<offset+4].reduce(0) { ($0 << 8) | Int($1) }
-            offset += 4
-            guard length >= 2, length <= input.count - offset else { throw NativeBackendError.malformedEvent }
-            var nal = Array(input[offset..<offset+length]); offset += length
-            let type = (nal[0] >> 1) & 63
-            if type < 32 {
-                let raw = Self.unescape(Array(nal.dropFirst(2)))
-                let tailLength = raw.last == 2 ? 9 : raw.last == 3 ? 13 : 0
-                if tailLength > 0, raw.count > tailLength {
-                    let t = Array(raw.suffix(tailLength))
-                    func pair(_ i: Int) -> Int { Int(t[i]) << 8 | Int(t[i+1]) }
-                    let base = tailLength == 13 ? 4 : 0
-                    let canvasMatches = base == 0 || (pair(0) == codedWidth && pair(2) == codedHeight)
-                    let w = pair(base+4), h = pair(base+6)
-                    if canvasMatches, pair(base) == 0, pair(base+2) == 0,
-                       w > 0, h > 0, w <= codedWidth, h <= codedHeight,
-                       codedWidth - w < 64, codedHeight - h < 64 {
-                        if let visible, visible.0 != w || visible.1 != h { throw NativeBackendError.malformedEvent }
-                        visible = (w, h)
-                        nal = Array(nal.prefix(2)) + Self.escape(Array(raw.dropLast(tailLength)))
-                    }
-                }
-            }
-            let n = UInt32(nal.count).bigEndian
-            withUnsafeBytes(of: n) { output.append(contentsOf: $0) }
-            output.append(contentsOf: nal)
+        switch (datagrams > 0, rtp > 0, frames > 0, overflows > initialOverflows) {
+        case (false, _, _, _): return 8
+        case (_, false, _, _): return 9
+        case (_, _, false, _): return 10
+        case (_, _, _, true): return 12
+        default: return 11
         }
-        bytes = output; visibleWidth = visible?.0; visibleHeight = visible?.1
-    }
-    private static func unescape(_ bytes: [UInt8]) -> [UInt8] {
-        var result: [UInt8] = [], zeros = 0
-        for (index, byte) in bytes.enumerated() {
-            if zeros == 2, byte == 3, index+1 < bytes.count, bytes[index+1] <= 3 {
-                zeros = 0; continue
-            }
-            result.append(byte); zeros = byte == 0 ? min(2,zeros+1) : 0
-        }
-        return result
-    }
-    private static func escape(_ bytes: [UInt8]) -> [UInt8] {
-        var result: [UInt8] = [], zeros = 0
-        for byte in bytes {
-            if zeros == 2, byte <= 3 { result.append(3); zeros = 0 }
-            result.append(byte); zeros = byte == 0 ? zeros+1 : 0
-        }
-        return result
-    }
-
-}
-
-/// Crop only declared picture geometry; never infer edges from UI colors.
-enum NCMVideoImage {
-    static func visibleRect(buffer: CVPixelBuffer, width: Int, height: Int, formatAperture: CGRect? = nil) throws -> CGRect {
-        let bounds = CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
-        let size = CGSize(width: width, height: height)
-        guard width > 0, height > 0, bounds.width >= size.width, bounds.height >= size.height else { throw NativeBackendError.malformedEvent }
-        func valid(_ rect: CGRect) -> Bool {
-            !rect.isNull && !rect.isInfinite && !rect.isEmpty && bounds.contains(rect) &&
-            rect == rect.integral && rect.width <= size.width && rect.height <= size.height
-        }
-        // iOS 26+ producers may provide a more precise display region than the
-        // ordinary clean aperture. CoreImage's automatic aperture option also
-        // gives this attachment priority; preserve its offsets in raw coordinates.
-        if let preferred = preferredRect(buffer: buffer), valid(preferred) { return preferred }
-        // CoreVideo clean-rectangle coordinates already use CoreImage's lower-left origin.
-        let clean = CVImageBufferGetCleanRect(buffer)
-        if clean != bounds, valid(clean) { return clean }
-        if let aperture = formatAperture {
-            let rect = CGRect(x: aperture.minX, y: bounds.height - aperture.maxY, width: aperture.width, height: aperture.height)
-            if valid(rect) { return rect }
-        }
-        // Hardware decoders may allocate aligned buffers with padding at right/bottom.
-        return CGRect(x: 0, y: bounds.height - size.height, width: size.width, height: size.height)
-    }
-    static func preferredRect(buffer: CVPixelBuffer) -> CGRect? {
-        guard let value = CVBufferCopyAttachment(buffer, kCVImageBufferPreferredCleanApertureKey, nil),
-              let aperture = value as? [String: Any],
-              let width = aperture[kCVImageBufferCleanApertureWidthKey as String] as? NSNumber,
-              let height = aperture[kCVImageBufferCleanApertureHeightKey as String] as? NSNumber else { return nil }
-        let x = (aperture[kCVImageBufferCleanApertureHorizontalOffsetKey as String] as? NSNumber)?.doubleValue ?? 0
-        let y = (aperture[kCVImageBufferCleanApertureVerticalOffsetKey as String] as? NSNumber)?.doubleValue ?? 0
-        return CGRect(x: (Double(CVPixelBufferGetWidth(buffer)) - width.doubleValue) / 2 + x,
-                      y: (Double(CVPixelBufferGetHeight(buffer)) - height.doubleValue) / 2 - y,
-                      width: width.doubleValue, height: height.doubleValue)
-    }
-    static func jpeg(buffer: CVPixelBuffer, rect: CGRect, context: CIContext) throws -> Data {
-        let image = CIImage(cvPixelBuffer: buffer).cropped(to: rect)
-        guard let cg = context.createCGImage(image, from: rect) else { throw NativeBackendError.screenshotFailure(stage: 20, cause: 1) }
-        let data = NSMutableData()
-        guard let target = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { throw NativeBackendError.malformedEvent }
-        CGImageDestinationAddImage(target, cg, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
-        guard CGImageDestinationFinalize(target) else { throw NativeBackendError.screenshotFailure(stage: 20, cause: 1) }
-        return data as Data
     }
 }

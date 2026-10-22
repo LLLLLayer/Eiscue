@@ -33,17 +33,20 @@ pub struct RsdHandshake {
 
 impl RsdHandshake {
     pub async fn new(socket: impl ReadWrite) -> Result<Self, IdeviceError> {
-        Ok(Self::new_retained(socket).await?.0)
+        let (description, _) = Self::new_retained(socket).await?;
+        Ok(description)
     }
 
-    /// NCM adaptation: retain the control stream for the authenticated generation.
-    /// The caller owns both values and closes them together; no shared RSD takeover.
+    /// Eiscue keeps the authenticated RSD channel alive with its service catalog.
     pub async fn new_retained<S: ReadWrite>(socket: S) -> Result<(Self, RemoteXpcClient<S>), IdeviceError> {
-        let mut xpc_client = RemoteXpcClient::new(socket).await?;
-        xpc_client.do_handshake().await?;
-        xpc_client.send_device_handshake().await?;
-        let data = xpc_client.recv_root().await?;
+        let mut channel = RemoteXpcClient::new(socket).await?;
+        channel.do_handshake().await?;
+        channel.send_device_handshake().await?;
+        let catalog = Self::decode_catalog(channel.recv_root().await?)?;
+        Ok((catalog, channel))
+    }
 
+    fn decode_catalog(data: plist::Value) -> Result<Self, IdeviceError> {
         let services_dict = match data
             .as_dictionary()
             .and_then(|x| x.get("Services"))
@@ -166,12 +169,12 @@ impl RsdHandshake {
             }
         };
 
-        Ok((Self {
+        Ok(Self {
             services,
             protocol_version,
             properties,
             uuid,
-        }, xpc_client))
+        })
     }
 
     pub async fn connect<T>(&mut self, provider: &mut impl RsdProvider) -> Result<T, IdeviceError>

@@ -59,6 +59,7 @@ def main():
     (directory / "toolchain.txt").write_text(version + output("xcrun", "swift", "--version") + xcodegen
                                             + f"DEVELOPER_DIR={developer}\nruntime={runtime['identifier']}\n")
     logged(directory, "helper-tests", "python3", "-m", "unittest", "discover", "-s", "Scripts/Tests", "-p", "test_*.py")
+    logged(directory, "native-archive-freshness", "python3", "Scripts/device-backend-artifacts.py", "check")
     logged(directory, "kit", "python3", "Scripts/test-swift-package.py", "--scratch-path",
            str(directory / "swiftpm"))
     logged(directory, "xcodegen", "xcodegen", "generate")

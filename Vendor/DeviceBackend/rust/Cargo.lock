@@ -794,7 +794,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "phoneagent-ncm-backend"
+name = "eiscue-device-backend"
 version = "0.1.0"
 dependencies = [
  "crc32fast",

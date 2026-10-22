@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import EiscueDeviceKit
 @testable import EiscueDeviceCore
-import PhoneAgentNCM
+import EiscueDeviceBackend
 
 @Suite struct DeviceErrorPresentationTests {
     @Test func unavailableScreenExplainsCompletedPairingAndChatInBothLanguages() throws {
